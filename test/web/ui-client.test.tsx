@@ -3200,11 +3200,10 @@ function assertOverviewLoadingAndError(locale: 'en-US' | 'pt-BR'): void {
 	expect(loading).toContain(locale === 'en-US' ? 'Loading operational overview' : 'Carregando visão operacional');
 	expect(loading).not.toContain(locale === 'en-US' ? 'No active run' : 'Nenhuma run ativa');
 	expect(error).toContain(locale === 'en-US' ? 'The operational overview could not be loaded' : 'Não foi possível carregar a visão operacional');
-	expect(error).toContain(CURRENT_PROJECT.name);
-	expect(error).toContain(locale === 'en-US' ? 'Readiness' : 'Prontidão');
-	expect(error).not.toContain(locale === 'en-US' ? 'No outcome in this window' : 'Nenhum resultado nesta janela');
+	expect(error).toContain('network failure');
+	expect(error).not.toContain(locale === 'en-US' ? 'Active runs' : 'Runs ativas');
 	expect(error).not.toContain('Provider');
-	expect(error).not.toContain('Backlog');
+	expect(error).not.toContain(locale === 'en-US' ? 'Approved queue' : 'Fila aprovada');
 }
 
 function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
@@ -3360,7 +3359,7 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('overview keeps the global registry as drill-down cards without management forms', () => {
+	test('overview renders four metrics and compact project collections without management forms', () => {
 		for (const expected of [
 			{ locale: 'en-US' as const, label: 'Control center', current: 'served by this instance', readiness: 'Readiness' },
 			{ locale: 'pt-BR' as const, label: 'Central de controle', current: 'servido por esta instância', readiness: 'Prontidão' },
@@ -3368,25 +3367,20 @@ describe('operator shell', () => {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
 			expect(html).toContain(`aria-label="${expected.label}"`);
 			expect(html).not.toContain(`<h2 class="font-semibold text-xl tracking-tight">`);
-			expect(html).toContain(`>${expected.current}</span>`);
-			expect(html).toContain(`>${expected.readiness}</dt>`);
-			expect(html).toContain('acme/gateship');
-			expect(html).toContain('acme/other-product');
+			expect(html).toContain('gateship');
+			expect(html).toContain('other-product');
 			expect(html).toContain('href="/overview"');
 			expect(html).toContain('href="/projects/project-current"');
 			expect(html).toContain('href="/projects/project-other"');
-			expect(html).toContain('card-ring-group grid auto-rows-fr gap-6 lg:grid-cols-2 2xl:grid-cols-3');
-			expect(html).toMatch(/class="[^"]*h-full[^"]*"/);
+			expect(html).not.toContain('data-slot="card-frame"');
 			expect(html).not.toContain('name="project-create-repository"');
 			expect(html).not.toContain('name="project-import-repository"');
 			expect(html).not.toContain('name="project-root"');
 		}
 	});
 
-	test('overview localizes every latest outcome in pt-BR and keeps absence explicit', () => {
-		const outcomes = ['shipped', 'failed', 'cancelled', 'incomplete'] as const;
-		const labels = ['enviada', 'falhou', 'cancelada', 'incompleta'];
-		for (const [index, outcome] of outcomes.entries()) {
+	test('overview localizes delivered runs and keeps non-delivery explicit', () => {
+		for (const outcome of ['shipped'] as const) {
 			const html = renderAt('/overview', {
 				locale: 'pt-BR',
 				projects: [CURRENT_PROJECT],
@@ -3406,12 +3400,15 @@ describe('operator shell', () => {
 							window: '7d', totalRuns: 1, runsWithKnownCost: 0, knownCostUsd: null,
 							runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 1 }, activeRuns: 1,
 							daily: [], configurations: [],
-						} }, activeRun: null, latestRun: { id: `run-${index}`, issueId: 'CAM-900', state: 'done', providerId: 'claude', createdAt: '', updatedAt: '' }, latestRunOutcome: outcome, recentRuns: [],
+						} }, activeRun: null, latestRun: { id: 'run-shipped', issueId: 'CAM-900', state: 'done', providerId: 'claude', createdAt: '', updatedAt: '' }, latestRunOutcome: outcome, recentRuns: [],
 					}],
 				},
 			});
-			expect(html).toContain(labels[index]!);
-			expect(html).not.toContain(`>${outcome}</p>`);
+			expect(html).toContain('servido por esta instância');
+			expect(html).toContain('enviada');
+			expect(html).not.toContain('falhou');
+			expect(html).not.toContain('cancelada');
+			expect(html).not.toContain('incompleta');
 		}
 		const empty = renderAt('/overview', { locale: 'pt-BR', projects: [CURRENT_PROJECT], overview: null });
 		expect(empty).not.toContain('Nenhum resultado nesta janela');
@@ -3432,16 +3429,16 @@ describe('operator shell', () => {
 		});
 		const aggregate = (projects: NonNullable<AppProps['overview']>['projects']): NonNullable<AppProps['overview']> => ({
 			window: '7d', overview: { window: '7d', totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] },
-			summary: { totalProjects: projects.length, readyProjects: projects.length, unavailableProjects: 0, nonTerminalRuns: 0, backlog: { idea: 0, specified: 0, planned: 0 } }, projects,
+			summary: { totalProjects: projects.length, readyProjects: projects.length, unavailableProjects: 0, nonTerminalRuns: projects.filter((project) => project.activeRun !== null).length, backlog: { idea: 0, specified: 0, planned: 0 } }, projects,
 		});
 		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
 		const noActive = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, history)]) });
-		expect(noActive).toContain('>0</p>');
+		expect(noActive).toContain('No active or blocked work.');
 			const active = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry({ id: 'run-active', issueId: 'CAM-900', state: 'working', providerId: 'claude', createdAt: '', updatedAt: '' }, history)]) });
 		expect(active).toContain('>1</p>');
 		const unavailable = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, null)]) });
-		expect(unavailable).toContain('Needs attention');
-		expect(unavailable).toContain('Some project data is unavailable.');
+		expect(unavailable).toContain('>0</p>');
+		expect(unavailable).not.toContain('Some project data is unavailable.');
 	});
 
 	test('overview uses the active run provider instead of historical configuration', () => {
@@ -3474,9 +3471,8 @@ describe('operator shell', () => {
 				}],
 			},
 		});
-		expect(html).toContain('>Provider</dt>');
-		expect(html).toMatch(/>Provider<\/dt><dd[^>]*>Codex</);
-		expect(html).not.toMatch(/>Provider<\/dt><dd[^>]*>Claude Code</);
+		expect(html).not.toContain('>Provider<');
+		expect(html).toContain('CAM-900');
 	});
 
 	test('overview localizes active run states in pt-BR', () => {
@@ -3516,8 +3512,7 @@ describe('operator shell', () => {
 					}],
 				},
 			});
-			// The phase renders as a badge inside its fact row now.
-			expect(html).toMatch(new RegExp(`>Fase</dt><dd[^>]*><span[^>]*data-slot="badge"[^>]*>${label}<`));
+			expect(html).toContain(label);
 			expect(html).not.toContain(`>${state}</p>`);
 		}
 	});
@@ -3551,7 +3546,7 @@ describe('operator shell', () => {
 		});
 		// The stat renders label first, value under it; the pairing is the
 		// claim, not the type classes.
-		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
+		expect(html).toMatch(/>Deliveries, last 7 days<\/p><p[^>]*>0<\/p>/s);
 	});
 
 	test('overview keeps the activity count without rendering a decorative line chart', () => {
@@ -3591,13 +3586,10 @@ describe('operator shell', () => {
 			},
 		});
 
-		expect(html).toMatch(/>Activity<\/p><p[^>]*>3<\/p>/s);
-		expect(html).toMatch(/>Runs completed<\/p><p[^>]*>2<\/p>/s);
-		expect(html).toContain('card-ring-group grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3');
-		expect(html).not.toContain('xl:col-span-2');
-		expect(html).toMatch(/class="[^"]*" data-slot="stat"><p[^>]*>Needs attention<\/p>/);
-		expect(html).toContain('aria-label="Outcomes"');
-		expect(html).toContain('2026-08-31: Activity 3; shipped 2; failed 1; cancelled 0; incomplete 0');
+		expect(html).toMatch(/>Active runs<\/p><p[^>]*>1<\/p>/s);
+		expect(html).toMatch(/>Approved issues<\/p><p[^>]*>2<\/p>/s);
+		expect(html).toMatch(/>Deliveries, last 7 days<\/p><p[^>]*>2<\/p>/s);
+		expect(html).toContain('overview-active-work');
 		expect(html).not.toContain('<polyline');
 		expect(html).not.toContain('preserveAspectRatio="none"');
 	});

@@ -22,6 +22,7 @@ import { CardGrid, CardSplit, CardStack, FormField, FormStack } from '../../webu
 import { EmptyState } from '../../webui/src/components/ui/empty-state.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
 import { Separator } from '../../webui/src/components/ui/separator.tsx';
+import { Stat } from '../../webui/src/components/ui/stat.tsx';
 import {
 	Tabs,
 	TabsList,
@@ -67,13 +68,17 @@ describe('ui primitives', () => {
 		expect(renderToStaticMarkup(<CardDisclosure open />)).toContain('open=""');
 	});
 
-	test('card titles and metric labels use mono, and the footer exists only with actions', () => {
+	test('content titles use sans, metric labels use the eyebrow voice, and the footer exists only with actions', () => {
 		const title = renderToStaticMarkup(<CardTitle>Run</CardTitle>);
+		const stat = renderToStaticMarkup(<Stat label="Needs attention" value={1} />);
 		const footer = renderToStaticMarkup(<CardFooter><button type="button">Save</button></CardFooter>);
 		const context = renderToStaticMarkup(
 			<ContextPanel description="Supporting context" title="Context"><form><CardFooter><button type="submit">Save</button></CardFooter></form></ContextPanel>,
 		);
-		expect(title).toContain('font-mono');
+		expect(title).toContain('font-sans');
+		expect(title).toContain('font-normal');
+		expect(stat).toContain('uppercase');
+		expect(stat).toContain('tracking-[0.12em]');
 		expect(footer).toContain('data-slot="card-footer"');
 		expect(footer).toContain('border-t');
 		expect(footer).toContain('bg-muted');

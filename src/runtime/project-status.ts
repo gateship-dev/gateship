@@ -361,13 +361,14 @@ export function readProjectOperationalOverview(
 			};
 		}
 		try {
-			const latestHistory = readPersistedRunHistory(status.database.path).at(-1);
+			const latestDeliveredHistory = readPersistedRunHistory(status.database.path)
+				.findLast((history) => history.evaluation.outcome === 'shipped');
 			return {
 				...status,
 				overview: readProjectHistoricalOverview(status.project, window, now),
 				activeRun: runOverview.activeRun,
-				latestRun: status.database.runs[0] ?? null,
-				latestRunOutcome: latestHistory?.evaluation.outcome ?? null,
+				latestRun: latestDeliveredHistory?.run ?? null,
+				latestRunOutcome: latestDeliveredHistory === undefined ? null : 'shipped',
 				recentRuns: status.database.runs,
 				nonTerminalRuns: runOverview.nonTerminalRuns,
 			};
