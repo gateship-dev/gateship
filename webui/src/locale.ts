@@ -119,7 +119,14 @@ export interface OverviewCatalog {
 	empty: string;
 	partial: string;
 	error: string;
-	metrics: { activeProjects: string; attention: string; backlog: string; completed: string; cost: string };
+	metrics: { attention: string; activeRuns: string; approvedIssues: string; deliveries: string };
+	activeWork: string;
+	projectStatus: string;
+	project: string;
+	activity: string;
+	lastDelivery: string;
+	noActiveWork: string;
+	noDelivery: string;
 	activeRun: string;
 	issue: string;
 	phase: string;
@@ -134,7 +141,6 @@ export interface OverviewCatalog {
 	noCost: string;
 	costCoverage: (known: number, total: number) => string;
 	trend: string;
-	activity: string;
 	outcomes: { shipped: string; failed: string; cancelled: string; incomplete: string };
 }
 
@@ -622,7 +628,7 @@ export const LOCALE_CATALOG = {
 		},
 		overview: {
 			title: 'Control center', description: 'A live view of project readiness, active work and recent outcomes.', loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.',
-			metrics: { activeProjects: 'Active projects', attention: 'Needs attention', backlog: 'Approved backlog', completed: 'Runs completed', cost: 'Known cost' }, activeRun: 'Active run', issue: 'Issue', phase: 'Phase', provider: 'Provider', updated: 'Updated', backlogLabel: 'Backlog', lastOutcome: 'Last outcome', noRun: 'No active run', noOutcome: 'No outcome in this window', databaseUnavailable: 'Operational data is unavailable.', historyUnavailable: 'Historical data is unavailable.', noCost: 'Unknown', costCoverage: (known, total) => `${known} of ${total} runs reported cost`, trend: 'Outcomes', activity: 'Activity', outcomes: { shipped: 'shipped', failed: 'failed', cancelled: 'cancelled', incomplete: 'incomplete' },
+			metrics: { attention: 'Needs attention', activeRuns: 'Active runs', approvedIssues: 'Approved issues', deliveries: 'Deliveries, last 7 days' }, activeWork: 'Active or blocked work', projectStatus: 'Project status', project: 'Project', activity: 'Current activity', lastDelivery: 'Last delivery', noActiveWork: 'No active or blocked work.', noDelivery: 'No delivery in this window', activeRun: 'Active run', issue: 'Issue', phase: 'Phase', provider: 'Provider', updated: 'Updated', backlogLabel: 'Approved queue', lastOutcome: 'Last delivery', noRun: 'No active run', noOutcome: 'No delivery in this window', databaseUnavailable: 'Operational data is unavailable.', historyUnavailable: 'Historical data is unavailable.', noCost: 'Unknown', costCoverage: (known, total) => `${known} of ${total} runs reported cost`, trend: 'Outcomes', outcomes: { shipped: 'shipped', failed: 'failed', cancelled: 'cancelled', incomplete: 'incomplete' },
 		},
 		runInspector: {
 			homeAccessibleLabel: 'Run inspector',
@@ -1068,7 +1074,7 @@ export const LOCALE_CATALOG = {
 		},
 		overview: {
 			title: 'Central de controle', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.',
-			metrics: { activeProjects: 'Projetos ativos', attention: 'Requer atenção', backlog: 'Backlog aprovado', completed: 'Runs concluídas', cost: 'Custo conhecido' }, activeRun: 'Run ativa', issue: 'Issue', phase: 'Fase', provider: 'Provider', updated: 'Atualizado', backlogLabel: 'Backlog', lastOutcome: 'Último resultado', noRun: 'Nenhuma run ativa', noOutcome: 'Nenhum resultado nesta janela', databaseUnavailable: 'Dados operacionais indisponíveis.', historyUnavailable: 'Dados históricos indisponíveis.', noCost: 'Desconhecido', costCoverage: (known, total) => `${known} de ${total} runs informaram custo`, trend: 'Resultados', activity: 'Atividade', outcomes: { shipped: 'enviada', failed: 'falhou', cancelled: 'cancelada', incomplete: 'incompleta' },
+			metrics: { attention: 'Requer atenção', activeRuns: 'Runs ativas', approvedIssues: 'Issues aprovadas', deliveries: 'Entregas, últimos 7 dias' }, activeWork: 'Trabalho ativo ou bloqueado', projectStatus: 'Estado dos projetos', project: 'Projeto', activity: 'Atividade atual', lastDelivery: 'Última entrega', noActiveWork: 'Nenhum trabalho ativo ou bloqueado.', noDelivery: 'Nenhuma entrega nesta janela', activeRun: 'Run ativa', issue: 'Issue', phase: 'Fase', provider: 'Provider', updated: 'Atualizado', backlogLabel: 'Fila aprovada', lastOutcome: 'Última entrega', noRun: 'Nenhuma run ativa', noOutcome: 'Nenhuma entrega nesta janela', databaseUnavailable: 'Dados operacionais indisponíveis.', historyUnavailable: 'Dados históricos indisponíveis.', noCost: 'Desconhecido', costCoverage: (known, total) => `${known} de ${total} runs informaram custo`, trend: 'Resultados', outcomes: { shipped: 'enviada', failed: 'falhou', cancelled: 'cancelada', incomplete: 'incompleta' },
 		},
 		runInspector: {
 			homeAccessibleLabel: 'Inspetor da execução',
