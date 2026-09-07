@@ -12,12 +12,16 @@ export const RUN_OVERVIEW_DEFAULT_LIMIT = 20;
 export const RUN_OVERVIEW_MAX_LIMIT = 100;
 export const RUN_OVERVIEW_MAX_OFFSET = 10_000;
 
+export type RunOverviewPeriod = '7d' | '30d' | 'all';
+
 export interface RunOverviewFilters {
 	limit?: number;
 	offset?: number;
 	projectId?: string;
 	state?: RunState;
 	providerId?: 'claude' | 'codex';
+	period?: RunOverviewPeriod;
+	search?: string;
 }
 
 export interface RunOverviewRow {
@@ -58,6 +62,7 @@ export interface RunOverviewPage {
 
 export interface RunOverviewReadOptions {
 	readHistory?: typeof readPersistedRunHistory;
+	now?: () => number;
 }
 
 function boundedPage(filters: RunOverviewFilters): { limit: number; offset: number } {
@@ -99,10 +104,15 @@ function projectRun(project: RegisteredProject, item: PersistedRunHistory): RunO
 	};
 }
 
-function matches(row: RunOverviewRow, filters: RunOverviewFilters): boolean {
+function matches(row: RunOverviewRow, filters: RunOverviewFilters, now: number): boolean {
+	const periodStart = filters.period === '7d' ? now - 7 * 24 * 60 * 60 * 1000
+		: filters.period === '30d' ? now - 30 * 24 * 60 * 60 * 1000 : null;
+	const search = filters.search?.trim().toLowerCase();
 	return (filters.projectId === undefined || row.projectId === filters.projectId)
 		&& (filters.state === undefined || row.state === filters.state)
-		&& (filters.providerId === undefined || row.providerId === filters.providerId);
+		&& (filters.providerId === undefined || row.providerId === filters.providerId)
+		&& (periodStart === null || Date.parse(row.createdAt) >= periodStart)
+		&& (search === undefined || search === '' || row.runId.toLowerCase().includes(search) || row.issueId.toLowerCase().includes(search));
 }
 
 export function readRunOverview(
@@ -111,6 +121,7 @@ export function readRunOverview(
 	options: RunOverviewReadOptions = {},
 ): RunOverviewPage {
 	const readHistory = options.readHistory ?? readPersistedRunHistory;
+	const now = options.now?.() ?? Date.now();
 	const errors: RunOverviewError[] = [];
 	const rows: RunOverviewRow[] = [];
 	for (const project of projects) {
@@ -118,7 +129,7 @@ export function readRunOverview(
 		try {
 			for (const item of readHistory(join(project.stateDir, 'runtime.sqlite'))) {
 				const row = projectRun(project, item);
-				if (matches(row, filters)) rows.push(row);
+				if (matches(row, filters, now)) rows.push(row);
 			}
 		} catch {
 			errors.push({
@@ -147,6 +158,10 @@ export function parseRunOverviewFilters(params: URLSearchParams): RunOverviewFil
 	if (providerId !== null && providerId !== 'claude' && providerId !== 'codex') {
 		throw new Error('providerId must be claude or codex.');
 	}
+	const period = params.get('period');
+	if (period !== null && period !== '7d' && period !== '30d' && period !== 'all') {
+		throw new Error('period must be 7d, 30d or all.');
+	}
 	const number = (name: string): number | undefined => {
 		const value = params.get(name);
 		if (value === null) return undefined;
@@ -159,5 +174,7 @@ export function parseRunOverviewFilters(params: URLSearchParams): RunOverviewFil
 		...(params.get('projectId') === null ? {} : { projectId: params.get('projectId')! }),
 		...(state === null ? {} : { state }),
 		...(providerId === null ? {} : { providerId }),
+		...(period === null ? {} : { period }),
+		...(params.get('search') === null ? {} : { search: params.get('search')! }),
 	};
 }

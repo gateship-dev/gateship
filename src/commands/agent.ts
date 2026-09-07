@@ -31,7 +31,7 @@ const projectPath = (suffix: string) => (input: Record<string, unknown>) =>
 	`${projectRootPath(input)}${suffix}`;
 const overviewRunsPath = (input: Record<string, unknown>) => {
 	const query = new URLSearchParams();
-	for (const field of ['limit', 'offset', 'projectId', 'state', 'providerId'] as const) {
+	for (const field of ['limit', 'offset', 'projectId', 'state', 'providerId', 'period', 'search'] as const) {
 		if (typeof input[field] === 'string' || typeof input[field] === 'number') {
 			query.set(field, String(input[field]));
 		}
@@ -48,7 +48,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
 	'projects.overview': { method: 'GET', path: () => '/api/overview', input: '{}' },
-	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?}' },
+	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?, period?, search?}' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
 	'projects.register': { method: 'POST', path: () => '/api/projects', input: '{root}' },
 	'projects.import': { method: 'POST', path: () => '/api/projects/import', input: '{repository}' },

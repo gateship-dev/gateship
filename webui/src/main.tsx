@@ -10,7 +10,7 @@
 
 import { type ReactElement, StrictMode, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createRoot } from 'react-dom/client';
-import { App, projectIdOf, routeOf } from './App.tsx';
+import { App, projectIdOf, routeOf, runIdOf } from './App.tsx';
 import {
 	abandonIssue,
 	type AgentDefaultsView,
@@ -123,6 +123,8 @@ import {
 	type OperationalResource,
 } from './operational-snapshot.ts';
 import {
+	displayedRunId,
+	eventsForRun,
 	invalidatesSnapshot,
 	type PlannableIssue,
 	type RunEventView,
@@ -434,6 +436,27 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		loadInitialSnapshot();
 	}, [loadInitialSnapshot, scope]);
 
+	const requestedRunId = runIdOf(pathname);
+	const selectedRunId = displayedRunId(requestedRunId, runs);
+	useEffect(() => {
+		if (selectedRunId === null) {
+			setEvents([]);
+			setOperationalReadState((current) => settleOperationalRead(current, 'Run activity', { state: 'available', value: undefined }));
+			return;
+		}
+		let disposed = false;
+		setEvents((current) => eventsForRun(current, selectedRunId));
+		void fetchRunEvents(scope, selectedRunId).then((value) => {
+			if (!disposed) {
+				setEvents(value);
+				setOperationalReadState((current) => settleOperationalRead(current, 'Run activity', { state: 'available', value: undefined }));
+			}
+		}).catch((error: unknown) => {
+			if (!disposed) setOperationalReadState((current) => settleOperationalRead(current, 'Run activity', { state: 'unavailable', detail: String(error) }));
+		});
+		return () => { disposed = true; };
+	}, [selectedRunId, scope]);
+
 	useEffect(() => {
 		if (routeOf(pathname) !== '/overview') {
 			setOverviewLoading(false);
@@ -541,7 +564,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		resolvedProposals,
 		resolvedProposalsOmittedCount,
 		runs,
-		events,
+		events: selectedRunId === null ? [] : eventsForRun(events, selectedRunId),
 		workspaceNotices,
 		staleService,
 		gitIdentity,
@@ -642,7 +665,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		enableNotifications,
 		send,
 	} = useOperationalRun(scope, pathname);
-	const run = runs[0] ?? null;
+	const requestedRunId = runIdOf(pathname);
+	const selectedRunId = displayedRunId(requestedRunId, runs);
+	const run = runs.find((candidate) => candidate.id === selectedRunId) ?? null;
 	const [locale, setLocale] = useState(initialLocale);
 	const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
 	const [projectOnboardingPending, setProjectOnboardingPending] =

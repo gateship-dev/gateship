@@ -56,4 +56,17 @@ describe('readRunOverview', () => {
 		}]);
 		expect(JSON.stringify(result)).not.toContain('private');
 	});
+
+	test('filtra período e busca por runId ou issueId antes da paginação', () => {
+		const recent = history('recent-run', '2026-09-05T00:00:00.000Z');
+		recent.run.createdAt = '2026-09-05T00:00:00.000Z';
+		const old = history('old-run', '2026-07-01T00:00:00.000Z');
+		old.run.createdAt = '2026-07-01T00:00:00.000Z';
+		const options = {
+			readHistory: () => [recent, old],
+			now: () => Date.parse('2026-09-07T00:00:00.000Z'),
+		};
+		expect(readRunOverview([project('one')], { period: '7d' }, options).runs.map((run) => run.runId)).toEqual(['recent-run']);
+		expect(readRunOverview([project('one')], { search: 'GSHIP-old' }, options).runs.map((run) => run.runId)).toEqual(['old-run']);
+	});
 });

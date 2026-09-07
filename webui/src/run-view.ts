@@ -199,6 +199,16 @@ export interface RunView {
 	executorHandoff: RunExecutorHandoffView | null;
 }
 
+/** A deep run route never receives activity retained for another run. */
+export function eventsForRun(events: readonly RunEventView[], runId: string): RunEventView[] {
+	return events.filter((event) => event.runId === runId);
+}
+
+/** A deep route selects its run; the project runs route selects the latest. */
+export function displayedRunId(requestedRunId: string | null, runs: readonly RunView[]): string | null {
+	return requestedRunId ?? runs[0]?.id ?? null;
+}
+
 /** A cost total plus exactly how many runs it spans (GSHIP-628). */
 export interface RunCostAggregate {
 	totalCostUsd: number | null;

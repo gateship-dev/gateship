@@ -562,6 +562,8 @@ export interface OverviewRunsQuery {
 	projectId?: string;
 	state?: RunView['state'];
 	providerId?: 'claude' | 'codex';
+	period?: '7d' | '30d' | 'all';
+	search?: string;
 }
 
 export async function fetchOverviewRuns(
