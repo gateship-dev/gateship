@@ -431,6 +431,7 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			input.executorHandoff,
 			input.verificationFeedback,
 			input.internalGuidance,
+			input.reconciliationGuidance,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,

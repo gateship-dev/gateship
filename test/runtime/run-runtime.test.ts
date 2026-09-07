@@ -3217,6 +3217,21 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		}
 	}
 
+	function seedDoneRun(store: RunStore, id: string, issueId: string, createdAt: string): void {
+		store.createRun({
+			id, issueId, sessionId: `${id}-session`, workspacePath: `/workspaces/${id}`, createdAt,
+		});
+		for (const [index, [toState, kind]] of ([
+			['working', 'run.started'], ['verify', 'run.work-completed'], ['review', 'run.verification-passed'],
+			['ready-to-ship', 'run.review-clean'], ['shipping', 'run.shipping'], ['done', 'run.shipped'],
+		] as const).entries()) {
+			store.transition({
+				runId: id, toState, kind,
+				createdAt: new Date(Date.parse(createdAt) + index + 1).toISOString(),
+			});
+		}
+	}
+
 	test('the switch is off by default and survives a service restart', () => {
 		const dbPath = join(createTestTmpdir('gship-run-runtime-chain-'), 'runtime.sqlite');
 		const store = new RunStore(dbPath);
@@ -3386,6 +3401,613 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		expect(runtime.getChainPause()).toMatchObject({ reason: 'no-admissible-issue' });
 
 		await runtime.stop();
+		runtime.close();
+	});
+
+	test('does not dispatch when the queue is disabled while reconciliation is pending', async () => {
+		let release!: () => void;
+		const pending = new Promise<void>((resolve) => { release = resolve; });
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				await pending;
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		runtime.setChainRuns(true);
+		const first = await runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(first.id)?.state === 'done');
+		runtime.setChainRuns(false);
+		release();
+		await waitFor(() => runtime.getChainPause()?.reason === 'chain-disabled');
+		expect(runtime.listRuns().map((run) => run.issueId)).toEqual(['GSHIP-1']);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('reconciles a changed admissible target before dispatching it', async () => {
+		let releaseFirst!: () => void;
+		const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+		let calls = 0;
+		let backlog = [admissibleIssue('GSHIP-2'), admissibleIssue('GSHIP-3')];
+		const reconciled: string[] = [];
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => backlog.filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
+			chainReconciler: { reconcile: async (input) => {
+				reconciled.push(input.targetIssueId);
+				if (calls++ === 0) await firstPending;
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		runtime.setChainRuns(true);
+		const first = await runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(first.id)?.state === 'done');
+		backlog = [admissibleIssue('GSHIP-2', { approval: undefined }), admissibleIssue('GSHIP-3')];
+		releaseFirst();
+		await waitFor(() => runtime.listRuns().some((run) => run.issueId === 'GSHIP-3'));
+		expect(reconciled).toEqual(['GSHIP-2', 'GSHIP-3']);
+		expect(runtime.listRuns().map((run) => run.issueId)).toContain('GSHIP-3');
+		expect(runtime.listRuns().map((run) => run.issueId)).not.toContain('GSHIP-2');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('passes clarified reconciliation guidance only to the reconciled issue executor', async () => {
+		const store = new RunStore(':memory:');
+		const executions: Array<{ issueId: string; operatorGuidance?: string; reconciliationGuidance?: string }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => {
+				executions.push({
+					issueId: input.issueId,
+					...(input.operatorGuidance === undefined ? {} : { operatorGuidance: input.operatorGuidance }),
+					...(input.reconciliationGuidance === undefined ? {} : { reconciliationGuidance: input.reconciliationGuidance }),
+				});
+				return { outcome: 'completed' as const };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [
+				admissibleIssue('GSHIP-2'),
+				admissibleIssue('GSHIP-3'),
+			].filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
+			chainReconciler: { reconcile: async (input) => input.targetIssueId === 'GSHIP-2'
+				? { outcome: 'clarified' as const, justification: 'orientação registrada', guidance: 'Prefira a seam já aprovada.', usage: { model: 'm', effort: 'e' } }
+				: { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } } },
+		});
+		runtime.setChainRuns(true);
+		await runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.listRuns().some((run) => run.issueId === 'GSHIP-3' && run.state === 'done'));
+
+		expect(executions).toEqual([
+			{ issueId: 'GSHIP-1' },
+			{ issueId: 'GSHIP-2', reconciliationGuidance: 'Prefira a seam já aprovada.' },
+			{ issueId: 'GSHIP-3' },
+		]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('recovers persisted reconciliation guidance before and during the first execution after restart', async () => {
+		const beforeStore = new RunStore(':memory:');
+		beforeStore.createRun({
+			id: 'run-guidance-before-executor', issueId: 'GSHIP-2', sessionId: 'session-before-executor',
+			workspacePath: '/project', createdAt: '2026-08-29T00:00:00.000Z',
+			reconciliationGuidance: 'Keep the approved seam.',
+		});
+		beforeStore.transition({ runId: 'run-guidance-before-executor', toState: 'working', kind: 'run.started', createdAt: '2026-08-29T00:00:01.000Z' });
+		beforeStore.transition({ runId: 'run-guidance-before-executor', toState: 'interrupted', kind: 'run.interrupted', createdAt: '2026-08-29T00:00:02.000Z' });
+		let beforeInput: { issueId: string; reconciliationGuidance?: string } | undefined;
+		const beforeRuntime = new RunRuntime({
+			cwd: '/project', store: beforeStore,
+			executor: { execute: async (input) => { beforeInput = input; return { outcome: 'completed' as const }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		beforeRuntime.resumeRun('run-guidance-before-executor');
+		await waitFor(() => beforeInput !== undefined);
+		expect(beforeInput).toMatchObject({ issueId: 'GSHIP-2', reconciliationGuidance: 'Keep the approved seam.' });
+		await beforeRuntime.stop();
+		beforeRuntime.close();
+
+		const dbPath = join(createTestTmpdir('gship-reconciliation-guidance-restart-'), 'runtime.sqlite');
+		let releaseFirst!: () => void;
+		const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
+		let firstInput: { issueId: string; reconciliationGuidance?: string } | undefined;
+		const firstStore = new RunStore(dbPath);
+		const firstRuntime = new RunRuntime({
+			cwd: '/project', store: firstStore,
+			executor: { execute: async (input) => {
+				firstInput = input;
+				await firstPending;
+				return { outcome: 'completed' as const };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const target = await firstRuntime.startRun('GSHIP-2', undefined, 'Keep the approved seam.');
+		await waitFor(() => firstInput !== undefined);
+		expect(firstInput).toMatchObject({ issueId: 'GSHIP-2', reconciliationGuidance: 'Keep the approved seam.' });
+		releaseFirst();
+		await firstRuntime.stop();
+		firstRuntime.close();
+
+		let resumedInput: { issueId: string; reconciliationGuidance?: string } | undefined;
+		const secondStore = new RunStore(dbPath);
+		const secondRuntime = new RunRuntime({
+			cwd: '/project', store: secondStore,
+			executor: { execute: async (input) => { resumedInput = input; return { outcome: 'completed' as const }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		secondRuntime.resumeRun(target.id);
+		await waitFor(() => secondStore.getRun(target.id)?.state === 'ready-to-ship');
+		expect(resumedInput).toMatchObject({ issueId: 'GSHIP-2', reconciliationGuidance: 'Keep the approved seam.' });
+		await secondRuntime.stop();
+		secondRuntime.close();
+	});
+
+	test('retries a chain reconciliation at a valid provider retry instant', async () => {
+		let armed: { callback: () => void; delayMs: number } | null = null;
+		const timer: RuntimeTimer = {
+			set: (callback, delayMs) => { armed = { callback, delayMs }; return armed; },
+			clear: () => { armed = null; },
+		};
+		let clock = '2026-08-23T00:40:00.000Z';
+		let attempts = 0;
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project', store, now: () => clock, timer,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => store.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+				? [] : [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				attempts += 1;
+				if (attempts === 1) throw new ProviderCallError('claude', 'usage-limit', 'limite', {
+					retryAt: '2026-08-23T00:50:00.000Z',
+				});
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		runtime.setChainRuns(true);
+		const first = await runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(first.id)?.state === 'done' && armed !== null);
+		const retry = armed as unknown as { callback: () => void; delayMs: number };
+		expect(retry.delayMs).toBe(600_000);
+		clock = '2026-08-23T00:50:00.000Z';
+		retry.callback();
+		await waitFor(() => runtime.listRuns().some((run) => run.issueId === 'GSHIP-2'));
+		expect(attempts).toBe(2);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('replays a waiting chain reconciliation after restart', async () => {
+		const dbPath = join(createTestTmpdir('gship-chain-reconcile-restart-'), 'runtime.sqlite');
+		const firstStore = new RunStore(dbPath);
+		const first = new RunRuntime({
+			cwd: '/project', store: firstStore,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				throw new ProviderCallError('claude', 'usage-limit', 'limite temporário');
+			} },
+		});
+		first.setChainRuns(true);
+		const source = await first.startRun('GSHIP-1');
+		await waitFor(() => first.getRun(source.id)?.state === 'done');
+		await waitFor(() => first.listRunEvents(source.id).some((event) => event.kind === 'run.chain-reconciliation-waiting'));
+		firstStore.createRun({
+			id: 'run-recent-done', issueId: 'GSHIP-0', sessionId: 'session-recent-done',
+			workspacePath: '/workspaces/run-recent-done', createdAt: '2026-08-24T00:00:00.000Z',
+		});
+		for (const [toState, kind] of [
+			['working', 'run.started'], ['verify', 'run.work-completed'], ['review', 'run.verification-passed'],
+			['ready-to-ship', 'run.review-clean'], ['shipping', 'run.shipping'], ['done', 'run.shipped'],
+		] as const) {
+			firstStore.transition({ runId: 'run-recent-done', toState, kind, createdAt: '2026-08-24T00:00:01.000Z' });
+		}
+		await first.stop();
+		first.close();
+
+		const secondStore = new RunStore(dbPath);
+		const second = new RunRuntime({
+			cwd: '/project', store: secondStore,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => secondStore.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+				? [] : [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => ({
+				outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' },
+			}) },
+		});
+		await waitFor(() => second.listRuns().some((run) => run.issueId === 'GSHIP-2'));
+		expect(second.listRunEvents(source.id).map((event) => event.kind)).toContain('run.chain-reconciliation');
+		await second.stop();
+		second.close();
+	});
+
+	test('rearms a future chain retry after restart without calling the reconciler early', async () => {
+		const dbPath = join(createTestTmpdir('gship-chain-reconcile-retry-restart-'), 'runtime.sqlite');
+		let clock = '2026-08-30T00:40:00.000Z';
+		let armed: { callback: () => void; delayMs: number } | null = null;
+		const timer: RuntimeTimer = {
+			set: (callback, delayMs) => { armed = { callback, delayMs }; return armed; },
+			clear: () => { armed = null; },
+		};
+		let attempts = 0;
+		const firstStore = new RunStore(dbPath);
+		const first = new RunRuntime({
+			cwd: '/project', store: firstStore, now: () => clock, timer,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				attempts += 1;
+				throw new ProviderCallError('claude', 'usage-limit', 'limite', { retryAt: '2026-08-30T00:50:00.000Z' });
+			} },
+		});
+		first.setChainRuns(true);
+		const source = await first.startRun('GSHIP-1');
+		await waitFor(() => first.listRunEvents(source.id).some((event) => event.kind === 'run.chain-reconciliation-waiting'));
+		await first.stop();
+		first.close();
+
+		armed = null;
+		const secondStore = new RunStore(dbPath);
+		const second = new RunRuntime({
+			cwd: '/project', store: secondStore, now: () => clock, timer,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => secondStore.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+				? [] : [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				attempts += 1;
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		expect(attempts).toBe(1);
+		const retry = armed as unknown as { callback: () => void; delayMs: number };
+		expect(retry.delayMs).toBe(600_000);
+		clock = '2026-08-30T00:50:00.000Z';
+		retry.callback();
+		await waitFor(() => secondStore.listRuns().some((run) => run.issueId === 'GSHIP-2'));
+		expect(attempts).toBe(2);
+		await second.stop();
+		second.close();
+	});
+
+	test('retries a waiting chain reconciliation immediately after restart when retryAt expired', async () => {
+		const store = new RunStore(':memory:');
+		store.setChainRunsEnabled(true);
+		seedDoneRun(store, 'run-expired-chain-retry', 'GSHIP-1', '2026-08-30T00:00:00.000Z');
+		store.appendEvent({
+			runId: 'run-expired-chain-retry', kind: 'run.chain-reconciliation-waiting',
+			payload: { issueId: 'GSHIP-2', retryAt: '2026-08-30T00:50:00.000Z' }, createdAt: '2026-08-30T00:00:10.000Z',
+		});
+		let attempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, now: () => '2026-08-30T00:51:00.000Z',
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => store.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+				? [] : [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				attempts += 1;
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		await waitFor(() => store.listRuns().some((run) => run.issueId === 'GSHIP-2'));
+		expect(attempts).toBe(1);
+		runtime.close();
+	});
+
+	test('restarts a persisted clarified reconciliation without calling the reconciler again', async () => {
+		const store = new RunStore(':memory:');
+		store.setChainRunsEnabled(true);
+		seedDoneRun(store, 'run-clarified-restart', 'GSHIP-1', '2026-08-25T00:00:00.000Z');
+		store.appendEvent({
+			runId: 'run-clarified-restart', kind: 'run.chain-reconciliation',
+			payload: { issueId: 'GSHIP-2', outcome: 'clarified', guidance: 'Use the existing seam.' },
+			createdAt: '2026-08-25T00:00:10.000Z',
+		});
+		let reconcilerCalls = 0;
+		const executions: Array<{ issueId: string; guidance?: string }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => {
+				executions.push({ issueId: input.issueId, ...(input.reconciliationGuidance === undefined ? {} : { guidance: input.reconciliationGuidance }) });
+				return { outcome: 'completed' as const };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => store.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+				? [] : [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				reconcilerCalls += 1;
+				return { outcome: 'unchanged' as const, justification: 'não esperado', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		await waitFor(() => executions.some((execution) => execution.issueId === 'GSHIP-2'));
+
+		expect(reconcilerCalls).toBe(0);
+		expect(executions).toContainEqual({ issueId: 'GSHIP-2', guidance: 'Use the existing seam.' });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('restarts a done run with no chain marker and dispatches one reconciled target', async () => {
+		const store = new RunStore(':memory:');
+		store.setChainRunsEnabled(true);
+		seedDoneRun(store, 'run-no-chain-marker', 'GSHIP-1', '2026-08-27T00:00:00.000Z');
+		let reconcilerCalls = 0;
+		let executorCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => {
+				if (input.issueId === 'GSHIP-2') executorCalls += 1;
+				return { outcome: 'completed' as const };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => store.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+				? [] : [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => {
+				reconcilerCalls += 1;
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		await waitFor(() => store.listRuns().some((run) => run.issueId === 'GSHIP-2' && run.state === 'done'));
+
+		expect(reconcilerCalls).toBe(1);
+		expect(executorCalls).toBe(1);
+		expect(store.listRunEvents('run-no-chain-marker').filter((event) => event.kind === 'run.chain-reconciliation')).toHaveLength(1);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('reselects a removed pending target before dispatching the next admissible issue', async () => {
+		const store = new RunStore(':memory:');
+		store.setChainRunsEnabled(true);
+		seedDoneRun(store, 'run-removed-target', 'GSHIP-1', '2026-08-29T00:00:00.000Z');
+		store.appendEvent({
+			runId: 'run-removed-target', kind: 'run.chain-reconciliation-pending',
+			payload: { issueId: 'GSHIP-2', guidance: 'old guidance' }, createdAt: '2026-08-29T00:00:10.000Z',
+		});
+		const reconciled: string[] = [];
+		const executions: Array<{ issueId: string; guidance?: string }> = [];
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => {
+				executions.push({ issueId: input.issueId, ...(input.reconciliationGuidance === undefined ? {} : { guidance: input.reconciliationGuidance }) });
+				return { outcome: 'completed' as const };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => store.listRuns().some((run) => run.issueId === 'GSHIP-3')
+				? [] : [admissibleIssue('GSHIP-3')],
+			chainReconciler: { reconcile: async ({ targetIssueId }) => {
+				reconciled.push(targetIssueId);
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+
+		await waitFor(() => executions.some((execution) => execution.issueId === 'GSHIP-3'));
+		expect(reconciled).toEqual(['GSHIP-3']);
+		expect(executions).toContainEqual({ issueId: 'GSHIP-3' });
+		expect(executions).not.toContainEqual({ issueId: 'GSHIP-2', guidance: 'old guidance' });
+		expect(store.listRuns().filter((run) => run.issueId === 'GSHIP-3')).toHaveLength(1);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('pauses visibly when a removed pending target has no replacement', async () => {
+		const store = new RunStore(':memory:');
+		store.setChainRunsEnabled(true);
+		seedDoneRun(store, 'run-removed-without-replacement', 'GSHIP-1', '2026-08-29T01:00:00.000Z');
+		store.appendEvent({
+			runId: 'run-removed-without-replacement', kind: 'run.chain-reconciliation-pending',
+			payload: { issueId: 'GSHIP-2' }, createdAt: '2026-08-29T01:00:10.000Z',
+		});
+		let reconcilerCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [],
+			chainReconciler: { reconcile: async () => {
+				reconcilerCalls += 1;
+				return { outcome: 'unchanged' as const, justification: 'não esperado', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+
+		await waitFor(() => store.listRunEvents('run-removed-without-replacement')
+			.some((event) => event.kind === 'run.chain-paused' && event.payload['reason'] === 'no-admissible-issue'));
+		expect(reconcilerCalls).toBe(0);
+		expect(store.listRuns().filter((run) => run.issueId === 'GSHIP-2')).toHaveLength(0);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('does not resume a pending chain marker after a later pause or target run', async () => {
+		for (const settlement of ['pause', 'target'] as const) {
+			const store = new RunStore(':memory:');
+			store.setChainRunsEnabled(true);
+			const sourceId = `run-pending-${settlement}`;
+			seedDoneRun(store, sourceId, 'GSHIP-1', '2026-08-28T00:00:00.000Z');
+			store.appendEvent({
+				runId: sourceId, kind: 'run.chain-reconciliation-pending',
+				payload: { issueId: 'GSHIP-2' }, createdAt: '2026-08-28T00:00:10.000Z',
+			});
+			if (settlement === 'pause') {
+				store.appendEvent({
+					runId: sourceId, kind: 'run.chain-paused',
+					payload: { issueId: 'GSHIP-2', reason: 'no-admissible-issue' }, createdAt: '2026-08-28T00:00:11.000Z',
+				});
+			} else {
+				seedDoneRun(store, `run-pending-target-${settlement}`, 'GSHIP-2', '2026-08-28T00:00:11.000Z');
+			}
+			let reconcilerCalls = 0;
+			let executorCalls = 0;
+			const runtime = new RunRuntime({
+				cwd: '/project', store,
+				executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' as const }; } },
+				verifier: { verify: async () => ({ ok: true }) },
+				shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+				listBacklog: () => store.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+					? [] : [admissibleIssue('GSHIP-2')],
+				chainReconciler: { reconcile: async () => {
+					reconcilerCalls += 1;
+					return { outcome: 'unchanged' as const, justification: 'não esperado', usage: { model: 'm', effort: 'e' } };
+				} },
+			});
+			await Bun.sleep(20);
+			expect(reconcilerCalls).toBe(0);
+			expect(executorCalls).toBe(0);
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
+	test('restarts a persisted unchanged reconciliation without duplicating a settled handoff', async () => {
+		for (const settlement of ['target', 'pause'] as const) {
+			const store = new RunStore(':memory:');
+			store.setChainRunsEnabled(true);
+			seedDoneRun(store, `run-unchanged-${settlement}`, 'GSHIP-1', '2026-08-26T00:00:00.000Z');
+			store.appendEvent({
+				runId: `run-unchanged-${settlement}`, kind: 'run.chain-reconciliation',
+				payload: { issueId: 'GSHIP-2', outcome: 'unchanged' }, createdAt: '2026-08-26T00:00:10.000Z',
+			});
+			if (settlement === 'pause') {
+				store.appendEvent({
+					runId: `run-unchanged-${settlement}`, kind: 'run.chain-paused',
+					payload: { issueId: 'GSHIP-2', reason: 'no-admissible-issue' }, createdAt: '2026-08-26T00:00:11.000Z',
+				});
+			} else {
+				seedDoneRun(store, `run-target-${settlement}`, 'GSHIP-2', '2026-08-26T00:00:11.000Z');
+			}
+			let reconcilerCalls = 0;
+			let executorCalls = 0;
+			const runtime = new RunRuntime({
+				cwd: '/project', store,
+				executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' as const }; } },
+				verifier: { verify: async () => ({ ok: true }) },
+				shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+				listBacklog: () => store.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
+					? [] : [admissibleIssue('GSHIP-2')],
+				chainReconciler: { reconcile: async () => {
+					reconcilerCalls += 1;
+					return { outcome: 'unchanged' as const, justification: 'não esperado', usage: { model: 'm', effort: 'e' } };
+				} },
+			});
+			await Bun.sleep(20);
+			expect(reconcilerCalls).toBe(0);
+			expect(executorCalls).toBe(0);
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
+	test('does not partially persist a material reconciliation when its store fails', async () => {
+		const dbPath = join(createTestTmpdir('gship-chain-reconcile-material-'), 'runtime.sqlite');
+		class FailingMaterialStore extends RunStore {
+			failures = 1;
+
+			override recordMaterialChainReconciliation(
+				input: Parameters<RunStore['recordMaterialChainReconciliation']>[0],
+			): ReturnType<RunStore['recordMaterialChainReconciliation']> {
+				if (this.failures > 0) {
+					this.failures -= 1;
+					throw new Error('material store unavailable');
+				}
+				return super.recordMaterialChainReconciliation(input);
+			}
+		}
+
+		const firstStore = new FailingMaterialStore(dbPath);
+		const first = new RunRuntime({
+			cwd: '/project', store: firstStore,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => ({
+				outcome: 'material' as const, justification: 'a especificação mudou',
+				usage: { model: 'm', effort: 'e' },
+			}) },
+		});
+		first.setChainRuns(true);
+		const source = await first.startRun('GSHIP-1');
+		await waitFor(() => first.getRun(source.id)?.state === 'done');
+		await waitFor(() => first.listRunEvents(source.id).some((event) => event.kind === 'run.chain-reconciliation-waiting'));
+
+		expect(firstStore.listProposals()).toEqual([]);
+		expect(first.listRunEvents(source.id).map((event) => event.kind)).not.toContain('run.chain-reconciliation');
+		expect(first.listRunEvents(source.id).map((event) => event.kind)).not.toContain('run.chain-paused');
+		expect(first.listRuns().map((run) => run.issueId)).toEqual(['GSHIP-1']);
+		await first.stop();
+		first.close();
+
+		const secondStore = new FailingMaterialStore(dbPath);
+		secondStore.failures = 0;
+		const second = new RunRuntime({
+			cwd: '/project', store: secondStore,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async () => ({
+				outcome: 'material' as const, justification: 'a especificação mudou',
+				usage: { model: 'm', effort: 'e' },
+			}) },
+		});
+		second.setChainRuns(true);
+		await waitFor(() => secondStore.listProposals().length === 1);
+
+		expect(secondStore.listProposals()).toHaveLength(1);
+		expect(second.listRunEvents(source.id).filter((event) => event.kind === 'run.chain-reconciliation')).toHaveLength(1);
+		expect(second.listRunEvents(source.id).filter((event) => event.kind === 'run.chain-paused')).toHaveLength(1);
+		expect(second.listRuns().map((run) => run.issueId)).toEqual(['GSHIP-1']);
+		await second.stop();
+		second.close();
+	});
+
+	test('aborts and awaits a pending chain reconciliation on stop', async () => {
+		let observedSignal: AbortSignal | undefined;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			chainReconciler: { reconcile: async (input) => {
+				observedSignal = input.signal;
+				await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
+				return { outcome: 'unchanged' as const, justification: 'não deve ser persistido', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		runtime.setChainRuns(true);
+		const source = await runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(source.id)?.state === 'done' && observedSignal !== undefined);
+		await runtime.stop();
+		expect(observedSignal?.aborted).toBe(true);
+		expect(runtime.listRunEvents(source.id).map((event) => event.kind)).not.toContain('run.chain-reconciliation');
+		expect(runtime.listRuns().map((run) => run.issueId)).toEqual(['GSHIP-1']);
 		runtime.close();
 	});
 });

@@ -14,6 +14,7 @@ import { fingerprintSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
 import { AgentCycleQuestionResolver } from '../runtime/agent-cycle-question-resolver.ts';
+import { AgentChainReconciler } from '../runtime/agent-chain-reconciler.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
 import type { AgentProviderId } from '../runtime/agent-session.ts';
@@ -2364,6 +2365,10 @@ export function createDefaultRunRuntimeOptions(
 			codex: new CodexCliReviewer({ resolveModel: model('codex', 'reviewer') }),
 		}),
 		cycleQuestionResolver: new AgentCycleQuestionResolver({
+			claude: new ClaudeAgentSession({ resolveModel: model('claude', 'orchestrator'), resolveClaudeCredential }),
+			codex: new CodexReviewSession({ resolveModel: model('codex', 'orchestrator') }),
+		}),
+		chainReconciler: new AgentChainReconciler({
 			claude: new ClaudeAgentSession({ resolveModel: model('claude', 'orchestrator'), resolveClaudeCredential }),
 			codex: new CodexReviewSession({ resolveModel: model('codex', 'orchestrator') }),
 		}),

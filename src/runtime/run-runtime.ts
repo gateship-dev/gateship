@@ -79,6 +79,8 @@ export interface RuntimeExecutionInput {
 	ciFeedback?: string;
 	/** Explicit response supplied by the operator when resuming a paused run. */
 	operatorGuidance?: string;
+	/** Non-binding guidance produced by the chain reconciler for this first execution. */
+	reconciliationGuidance?: string;
 	/**
 	 * Binding answer produced internally by the read-only orchestrator for an
 	 * executor question already covered by the approved contract. This is
@@ -292,6 +294,8 @@ export interface RunRuntimeOptions {
 	verifier?: RuntimeVerifier;
 	reviewer?: RuntimeReviewer;
 	cycleQuestionResolver?: RuntimeCycleQuestionResolver;
+	/** Fresh read-only comparison performed before the next chained issue is admitted. */
+	chainReconciler?: RuntimeChainReconciler;
 	/**
 	 * The project's full verification manifest (GSHIP-649), run once the
 	 * issue's own verify and the independent review are both clean and before
@@ -326,6 +330,28 @@ export interface RunRuntimeOptions {
 	agentDefaults?: () => AgentDefaults;
 }
 
+export interface RuntimeChainReconciliationInput {
+	runId: string;
+	workspace: string;
+	sourceIssueId: string;
+	targetIssueId: string;
+	originMain: string;
+	priorDelivery: { runId: string; issueId: string };
+	nextSpecification: string;
+	providerId: AgentProviderId;
+	signal: AbortSignal;
+	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: RunEventClass) => void;
+}
+
+export type RuntimeChainReconciliationResult =
+	| { outcome: 'unchanged'; justification: string; usage: RuntimeCycleResponseUsage }
+	| { outcome: 'clarified'; justification: string; guidance: string; usage: RuntimeCycleResponseUsage }
+	| { outcome: 'material'; justification: string; guidance?: string; usage: RuntimeCycleResponseUsage };
+
+export interface RuntimeChainReconciler {
+	reconcile: (input: RuntimeChainReconciliationInput) => Promise<RuntimeChainReconciliationResult>;
+}
+
 export class RuntimeUnavailableError extends Error {
 	constructor(message = 'No runtime executor and verifier are configured yet.') {
 		super(message);
@@ -353,6 +379,7 @@ export const CHAIN_PAUSE_REASONS = {
 	noAdmissibleIssue: 'no-admissible-issue',
 	runActive: 'run-active',
 	startFailed: 'chain-start-failed',
+	materialReconciliation: 'chain-reconciliation-material',
 } as const;
 
 export type ChainPauseReason = (typeof CHAIN_PAUSE_REASONS)[keyof typeof CHAIN_PAUSE_REASONS];
@@ -427,6 +454,34 @@ interface ActiveRun {
 	promise: Promise<void>;
 }
 
+interface ActiveChainReconciliation {
+	runId: string;
+	issueId: string;
+	controller: AbortController;
+	promise: Promise<void>;
+}
+
+type ChainReconciliationDecision =
+	| { outcome: 'continue'; guidance?: string }
+	| { outcome: 'reselect' }
+	| { outcome: 'pause' };
+
+interface PendingChainHandoff {
+	issueId: string;
+	decision?: ChainReconciliationDecision;
+	retryAt?: string;
+	waiting?: boolean;
+}
+
+function chainDecisionFromPayload(payload: Record<string, unknown>): ChainReconciliationDecision | { outcome: 'material' } {
+	if (payload['outcome'] === 'material') return { outcome: 'material' };
+	const guidance = payload['outcome'] === 'clarified' ? payload['guidance'] : undefined;
+	return {
+		outcome: 'continue',
+		...(typeof guidance === 'string' && guidance.length > 0 ? { guidance } : {}),
+	};
+}
+
 /**
  * One implementation attempt and its current correction context.
  */
@@ -437,6 +492,7 @@ interface RunAttempt {
 	fullVerifyFeedback?: string;
 	ciFeedback?: string;
 	operatorGuidance?: string;
+	reconciliationGuidance?: string;
 	internalGuidance?: RuntimeInternalGuidance;
 }
 
@@ -451,6 +507,10 @@ const PROVIDER_AVAILABILITY_FAILURES: readonly ProviderErrorKind[] = [
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function continueChainWithGuidance(guidance: string | undefined): { outcome: 'continue'; guidance?: string } {
+	return guidance === undefined ? { outcome: 'continue' } : { outcome: 'continue', guidance };
 }
 
 function compactDefined(entries: Record<string, unknown>): Record<string, unknown> {
@@ -524,6 +584,7 @@ export class RunRuntime {
 	readonly #verifier: RuntimeVerifier | undefined;
 	readonly #reviewer: RuntimeReviewer | undefined;
 	readonly #cycleQuestionResolver: RuntimeCycleQuestionResolver | undefined;
+	readonly #chainReconciler: RuntimeChainReconciler | undefined;
 	readonly #fullVerifier: RuntimeVerifier | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
 	readonly #hasWorkspaceChanges: ((cwd: string) => boolean) | undefined;
@@ -539,6 +600,8 @@ export class RunRuntime {
 	readonly #active = new Map<string, ActiveRun>();
 	readonly #spentProviderRetries = new Map<string, SpentProviderRetry>();
 	#armedProviderRetry: ArmedProviderRetry | null = null;
+	#armedChainReconciliationRetry: { runId: string; issueId: string; handle: RuntimeTimerHandle } | null = null;
+	#activeChainReconciliation: ActiveChainReconciliation | null = null;
 	#workspaceNotices: WorkspaceNotice[] = [];
 	#admissionBlockedReason: string | null = null;
 	readonly #admissionFences = new Map<symbol, string>();
@@ -556,6 +619,7 @@ export class RunRuntime {
 		this.#verifier = options.verifier;
 		this.#reviewer = options.reviewer;
 		this.#cycleQuestionResolver = options.cycleQuestionResolver;
+		this.#chainReconciler = options.chainReconciler;
 		this.#fullVerifier = options.fullVerifier;
 		this.#shipper = options.shipper;
 		this.#hasWorkspaceChanges = options.hasWorkspaceChanges;
@@ -574,6 +638,7 @@ export class RunRuntime {
 		// whose instant already passed while this process was down is armed
 		// here at zero delay rather than waiting for the next hold.
 		this.#armProviderRetryForWaitingRun();
+		this.#resumeWaitingChainReconciliation();
 	}
 
 	/** Binds the registry-owned defaults for an injected boot runtime. */
@@ -581,7 +646,7 @@ export class RunRuntime {
 		this.#agentDefaults = agentDefaults;
 	}
 
-	async startRun(issueId: string, source?: string): Promise<RunRecord> {
+	async startRun(issueId: string, source?: string, reconciliationGuidance?: string): Promise<RunRecord> {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
@@ -621,9 +686,13 @@ export class RunRuntime {
 			...(source === undefined ? {} : { source }),
 			workspacePath,
 			createdAt: this.#now(),
+			...(reconciliationGuidance === undefined ? {} : { reconciliationGuidance }),
 		});
 		this.#publish(created.event);
-		this.#launch(created.run, { resume: false });
+		this.#launch(created.run, {
+			resume: false,
+			...(reconciliationGuidance === undefined ? {} : { reconciliationGuidance }),
+		});
 		return created.run;
 	}
 
@@ -657,11 +726,13 @@ export class RunRuntime {
 		const recoveredCycle = this.#recoveredCycleAttempt(run);
 		const recoveredVerification = this.#unconsumedVerificationAttempt(run.id);
 		const recoveredCi = this.#unconsumedCiAttempt(run.id);
+		const recoveredReconciliation = this.#reconciliationGuidanceAttempt(run);
 		this.#launch(run, {
 			resume: true,
 			...(recoveredCycle ?? {}),
 			...(recoveredVerification ?? {}),
 			...(recoveredCi ?? {}),
+			...(recoveredReconciliation ?? {}),
 			...(guidance === undefined || guidance.length === 0
 				? {}
 				: { operatorGuidance: guidance }),
@@ -1081,14 +1152,22 @@ export class RunRuntime {
 
 	async stop(): Promise<void> {
 		this.#cancelProviderRetry();
+		this.#cancelChainReconciliationRetry();
+		const reconciliation = this.#activeChainReconciliation;
+		reconciliation?.controller.abort();
 		const active = [...this.#active.values()];
 		for (const run of active) run.controller.abort();
-		await Promise.allSettled(active.map((run) => run.promise));
+		await Promise.allSettled([
+			...active.map((run) => run.promise),
+			...(reconciliation === null ? [] : [reconciliation.promise]),
+		]);
 	}
 
 	close(): void {
 		if (this.#active.size > 0) throw new Error('cannot close a runtime with active runs');
+		if (this.#activeChainReconciliation !== null) throw new Error('cannot close a runtime with active chain reconciliation');
 		this.#cancelProviderRetry();
+		this.#cancelChainReconciliationRetry();
 		this.#store.close();
 	}
 
@@ -1702,6 +1781,17 @@ export class RunRuntime {
 		return this.#unconsumedCycleAttempt(run.id);
 	}
 
+	#reconciliationGuidanceAttempt(run: RunRecord): Pick<RunAttempt, 'reconciliationGuidance'> | null {
+		const events = this.#store.listRunDecisionEvents(run.id);
+		const created = events.find((event) => event.kind === 'run.created');
+		if (created === undefined) return null;
+		if (events.some((event) => event.kind === 'run.work-completed')) return null;
+		const guidance = created.payload['reconciliationGuidance'];
+		return typeof guidance === 'string' && guidance.length > 0
+			? { reconciliationGuidance: guidance }
+			: null;
+	}
+
 	/** Restore an unconsumed issue-verification correction after any resume. */
 	#unconsumedVerificationAttempt(runId: string): Pick<RunAttempt, 'verificationFeedback'> | null {
 		const events = this.#store.listRunDecisionEvents(runId);
@@ -2057,6 +2147,9 @@ export class RunRuntime {
 			...(attempt.operatorGuidance === undefined
 				? {}
 				: { operatorGuidance: attempt.operatorGuidance }),
+			...(attempt.reconciliationGuidance === undefined
+				? {}
+				: { reconciliationGuidance: attempt.reconciliationGuidance }),
 			...(attempt.internalGuidance === undefined
 				? {}
 				: { internalGuidance: attempt.internalGuidance }),
@@ -2155,12 +2248,244 @@ export class RunRuntime {
 			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.noAdmissibleIssue);
 			return;
 		}
-		void this.startNextAdmissibleIssue().catch((error) => {
+		this.#startChainReconciliation(run, nextIssueId);
+	}
+
+	#resumeWaitingChainReconciliation(): void {
+		if (!this.#store.getChainRunsEnabled()) return;
+		for (const run of this.#store.listRuns(10_000).filter((candidate) => candidate.state === 'done')) {
+			const events = this.#store.listRunDecisionEvents(run.id);
+			const pending = this.#pendingChainReconciliation(run.id, events);
+			if (pending !== null) {
+				if (pending.waiting && this.#hasFutureChainRetry(pending.retryAt)) {
+					this.#armChainReconciliationRetry(run.id, pending.issueId, pending.retryAt);
+					return;
+				}
+				this.#startChainReconciliation(run, pending.issueId, pending.decision);
+				return;
+			}
+			if (!events.some((event) => this.#isChainHandoffEvent(event.kind))) {
+				this.#attemptChain(run);
+				return;
+			}
+		}
+	}
+
+	#pendingChainReconciliation(runId: string, events = this.#store.listRunDecisionEvents(runId)): PendingChainHandoff | null {
+		const event = events.findLast((candidate) =>
+			candidate.kind === 'run.chain-reconciliation-pending'
+			|| candidate.kind === 'run.chain-reconciliation-waiting'
+			|| candidate.kind === 'run.chain-reconciliation');
+		if (event === undefined) return null;
+		const issueId = event.payload['issueId'];
+		if (typeof issueId !== 'string') return null;
+		if (event.kind !== 'run.chain-reconciliation') {
+			return this.#pendingChainEvent(events, event, issueId, event.kind === 'run.chain-reconciliation-waiting');
+		}
+		return this.#pendingPersistedChainHandoff(events, event, issueId);
+	}
+
+	#isChainHandoffEvent(kind: string): boolean {
+		return kind === 'run.chain-reconciliation-pending'
+			|| kind === 'run.chain-reconciliation-waiting'
+			|| kind === 'run.chain-reconciliation'
+			|| kind === 'run.chain-paused';
+	}
+
+	#pendingChainEvent(events: RunEvent[], event: RunEvent, issueId: string, waiting: boolean): PendingChainHandoff | null {
+		const resolved = events.slice(events.indexOf(event) + 1).some((later) =>
+			(later.kind === 'run.chain-reconciliation' && later.payload['issueId'] === issueId)
+			|| (later.kind === 'run.chain-paused' && later.payload['issueId'] === issueId));
+		const targetCreated = this.#store.listRuns(10_000).some((run) =>
+			run.issueId === issueId && run.createdAt >= event.createdAt,
+		);
+		return resolved || targetCreated ? null : {
+			issueId,
+			...(waiting ? { waiting: true, ...(typeof event.payload['retryAt'] === 'string' ? { retryAt: event.payload['retryAt'] } : {}) } : {}),
+		};
+	}
+
+	#hasFutureChainRetry(retryAt: string | undefined): retryAt is string {
+		if (retryAt === undefined) return false;
+		const retryAtMs = Date.parse(retryAt);
+		const nowMs = Date.parse(this.#now());
+		return Number.isFinite(retryAtMs) && Number.isFinite(nowMs) && retryAtMs > nowMs;
+	}
+
+	#pendingPersistedChainHandoff(events: RunEvent[], event: RunEvent, issueId: string): PendingChainHandoff | null {
+		const decision = chainDecisionFromPayload(event.payload);
+		if (decision.outcome === 'material') return null;
+		const resolved = events.slice(events.indexOf(event) + 1).some((later) =>
+			later.kind === 'run.chain-paused' && later.payload['issueId'] === issueId,
+		);
+		const targetCreated = this.#store.listRuns(10_000).some((run) =>
+			run.issueId === issueId && run.createdAt >= event.createdAt,
+		);
+		return resolved || targetCreated ? null : { issueId, decision };
+	}
+
+	#startChainReconciliation(run: RunRecord, issueId: string, decision?: ChainReconciliationDecision): void {
+		if (this.#activeChainReconciliation !== null) return;
+		const controller = new AbortController();
+		const promise = this.#continueChainAfterReconciliation(run, issueId, controller.signal, decision)
+			.finally(() => {
+				if (this.#activeChainReconciliation?.controller === controller) {
+					this.#activeChainReconciliation = null;
+				}
+			});
+		this.#activeChainReconciliation = { runId: run.id, issueId, controller, promise };
+	}
+
+	async #continueChainAfterReconciliation(
+		run: RunRecord,
+		issueId: string,
+		signal: AbortSignal,
+		decision?: ChainReconciliationDecision,
+	): Promise<void> {
+		try {
+			const reconciliation = decision ?? await this.#reconcileBeforeChain(run, issueId, signal);
+			if (!signal.aborted) await this.#dispatchChainReconciliation(run, issueId, signal, reconciliation);
+		} catch (error) {
+			if (signal.aborted) return;
+			if (error instanceof ProviderCallError && PROVIDER_AVAILABILITY_FAILURES.includes(error.kind)) {
+				this.#emit(run.id, 'run.chain-reconciliation-waiting', {
+					issueId, provider: error.provider, kind: error.kind,
+					message: error.message, ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
+				});
+				this.#armChainReconciliationRetry(run.id, issueId, error.retryAt);
+				return;
+			}
 			const reason = error instanceof RuntimeConflictError
 				? CHAIN_PAUSE_REASONS.runActive
 				: CHAIN_PAUSE_REASONS.startFailed;
-			this.#emitChainPause(run.id, reason, { issueId: nextIssueId, error: errorMessage(error) });
+			this.#emitChainPause(run.id, reason, { issueId, error: errorMessage(error) });
+		}
+	}
+
+	async #dispatchChainReconciliation(
+		run: RunRecord,
+		issueId: string,
+		signal: AbortSignal,
+		reconciliation: ChainReconciliationDecision,
+	): Promise<void> {
+		if (reconciliation.outcome === 'reselect') {
+			await this.#dispatchReconciledChain(run, issueId, signal);
+		} else if (reconciliation.outcome === 'continue') {
+			await this.#dispatchReconciledChain(run, issueId, signal, reconciliation.guidance);
+		}
+	}
+
+	async #dispatchReconciledChain(
+		run: RunRecord,
+		issueId: string,
+		signal: AbortSignal,
+		reconciliationGuidance?: string,
+	): Promise<void> {
+		if (signal.aborted) return;
+		if (!this.#store.getChainRunsEnabled()) {
+			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.disabled, { issueId });
+			return;
+		}
+		const currentIssueId = this.#nextAdmissibleIssueId();
+		if (currentIssueId === null) {
+			this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.noAdmissibleIssue);
+			return;
+		}
+		if (currentIssueId !== issueId) {
+			await this.#continueChainAfterReconciliation(run, currentIssueId, signal);
+			return;
+		}
+		if (signal.aborted) return;
+		await this.startRun(issueId, undefined, reconciliationGuidance);
+	}
+
+	#armChainReconciliationRetry(runId: string, issueId: string, retryAt: string | undefined): void {
+		this.#cancelChainReconciliationRetry();
+		const retryAtMs = retryAt === undefined ? Number.NaN : Date.parse(retryAt);
+		if (!Number.isFinite(retryAtMs)) return;
+		const nowMs = Date.parse(this.#now());
+		const delayMs = Number.isFinite(nowMs) ? Math.max(0, retryAtMs - nowMs) : 0;
+		const handle = this.#timer.set(() => {
+			this.#armedChainReconciliationRetry = null;
+			const run = this.#store.getRun(runId);
+			if (run !== null && run.state === 'done' && this.#store.getChainRunsEnabled()) {
+				this.#startChainReconciliation(run, issueId);
+			}
+		}, delayMs);
+		this.#armedChainReconciliationRetry = { runId, issueId, handle };
+	}
+
+	#cancelChainReconciliationRetry(): void {
+		const retry = this.#armedChainReconciliationRetry;
+		if (retry === null) return;
+		this.#timer.clear(retry.handle);
+		this.#armedChainReconciliationRetry = null;
+	}
+
+	async #reconcileBeforeChain(
+		run: RunRecord,
+		targetIssueId: string,
+		signal: AbortSignal,
+	): Promise<ChainReconciliationDecision> {
+		const reconciler = this.#chainReconciler;
+		if (reconciler === undefined) {
+			return { outcome: 'continue' };
+		}
+		const target = this.#listBacklog?.().find((issue) => issue.id === targetIssueId);
+		if (target === undefined) return { outcome: 'reselect' };
+		const prior = this.#store.listRunDecisionEvents(run.id)
+			.findLast((event) => event.kind === 'run.chain-reconciliation' && event.payload['issueId'] === targetIssueId);
+		if (prior !== undefined) {
+			const decision = chainDecisionFromPayload(prior.payload);
+			if (decision.outcome === 'material') {
+				this.#emitChainPause(run.id, CHAIN_PAUSE_REASONS.materialReconciliation, { issueId: targetIssueId, reconciliation: 'material' });
+				return { outcome: 'pause' };
+			}
+			return decision;
+		}
+		this.#emit(run.id, 'run.chain-reconciliation-pending', { issueId: targetIssueId });
+		const started = performance.now();
+		const result = await reconciler.reconcile({
+			 runId: run.id, sourceIssueId: run.issueId, targetIssueId,
+			workspace: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
+			originMain: 'origin/main',
+			priorDelivery: { runId: run.id, issueId: run.issueId },
+			nextSpecification: JSON.stringify(target.spec), providerId: run.providerId,
+			signal,
+			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
 		});
+		if (signal.aborted) return { outcome: 'pause' };
+		const guidance = 'guidance' in result ? result.guidance : undefined;
+		const reconciliationPayload = {
+			workflowRevision: this.#workflowRevision ?? null, runId: run.id, issueId: targetIssueId,
+			provider: run.providerId, model: result.usage.model, effort: result.usage.effort,
+			latencyMs: Math.max(0, Math.round(performance.now() - started)), outcome: result.outcome,
+			justification: result.justification, ...(guidance === undefined ? {} : { guidance }),
+			...cycleUsageEventPayload(result.usage),
+		};
+		if (result.outcome === 'material') {
+			try {
+				const recorded = this.#store.recordMaterialChainReconciliation({
+					runId: run.id, issueId: targetIssueId, reconciliationPayload,
+					pausePayload: { issueId: targetIssueId, reconciliation: 'material', reason: CHAIN_PAUSE_REASONS.materialReconciliation },
+					proposal: {
+					title: `Revisar a especificação de ${targetIssueId}`,
+					evidence: `${result.justification}${guidance === undefined ? '' : ` Orientação: ${guidance}`}`,
+					}, createdAt: this.#now(),
+				});
+				this.#publish(recorded.reconciliation);
+				this.#publish(recorded.proposalCaptured);
+				this.#publish(recorded.pause);
+				return { outcome: 'pause' };
+			} catch (error) {
+				this.#emit(run.id, 'run.chain-reconciliation-waiting', {
+					issueId: targetIssueId, reason: 'material-persistence-failed', error: errorMessage(error),
+				});
+				return { outcome: 'pause' };
+			}
+		}
+		this.#emit(run.id, 'run.chain-reconciliation', reconciliationPayload);
+		return continueChainWithGuidance(guidance);
 	}
 
 	/**

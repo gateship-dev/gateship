@@ -160,6 +160,16 @@ function defaultLoadIssue(cwd: string, issueId: string): string {
 	return issue.content;
 }
 
+function reconciliationGuidancePrompt(guidance: string | undefined): string[] {
+	return guidance === undefined ? [] : [
+		'',
+		'Non-binding reconciliation guidance for this execution follows.',
+		'Keep the approved issue specification and fingerprint unchanged; use this only as execution context.',
+		'',
+		guidance,
+	];
+}
+
 export function buildWorkPrompt(
 	issueId: string,
 	issue: string,
@@ -178,6 +188,8 @@ export function buildWorkPrompt(
 	verificationFeedback: string | undefined = undefined,
 	/** Internal orchestrator answer to the executor's own prior question. */
 	internalGuidance: RuntimeInternalGuidance | undefined = undefined,
+	/** Non-binding execution context produced by the chain reconciler. */
+	reconciliationGuidance: string | undefined = undefined,
 ): string {
 	// The single automatic fix round carries the reviewer's findings verbatim:
 	// the reviewer is a separate session, so nothing else puts them in context.
@@ -289,6 +301,7 @@ export function buildWorkPrompt(
 		...decisionsSection,
 		...guidanceSection,
 		...internalGuidanceSection,
+		...reconciliationGuidancePrompt(reconciliationGuidance),
 		...reviewSection,
 		...verificationSection,
 		...fullVerifySection,
@@ -475,6 +488,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.executorHandoff,
 			input.verificationFeedback,
 			input.internalGuidance,
+			input.reconciliationGuidance,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,
