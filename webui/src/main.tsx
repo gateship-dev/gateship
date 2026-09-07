@@ -483,7 +483,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 			if (disposed) return;
 			if (first) setOverviewLoading(true);
 			try {
-				commit(await fetchOverview(controller.signal));
+				commit(await fetchOverview('7d', {}, controller.signal));
 			} catch (error: unknown) {
 				report(error);
 			} finally {

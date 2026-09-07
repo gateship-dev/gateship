@@ -40,6 +40,27 @@ conhecido. Cada sinal mantém sua origem, cobertura e limitações. Não existe
 score composto, nível de maturidade ou número que substitua a leitura dos
 fatos.
 
+O endpoint global `GET /api/overview` aceita `window=7d|30d|all` e os filtros
+opcionais `projectId`, `providerId`, `model`, `role` e `effort`. A projeção
+reproduz o histórico existente, sem novo armazenamento. `runsByOutcome` conta
+as runs selecionadas; `activeRuns` conta `incomplete` e `terminalRuns` conta os
+demais outcomes. `terminalWallTimeMs` soma durações terminais válidas e
+`terminalWallTimeRuns` é seu denominador conhecido; sem duração conhecida o
+valor permanece `null`.
+`shippedWithoutIntervention` conta entregas sem intervenção registrada.
+`dispatchToMergeMs` soma o intervalo entre `run.started` e `ship.merged`, e
+`dispatchToMergeRuns` é seu denominador conhecido. `firstReviewPasses` conta
+quando a primeira decisão de review é `run.review-clean`, enquanto
+`firstReviewPassKnownRuns` conta runs com primeira decisão demonstrável.
+`ciCorrections` conta rounds `run.ci-fix-requested`. Timestamps inválidos e
+custo não reportado ficam fora das derivações e permanecem `null` quando a
+soma não é conhecida. Custo é equivalente ao uso da API, não cobrança da
+assinatura. `providerId` usa a proveniência das configurações reconstruídas;
+sem configuração reconstruível, o provider da run é fallback apenas no filtro
+isolado. Com `role`, `model` ou `effort`, todos os campos devem coincidir na
+mesma configuração, sem fallback. A origem inicial da run não define a
+semântica desse filtro.
+
 Evidências são tipadas por origem: check determinístico, julgamento humano ou
 avaliação de modelo. Diagnósticos, coortes e ideias derivadas continuam
 advisory: podem gerar uma proposta revisável, mas não aprovam, iniciam,

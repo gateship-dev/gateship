@@ -273,8 +273,31 @@ export interface HistoricalOverviewView {
 	knownCostUsd: number | null;
 	runsByOutcome: { shipped: number; failed: number; cancelled: number; incomplete: number };
 	activeRuns: number;
-	daily: Array<{ date: string; totalRuns: number; runsByOutcome: { shipped: number; failed: number; cancelled: number; incomplete: number }; runsWithKnownCost: number; knownCostUsd: number | null }>;
+	terminalRuns: number;
+	terminalWallTimeMs: number | null;
+	terminalWallTimeRuns: number;
+	shippedWithoutIntervention: number;
+	dispatchToMergeMs: number | null;
+	dispatchToMergeRuns: number;
+	firstReviewPasses: number;
+	firstReviewPassKnownRuns: number;
+	ciCorrections: number;
+	fixRounds: number;
+	attentionRequests: number;
+	operatorInterventions: number;
+	providerHolds: number;
+	resolvedCycleQuestions: number;
+	reportedTokens: { inputTokens: number | null; outputTokens: number | null; cacheCreationInputTokens: number | null; cacheReadInputTokens: number | null; thinkingTokens: number | null };
+	daily: Array<{ date: string; totalRuns: number; runsByOutcome: { shipped: number; failed: number; cancelled: number; incomplete: number }; runsWithKnownCost: number; knownCostUsd: number | null; terminalRuns: number; shippedWithoutIntervention: number; ciCorrections: number; inputTokens: number | null; outputTokens: number | null }>;
 	configurations: Array<{ provider: string; role: string; model?: string; effort?: string }>;
+}
+
+export interface HistoricalOverviewFilters {
+	projectId?: string;
+	providerId?: 'claude' | 'codex';
+	model?: string;
+	role?: 'orchestrator' | 'executor' | 'reviewer';
+	effort?: string;
 }
 
 export interface ProjectOperationalOverviewView {
@@ -564,8 +587,12 @@ function overviewRecord(value: unknown): ProjectOperationalOverviewView | null {
 	return value as ProjectOperationalOverviewView;
 }
 
-export async function fetchOverview(signal?: AbortSignal): Promise<ProjectOperationalOverviewView> {
-	const response = await fetch(`${OVERVIEW_PATH}?window=7d`, { signal });
+export async function fetchOverview(
+	window: OverviewWindow = '7d', filters: HistoricalOverviewFilters = {}, signal?: AbortSignal,
+): Promise<ProjectOperationalOverviewView> {
+	const params = new URLSearchParams({ window });
+	for (const [key, value] of Object.entries(filters)) if (value !== undefined) params.set(key, value);
+	const response = await fetch(`${OVERVIEW_PATH}?${params}`, { signal });
 	const overview = overviewRecord(await readJson<unknown>(response, 'Overview'));
 	if (overview === null) throw new Error('Gateship returned an unreadable overview.');
 	return overview;
