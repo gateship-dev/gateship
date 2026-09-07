@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-817",
   "title": "Expor mediana de dispatch-to-merge nos Insights",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-07T23:45:54.496Z",
-  "updatedAt": "2026-09-07T23:45:54.496Z",
+  "updatedAt": "2026-09-07T23:55:24.817Z",
   "description": "Estender o contrato histórico entregue em GSHIP-813 para calcular e expor medianDispatchToMergeMs: number | null a partir dos intervalos válidos já reconstruídos entre run.started e ship.merged, respeitando as mesmas janelas e filtros de proveniência. Calcular a mediana determinística para amostras ímpares e a média dos dois valores centrais para amostras pares; retornar null quando não houver amostra válida. Atualizar o tipo do cliente e a documentação de fórmula, denominador, exclusões e cobertura. Não criar armazenamento, expor amostras brutas, alterar roteamento ou implementar a UI de GSHIP-814. Cobrir amostra vazia, timestamps inválidos, amostras pares e ímpares e aplicação dos filtros com testes.",
   "specSource": "operator",
   "spec": {
