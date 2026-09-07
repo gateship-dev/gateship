@@ -69,6 +69,7 @@ describe('read-only persisted run status', () => {
 		expect(() => readPersistedRunStatuses(dbPath)).toThrow();
 		expect(existsSync(dbPath)).toBe(false);
 	});
+
 });
 
 describe('run store workspace migration', () => {

@@ -3,7 +3,10 @@ import { join } from 'node:path';
 
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
+import { isPlannable } from '../issues/plannable.ts';
+import type { IssueEntry } from '../issues/types.ts';
 import type { RegisteredProject } from './project-registry.ts';
+import type { ChainPauseView, RunRuntime } from './run-runtime.ts';
 import {
 	type PersistedRunHistory,
 	type PersistedRunStatus,
@@ -11,9 +14,106 @@ import {
 	readPersistedRunOverview,
 	readPersistedRunStatuses,
 } from './run-store.ts';
+import { isTerminalRunState } from './run-state.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 export const PROJECT_STATUS_RUN_LIMIT = 20;
+
+export interface QueueIssue {
+	id: string;
+	title: string;
+}
+
+export interface ProjectQueueView {
+	project: RegisteredProject;
+	readiness: RegisteredProject['readiness'];
+	chainEnabled: boolean;
+	pause: { reason: string; createdAt: string } | null;
+	currentRun: PersistedRunStatus | null;
+	currentIssue: QueueIssue | null;
+	plannedIssues: QueueIssue[];
+	nextIssue: QueueIssue | null;
+}
+
+export interface QueueOverviewError {
+	projectId: string;
+	projectName: string;
+	code: 'project-unavailable';
+	message: 'Project queue is unavailable.';
+}
+
+export interface QueueOverview {
+	queues: ProjectQueueView[];
+	errors: QueueOverviewError[];
+}
+
+const CHAIN_PAUSE_REASONS = new Set([
+	'chain-disabled', 'previous-run-not-done', 'no-admissible-issue', 'run-active', 'chain-start-failed',
+]);
+
+function queueIssue(issue: IssueEntry | undefined): QueueIssue | null {
+	return issue === undefined ? null : { id: issue.id, title: issue.title };
+}
+
+function pauseOf(event: ChainPauseView | null): ProjectQueueView['pause'] {
+	if (event === null) return null;
+	const reason = event.reason;
+	if (typeof reason !== 'string' || !CHAIN_PAUSE_REASONS.has(reason)) return null;
+	return { reason, createdAt: event.createdAt };
+}
+
+export type QueueRuntime = Pick<RunRuntime, 'listRuns' | 'getChainRuns' | 'getChainPause'>;
+
+function queueRuntimeState(
+	project: RegisteredProject,
+	queueContexts: ReadonlyMap<string, QueueRuntime>,
+): {
+	currentRun: ProjectQueueView['currentRun'];
+	chainEnabled: boolean;
+	lastPause: ChainPauseView | null;
+} {
+	const context = queueContexts.get(project.id);
+	if (context === undefined) throw new Error('Project runtime context is unavailable.');
+	return {
+		currentRun: context.listRuns().find((run) => !isTerminalRunState(run.state)) ?? null,
+		chainEnabled: context.getChainRuns(),
+		lastPause: context.getChainPause(),
+	};
+}
+
+/** Global, read-only queue projection. Each project is isolated so one bad checkout does not hide the others. */
+export function readQueueOverview(
+	projects: readonly RegisteredProject[],
+	readBacklog: (project: RegisteredProject) => IssueEntry[] = (project) =>
+		readBacklogFromMain(project.root, undefined, RUNTIME_SOURCE_REF),
+	queueContexts: ReadonlyMap<string, QueueRuntime>,
+): QueueOverview {
+	const queues: ProjectQueueView[] = [];
+	const errors: QueueOverviewError[] = [];
+	for (const project of projects) {
+		try {
+			const backlog = readBacklog(project);
+			const plannedIssues = backlog.filter((issue) => isPlannable(issue, backlog)).map((issue) => ({ id: issue.id, title: issue.title }));
+			const { currentRun, chainEnabled, lastPause } = queueRuntimeState(project, queueContexts);
+			const currentIssue = queueIssue(currentRun === null ? undefined : backlog.find((issue) => issue.id === currentRun.issueId));
+			queues.push({
+				project,
+				readiness: project.readiness,
+				chainEnabled,
+				pause: pauseOf(lastPause),
+				currentRun,
+				currentIssue,
+				plannedIssues,
+			// The runtime serializes admission per project. While a run is active,
+			// no backlog entry is admissible, even though approved candidates remain visible.
+			nextIssue: currentRun === null ? plannedIssues[0] ?? null : null,
+			});
+		} catch {
+			errors.push({ projectId: project.id, projectName: project.name, code: 'project-unavailable', message: 'Project queue is unavailable.' });
+		}
+	}
+	return { queues, errors };
+}
 
 export type OverviewWindow = '7d' | '30d' | 'all';
 

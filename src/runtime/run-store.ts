@@ -90,6 +90,9 @@ interface PersistedRunStatusRow {
 }
 
 function openReadOnlyDatabase(path: string): Database {
+	if (!existsSync(path)) {
+		throw new Error('unable to open database file');
+	}
 	if (existsSync(`${path}-wal`)) {
 		return new Database(path, { readonly: true, strict: true });
 	}

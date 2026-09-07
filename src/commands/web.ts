@@ -116,6 +116,7 @@ import {
 	type OverviewWindow,
 	readProjectOperationalOverview,
 	readProjectOperationalStatus,
+	readQueueOverview,
 } from '../runtime/project-status.ts';
 import {
 	ProjectUnregistrationError,
@@ -2749,6 +2750,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		composeProjectRuntime,
 	);
 	projectRuntimes.register(currentProject.id, bootContext);
+	projectRuntimes.prepareReady();
 	const assets = resolveWebAssets();
 	const projectPath = `/projects/${encodeURIComponent(currentProject.id)}`;
 	const redirect = (path: string) => (request: Request) =>
@@ -2798,6 +2800,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/': redirect('/overview'),
 			'/overview': () => serveWebAsset(assets.indexHtml),
 			'/overview/runs': () => serveWebAsset(assets.indexHtml),
+			'/overview/queues': () => serveWebAsset(assets.indexHtml),
 			'/projects': () => serveWebAsset(assets.indexHtml),
 			'/runs': redirect(`${projectPath}/runs`),
 			'/work': redirect(`${projectPath}/work`),
@@ -2824,6 +2827,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				return Response.json(readProjectOperationalOverview(
 					projectRegistry.list(projectRoot), undefined, undefined, rawWindow as OverviewWindow,
 				));
+			},
+			'/api/overview/queues': () => {
+				const contexts = new Map(
+					projectRuntimes.listQueueContexts()
+						.filter((entry): entry is { project: RegisteredProject; context: ProjectCycleContext } => entry.project.readiness === 'ready' && entry.context !== undefined)
+						.map((entry) => [entry.project.id, entry.context.runtime]),
+				);
+				return Response.json(readQueueOverview(projectRegistry.list(projectRoot), undefined, contexts));
 			},
 			'/api/overview/runs': (request) => {
 				try {

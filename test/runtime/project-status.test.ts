@@ -4,9 +4,12 @@ import { join } from 'node:path';
 
 import {
 	readProjectOperationalOverview,
+	readQueueOverview,
 	type ProjectOperationalStatus,
+	type QueueRuntime,
 } from '../../src/runtime/project-status.ts';
 import { readPersistedRunHistory, readPersistedRunStatuses, RunStore } from '../../src/runtime/run-store.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const project = {
@@ -180,4 +183,23 @@ test('ignores malformed activity events when reading historical decisions', () =
 	expect(history).toHaveLength(1);
 	expect(history[0]?.events.map((event) => event.kind)).toEqual(['run.created']);
 	expect(history[0]?.evaluation.outcome).toBe('incomplete');
+});
+
+test('projects queues independently, keeps dispatcher order, and reports active work', () => {
+	const approved = { scope: 'do it', verify: ['bun test'] };
+	const backlog = [
+		{ id: 'GSHIP-19', title: 'dependency', stage: 'planned' as const, status: 'open' as const, blockedBy: [], createdAt: '', updatedAt: '' },
+		{ id: 'GSHIP-20', title: 'blocked', stage: 'specified' as const, status: 'open' as const, blockedBy: ['GSHIP-19'], createdAt: '', updatedAt: '', spec: approved, approval: { fingerprint: fingerprintSpec(approved), approvedAt: '' } },
+		{ id: 'GSHIP-12', title: 'current', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '', updatedAt: '', spec: approved, approval: { fingerprint: fingerprintSpec(approved), approvedAt: '' } },
+	];
+	const queues = readQueueOverview([
+		project,
+		{ ...project, id: 'unavailable', name: 'unavailable', stateDir: '/missing-state' },
+	], () => backlog, new Map<string, QueueRuntime>([[project.id, {
+		listRuns: () => [{ id: 'run-queue', issueId: 'GSHIP-12', providerId: 'claude', state: 'working', createdAt: '', updatedAt: '' } as never],
+		getChainRuns: () => true,
+		getChainPause: () => null,
+	}]]));
+	expect(queues.queues[0]).toMatchObject({ chainEnabled: true, currentRun: { issueId: 'GSHIP-12' }, nextIssue: null, plannedIssues: [{ id: 'GSHIP-12' }] });
+	expect(queues.errors).toEqual([{ projectId: 'unavailable', projectName: 'unavailable', code: 'project-unavailable', message: 'Project queue is unavailable.' }]);
 });

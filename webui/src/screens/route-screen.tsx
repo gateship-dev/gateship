@@ -5,6 +5,7 @@ import type { ProjectSurface, RouteSelection } from '../routes.ts';
 interface RouteScreens {
 	overview: () => React.ReactElement;
 	overviewRuns: () => React.ReactElement;
+	overviewQueues: () => React.ReactElement;
 	projects: () => React.ReactElement;
 	globalSettings: () => React.ReactElement;
 	notFound: () => React.ReactElement;
@@ -29,6 +30,7 @@ export function RouteScreen({
 }): React.ReactElement {
 	if (selection.surface === 'overview') return screens.overview();
 	if (selection.surface === 'overview-runs') return screens.overviewRuns();
+	if (selection.surface === 'overview-queues') return screens.overviewQueues();
 	if (selection.surface === 'projects') return screens.projects();
 	if (selection.surface === 'global-settings') return screens.globalSettings();
 	if (selectedProject === null) return screens.notFound();

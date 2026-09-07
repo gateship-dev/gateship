@@ -49,6 +49,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
 	'projects.overview': { method: 'GET', path: () => '/api/overview', input: '{}' },
 	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?, period?, search?}' },
+	'queues.list': { method: 'GET', path: () => '/api/overview/queues', input: '{}' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
 	'projects.register': { method: 'POST', path: () => '/api/projects', input: '{root}' },
 	'projects.import': { method: 'POST', path: () => '/api/projects/import', input: '{repository}' },

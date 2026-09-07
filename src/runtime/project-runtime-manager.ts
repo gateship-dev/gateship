@@ -11,6 +11,8 @@ const DIAGNOSTIC_SCHEDULE_CHECK_MS = 60_000;
 export interface ManagedProjectRuntime {
 	runtime: {
 		listRuns(limit?: number): RunRecord[];
+		getChainRuns?(): boolean;
+		getChainPause?(): unknown;
 		acquireAdmissionFence(reason: string): () => void;
 	};
 	diagnostics?: {
@@ -39,6 +41,7 @@ export class ProjectRuntimeLookupError extends Error {
  */
 export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 	readonly #contexts = new Map<string, T>();
+	readonly #compositionErrors = new Map<string, unknown>();
 	#admissionFence: { token: symbol; reason: string } | null = null;
 	readonly #contextFenceReleases = new Map<T, () => void>();
 	#diagnosticScheduleTimer: ReturnType<typeof setInterval> | null = null;
@@ -51,7 +54,29 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 
 	register(projectId: string, context: T): void {
 		this.#contexts.set(projectId, context);
+		this.#compositionErrors.delete(projectId);
 		this.#applyAdmissionFence(context);
+	}
+
+	/** Compose every ready registration before the web server starts serving reads. */
+	prepareReady(): void {
+		for (const project of this.registry.list(this.currentRoot)) {
+			if (project.readiness !== 'ready' || this.#contexts.has(project.id)) continue;
+			try {
+				this.get(project.id);
+			} catch (error) {
+				this.#compositionErrors.set(project.id, error);
+			}
+		}
+	}
+
+	/** Return only already-owned contexts; this never composes during a request. */
+	listQueueContexts(): Array<{ project: RegisteredProject; context?: T; error?: unknown }> {
+		return this.registry.list(this.currentRoot).map((project) => ({
+			project,
+			...(this.#contexts.has(project.id) ? { context: this.#contexts.get(project.id) } : {}),
+			...(this.#compositionErrors.has(project.id) ? { error: this.#compositionErrors.get(project.id) } : {}),
+		}));
 	}
 
 	/**
@@ -136,6 +161,7 @@ export class ProjectRuntimeManager<T extends ManagedProjectRuntime> {
 		this.stopDiagnosticScheduler();
 		const contexts = [...this.#contexts.values()];
 		this.#contexts.clear();
+		this.#compositionErrors.clear();
 		await Promise.all(contexts.map((context) => context.close()));
 	}
 
