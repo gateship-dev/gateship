@@ -114,7 +114,7 @@ import {
 	ProjectRuntimeManager,
 } from '../runtime/project-runtime-manager.ts';
 import {
-	type OverviewWindow,
+	type OverviewWindow, type HistoricalOverviewFilters,
 	readProjectOperationalOverview,
 	readProjectOperationalStatus,
 	readQueueOverview,
@@ -2824,13 +2824,30 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
 			'/api/snapshot': readSnapshot,
 			'/api/project': () => Response.json({ project: inspectProject(projectRoot) }),
+			// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: query validation keeps the public overview contract explicit
 			'/api/overview': (request) => {
-				const rawWindow = new URL(request.url).searchParams.get('window') ?? '7d';
+				const params = new URL(request.url).searchParams;
+				const rawWindow = params.get('window') ?? '7d';
 				if (rawWindow !== '7d' && rawWindow !== '30d' && rawWindow !== 'all') {
 					return Response.json({ ok: false, code: 'invalid-window', message: 'window must be 7d, 30d, or all.' }, { status: 400 });
 				}
+				const providerId = params.get('providerId');
+				if (providerId !== null && providerId !== 'claude' && providerId !== 'codex') {
+					return Response.json({ ok: false, code: 'invalid-query', message: 'providerId must be claude or codex.' }, { status: 400 });
+				}
+				const role = params.get('role');
+				if (role !== null && role !== 'orchestrator' && role !== 'executor' && role !== 'reviewer') {
+					return Response.json({ ok: false, code: 'invalid-query', message: 'role must be orchestrator, executor, or reviewer.' }, { status: 400 });
+				}
+				const filters: HistoricalOverviewFilters = {
+					...(params.get('projectId') === null ? {} : { projectId: params.get('projectId')! }),
+					...(providerId === null ? {} : { providerId }),
+					...(params.get('model') === null ? {} : { model: params.get('model')! }),
+					...(role === null ? {} : { role }),
+					...(params.get('effort') === null ? {} : { effort: params.get('effort')! }),
+				};
 				return Response.json(readProjectOperationalOverview(
-					projectRegistry.list(projectRoot), undefined, undefined, rawWindow as OverviewWindow,
+					projectRegistry.list(projectRoot).filter((project) => filters.projectId === undefined || project.id === filters.projectId), undefined, undefined, rawWindow as OverviewWindow, new Date(), filters,
 				));
 			},
 			'/api/overview/queues': () => {

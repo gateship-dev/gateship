@@ -590,7 +590,7 @@ const DIAGNOSTICS_WITH_FINDING: AppProps['diagnostics'] = {
 	stats: { total: 1, pending: 1, dismissed: 0, promoted: 0, cleared: 0, recurring: 0 },
 };
 
-function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): string {
+function renderAt(route: OperatorRoute, overrides: Omit<Partial<AppProps>, 'overview'> & { overview?: unknown } = {}): string {
 	return renderToStaticMarkup(
 		<App
 			backlog={BACKLOG}
@@ -670,7 +670,7 @@ function renderAt(route: OperatorRoute, overrides: Partial<AppProps> = {}): stri
 			suggestedTimezone="America/Sao_Paulo"
 			version=""
 			workspaceNotices={[]}
-			{...overrides}
+			{...overrides as Partial<AppProps>}
 		/>,
 	);
 }
@@ -3216,7 +3216,7 @@ function assertOverviewLoadingAndError(locale: 'en-US' | 'pt-BR'): void {
 
 function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 	const history = { window: '7d' as const, totalRuns: 1, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 1, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 1, daily: [], configurations: [] };
-	const overviewFor = (database: NonNullable<AppProps['overview']>['projects'][number]['database'], historical: NonNullable<AppProps['overview']>['projects'][number]['overview']['overview']) => ({
+	const overviewFor = (database: NonNullable<AppProps['overview']>['projects'][number]['database'], historical: unknown) => ({
 		window: '7d' as const, overview: history,
 		summary: { totalProjects: 1, readyProjects: 1, unavailableProjects: 0, nonTerminalRuns: 1, backlog: { idea: 0, specified: 0, planned: 0 } },
 		projects: [{ project: CURRENT_PROJECT, root: { state: 'available' as const }, backlog: { state: 'available' as const, counts: { idea: 0, specified: 0, planned: 0 } }, database, overview: { overview: historical }, activeRun: { id: 'run-factual', issueId: 'CAM-900', state: 'working', providerId: 'claude' as const, createdAt: '', updatedAt: '' }, latestRun: null, latestRunOutcome: null, recentRuns: [] }],
@@ -3488,16 +3488,16 @@ describe('operator shell', () => {
 	});
 
 	test('overview derives active projects from activeRun and escalates missing history', () => {
-		const entry = (activeRun: NonNullable<AppProps['overview']>['projects'][number]['activeRun'], history: NonNullable<AppProps['overview']>['projects'][number]['overview']['overview']) => ({
+		const entry = (activeRun: NonNullable<AppProps['overview']>['projects'][number]['activeRun'], history: unknown) => ({
 			project: CURRENT_PROJECT,
 			root: { state: 'available' as const },
 			backlog: { state: 'available' as const, counts: { idea: 0, specified: 0, planned: 0 } },
 			database: { state: 'available' as const, path: '/state/runtime.sqlite' },
 			overview: { overview: history }, activeRun, latestRun: null, latestRunOutcome: null, recentRuns: [],
 		});
-		const aggregate = (projects: NonNullable<AppProps['overview']>['projects']): NonNullable<AppProps['overview']> => ({
+		const aggregate = (projects: unknown[]): unknown => ({
 			window: '7d', overview: { window: '7d', totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] },
-			summary: { totalProjects: projects.length, readyProjects: projects.length, unavailableProjects: 0, nonTerminalRuns: projects.filter((project) => project.activeRun !== null).length, backlog: { idea: 0, specified: 0, planned: 0 } }, projects,
+			summary: { totalProjects: projects.length, readyProjects: projects.length, unavailableProjects: 0, nonTerminalRuns: (projects as Array<{ activeRun: unknown }>).filter((project) => project.activeRun !== null).length, backlog: { idea: 0, specified: 0, planned: 0 } }, projects,
 		});
 		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
 		const noActive = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, history)]) });

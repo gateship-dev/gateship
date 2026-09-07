@@ -16,6 +16,7 @@ import {
 } from './run-store.ts';
 import { isTerminalRunState } from './run-state.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
+import { selectRunRoundOrigins } from './round-origin.ts';
 
 export const PROJECT_STATUS_RUN_LIMIT = 20;
 
@@ -137,7 +138,15 @@ export interface HistoricalOverview {
 	knownCostUsd: number | null;
 	runsByOutcome: Record<'shipped' | 'failed' | 'cancelled' | 'incomplete', number>;
 	activeRuns: number;
-	terminalWallTimeMs: number;
+	terminalRuns: number;
+	terminalWallTimeMs: number | null;
+	terminalWallTimeRuns: number;
+	shippedWithoutIntervention: number;
+	dispatchToMergeMs: number | null;
+	dispatchToMergeRuns: number;
+	firstReviewPasses: number;
+	firstReviewPassKnownRuns: number;
+	ciCorrections: number;
 	fixRounds: number;
 	attentionRequests: number;
 	operatorInterventions: number;
@@ -157,6 +166,9 @@ export interface HistoricalOverview {
 		runsByOutcome: HistoricalOverview['runsByOutcome'];
 		runsWithKnownCost: number;
 		knownCostUsd: number | null;
+		terminalRuns: number;
+		shippedWithoutIntervention: number;
+		ciCorrections: number;
 		inputTokens: number | null;
 		outputTokens: number | null;
 	}>;
@@ -165,6 +177,14 @@ export interface HistoricalOverview {
 export interface HistoricalOverviewRead {
 	overview: HistoricalOverview | null;
 	reason?: string;
+}
+
+export interface HistoricalOverviewFilters {
+	projectId?: string;
+	providerId?: 'claude' | 'codex';
+	model?: string;
+	role?: 'orchestrator' | 'executor' | 'reviewer';
+	effort?: string;
 }
 
 const OVERVIEW_WINDOWS: Readonly<Record<OverviewWindow, number | null>> = { '7d': 7, '30d': 30, all: null };
@@ -180,7 +200,9 @@ function emptyOutcomes(): HistoricalOverview['runsByOutcome'] {
 function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 	return {
 		window, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null,
-		runsByOutcome: emptyOutcomes(), activeRuns: 0, terminalWallTimeMs: 0,
+		runsByOutcome: emptyOutcomes(), activeRuns: 0, terminalRuns: 0, terminalWallTimeMs: null, terminalWallTimeRuns: 0,
+		shippedWithoutIntervention: 0, dispatchToMergeMs: null, dispatchToMergeRuns: 0,
+		firstReviewPasses: 0, firstReviewPassKnownRuns: 0, ciCorrections: 0,
 		fixRounds: 0, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0,
 		resolvedCycleQuestions: 0,
 		reportedTokens: { inputTokens: null, outputTokens: null, cacheCreationInputTokens: null,
@@ -189,12 +211,34 @@ function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 	};
 }
 
+// The branches below preserve unknown coverage instead of coercing it to zero.
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: historical replay keeps each independently observable derivation explicit
 function addRunMetrics(result: HistoricalOverview, item: PersistedRunHistory): void {
 	const evaluation = item.evaluation;
 	result.totalRuns += 1;
 	result.runsByOutcome[evaluation.outcome] += 1;
 	result.activeRuns += evaluation.outcome === 'incomplete' ? 1 : 0;
-	result.terminalWallTimeMs += evaluation.wallTimeMs ?? 0;
+	result.terminalRuns += evaluation.outcome === 'incomplete' ? 0 : 1;
+	if (evaluation.outcome !== 'incomplete' && evaluation.wallTimeMs !== null) {
+		result.terminalWallTimeRuns += 1;
+		result.terminalWallTimeMs = (result.terminalWallTimeMs ?? 0) + evaluation.wallTimeMs;
+	}
+	if (evaluation.outcome === 'shipped' && evaluation.operatorInterventions === 0) result.shippedWithoutIntervention += 1;
+	result.ciCorrections += selectRunRoundOrigins(item.events).ci ?? 0;
+	const dispatch = item.events.find((event) => event.kind === 'run.started');
+	const merge = item.events.findLast((event) => event.kind === 'ship.merged');
+	if (dispatch !== undefined && merge !== undefined) {
+		const elapsed = Date.parse(merge.createdAt) - Date.parse(dispatch.createdAt);
+		if (Number.isFinite(elapsed) && elapsed >= 0) {
+			result.dispatchToMergeRuns += 1;
+			result.dispatchToMergeMs = (result.dispatchToMergeMs ?? 0) + elapsed;
+		}
+	}
+	const firstReview = item.events.find((event) => event.kind === 'run.review-clean' || event.kind === 'run.review-fix-requested');
+	if (firstReview !== undefined) {
+		result.firstReviewPassKnownRuns += 1;
+		if (firstReview.kind === 'run.review-clean') result.firstReviewPasses += 1;
+	}
 	result.fixRounds += item.run.fixRounds;
 	result.attentionRequests += evaluation.attentionRequests;
 	result.operatorInterventions += evaluation.operatorInterventions;
@@ -260,12 +304,16 @@ function addModelConfiguration(
 	}));
 }
 
-function addRunConfigurations(configurations: Set<string>, item: PersistedRunHistory): void {
+function runModelConfigurations(item: PersistedRunHistory): HistoricalOverview['configurations'] {
 	const providers = modelProviderMap(item);
+	const configurations = new Set<string>();
 	for (const event of item.events) remapModelProvider(providers, item, event);
-	for (const event of item.events) {
-		addModelConfiguration(configurations, providers, item, event);
-	}
+	for (const event of item.events) addModelConfiguration(configurations, providers, item, event);
+	return [...configurations].map((value) => JSON.parse(value) as HistoricalOverview['configurations'][number]);
+}
+
+function addRunConfigurations(configurations: Set<string>, item: PersistedRunHistory): void {
+	for (const configuration of runModelConfigurations(item)) configurations.add(JSON.stringify(configuration));
 }
 
 function addReportedTokens(result: HistoricalOverview, item: PersistedRunHistory): void {
@@ -286,9 +334,12 @@ function addReportedTokens(result: HistoricalOverview, item: PersistedRunHistory
 function addDailyRun(daily: Map<string, HistoricalOverview['daily'][number]>, item: PersistedRunHistory): void {
 	const date = runDate(item.run.createdAt);
 	if (date === null) return;
-	const day = daily.get(date) ?? { date, totalRuns: 0, runsByOutcome: emptyOutcomes(), runsWithKnownCost: 0, knownCostUsd: null, inputTokens: null, outputTokens: null };
+	const day = daily.get(date) ?? { date, totalRuns: 0, runsByOutcome: emptyOutcomes(), runsWithKnownCost: 0, knownCostUsd: null, terminalRuns: 0, shippedWithoutIntervention: 0, ciCorrections: 0, inputTokens: null, outputTokens: null };
 	day.totalRuns += 1;
 	day.runsByOutcome[evaluationOutcome(item)] += 1;
+	if (item.evaluation.outcome !== 'incomplete') day.terminalRuns += 1;
+	if (item.evaluation.outcome === 'shipped' && item.evaluation.operatorInterventions === 0) day.shippedWithoutIntervention += 1;
+	day.ciCorrections += selectRunRoundOrigins(item.events).ci ?? 0;
 	if (item.cost.totalCostUsd !== null) {
 		day.runsWithKnownCost += 1;
 		day.knownCostUsd = (day.knownCostUsd ?? 0) + item.cost.totalCostUsd;
@@ -308,12 +359,27 @@ function historicalOverview(
 	history: readonly PersistedRunHistory[],
 	window: OverviewWindow,
 	now: Date,
+	filters: HistoricalOverviewFilters = {},
 ): HistoricalOverview {
 	const days = OVERVIEW_WINDOWS[window];
 	const cutoff = days === null ? -Infinity : now.getTime() - days * 24 * 60 * 60 * 1000;
-	const selected = history.filter(({ run }) => {
+	const selected = history.filter((item) => {
+		const { run } = item;
 		const timestamp = Date.parse(run.createdAt);
-		return Number.isFinite(timestamp) && timestamp >= cutoff;
+		if (!Number.isFinite(timestamp) || timestamp < cutoff) return false;
+		const hasRoleProvenanceFilter = filters.model !== undefined || filters.role !== undefined || filters.effort !== undefined;
+		if (!hasRoleProvenanceFilter) {
+			if (filters.providerId === undefined) return true;
+			const configurations = runModelConfigurations(item);
+			return configurations.length > 0
+				? configurations.some((configuration) => configuration.provider === filters.providerId)
+				: run.providerId === filters.providerId;
+		}
+		return runModelConfigurations(item).some((configuration) =>
+			(filters.providerId === undefined || configuration.provider === filters.providerId)
+			&& (filters.role === undefined || configuration.role === filters.role)
+			&& (filters.model === undefined || configuration.model === filters.model)
+			&& (filters.effort === undefined || configuration.effort === filters.effort));
 	});
 	const result = emptyHistoricalOverview(window);
 	const configurations = new Set<string>();
@@ -340,9 +406,10 @@ export function readProjectHistoricalOverview(
 	window: OverviewWindow = '7d',
 	now = new Date(),
 	readHistory: typeof readPersistedRunHistory = readPersistedRunHistory,
+	filters: HistoricalOverviewFilters = {},
 ): HistoricalOverviewRead {
 	try {
-		return { overview: historicalOverview(readHistory(join(project.stateDir, 'runtime.sqlite')), window, now) };
+		return { overview: historicalOverview(readHistory(join(project.stateDir, 'runtime.sqlite')), window, now, filters) };
 	} catch (error) {
 		return { overview: null, reason: error instanceof Error ? error.message : String(error) };
 	}
@@ -433,6 +500,7 @@ export function readProjectOperationalOverview(
 	readRunOverview: typeof readPersistedRunOverview = readPersistedRunOverview,
 	window: OverviewWindow = '7d',
 	now = new Date(),
+	filters: HistoricalOverviewFilters = {},
 ): ProjectOperationalOverview {
 	const statuses = projects.map(readStatus);
 	const overviewProjects: Array<ProjectOperationalStatus & {
@@ -478,7 +546,7 @@ export function readProjectOperationalOverview(
 				.findLast((history) => history.evaluation.outcome === 'shipped');
 			return {
 				...status,
-				overview: readProjectHistoricalOverview(status.project, window, now),
+				overview: readProjectHistoricalOverview(status.project, window, now, readPersistedRunHistory, filters),
 				activeRun: runOverview.activeRun,
 				latestRun: latestDeliveredHistory?.run ?? null,
 				latestRunOutcome: latestDeliveredHistory === undefined ? null : 'shipped',
@@ -543,10 +611,12 @@ function mergeHistoricalTotals(combined: HistoricalOverview, item: HistoricalOve
 	for (const outcome of Object.keys(combined.runsByOutcome) as Array<keyof HistoricalOverview['runsByOutcome']>) {
 		combined.runsByOutcome[outcome] += item.runsByOutcome[outcome];
 	}
-	for (const field of ['activeRuns', 'terminalWallTimeMs', 'fixRounds', 'attentionRequests',
+	for (const field of ['activeRuns', 'terminalRuns', 'terminalWallTimeRuns', 'shippedWithoutIntervention', 'dispatchToMergeRuns', 'firstReviewPasses', 'firstReviewPassKnownRuns', 'ciCorrections', 'fixRounds', 'attentionRequests',
 		'operatorInterventions', 'providerHolds', 'resolvedCycleQuestions'] as const) {
 		combined[field] += item[field];
 	}
+	if (item.terminalWallTimeMs !== null) combined.terminalWallTimeMs = (combined.terminalWallTimeMs ?? 0) + item.terminalWallTimeMs;
+	if (item.dispatchToMergeMs !== null) combined.dispatchToMergeMs = (combined.dispatchToMergeMs ?? 0) + item.dispatchToMergeMs;
 	for (const key of Object.keys(combined.reportedTokens) as Array<keyof HistoricalOverview['reportedTokens']>) {
 		combined.reportedTokens[key] = addNullable(combined.reportedTokens[key], item.reportedTokens[key] ?? undefined);
 	}
@@ -556,10 +626,13 @@ function mergeHistoricalDay(
 	daily: Map<string, HistoricalOverview['daily'][number]>,
 	itemDay: HistoricalOverview['daily'][number],
 ): void {
-	const day = daily.get(itemDay.date) ?? { ...itemDay, totalRuns: 0, runsByOutcome: emptyOutcomes(), runsWithKnownCost: 0, knownCostUsd: null, inputTokens: null, outputTokens: null };
+	const day = daily.get(itemDay.date) ?? { ...itemDay, totalRuns: 0, runsByOutcome: emptyOutcomes(), runsWithKnownCost: 0, knownCostUsd: null, terminalRuns: 0, shippedWithoutIntervention: 0, ciCorrections: 0, inputTokens: null, outputTokens: null };
 	day.totalRuns += itemDay.totalRuns;
 	for (const outcome of Object.keys(day.runsByOutcome) as Array<keyof HistoricalOverview['runsByOutcome']>) day.runsByOutcome[outcome] += itemDay.runsByOutcome[outcome];
 	day.runsWithKnownCost += itemDay.runsWithKnownCost;
+	day.terminalRuns += itemDay.terminalRuns;
+	day.shippedWithoutIntervention += itemDay.shippedWithoutIntervention;
+	day.ciCorrections += itemDay.ciCorrections;
 	if (itemDay.knownCostUsd !== null) day.knownCostUsd = (day.knownCostUsd ?? 0) + itemDay.knownCostUsd;
 	day.inputTokens = addNullable(day.inputTokens, itemDay.inputTokens ?? undefined);
 	day.outputTokens = addNullable(day.outputTokens, itemDay.outputTokens ?? undefined);

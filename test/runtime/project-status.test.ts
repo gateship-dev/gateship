@@ -4,11 +4,12 @@ import { join } from 'node:path';
 
 import {
 	readProjectOperationalOverview,
+	readProjectHistoricalOverview,
 	readQueueOverview,
 	type ProjectOperationalStatus,
 	type QueueRuntime,
 } from '../../src/runtime/project-status.ts';
-import { readPersistedRunHistory, readPersistedRunStatuses, RunStore } from '../../src/runtime/run-store.ts';
+import { readPersistedRunHistory, readPersistedRunStatuses, RunStore, type PersistedRunHistory } from '../../src/runtime/run-store.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -23,6 +24,15 @@ const project = {
 };
 
 type HistoryRun = { id: string; createdAt: string; terminal: 'shipped' | 'failed' | 'cancelled' };
+
+function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' = 'claude'): PersistedRunHistory {
+	return {
+		run: { id, issueId: `GSHIP-${id}`, sessionId: id, providerId, workspacePath: '/private/workspace', state: 'done', fixRounds: 0, createdAt: '2026-09-01T00:00:00.000Z', updatedAt, summary: null, error: null },
+		events: [],
+		evaluation: { workflowRevision: null, provider: providerId, outcome: 'shipped', wallTimeMs: 1, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, roles: [] },
+		cost: { totalCostUsd: null, breakdown: [], roles: [] },
+	};
+}
 
 function runTime(run: HistoryRun, suffix: number): string {
 	return `${run.createdAt.slice(0, -1)}${suffix}Z`;
@@ -212,4 +222,55 @@ test('keeps queue delivery history unavailable distinct from a valid empty histo
 	const unavailable = readQueueOverview([project], () => [], new Map([[project.id, context]]), () => { throw new Error('history unavailable'); });
 	expect(unavailable.queues[0]?.lastDelivery).toEqual({ state: 'unavailable' });
 	expect(unavailable.errors).toEqual([]);
+});
+
+test('expõe derivações históricas, denominadores e desconhecidos sem inventar dados', () => {
+	const shipped = history('derived', '2026-09-05T00:00:00.000Z');
+	shipped.run.createdAt = '2026-09-05T00:00:00.000Z';
+	shipped.events = [
+		{ kind: 'run.started', createdAt: '2026-09-05T00:01:00.000Z' },
+		{ kind: 'run.review-fix-requested', createdAt: '2026-09-05T00:02:00.000Z' },
+		{ kind: 'run.ci-fix-requested', createdAt: '2026-09-05T00:03:00.000Z' },
+		{ kind: 'run.started', createdAt: '2026-09-05T00:04:00.000Z' },
+		{ kind: 'run.review-clean', createdAt: '2026-09-05T00:05:00.000Z' },
+		{ kind: 'ship.merged', createdAt: '2026-09-05T00:10:00.000Z' },
+	] as never;
+	const overview = readProjectHistoricalOverview(project, '7d', new Date('2026-09-07T00:00:00.000Z'), () => [shipped]);
+	expect(overview.overview).toMatchObject({
+		totalRuns: 1, terminalRuns: 1, terminalWallTimeMs: 1, terminalWallTimeRuns: 1,
+		shippedWithoutIntervention: 1, dispatchToMergeMs: 540000, dispatchToMergeRuns: 1,
+		firstReviewPasses: 0, firstReviewPassKnownRuns: 1, ciCorrections: 1,
+	});
+	expect(overview.overview?.daily[0]).toMatchObject({ terminalRuns: 1, shippedWithoutIntervention: 1, ciCorrections: 1 });
+
+	const empty = readProjectHistoricalOverview(project, 'all', new Date(), () => []);
+	expect(empty.overview).toMatchObject({ totalRuns: 0, terminalRuns: 0, terminalWallTimeMs: null, dispatchToMergeMs: null, daily: [] });
+	const incomplete = history('active', '2026-09-05T00:00:00.000Z');
+	incomplete.evaluation.outcome = 'incomplete';
+	const partial = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [incomplete]);
+	expect(partial.overview).toMatchObject({ activeRuns: 1, terminalRuns: 0, terminalWallTimeMs: null, terminalWallTimeRuns: 0 });
+});
+
+test('filtra a proveniência por provider, papel, modelo e esforço', () => {
+	const item = history('filtered', '2026-09-05T00:00:00.000Z', 'claude');
+	item.events = [
+		{ seq: 1, kind: 'provider.model', payload: { provider: 'codex', model: 'model-b', effort: 'high' } },
+		{ seq: 2, kind: 'provider.model', payload: { provider: 'claude', model: 'model-a', effort: 'low' } },
+	] as never;
+	const read = (filters: Parameters<typeof readProjectHistoricalOverview>[4]) =>
+		readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [item], filters).overview;
+	// Provider filters use reconstructed configuration provenance, not the
+	// initial run origin. Combined filters must match one configuration tuple.
+	expect(read({ providerId: 'codex' })?.totalRuns).toBe(1);
+	expect(read({ providerId: 'codex', role: 'executor', model: 'model-a', effort: 'high' })?.totalRuns).toBe(0);
+	expect(read({ providerId: 'codex', role: 'executor', model: 'model-b', effort: 'high' })?.totalRuns).toBe(1);
+	expect(read({ providerId: 'claude', role: 'executor', model: 'model-a', effort: 'low' })?.totalRuns).toBe(1);
+	expect(read({ providerId: 'claude' })?.totalRuns).toBe(1);
+	expect(read({ role: 'reviewer' })?.totalRuns).toBe(0);
+
+	const legacy = history('legacy', '2026-09-05T00:00:00.000Z', 'claude');
+	const readLegacy = (filters: Parameters<typeof readProjectHistoricalOverview>[4]) =>
+		readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [legacy], filters).overview;
+	expect(readLegacy({ providerId: 'claude' })?.totalRuns).toBe(1);
+	expect(readLegacy({ providerId: 'claude', role: 'executor' })?.totalRuns).toBe(0);
 });
