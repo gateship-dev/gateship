@@ -2750,6 +2750,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		composeProjectRuntime,
 	);
 	projectRuntimes.register(currentProject.id, bootContext);
+	projectRuntimes.prepareReady();
 	const assets = resolveWebAssets();
 	const projectPath = `/projects/${encodeURIComponent(currentProject.id)}`;
 	const redirect = (path: string) => (request: Request) =>
@@ -2827,7 +2828,14 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					projectRegistry.list(projectRoot), undefined, undefined, rawWindow as OverviewWindow,
 				));
 			},
-			'/api/overview/queues': () => Response.json(readQueueOverview(projectRegistry.list(projectRoot))),
+			'/api/overview/queues': () => {
+				const contexts = new Map(
+					projectRuntimes.listQueueContexts()
+						.filter((entry): entry is { project: RegisteredProject; context: ProjectCycleContext } => entry.project.readiness === 'ready' && entry.context !== undefined)
+						.map((entry) => [entry.project.id, entry.context.runtime]),
+				);
+				return Response.json(readQueueOverview(projectRegistry.list(projectRoot), undefined, contexts));
+			},
 			'/api/overview/runs': (request) => {
 				try {
 					return Response.json(readRunOverview(

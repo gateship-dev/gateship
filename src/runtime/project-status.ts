@@ -6,6 +6,7 @@ import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
 import { isPlannable } from '../issues/plannable.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import type { RegisteredProject } from './project-registry.ts';
+import type { ChainPauseView, RunRuntime } from './run-runtime.ts';
 import {
 	type PersistedRunHistory,
 	type PersistedRunStatus,
@@ -15,6 +16,7 @@ import {
 	readActivePersistedRun,
 	readPersistedChainSnapshot,
 } from './run-store.ts';
+import { isTerminalRunState } from './run-state.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 export const PROJECT_STATUS_RUN_LIMIT = 20;
@@ -55,9 +57,39 @@ function queueIssue(issue: IssueEntry | undefined): QueueIssue | null {
 	return issue === undefined ? null : { id: issue.id, title: issue.title };
 }
 
-function pauseOf(event: ReturnType<typeof readPersistedChainSnapshot>['lastPause']): ProjectQueueView['pause'] {
-	if (event === null || typeof event.payload.reason !== 'string' || !CHAIN_PAUSE_REASONS.has(event.payload.reason)) return null;
-	return { reason: event.payload.reason, createdAt: event.createdAt };
+function pauseOf(event: ChainPauseView | ReturnType<typeof readPersistedChainSnapshot>['lastPause']): ProjectQueueView['pause'] {
+	if (event === null) return null;
+	const reason = 'reason' in event ? event.reason : event.payload.reason;
+	if (typeof reason !== 'string' || !CHAIN_PAUSE_REASONS.has(reason)) return null;
+	return { reason, createdAt: event.createdAt };
+}
+
+type QueueRuntime = Pick<RunRuntime, 'listRuns' | 'getChainRuns' | 'getChainPause'>;
+
+function queueRuntimeState(
+	project: RegisteredProject,
+	queueContexts: ReadonlyMap<string, QueueRuntime> | undefined,
+): {
+	currentRun: ProjectQueueView['currentRun'];
+	chainEnabled: boolean;
+	lastPause: ChainPauseView | ReturnType<typeof readPersistedChainSnapshot>['lastPause'];
+} {
+	const context = queueContexts?.get(project.id);
+	if (queueContexts !== undefined && context === undefined) throw new Error('Project runtime context is unavailable.');
+	if (context === undefined) {
+		const databasePath = join(project.stateDir, 'runtime.sqlite');
+		const chain = readPersistedChainSnapshot(databasePath);
+		return {
+			currentRun: readActivePersistedRun(databasePath),
+			chainEnabled: chain.chainEnabled,
+			lastPause: chain.lastPause,
+		};
+	}
+	return {
+		currentRun: context.listRuns().find((run) => !isTerminalRunState(run.state)) ?? null,
+		chainEnabled: context.getChainRuns(),
+		lastPause: context.getChainPause(),
+	};
 }
 
 /** Global, read-only queue projection. Each project is isolated so one bad checkout does not hide the others. */
@@ -65,6 +97,7 @@ export function readQueueOverview(
 	projects: readonly RegisteredProject[],
 	readBacklog: (project: RegisteredProject) => IssueEntry[] = (project) =>
 		readBacklogFromMain(project.root, undefined, RUNTIME_SOURCE_REF),
+	queueContexts?: ReadonlyMap<string, Pick<RunRuntime, 'listRuns' | 'getChainRuns' | 'getChainPause'>>,
 ): QueueOverview {
 	const queues: ProjectQueueView[] = [];
 	const errors: QueueOverviewError[] = [];
@@ -72,14 +105,13 @@ export function readQueueOverview(
 		try {
 			const backlog = readBacklog(project);
 			const plannedIssues = backlog.filter((issue) => isPlannable(issue, backlog)).map((issue) => ({ id: issue.id, title: issue.title }));
-			const currentRun = readActivePersistedRun(join(project.stateDir, 'runtime.sqlite'));
-			const chain = readPersistedChainSnapshot(join(project.stateDir, 'runtime.sqlite'));
+			const { currentRun, chainEnabled, lastPause } = queueRuntimeState(project, queueContexts);
 			const currentIssue = queueIssue(currentRun === null ? undefined : backlog.find((issue) => issue.id === currentRun.issueId));
 			queues.push({
 				project,
 				readiness: project.readiness,
-				chainEnabled: chain.chainEnabled,
-				pause: pauseOf(chain.lastPause),
+				chainEnabled,
+				pause: pauseOf(lastPause),
 				currentRun,
 				currentIssue,
 				plannedIssues,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { createProjectFromOperator, startWebServer } from '../../src/commands/web.ts';
@@ -44,6 +44,46 @@ describe('GET /api/project', () => {
 			});
 		} finally {
 			handle.stop();
+		}
+	});
+});
+
+describe('GET /api/overview/queues', () => {
+	test('reads prepared runtime contexts without changing runtime database files', async () => {
+		const cwd = createTestTmpdir('gship-queues-api-');
+		readyCheckout(cwd);
+		const databasePath = join(cwd, '.gship', 'runtime.sqlite');
+		const store = new RunStore(databasePath);
+		store.setChainRunsEnabled(true);
+		store.createRun({
+			id: 'run-queues-api',
+			issueId: 'GSHIP-1',
+			sessionId: 'session-queues-api',
+			workspacePath: '/workspace/queues-api',
+			createdAt: '2026-08-23T10:00:00.000Z',
+		});
+		store.close();
+		const databaseFiles = [databasePath, `${databasePath}-wal`, `${databasePath}-shm`];
+		const snapshot = () => databaseFiles.map((path) => {
+			if (!existsSync(path)) return null;
+			const stats = statSync(path);
+			return { exists: true, size: stats.size, mtimeMs: stats.mtimeMs };
+		});
+		const handle = startWebServer({ port: 0, cwd });
+		try {
+			const before = snapshot();
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/overview/queues`);
+			expect(response.status).toBe(200);
+			const body = await response.json() as {
+			queues: Array<{ project: { id: string; root: string }; chainEnabled: boolean; currentRun: { issueId: string } | null }>;
+			errors: Array<{ projectId: string }>;
+		};
+		const queue = body.queues.find((entry) => entry.project.root === cwd);
+		expect(queue).toMatchObject({ chainEnabled: true, currentRun: { issueId: 'GSHIP-1' } });
+		expect(body.errors.some((error) => error.projectId === queue?.project.id)).toBe(false);
+			expect(snapshot()).toEqual(before);
+		} finally {
+			await handle.stop();
 		}
 	});
 });
@@ -604,8 +644,8 @@ describe('GET /api/projects/:projectId/status', () => {
 					state: 'available',
 					path: join(targetState, 'runtime.sqlite'),
 					runs: [{
-						id: 'run-status', issueId: 'GSHIP-1', providerId: 'codex', state: 'queued',
-						createdAt: '2026-08-22T10:00:00.000Z', updatedAt: '2026-08-22T10:00:00.000Z',
+						id: 'run-status', issueId: 'GSHIP-1', providerId: 'codex', state: 'interrupted',
+						createdAt: '2026-08-22T10:00:00.000Z', updatedAt: expect.any(String),
 					}],
 				},
 			});
