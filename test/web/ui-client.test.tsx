@@ -141,6 +141,8 @@ import {
 	actionsFor,
 	aggregateRunCosts,
 	attentionOf,
+	displayedRunId,
+	eventsForRun,
 	invalidatesSnapshot,
 	progressOf,
 	type RunCostView,
@@ -703,6 +705,11 @@ test('a project root is Runs, keeps the explicit Runs address, and omits Convers
 	});
 	expect(routeSelection('/projects/project-current/runs', CURRENT_PROJECT.id)).toEqual({
 		projectId: CURRENT_PROJECT.id,
+		surface: 'runs',
+	});
+	expect(routeSelection('/projects/project-current/runs/run-1', CURRENT_PROJECT.id)).toEqual({
+		projectId: CURRENT_PROJECT.id,
+		runId: 'run-1',
 		surface: 'runs',
 	});
 });
@@ -3379,6 +3386,39 @@ describe('operator shell', () => {
 		}
 	});
 
+	test('control center keeps Now and Runs as localized local navigation', () => {
+		for (const [locale, now, runs] of [['en-US', 'Now', 'Runs'], ['pt-BR', 'Agora', 'Execuções']] as const) {
+			const overview = renderAt('/overview', { locale });
+			const history = renderAt('/overview/runs', { locale });
+			for (const html of [overview, history]) {
+				expect(html).toContain(`>${now}</a>`);
+				expect(html).toContain(`>${runs}</a>`);
+				expect(html).toContain('href="/overview/runs"');
+			}
+			expect(openingTags(overview).find((tag) => tag.includes('href="/overview"') && tag.includes('aria-current="page"'))).toBeDefined();
+			expect(openingTags(history).find((tag) => tag.includes('href="/overview/runs"') && tag.includes('aria-current="page"'))).toBeDefined();
+		}
+	});
+
+	test('global navigation identifies Control center as current throughout its Runs route', () => {
+		const html = renderAt('/overview/runs');
+		const sidebarStart = html.indexOf('<nav aria-label="Navigation"');
+		const sidebar = html.slice(sidebarStart, html.indexOf('</nav>', sidebarStart));
+		const sidebarOverview = openingTags(sidebar).find((tag) => tag.includes('href="/overview"'));
+		expect(sidebarOverview).toContain('aria-current="page"');
+
+		const rail = renderToStaticMarkup(
+			<ShellRail
+				catalog={LOCALE_CATALOG['en-US'].shell}
+				projects={[CURRENT_PROJECT]}
+				selection={routeSelection('/overview/runs', CURRENT_PROJECT.id)}
+				status={null}
+			/>,
+		);
+		const railOverview = openingTags(rail).find((tag) => tag.includes('href="/overview"'));
+		expect(railOverview).toContain('aria-current="page"');
+	});
+
 	test('overview localizes delivered runs and keeps non-delivery explicit', () => {
 		for (const outcome of ['shipped'] as const) {
 			const html = renderAt('/overview', {
@@ -4277,9 +4317,11 @@ describe('operator shell', () => {
 
 	test('reads canonical project routes and falls unknown paths back to overview', () => {
 		expect(routeOf('/overview')).toBe('/overview');
+		expect(routeOf('/overview/runs')).toBe('/overview/runs');
 		expect(routeOf('/projects')).toBe('/projects');
 		expect(routeOf('/projects/project-current')).toBe('/projects/project-current');
 		expect(routeOf('/projects/project-current/runs/')).toBe('/projects/project-current/runs');
+		expect(routeOf('/projects/project-current/runs/run-1')).toBe('/projects/project-current/runs/run-1');
 		expect(routeOf('/projects/project-current/work')).toBe('/projects/project-current/work');
 		expect(routeOf('/projects/project-current/settings')).toBe('/projects/project-current/settings');
 		expect(routeOf('/projects/project-current/unknown')).toBe('/overview');
@@ -4767,6 +4809,18 @@ describe('shared live edge and responsive surface content', () => {
 });
 
 describe('screen derivations', () => {
+	test('a deep run keeps only its own events while activity is reloaded', () => {
+		const event = (seq: number, runId: string): RunEventView => ({
+			seq, runId, kind: 'run.state', fromState: 'queued', toState: 'working', payload: {}, createdAt: '2026-09-07T00:00:00.000Z',
+		});
+		expect(eventsForRun([event(1, 'run-old'), event(2, 'run-selected')], 'run-selected'))
+			.toEqual([event(2, 'run-selected')]);
+		expect(eventsForRun([event(1, 'run-old')], 'run-selected')).toEqual([]);
+		const runs = [runIn('working', { id: 'run-latest' }), runIn('done', { id: 'run-selected' })];
+		expect(displayedRunId('run-selected', runs)).toBe('run-selected');
+		expect(displayedRunId(null, runs)).toBe('run-latest');
+		expect(eventsForRun([event(2, 'run-selected')], displayedRunId(null, runs)!)).toEqual([]);
+	});
 	test('progress advances monotonically along the run spine', () => {
 		const spine: RunState[] = [
 			'queued',
@@ -5442,7 +5496,7 @@ describe('same-origin transport', () => {
 		});
 	});
 
-	test('reads persisted activity for one run', async () => {
+	test('reads persisted activity for the deep run and then the latest project run', async () => {
 		const events = [{
 			seq: 9,
 			runId: 'run-1',
@@ -5452,12 +5506,17 @@ describe('same-origin transport', () => {
 			payload: { tools: ['Read'] },
 			createdAt: '2026-08-16T03:04:05.000Z',
 		}];
+		const runs = [runIn('working', { id: 'run-latest' }), runIn('done', { id: 'run-selected' })];
 		const calls = await withRecordedFetch({ events }, 200, async () => {
-			expect(await fetchRunEvents(null, 'run-1')).toEqual(events);
+			const deepRunId = displayedRunId('run-selected', runs);
+			const listRunId = displayedRunId(null, runs);
+			expect(await fetchRunEvents(null, deepRunId!)).toEqual(events);
+			expect(await fetchRunEvents(null, listRunId!)).toEqual(events);
 		});
 
 		expect(calls).toEqual([
-			{ url: '/api/runs/run-1/events', method: 'GET', body: null },
+			{ url: '/api/runs/run-selected/events', method: 'GET', body: null },
+			{ url: '/api/runs/run-latest/events', method: 'GET', body: null },
 		]);
 	});
 

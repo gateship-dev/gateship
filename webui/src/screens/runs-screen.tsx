@@ -7,11 +7,15 @@ import { Stat } from '../components/ui/stat.tsx';
 import { CardGrid, CardSplit, CardStack } from '../components/ui/card-layout.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
+import { runIdOf } from '../routes.ts';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { PreviousRunsPanel, RunActivity, RunCard, RunCostPanel, RunReport, WorkflowBenchmarkPanel, WorkflowInsightsPanel, WorkspaceNoticesPanel, formatCostUsd } from './runs.tsx';
 
 export function RunsSurface(props: AppProps): React.ReactElement {
-	const run = props.runs[0] ?? null;
+	const requestedRunId = runIdOf(String(props.surfaceRoute ?? props.route));
+	const run = requestedRunId === null
+		? props.runs[0] ?? null
+		: props.runs.find((candidate) => candidate.id === requestedRunId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const catalog = localeCatalog.runInspector;
 	const runsFailure = props.operationalFailures?.Runs;

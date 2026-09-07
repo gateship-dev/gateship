@@ -45,6 +45,7 @@ export interface ShellCatalog {
 	languageLabel: string;
 	routeLabels: {
 		overview: string;
+		overviewRuns: string;
 		runs: string;
 		work: string;
 		settings: string;
@@ -115,6 +116,7 @@ export interface ProjectsCatalog {
 export interface OverviewCatalog {
 	title: string;
 	description: string;
+	navigation: { label: string; now: string; runs: string };
 	loading: string;
 	empty: string;
 	partial: string;
@@ -142,6 +144,12 @@ export interface OverviewCatalog {
 	costCoverage: (known: number, total: number) => string;
 	trend: string;
 	outcomes: { shipped: string; failed: string; cancelled: string; incomplete: string };
+}
+
+export interface OverviewRunsCatalog {
+	title: string; description: string; loading: string; error: string; partial: string; empty: string; merged: string;
+	search: string; project: string; state: string; provider: string; period: string; all: string; last7d: string; last30d: string;
+	issue: string; duration: string; delivery: string; ci: string; model: string; previous: string; next: string; page: (from: number, to: number, total: number) => string;
 }
 
 export interface RunInspectorCatalog {
@@ -541,6 +549,7 @@ export interface LocaleCatalog {
 	shell: ShellCatalog;
 	projects: ProjectsCatalog;
 	overview: OverviewCatalog;
+	overviewRuns: OverviewRunsCatalog;
 	runInspector: RunInspectorCatalog;
 	runsOperational: RunsOperationalCatalog;
 	runsWorkflow: RunsWorkflowCatalog;
@@ -564,6 +573,7 @@ export const LOCALE_CATALOG = {
 			languageLabel: 'Language',
 			routeLabels: {
 				overview: 'Control center',
+				overviewRuns: 'Runs',
 				runs: 'Runs',
 				work: 'Work',
 				settings: 'Settings',
@@ -627,9 +637,10 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		overview: {
-			title: 'Control center', description: 'A live view of project readiness, active work and recent outcomes.', loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.',
+			title: 'Control center', description: 'A live view of project readiness, active work and recent outcomes.', navigation: { label: 'Control center', now: 'Now', runs: 'Runs' }, loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.',
 			metrics: { attention: 'Needs attention', activeRuns: 'Active runs', approvedIssues: 'Approved issues', deliveries: 'Deliveries, last 7 days' }, activeWork: 'Active or blocked work', projectStatus: 'Project status', project: 'Project', activity: 'Current activity', lastDelivery: 'Last delivery', noActiveWork: 'No active or blocked work.', noDelivery: 'No delivery in this window', activeRun: 'Active run', issue: 'Issue', phase: 'Phase', provider: 'Provider', updated: 'Updated', backlogLabel: 'Approved queue', lastOutcome: 'Last delivery', noRun: 'No active run', noOutcome: 'No delivery in this window', databaseUnavailable: 'Operational data is unavailable.', historyUnavailable: 'Historical data is unavailable.', noCost: 'Unknown', costCoverage: (known, total) => `${known} of ${total} runs reported cost`, trend: 'Outcomes', outcomes: { shipped: 'shipped', failed: 'failed', cancelled: 'cancelled', incomplete: 'incomplete' },
 		},
+		overviewRuns: { title: 'Runs', description: 'All project runs in one operational view.', loading: 'Loading runs…', error: 'Runs could not be loaded.', partial: 'Some project histories are unavailable.', empty: 'No runs match these filters.', merged: 'Merged', search: 'Search runId or issueId', project: 'Project', state: 'State', provider: 'Provider', period: 'Period', all: 'All time', last7d: 'Last 7 days', last30d: 'Last 30 days', issue: 'Issue', duration: 'Duration', delivery: 'Delivery', ci: 'CI', model: 'Provider / model', previous: 'Previous', next: 'Next', page: (from, to, total) => `${from}–${to} of ${total}` },
 		runInspector: {
 			homeAccessibleLabel: 'Run inspector',
 			currentRunTitle: 'Current run',
@@ -1010,6 +1021,7 @@ export const LOCALE_CATALOG = {
 			languageLabel: 'Idioma',
 			routeLabels: {
 				overview: 'Central de controle',
+				overviewRuns: 'Execuções',
 				runs: 'Runs',
 				work: 'Trabalho',
 				settings: 'Ajustes',
@@ -1073,9 +1085,10 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		overview: {
-			title: 'Central de controle', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.',
+			title: 'Central de controle', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', navigation: { label: 'Central de controle', now: 'Agora', runs: 'Execuções' }, loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.',
 			metrics: { attention: 'Requer atenção', activeRuns: 'Runs ativas', approvedIssues: 'Issues aprovadas', deliveries: 'Entregas, últimos 7 dias' }, activeWork: 'Trabalho ativo ou bloqueado', projectStatus: 'Estado dos projetos', project: 'Projeto', activity: 'Atividade atual', lastDelivery: 'Última entrega', noActiveWork: 'Nenhum trabalho ativo ou bloqueado.', noDelivery: 'Nenhuma entrega nesta janela', activeRun: 'Run ativa', issue: 'Issue', phase: 'Fase', provider: 'Provider', updated: 'Atualizado', backlogLabel: 'Fila aprovada', lastOutcome: 'Última entrega', noRun: 'Nenhuma run ativa', noOutcome: 'Nenhuma entrega nesta janela', databaseUnavailable: 'Dados operacionais indisponíveis.', historyUnavailable: 'Dados históricos indisponíveis.', noCost: 'Desconhecido', costCoverage: (known, total) => `${known} de ${total} runs informaram custo`, trend: 'Resultados', outcomes: { shipped: 'enviada', failed: 'falhou', cancelled: 'cancelada', incomplete: 'incompleta' },
 		},
+		overviewRuns: { title: 'Execuções', description: 'Todas as execuções dos projetos em uma visão operacional.', loading: 'Carregando execuções…', error: 'Não foi possível carregar as execuções.', partial: 'O histórico de alguns projetos está indisponível.', empty: 'Nenhuma execução corresponde aos filtros.', merged: 'Mesclada', search: 'Buscar runId ou issueId', project: 'Projeto', state: 'Estado', provider: 'Provider', period: 'Período', all: 'Todo o período', last7d: 'Últimos 7 dias', last30d: 'Últimos 30 dias', issue: 'Issue', duration: 'Duração', delivery: 'Entrega', ci: 'CI', model: 'Provider / modelo', previous: 'Anterior', next: 'Próxima', page: (from, to, total) => `${from}–${to} de ${total}` },
 		runInspector: {
 			homeAccessibleLabel: 'Inspetor da execução',
 			currentRunTitle: 'Execução atual',

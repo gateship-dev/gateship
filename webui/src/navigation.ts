@@ -15,11 +15,12 @@ export interface NavigationIntent {
 function isOperatorPath(pathname: string): boolean {
 	const normalized = pathname.replace(/\/+$/, '') || '/';
 	return normalized === '/overview'
+		|| normalized === '/overview/runs'
 		|| normalized === '/'
 		|| normalized === '/runs'
 		|| normalized === '/work'
 		|| normalized === '/settings'
-		|| /^\/projects\/[^/]+(?:\/(?:runs|work|settings))?$/.test(normalized);
+		|| /^\/projects\/[^/]+(?:\/runs(?:\/[^/]+)?|\/work|\/settings)?$/.test(normalized);
 }
 
 /**

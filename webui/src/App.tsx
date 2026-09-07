@@ -15,6 +15,7 @@ import { GlobalSettingsSurface } from './screens/global-settings-screen.tsx';
 import { NonCurrentProjectSurface } from './screens/non-current-project-screen.tsx';
 import { OnboardingSurface } from './screens/onboarding-screen.tsx';
 import { OverviewSurface } from './screens/overview-screen.tsx';
+import { OverviewRunsSurface } from './screens/overview-runs-screen.tsx';
 import { ProjectsManagementSurface } from './screens/projects-management-screen.tsx';
 import { RunsSurface } from './screens/runs-screen.tsx';
 import { SettingsSurface } from './screens/settings-screen.tsx';
@@ -27,7 +28,7 @@ import {
 } from './screens/shell.tsx';
 import { WorkSurface } from './screens/work-screen.tsx';
 
-export { projectIdOf, routeOf } from './routes.ts';
+export { projectIdOf, routeOf, runIdOf } from './routes.ts';
 export type { AppProps } from './app-props.ts';
 export type { OperatorRoute } from './routes.ts';
 
@@ -52,7 +53,6 @@ export function handleProjectShortcut(
 }
 
 export function App(props: AppProps): React.ReactElement {
-	const run = props.runs[0] ?? null;
 	const currentProject = props.projects.find((project) => project.current) ?? null;
 	const selection = routeSelection(
 		props.surfaceRoute ?? props.route,
@@ -60,6 +60,9 @@ export function App(props: AppProps): React.ReactElement {
 		props.selectedProjectId ?? null,
 	);
 	const selectedProject = props.projects.find((project) => project.id === selection.projectId) ?? null;
+	const run = selection.runId === undefined
+		? props.runs[0] ?? null
+		: props.runs.find((candidate) => candidate.id === selection.runId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
 	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
 	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
@@ -89,6 +92,7 @@ export function App(props: AppProps): React.ReactElement {
 				currentProjectReady={props.project.state === 'ready'}
 				screens={{
 					overview: () => <OverviewSurface {...props} />,
+					overviewRuns: () => <OverviewRunsSurface props={props} />,
 					projects: () => <ProjectsManagementSurface {...props} />,
 					globalSettings: () => <GlobalSettingsSurface {...props} />,
 					notFound: () => (

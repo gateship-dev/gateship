@@ -87,8 +87,10 @@ describe('embedded web bundle', () => {
 			expect(currentId).toBeString();
 
 			for (const path of [
+				'/overview/runs',
 				`/projects/${currentId}`,
 				`/projects/${currentId}/runs`,
+				`/projects/${currentId}/runs/run-1`,
 				`/projects/${currentId}/work`,
 				`/projects/${currentId}/settings`,
 			]) {
@@ -116,7 +118,6 @@ describe('embedded web bundle', () => {
 				}
 			}
 			// Enumerated paths, not a universal fallback: anything else is a 404.
-			expect((await get(handle, `/projects/${currentId}/runs/run-1`)).status).toBe(404);
 			expect((await get(handle, '/qualquer-coisa')).status).toBe(404);
 		} finally {
 			await handle.stop();
