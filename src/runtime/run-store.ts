@@ -1,7 +1,6 @@
-import { constants, Database } from 'bun:sqlite';
-import { existsSync, mkdirSync } from 'node:fs';
+import { Database } from 'bun:sqlite';
+import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import type { AgentProviderId } from './agent-session.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
@@ -90,15 +89,7 @@ interface PersistedRunStatusRow {
 }
 
 function openReadOnlyDatabase(path: string): Database {
-	if (existsSync(`${path}-wal`)) {
-		return new Database(path, { readonly: true, strict: true });
-	}
-	const uri = pathToFileURL(path);
-	uri.searchParams.set('immutable', '1');
-	return new Database(
-		uri.href,
-		constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
-	);
+	return new Database(path, { readonly: true, strict: true });
 }
 
 /**
