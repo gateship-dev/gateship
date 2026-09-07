@@ -287,6 +287,7 @@ export interface CreateRunInput {
 	source?: string;
 	workspacePath: string;
 	createdAt: string;
+	reconciliationGuidance?: string;
 }
 
 export interface TransitionRunInput {
@@ -313,6 +314,22 @@ export interface RecordProposalsInput {
 	issueId: string;
 	proposals: readonly ProposalDraft[];
 	createdAt: string;
+}
+
+export interface RecordMaterialChainReconciliationInput {
+	runId: string;
+	issueId: string;
+	reconciliationPayload: Record<string, unknown>;
+	pausePayload: Record<string, unknown>;
+	proposal: ProposalDraft;
+	createdAt: string;
+}
+
+export interface RecordedMaterialChainReconciliation {
+	reconciliation: RunEvent;
+	proposalCaptured: RunEvent;
+	pause: RunEvent;
+	proposal: RunProposal;
 }
 
 /** Which run-owned provider invocation reported the API-equivalent cost. */
@@ -393,6 +410,7 @@ const USAGE_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
 	'provider.usage': 'executor',
 	'review.usage': 'reviewer',
 	'run.cycle-response': 'orchestrator',
+	'run.chain-reconciliation': 'orchestrator',
 };
 
 function decodeUsageNumber(value: unknown): number | undefined {
@@ -895,6 +913,8 @@ export class RunStore {
 			...(workflowRevision === undefined || workflowRevision.length === 0
 				? {} : { workflowRevision: workflowRevision.slice(0, 200) }),
 			...(source === undefined || source.length === 0 ? {} : { source: source.slice(0, 100) }),
+			...(input.reconciliationGuidance === undefined || input.reconciliationGuidance.length === 0
+				? {} : { reconciliationGuidance: input.reconciliationGuidance }),
 		};
 		const create = this.#db.transaction(() => {
 			this.#db.query(`
@@ -1017,6 +1037,70 @@ export class RunStore {
 			}) as ProposalRow);
 		});
 		return insert().map(decodeProposal);
+	}
+
+	/** Atomically records a material chain result, its required proposal and pause. */
+	recordMaterialChainReconciliation(
+		input: RecordMaterialChainReconciliationInput,
+	): RecordedMaterialChainReconciliation {
+		const write = this.#db.transaction(() => {
+			const current = this.getRun(input.runId);
+			if (current === null) throw new Error(`run not found: ${input.runId}`);
+			const recorded = this.#db.query(
+				'SELECT COUNT(*) AS total FROM run_proposals WHERE run_id = $runId',
+			).get({ runId: input.runId }) as { total: number };
+			const proposal = this.#db.query(`
+				INSERT INTO run_proposals (
+					id, run_id, issue_id, relationship, status, title, evidence, created_at, updated_at
+				) VALUES (
+					$id, $runId, $issueId, 'derived-from', 'pending', $title, $evidence, $createdAt, $createdAt
+				)
+				RETURNING *
+			`).get({
+				id: `${input.runId}-proposal-${recorded.total + 1}`,
+				runId: input.runId,
+				issueId: input.issueId,
+				title: input.proposal.title,
+				evidence: input.proposal.evidence,
+				createdAt: input.createdAt,
+			}) as ProposalRow;
+			const reconciliation = this.#db.query(`
+				INSERT INTO run_events (
+					run_id, kind, from_state, to_state, payload_json, created_at, event_class
+				) VALUES ($runId, 'run.chain-reconciliation', $state, $state, $payloadJson, $createdAt, 'decision')
+				RETURNING *
+			`).get({
+				runId: input.runId, state: current.state,
+				payloadJson: JSON.stringify(input.reconciliationPayload), createdAt: input.createdAt,
+			}) as EventRow;
+			const proposalCaptured = this.#db.query(`
+				INSERT INTO run_events (
+					run_id, kind, from_state, to_state, payload_json, created_at, event_class
+				) VALUES ($runId, 'run.proposals-captured', $state, $state, $payloadJson, $createdAt, 'decision')
+				RETURNING *
+			`).get({
+				runId: input.runId, state: current.state,
+				payloadJson: JSON.stringify({ proposalIds: [`${input.runId}-proposal-${recorded.total + 1}`] }),
+				createdAt: input.createdAt,
+			}) as EventRow;
+			const pause = this.#db.query(`
+				INSERT INTO run_events (
+					run_id, kind, from_state, to_state, payload_json, created_at, event_class
+				) VALUES ($runId, 'run.chain-paused', $state, $state, $payloadJson, $createdAt, 'decision')
+				RETURNING *
+			`).get({
+				runId: input.runId, state: current.state,
+				payloadJson: JSON.stringify(input.pausePayload), createdAt: input.createdAt,
+			}) as EventRow;
+			return { reconciliation, proposalCaptured, pause, proposal };
+		});
+		const result = write();
+		return {
+			reconciliation: decodeEvent(result.reconciliation),
+			proposalCaptured: decodeEvent(result.proposalCaptured),
+			pause: decodeEvent(result.pause),
+			proposal: decodeProposal(result.proposal),
+		};
 	}
 
 	/** Newest bounded window of captured proposals, in capture order. */
@@ -1649,7 +1733,7 @@ export class RunStore {
 	getRunCostSummary(runId: string): RunCostSummary {
 		const rows = this.#db.query(`
 			SELECT kind, payload_json FROM run_events
-			WHERE run_id = $runId AND kind IN ('provider.usage', 'review.usage', 'run.cycle-response')
+			WHERE run_id = $runId AND kind IN ('provider.usage', 'review.usage', 'run.cycle-response', 'run.chain-reconciliation')
 			ORDER BY seq ASC
 		`).all({ runId }) as Array<{ kind: string; payload_json: string }>;
 
