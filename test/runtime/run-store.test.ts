@@ -8,7 +8,6 @@ import { selectPullRequestDelivery } from '../../src/runtime/pull-request-delive
 import { PROPOSAL_LIMITS, ProposalTransitionError } from '../../src/runtime/run-proposal.ts';
 import {
 	PROJECT_BRIEF_LIMITS,
-	readPersistedChainSnapshot,
 	readPersistedRunStatuses,
 	RunStore,
 } from '../../src/runtime/run-store.ts';
@@ -71,30 +70,6 @@ describe('read-only persisted run status', () => {
 		expect(existsSync(dbPath)).toBe(false);
 	});
 
-	test('reads the latest settings and events after the writer closes', () => {
-		const dbPath = join(createTestTmpdir('gship-run-store-readonly-latest-'), 'runtime.sqlite');
-		const store = new RunStore(dbPath);
-		store.setChainRunsEnabled(true);
-		store.createRun({
-			id: 'run-latest',
-			issueId: 'GSHIP-810',
-			sessionId: 'session-latest',
-			workspacePath: '/workspace/run-latest',
-			createdAt: '2026-08-23T10:00:00.000Z',
-		});
-		store.appendEvent({
-			runId: 'run-latest',
-			kind: 'run.chain-paused',
-			createdAt: '2026-08-23T10:01:00.000Z',
-			payload: { reason: 'no-admissible-issue' },
-		});
-		store.close();
-
-		expect(readPersistedChainSnapshot(dbPath)).toMatchObject({
-			chainEnabled: true,
-			lastPause: { payload: { reason: 'no-admissible-issue' } },
-		});
-	});
 });
 
 describe('run store workspace migration', () => {

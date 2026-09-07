@@ -13,8 +13,6 @@ import {
 	readPersistedRunHistory,
 	readPersistedRunOverview,
 	readPersistedRunStatuses,
-	readActivePersistedRun,
-	readPersistedChainSnapshot,
 } from './run-store.ts';
 import { isTerminalRunState } from './run-state.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
@@ -57,34 +55,25 @@ function queueIssue(issue: IssueEntry | undefined): QueueIssue | null {
 	return issue === undefined ? null : { id: issue.id, title: issue.title };
 }
 
-function pauseOf(event: ChainPauseView | ReturnType<typeof readPersistedChainSnapshot>['lastPause']): ProjectQueueView['pause'] {
+function pauseOf(event: ChainPauseView | null): ProjectQueueView['pause'] {
 	if (event === null) return null;
-	const reason = 'reason' in event ? event.reason : event.payload.reason;
+	const reason = event.reason;
 	if (typeof reason !== 'string' || !CHAIN_PAUSE_REASONS.has(reason)) return null;
 	return { reason, createdAt: event.createdAt };
 }
 
-type QueueRuntime = Pick<RunRuntime, 'listRuns' | 'getChainRuns' | 'getChainPause'>;
+export type QueueRuntime = Pick<RunRuntime, 'listRuns' | 'getChainRuns' | 'getChainPause'>;
 
 function queueRuntimeState(
 	project: RegisteredProject,
-	queueContexts: ReadonlyMap<string, QueueRuntime> | undefined,
+	queueContexts: ReadonlyMap<string, QueueRuntime>,
 ): {
 	currentRun: ProjectQueueView['currentRun'];
 	chainEnabled: boolean;
-	lastPause: ChainPauseView | ReturnType<typeof readPersistedChainSnapshot>['lastPause'];
+	lastPause: ChainPauseView | null;
 } {
-	const context = queueContexts?.get(project.id);
-	if (queueContexts !== undefined && context === undefined) throw new Error('Project runtime context is unavailable.');
-	if (context === undefined) {
-		const databasePath = join(project.stateDir, 'runtime.sqlite');
-		const chain = readPersistedChainSnapshot(databasePath);
-		return {
-			currentRun: readActivePersistedRun(databasePath),
-			chainEnabled: chain.chainEnabled,
-			lastPause: chain.lastPause,
-		};
-	}
+	const context = queueContexts.get(project.id);
+	if (context === undefined) throw new Error('Project runtime context is unavailable.');
 	return {
 		currentRun: context.listRuns().find((run) => !isTerminalRunState(run.state)) ?? null,
 		chainEnabled: context.getChainRuns(),
@@ -97,7 +86,7 @@ export function readQueueOverview(
 	projects: readonly RegisteredProject[],
 	readBacklog: (project: RegisteredProject) => IssueEntry[] = (project) =>
 		readBacklogFromMain(project.root, undefined, RUNTIME_SOURCE_REF),
-	queueContexts?: ReadonlyMap<string, Pick<RunRuntime, 'listRuns' | 'getChainRuns' | 'getChainPause'>>,
+	queueContexts: ReadonlyMap<string, QueueRuntime>,
 ): QueueOverview {
 	const queues: ProjectQueueView[] = [];
 	const errors: QueueOverviewError[] = [];
