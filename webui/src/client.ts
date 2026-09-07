@@ -279,6 +279,7 @@ export interface HistoricalOverviewView {
 	shippedWithoutIntervention: number;
 	dispatchToMergeMs: number | null;
 	dispatchToMergeRuns: number;
+	medianDispatchToMergeMs: number | null;
 	firstReviewPasses: number;
 	firstReviewPassKnownRuns: number;
 	ciCorrections: number;

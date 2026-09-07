@@ -144,6 +144,7 @@ export interface HistoricalOverview {
 	shippedWithoutIntervention: number;
 	dispatchToMergeMs: number | null;
 	dispatchToMergeRuns: number;
+	medianDispatchToMergeMs: number | null;
 	firstReviewPasses: number;
 	firstReviewPassKnownRuns: number;
 	ciCorrections: number;
@@ -189,6 +190,8 @@ export interface HistoricalOverviewFilters {
 
 const OVERVIEW_WINDOWS: Readonly<Record<OverviewWindow, number | null>> = { '7d': 7, '30d': 30, all: null };
 
+const dispatchToMergeSamples = new WeakMap<HistoricalOverview, number[]>();
+
 function addNullable(total: number | null, value: number | undefined): number | null {
 	return value === undefined ? total : (total ?? 0) + value;
 }
@@ -201,7 +204,7 @@ function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 	return {
 		window, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null,
 		runsByOutcome: emptyOutcomes(), activeRuns: 0, terminalRuns: 0, terminalWallTimeMs: null, terminalWallTimeRuns: 0,
-		shippedWithoutIntervention: 0, dispatchToMergeMs: null, dispatchToMergeRuns: 0,
+		shippedWithoutIntervention: 0, dispatchToMergeMs: null, dispatchToMergeRuns: 0, medianDispatchToMergeMs: null,
 		firstReviewPasses: 0, firstReviewPassKnownRuns: 0, ciCorrections: 0,
 		fixRounds: 0, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0,
 		resolvedCycleQuestions: 0,
@@ -209,6 +212,15 @@ function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 			cacheReadInputTokens: null, thinkingTokens: null },
 		configurations: [], daily: [],
 	};
+}
+
+function median(values: readonly number[]): number | null {
+	if (values.length === 0) return null;
+	const ordered = [...values].sort((a, b) => a - b);
+	const middle = Math.floor(ordered.length / 2);
+	return ordered.length % 2 === 1
+		? ordered[middle] ?? null
+		: ((ordered[middle - 1] ?? 0) + (ordered[middle] ?? 0)) / 2;
 }
 
 // The branches below preserve unknown coverage instead of coercing it to zero.
@@ -232,6 +244,7 @@ function addRunMetrics(result: HistoricalOverview, item: PersistedRunHistory): v
 		if (Number.isFinite(elapsed) && elapsed >= 0) {
 			result.dispatchToMergeRuns += 1;
 			result.dispatchToMergeMs = (result.dispatchToMergeMs ?? 0) + elapsed;
+			dispatchToMergeSamples.get(result)?.push(elapsed);
 		}
 	}
 	const firstReview = item.events.find((event) => event.kind === 'run.review-clean' || event.kind === 'run.review-fix-requested');
@@ -382,6 +395,7 @@ function historicalOverview(
 			&& (filters.effort === undefined || configuration.effort === filters.effort));
 	});
 	const result = emptyHistoricalOverview(window);
+	dispatchToMergeSamples.set(result, []);
 	const configurations = new Set<string>();
 	const daily = new Map<string, HistoricalOverview['daily'][number]>();
 	for (const item of selected) {
@@ -390,6 +404,7 @@ function historicalOverview(
 		addReportedTokens(result, item);
 		addDailyRun(daily, item);
 	}
+	result.medianDispatchToMergeMs = median(dispatchToMergeSamples.get(result) ?? []);
 	result.configurations = [...configurations].map((value) => JSON.parse(value) as HistoricalOverview['configurations'][number]);
 	result.configurations.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 	result.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
@@ -617,6 +632,7 @@ function mergeHistoricalTotals(combined: HistoricalOverview, item: HistoricalOve
 	}
 	if (item.terminalWallTimeMs !== null) combined.terminalWallTimeMs = (combined.terminalWallTimeMs ?? 0) + item.terminalWallTimeMs;
 	if (item.dispatchToMergeMs !== null) combined.dispatchToMergeMs = (combined.dispatchToMergeMs ?? 0) + item.dispatchToMergeMs;
+	dispatchToMergeSamples.get(combined)?.push(...(dispatchToMergeSamples.get(item) ?? []));
 	for (const key of Object.keys(combined.reportedTokens) as Array<keyof HistoricalOverview['reportedTokens']>) {
 		combined.reportedTokens[key] = addNullable(combined.reportedTokens[key], item.reportedTokens[key] ?? undefined);
 	}
@@ -652,9 +668,11 @@ function addHistoricalOverview(
 
 function combineHistoricalOverviews(overviews: readonly HistoricalOverview[], window: OverviewWindow): HistoricalOverview {
 	const combined = emptyHistoricalOverview(window);
+	dispatchToMergeSamples.set(combined, []);
 	const configurations = new Set<string>();
 	const daily = new Map<string, HistoricalOverview['daily'][number]>();
 	for (const item of overviews) addHistoricalOverview(combined, item, configurations, daily);
+	combined.medianDispatchToMergeMs = median(dispatchToMergeSamples.get(combined) ?? []);
 	combined.configurations = [...configurations].map((value) => JSON.parse(value) as HistoricalOverview['configurations'][number]);
 	combined.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
 	return combined;

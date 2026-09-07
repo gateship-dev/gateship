@@ -238,13 +238,13 @@ test('expõe derivações históricas, denominadores e desconhecidos sem inventa
 	const overview = readProjectHistoricalOverview(project, '7d', new Date('2026-09-07T00:00:00.000Z'), () => [shipped]);
 	expect(overview.overview).toMatchObject({
 		totalRuns: 1, terminalRuns: 1, terminalWallTimeMs: 1, terminalWallTimeRuns: 1,
-		shippedWithoutIntervention: 1, dispatchToMergeMs: 540000, dispatchToMergeRuns: 1,
+		shippedWithoutIntervention: 1, dispatchToMergeMs: 540000, dispatchToMergeRuns: 1, medianDispatchToMergeMs: 540000,
 		firstReviewPasses: 0, firstReviewPassKnownRuns: 1, ciCorrections: 1,
 	});
 	expect(overview.overview?.daily[0]).toMatchObject({ terminalRuns: 1, shippedWithoutIntervention: 1, ciCorrections: 1 });
 
 	const empty = readProjectHistoricalOverview(project, 'all', new Date(), () => []);
-	expect(empty.overview).toMatchObject({ totalRuns: 0, terminalRuns: 0, terminalWallTimeMs: null, dispatchToMergeMs: null, daily: [] });
+	expect(empty.overview).toMatchObject({ totalRuns: 0, terminalRuns: 0, terminalWallTimeMs: null, dispatchToMergeMs: null, medianDispatchToMergeMs: null, daily: [] });
 	const incomplete = history('active', '2026-09-05T00:00:00.000Z');
 	incomplete.evaluation.outcome = 'incomplete';
 	const partial = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [incomplete]);
@@ -273,4 +273,38 @@ test('filtra a proveniência por provider, papel, modelo e esforço', () => {
 		readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [legacy], filters).overview;
 	expect(readLegacy({ providerId: 'claude' })?.totalRuns).toBe(1);
 	expect(readLegacy({ providerId: 'claude', role: 'executor' })?.totalRuns).toBe(0);
+});
+
+test('calcula mediana ímpar, média par e ignora timestamps inválidos', () => {
+	const dispatchHistory = (id: string, elapsedMs: number, provider: 'claude' | 'codex' = 'claude'): PersistedRunHistory => {
+		const item = history(id, '2026-09-05T00:00:00.000Z', provider);
+		const started = Date.parse('2026-09-05T00:00:00.000Z');
+		item.events = [
+			{ kind: 'provider.model', payload: { provider, model: 'model-a', effort: 'low' } },
+			{ kind: 'run.started', createdAt: new Date(started).toISOString() },
+			{ kind: 'ship.merged', createdAt: new Date(started + elapsedMs).toISOString() },
+		] as never;
+		return item;
+	};
+	const invalid = dispatchHistory('invalid', 1);
+	invalid.events = [
+		{ kind: 'run.started', createdAt: 'not-a-timestamp' },
+		{ kind: 'ship.merged', createdAt: '2026-09-05T00:01:00.000Z' },
+	] as never;
+	const histories = [dispatchHistory('one', 1), dispatchHistory('three', 3), dispatchHistory('five', 5), invalid];
+	const read = (items: PersistedRunHistory[]) => readProjectHistoricalOverview(
+		project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => items,
+	).overview;
+
+	expect(read(histories)).toMatchObject({ dispatchToMergeRuns: 3, medianDispatchToMergeMs: 3 });
+	expect(read([dispatchHistory('two', 2), dispatchHistory('eight', 8)])).toMatchObject({
+		dispatchToMergeRuns: 2, medianDispatchToMergeMs: 5,
+	});
+
+	const filtered = readProjectHistoricalOverview(
+		project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [
+			dispatchHistory('claude', 10), dispatchHistory('codex', 20, 'codex'),
+		], { providerId: 'codex' },
+	).overview;
+	expect(filtered).toMatchObject({ totalRuns: 1, dispatchToMergeRuns: 1, medianDispatchToMergeMs: 20 });
 });

@@ -52,6 +52,14 @@ valor permanece `null`.
 `dispatchToMergeRuns` é seu denominador conhecido. `firstReviewPasses` conta
 quando a primeira decisão de review é `run.review-clean`, enquanto
 `firstReviewPassKnownRuns` conta runs com primeira decisão demonstrável.
+`medianDispatchToMergeMs` calcula a mediana determinística desses mesmos
+intervalos válidos: o valor central para uma amostra ímpar e a média dos dois
+valores centrais para uma amostra par. Seu denominador é
+`dispatchToMergeRuns`; sem amostra válida, permanece `null`. A cobertura
+exclui runs sem os dois eventos, intervalos negativos e timestamps inválidos,
+e preserva as janelas e os filtros de proveniência descritos acima. A fórmula
+é coberta por testes de amostra vazia, timestamps inválidos, cardinalidade par
+e ímpar e filtros.
 `ciCorrections` conta rounds `run.ci-fix-requested`. Timestamps inválidos e
 custo não reportado ficam fora das derivações e permanecem `null` quando a
 soma não é conhecida. Custo é equivalente ao uso da API, não cobrança da
