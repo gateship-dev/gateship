@@ -339,10 +339,10 @@ export function ShellNavigation({
 			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
 				<li className="shrink-0">
 					<a
-						aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' ? 'page' : undefined}
+						aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' ? 'page' : undefined}
 						className={cn(
 							NAV_LINK_CLASS,
-							(selection.surface === 'overview' || selection.surface === 'overview-runs') && 'bg-sidebar-accent text-sidebar-accent-foreground',
+							(selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues') && 'bg-sidebar-accent text-sidebar-accent-foreground',
 						)}
 						href="/overview"
 					>

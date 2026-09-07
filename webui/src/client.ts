@@ -38,6 +38,7 @@ export const NOTIFICATIONS_PATH = '/api/notifications';
 export const UPDATE_PATH = '/api/update';
 export const OVERVIEW_PATH = '/api/overview';
 export const OVERVIEW_RUNS_PATH = '/api/overview/runs';
+export const OVERVIEW_QUEUES_PATH = '/api/overview/queues';
 
 /**
  * Which project a run- or issue-facing read or write names (GSHIP-707,
@@ -288,6 +289,19 @@ export interface ProjectOperationalOverviewView {
 	};
 	projects: ProjectOverviewView[];
 }
+
+export interface QueueIssueView { id: string; title: string }
+export interface ProjectQueueView {
+	project: RegisteredProjectView;
+	readiness: RegisteredProjectView['readiness'];
+	chainEnabled: boolean;
+	pause: { reason: string; createdAt: string } | null;
+	currentRun: OverviewRunView | null;
+	currentIssue: QueueIssueView | null;
+	plannedIssues: QueueIssueView[];
+	nextIssue: QueueIssueView | null;
+}
+export interface QueueOverviewView { queues: ProjectQueueView[]; errors: Array<{ projectId: string; projectName: string; code: string; message: string }> }
 
 export interface CreateProjectInput {
 	repository: string;
@@ -554,6 +568,11 @@ export async function fetchOverview(signal?: AbortSignal): Promise<ProjectOperat
 	const overview = overviewRecord(await readJson<unknown>(response, 'Overview'));
 	if (overview === null) throw new Error('Gateship returned an unreadable overview.');
 	return overview;
+}
+
+export async function fetchOverviewQueues(signal?: AbortSignal): Promise<QueueOverviewView> {
+	const response = await fetch(OVERVIEW_QUEUES_PATH, { signal });
+	return await readJson<QueueOverviewView>(response, 'Overview queues');
 }
 
 export interface OverviewRunsQuery {

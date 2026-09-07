@@ -3,6 +3,8 @@ import { join } from 'node:path';
 
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
+import { isPlannable } from '../issues/plannable.ts';
+import type { IssueEntry } from '../issues/types.ts';
 import type { RegisteredProject } from './project-registry.ts';
 import {
 	type PersistedRunHistory,
@@ -10,10 +12,87 @@ import {
 	readPersistedRunHistory,
 	readPersistedRunOverview,
 	readPersistedRunStatuses,
+	readActivePersistedRun,
+	readPersistedChainSnapshot,
 } from './run-store.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 export const PROJECT_STATUS_RUN_LIMIT = 20;
+
+export interface QueueIssue {
+	id: string;
+	title: string;
+}
+
+export interface ProjectQueueView {
+	project: RegisteredProject;
+	readiness: RegisteredProject['readiness'];
+	chainEnabled: boolean;
+	pause: { reason: string; createdAt: string } | null;
+	currentRun: PersistedRunStatus | null;
+	currentIssue: QueueIssue | null;
+	plannedIssues: QueueIssue[];
+	nextIssue: QueueIssue | null;
+}
+
+export interface QueueOverviewError {
+	projectId: string;
+	projectName: string;
+	code: 'project-unavailable';
+	message: 'Project queue is unavailable.';
+}
+
+export interface QueueOverview {
+	queues: ProjectQueueView[];
+	errors: QueueOverviewError[];
+}
+
+const CHAIN_PAUSE_REASONS = new Set([
+	'chain-disabled', 'previous-run-not-done', 'no-admissible-issue', 'run-active', 'chain-start-failed',
+]);
+
+function queueIssue(issue: IssueEntry | undefined): QueueIssue | null {
+	return issue === undefined ? null : { id: issue.id, title: issue.title };
+}
+
+function pauseOf(event: ReturnType<typeof readPersistedChainSnapshot>['lastPause']): ProjectQueueView['pause'] {
+	if (event === null || typeof event.payload.reason !== 'string' || !CHAIN_PAUSE_REASONS.has(event.payload.reason)) return null;
+	return { reason: event.payload.reason, createdAt: event.createdAt };
+}
+
+/** Global, read-only queue projection. Each project is isolated so one bad checkout does not hide the others. */
+export function readQueueOverview(
+	projects: readonly RegisteredProject[],
+	readBacklog: (project: RegisteredProject) => IssueEntry[] = (project) =>
+		readBacklogFromMain(project.root, undefined, RUNTIME_SOURCE_REF),
+): QueueOverview {
+	const queues: ProjectQueueView[] = [];
+	const errors: QueueOverviewError[] = [];
+	for (const project of projects) {
+		try {
+			const backlog = readBacklog(project);
+			const plannedIssues = backlog.filter((issue) => isPlannable(issue, backlog)).map((issue) => ({ id: issue.id, title: issue.title }));
+			const currentRun = readActivePersistedRun(join(project.stateDir, 'runtime.sqlite'));
+			const chain = readPersistedChainSnapshot(join(project.stateDir, 'runtime.sqlite'));
+			const currentIssue = queueIssue(currentRun === null ? undefined : backlog.find((issue) => issue.id === currentRun.issueId));
+			queues.push({
+				project,
+				readiness: project.readiness,
+				chainEnabled: chain.chainEnabled,
+				pause: pauseOf(chain.lastPause),
+				currentRun,
+				currentIssue,
+				plannedIssues,
+			// The runtime serializes admission per project. While a run is active,
+			// no backlog entry is admissible, even though approved candidates remain visible.
+			nextIssue: currentRun === null ? plannedIssues[0] ?? null : null,
+			});
+		} catch {
+			errors.push({ projectId: project.id, projectName: project.name, code: 'project-unavailable', message: 'Project queue is unavailable.' });
+		}
+	}
+	return { queues, errors };
+}
 
 export type OverviewWindow = '7d' | '30d' | 'all';
 

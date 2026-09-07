@@ -4,9 +4,11 @@ import { join } from 'node:path';
 
 import {
 	readProjectOperationalOverview,
+	readQueueOverview,
 	type ProjectOperationalStatus,
 } from '../../src/runtime/project-status.ts';
-import { readPersistedRunHistory, readPersistedRunStatuses, RunStore } from '../../src/runtime/run-store.ts';
+import { readPersistedChainSnapshot, readPersistedRunHistory, readPersistedRunStatuses, RunStore } from '../../src/runtime/run-store.ts';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const project = {
@@ -180,4 +182,35 @@ test('ignores malformed activity events when reading historical decisions', () =
 	expect(history).toHaveLength(1);
 	expect(history[0]?.events.map((event) => event.kind)).toEqual(['run.created']);
 	expect(history[0]?.evaluation.outcome).toBe('incomplete');
+});
+
+test('projects queues independently, keeps dispatcher order, and reports active work', () => {
+	const databasePath = join(createTestTmpdir('gship-project-queue-'), 'runtime.sqlite');
+	const store = new RunStore(databasePath);
+	store.setChainRunsEnabled(true);
+	store.createRun({ id: 'run-queue', issueId: 'GSHIP-12', sessionId: 'session-queue', workspacePath: '/workspace', createdAt: '2026-08-23T10:00:00.000Z' });
+	store.transition({ runId: 'run-queue', toState: 'working', kind: 'run.started', createdAt: '2026-08-23T10:01:00.000Z' });
+	store.close();
+	const approved = { scope: 'do it', verify: ['bun test'] };
+	const backlog = [
+		{ id: 'GSHIP-19', title: 'dependency', stage: 'planned' as const, status: 'open' as const, blockedBy: [], createdAt: '', updatedAt: '' },
+		{ id: 'GSHIP-20', title: 'blocked', stage: 'specified' as const, status: 'open' as const, blockedBy: ['GSHIP-19'], createdAt: '', updatedAt: '', spec: approved, approval: { fingerprint: fingerprintSpec(approved), approvedAt: '' } },
+		{ id: 'GSHIP-12', title: 'current', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '', updatedAt: '', spec: approved, approval: { fingerprint: fingerprintSpec(approved), approvedAt: '' } },
+	];
+	const queues = readQueueOverview([
+		{ ...project, stateDir: databasePath.slice(0, databasePath.lastIndexOf('/')) },
+		{ ...project, id: 'unavailable', name: 'unavailable', stateDir: '/missing-state' },
+	], () => backlog);
+	expect(queues.queues[0]).toMatchObject({ chainEnabled: true, currentRun: { issueId: 'GSHIP-12' }, nextIssue: null, plannedIssues: [{ id: 'GSHIP-12' }] });
+	expect(queues.errors).toEqual([{ projectId: 'unavailable', projectName: 'unavailable', code: 'project-unavailable', message: 'Project queue is unavailable.' }]);
+});
+
+test('clears a persisted pause after a later run is created', () => {
+	const databasePath = join(createTestTmpdir('gship-project-queue-pause-'), 'runtime.sqlite');
+	const store = new RunStore(databasePath);
+	store.createRun({ id: 'run-paused', issueId: 'GSHIP-1', sessionId: 'session-paused', workspacePath: '/workspace', createdAt: '2026-08-23T10:00:00.000Z' });
+	store.appendEvent({ runId: 'run-paused', kind: 'run.chain-paused', createdAt: '2026-08-23T10:01:00.000Z', payload: { reason: 'no-admissible-issue' } });
+	store.createRun({ id: 'run-resumed', issueId: 'GSHIP-2', sessionId: 'session-resumed', workspacePath: '/workspace', createdAt: '2026-08-23T10:02:00.000Z' });
+	store.close();
+	expect(readPersistedChainSnapshot(databasePath).lastPause).toBeNull();
 });

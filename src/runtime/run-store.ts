@@ -201,6 +201,31 @@ export function readActivePersistedRun(path: string): PersistedRunStatus | null 
 	}
 }
 
+export interface PersistedChainSnapshot {
+	chainEnabled: boolean;
+	lastPause: RunEvent | null;
+}
+
+/** Read the chain switch and its durable pause event without composing a runtime. */
+export function readPersistedChainSnapshot(path: string): PersistedChainSnapshot {
+	const db = openReadOnlyDatabase(path);
+	try {
+		const setting = db.query(
+			'SELECT value FROM runtime_settings WHERE key = $key',
+		).get({ key: 'chain-runs' }) as { value: string } | null;
+		const row = db.query(
+			"SELECT * FROM run_events WHERE kind = 'run.chain-paused' ORDER BY seq DESC LIMIT 1",
+		).get() as EventRow | null;
+		if (row === null) return { chainEnabled: setting?.value === 'true', lastPause: null };
+		const resumed = db.query(
+			"SELECT 1 FROM run_events WHERE seq > $pauseSeq AND kind = 'run.created' LIMIT 1",
+		).get({ pauseSeq: row.seq }) !== null;
+		return { chainEnabled: setting?.value === 'true', lastPause: resumed ? null : decodeEvent(row) };
+	} finally {
+		db.close();
+	}
+}
+
 /**
  * Ephemeral provider/review stream chatter versus a durable decision the run
  * made (GSHIP-627). Written once at emission and never re-derived at read

@@ -116,6 +116,7 @@ import {
 	type OverviewWindow,
 	readProjectOperationalOverview,
 	readProjectOperationalStatus,
+	readQueueOverview,
 } from '../runtime/project-status.ts';
 import {
 	ProjectUnregistrationError,
@@ -2798,6 +2799,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/': redirect('/overview'),
 			'/overview': () => serveWebAsset(assets.indexHtml),
 			'/overview/runs': () => serveWebAsset(assets.indexHtml),
+			'/overview/queues': () => serveWebAsset(assets.indexHtml),
 			'/projects': () => serveWebAsset(assets.indexHtml),
 			'/runs': redirect(`${projectPath}/runs`),
 			'/work': redirect(`${projectPath}/work`),
@@ -2825,6 +2827,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					projectRegistry.list(projectRoot), undefined, undefined, rawWindow as OverviewWindow,
 				));
 			},
+			'/api/overview/queues': () => Response.json(readQueueOverview(projectRegistry.list(projectRoot))),
 			'/api/overview/runs': (request) => {
 				try {
 					return Response.json(readRunOverview(
