@@ -16,6 +16,7 @@ function isOperatorPath(pathname: string): boolean {
 	const normalized = pathname.replace(/\/+$/, '') || '/';
 	return normalized === '/overview'
 		|| normalized === '/overview/runs'
+		|| normalized === '/overview/queues'
 		|| normalized === '/'
 		|| normalized === '/runs'
 		|| normalized === '/work'

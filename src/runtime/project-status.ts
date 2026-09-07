@@ -33,6 +33,7 @@ export interface ProjectQueueView {
 	currentIssue: QueueIssue | null;
 	plannedIssues: QueueIssue[];
 	nextIssue: QueueIssue | null;
+	lastDelivery: { state: 'available'; run: PersistedRunStatus | null } | { state: 'unavailable' };
 }
 
 export interface QueueOverviewError {
@@ -67,17 +68,27 @@ export type QueueRuntime = Pick<RunRuntime, 'listRuns' | 'getChainRuns' | 'getCh
 function queueRuntimeState(
 	project: RegisteredProject,
 	queueContexts: ReadonlyMap<string, QueueRuntime>,
+	readHistory: typeof readPersistedRunHistory,
 ): {
 	currentRun: ProjectQueueView['currentRun'];
 	chainEnabled: boolean;
 	lastPause: ChainPauseView | null;
+	lastDelivery: ProjectQueueView['lastDelivery'];
 } {
 	const context = queueContexts.get(project.id);
 	if (context === undefined) throw new Error('Project runtime context is unavailable.');
+	let lastDelivery: ProjectQueueView['lastDelivery'];
+	try {
+		lastDelivery = { state: 'available', run: readHistory(join(project.stateDir, 'runtime.sqlite'))
+			.findLast((history) => history.evaluation.outcome === 'shipped')?.run ?? null };
+	} catch {
+		lastDelivery = { state: 'unavailable' };
+	}
 	return {
 		currentRun: context.listRuns().find((run) => !isTerminalRunState(run.state)) ?? null,
 		chainEnabled: context.getChainRuns(),
 		lastPause: context.getChainPause(),
+		lastDelivery,
 	};
 }
 
@@ -87,6 +98,7 @@ export function readQueueOverview(
 	readBacklog: (project: RegisteredProject) => IssueEntry[] = (project) =>
 		readBacklogFromMain(project.root, undefined, RUNTIME_SOURCE_REF),
 	queueContexts: ReadonlyMap<string, QueueRuntime>,
+	readHistory: typeof readPersistedRunHistory = readPersistedRunHistory,
 ): QueueOverview {
 	const queues: ProjectQueueView[] = [];
 	const errors: QueueOverviewError[] = [];
@@ -94,7 +106,7 @@ export function readQueueOverview(
 		try {
 			const backlog = readBacklog(project);
 			const plannedIssues = backlog.filter((issue) => isPlannable(issue, backlog)).map((issue) => ({ id: issue.id, title: issue.title }));
-			const { currentRun, chainEnabled, lastPause } = queueRuntimeState(project, queueContexts);
+			const { currentRun, chainEnabled, lastPause, lastDelivery } = queueRuntimeState(project, queueContexts, readHistory);
 			const currentIssue = queueIssue(currentRun === null ? undefined : backlog.find((issue) => issue.id === currentRun.issueId));
 			queues.push({
 				project,
@@ -106,7 +118,8 @@ export function readQueueOverview(
 				plannedIssues,
 			// The runtime serializes admission per project. While a run is active,
 			// no backlog entry is admissible, even though approved candidates remain visible.
-			nextIssue: currentRun === null ? plannedIssues[0] ?? null : null,
+				nextIssue: currentRun === null ? plannedIssues[0] ?? null : null,
+				lastDelivery,
 			});
 		} catch {
 			errors.push({ projectId: project.id, projectName: project.name, code: 'project-unavailable', message: 'Project queue is unavailable.' });
