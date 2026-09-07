@@ -203,3 +203,13 @@ test('projects queues independently, keeps dispatcher order, and reports active 
 	expect(queues.queues[0]).toMatchObject({ chainEnabled: true, currentRun: { issueId: 'GSHIP-12' }, nextIssue: null, plannedIssues: [{ id: 'GSHIP-12' }] });
 	expect(queues.errors).toEqual([{ projectId: 'unavailable', projectName: 'unavailable', code: 'project-unavailable', message: 'Project queue is unavailable.' }]);
 });
+
+test('keeps queue delivery history unavailable distinct from a valid empty history', () => {
+	const context: QueueRuntime = { listRuns: () => [], getChainRuns: () => true, getChainPause: () => null };
+	const available = readQueueOverview([project], () => [], new Map([[project.id, context]]), () => []);
+	expect(available.queues[0]?.lastDelivery).toEqual({ state: 'available', run: null });
+
+	const unavailable = readQueueOverview([project], () => [], new Map([[project.id, context]]), () => { throw new Error('history unavailable'); });
+	expect(unavailable.queues[0]?.lastDelivery).toEqual({ state: 'unavailable' });
+	expect(unavailable.errors).toEqual([]);
+});

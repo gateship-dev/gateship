@@ -300,6 +300,7 @@ export interface ProjectQueueView {
 	currentIssue: QueueIssueView | null;
 	plannedIssues: QueueIssueView[];
 	nextIssue: QueueIssueView | null;
+	lastDelivery: { state: 'available'; run: OverviewRunView | null } | { state: 'unavailable' };
 }
 export interface QueueOverviewView { queues: ProjectQueueView[]; errors: Array<{ projectId: string; projectName: string; code: string; message: string }> }
 

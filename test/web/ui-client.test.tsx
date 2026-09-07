@@ -120,6 +120,7 @@ import {
 	readLocalePreference,
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
+import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
 import {
 	beginOperationalReads,
 	beginOperationalRefresh,
@@ -3230,6 +3231,33 @@ function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 }
 
 describe('operator shell', () => {
+	test('queue empty states distinguish no projects, an unknown filter and an unavailable filtered project in both locales', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const catalog = LOCALE_CATALOG[locale].overview.queues;
+			const empty = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter={undefined} locale={locale} projectCount={0} queues={[]} />);
+			const unknownFilter = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter="missing" locale={locale} projectCount={1} queues={[]} />);
+			const unavailable = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[{ projectId: 'project-1', projectName: 'Project', code: 'project-unavailable', message: 'Project queue is unavailable.' }]} filter="project-1" locale={locale} projectCount={1} queues={[]} />);
+			expect(empty).toContain(catalog.empty);
+			expect(unknownFilter).not.toContain(catalog.empty);
+			expect(unavailable).toBe('');
+		}
+	});
+
+	test('queue filtering keeps only the selected alert and queue details retain dl semantics', () => {
+		const errors = [
+			{ projectId: 'project-1', projectName: 'One', code: 'project-unavailable', message: 'Project queue is unavailable.' },
+			{ projectId: 'project-2', projectName: 'Two', code: 'project-unavailable', message: 'Project queue is unavailable.' },
+		] as const;
+		expect(queueErrorsForFilter([...errors], 'project-2').map((error) => error.projectId)).toEqual(['project-2']);
+		expect(queueErrorsForFilter([...errors], undefined)).toHaveLength(2);
+		const queue = { project: { id: 'project-1', name: 'One' }, readiness: 'ready', chainEnabled: true, pause: null, currentRun: null, currentIssue: null, plannedIssues: [], nextIssue: null, lastDelivery: { state: 'unavailable' } } as never;
+		const html = renderToStaticMarkup(<QueueRow catalog={LOCALE_CATALOG['en-US'].overview.queues} locale="en-US" queue={queue} />);
+		expect(html).toContain('<dl');
+		expect(html).toContain('<dt');
+		expect(html).toContain('<dd');
+		expect(html).toContain('Delivery history unavailable.');
+		expect(html).not.toContain('No delivery yet');
+	});
 	test('known internal destinations use history across surfaces and projects', () => {
 		const base = {
 			currentUrl: 'http://gateship.test/projects/project-current/runs',
