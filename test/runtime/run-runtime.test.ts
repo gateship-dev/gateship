@@ -10,7 +10,12 @@ import { type AgentSessionInput, ProviderCallError } from '../../src/runtime/age
 import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
-import { RunRuntime, type RuntimeShipInput, type RuntimeTimer } from '../../src/runtime/run-runtime.ts';
+import {
+	RunRuntime,
+	type RuntimeChainReconciliationInput,
+	type RuntimeShipInput,
+	type RuntimeTimer,
+} from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
 import { type RunEvent, type RunRecord, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -3457,6 +3462,46 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		expect(reconciled).toEqual(['GSHIP-2', 'GSHIP-3']);
 		expect(runtime.listRuns().map((run) => run.issueId)).toContain('GSHIP-3');
 		expect(runtime.listRuns().map((run) => run.issueId)).not.toContain('GSHIP-2');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('reconciles from the stable project root after the source worktree is released', async () => {
+		let releaseReconciliation!: () => void;
+		const reconciliationPending = new Promise<void>((resolve) => { releaseReconciliation = resolve; });
+		const releaseCalls: string[] = [];
+		let reconciliationInput: RuntimeChainReconciliationInput | undefined;
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			workspace: {
+				prepare: async (input) => `/workspaces/${input.runId}`,
+				release: (input) => {
+					releaseCalls.push(input.workspacePath);
+					return { outcome: 'released' as const, branch: 'gship/gship-818' };
+				},
+			},
+			listBacklog: () => [admissibleIssue('GSHIP-2')]
+				.filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
+			chainReconciler: { reconcile: async (input) => {
+				reconciliationInput = input;
+				await reconciliationPending;
+				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
+			} },
+		});
+		runtime.setChainRuns(true);
+
+		const source = await runtime.startRun('GSHIP-1');
+		await waitFor(() => reconciliationInput !== undefined && releaseCalls.length === 1);
+
+		expect(reconciliationInput?.workspace).toBe('/project');
+		expect(releaseCalls).toEqual([`/workspaces/${source.id}`]);
+
+		releaseReconciliation();
+		await waitFor(() => runtime.listRuns().some((run) => run.issueId === 'GSHIP-2'));
 		await runtime.stop();
 		runtime.close();
 	});
