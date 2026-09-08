@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-840",
+  "title": "Adicionar contrato condicional de pesquisa atual",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T21:44:06.619Z",
+  "updatedAt": "2026-09-08T21:44:06.619Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Permitir que uma spec aprovada exija referências atuais e verificáveis para dependências, APIs, segurança, upgrades ou decisões explicitamente atuais, sem obrigar pesquisa em tarefas internas e mecânicas.",
+    "acceptance": [
+      "A spec aceita um contrato opcional e tipado de pesquisa com perguntas, classes de fonte primária e política de versão ou atualidade.",
+      "O contrato aprovado define quando a pesquisa é obrigatória; sua ausência mantém o fluxo atual sem uma fase artificial.",
+      "Cada recibo imutável registra URL, tipo de fonte, fetchedAt, versão, tag ou SHA resolvido quando aplicável, hash do conteúdo, afirmação sustentada e aplicabilidade ao projeto.",
+      "Documentação de dependência corresponde à versão instalada; upgrades registram versão instalada, alvo e changelog ou guia de migração.",
+      "Referências a repositórios ficam presas a release, tag ou commit, e termos latest ou current são resolvidos no início da run.",
+      "Conteúdo externo é sempre dado não confiável, nunca instrução executável, e não recebe credenciais do projeto.",
+      "Specs legadas continuam legíveis e seus fingerprints não são reinterpretados."
+    ],
+    "boundaries": [
+      "Não criar crawler, vector database, grafo, novo agente pesquisador ou índice global.",
+      "Não exigir pesquisa para renames, formatação ou mudanças puramente internas.",
+      "Não usar quantidade de links, popularidade ou recência isolada como score de qualidade.",
+      "Não aceitar blogs ou posts como substitutos silenciosos de documentação oficial ou código primário.",
+      "Não armazenar conteúdo integral quando hash, referência e afirmação auditável forem suficientes."
+    ],
+    "verify": [
+      "bun test test/issues/spec.test.ts test/runtime/issue-intake.test.ts test/commands/agent.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "f10107a67c4f3ba356cca9f45208cb11ff1c303563e9f9c2e28fecb48b2c88a8",
+    "approvedAt": "2026-09-08T21:44:06.619Z"
+  }
+}
