@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-839",
+  "title": "Separar verificação focada do full verify",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T21:44:03.244Z",
+  "updatedAt": "2026-09-08T21:44:03.244Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Eliminar repetições comprovadamente equivalentes da suíte completa durante correções, mantendo o full verifier e a CI como garantias finais do commit entregue.",
+    "acceptance": [
+      "O contrato distingue verificações focadas executadas após cada tentativa da verificação completa pertencente ao projeto.",
+      "Uma spec não pode aprovar como verificação focada o mesmo comando canônico do full verify nem um alias cuja equivalência o harness consiga provar deterministicamente.",
+      "A fixture do Gateship reconhece bun run check:all como equivalente ao bun run verify declarado pelo projeto e impede a repetição observada na GSHIP-837.",
+      "Comandos distintos ou equivalência desconhecida nunca são descartados silenciosamente.",
+      "O full verify executa uma vez após review limpo e volta a executar somente quando uma correção posterior modifica o tree aprovado.",
+      "Uma falha focada continua retornando apenas a correção mecânica autorizada, e uma falha do full verify preserva seu orçamento independente.",
+      "Eventos e avaliação registram a cadência executada para que o ganho de tempo possa ser auditado sem inferência."
+    ],
+    "boundaries": [
+      "Não reduzir nem remover o full verify ou a CI.",
+      "Não criar parser geral de equivalência de shell, grafo de impacto ou cache entre runs.",
+      "Não escolher testes por modelo.",
+      "Não usar duração como motivo para pular uma verificação.",
+      "Não adicionar regra específica por texto sem uma identidade canônica fornecida pelo harness."
+    ],
+    "verify": [
+      "bun test test/issues/spec.test.ts test/runtime/run-runtime.test.ts test/runtime/run-evaluation.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "4a2a2eb22e867bf28c2d4619a5f3e5134c6368f4285a9b1325d3041e00cd3177",
+    "approvedAt": "2026-09-08T21:44:03.244Z"
+  }
+}
