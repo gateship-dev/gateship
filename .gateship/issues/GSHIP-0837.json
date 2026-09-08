@@ -1,0 +1,38 @@
+{
+  "id": "GSHIP-837",
+  "title": "Tornar projects.overview fiel ao orçamento real do Agent CLI",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T20:08:57.942Z",
+  "updatedAt": "2026-09-08T20:08:57.942Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Separar a projeção compacta consumida por agentes do payload rico da interface para que projects.overview seja útil, previsível e verificável com o histórico real.",
+    "acceptance": [
+      "A chamada padrão projects.overview retorna sucesso e seu JSON serializado cabe no limite padrão de 12 KiB com uma fixture representativa do histórico real.",
+      "A projeção do agente preserva somente fatos necessários para decisão operacional, incluindo resumo global, estado resumido dos projetos e página factual de cohorts, sem backlog, banco, runs ou overview aninhado por projeto.",
+      "Filtros e paginação explícitos de cohorts continuam tipados e uma página explícita cabe no limite máximo de 64 KiB.",
+      "O endpoint HTTP usado pela interface mantém o payload rico e a paginação visual já entregue.",
+      "Nenhum dado é truncado silenciosamente e nenhum limite global de saída é aumentado.",
+      "Erros de tamanho citam projects.overview e os campos de paginação aplicáveis, nunca issues.list.",
+      "Os testes exercitam o JSON serializado de uma resposta realista, os caminhos HTTP e Agent CLI, e o canário pós-release prova sucesso contra o histórico local real."
+    ],
+    "boundaries": [
+      "Não criar score composto, novo subsistema de telemetria ou migração histórica.",
+      "Não alterar políticas do workflow com base nesta única amostra.",
+      "Não remover informações da interface web.",
+      "Preferir a menor projeção tipada possível; não mascarar excesso de payload com clamp."
+    ],
+    "verify": [
+      "bun test test/commands/agent.test.ts test/web/project-status-api.test.ts",
+      "bun run typecheck",
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "be07981f80679eb1c0303ce502a21c93645c974a635cc35cbb4134d1d1355c94",
+    "approvedAt": "2026-09-08T20:08:57.942Z"
+  }
+}
