@@ -560,9 +560,9 @@ describe('canonical agent CLI', () => {
 
 	test('routes every mutation class with JSON and agent-cli provenance', async () => {
 		const cases: Array<[string, Record<string, unknown>, string, string]> = [
-			['issues.create', { projectId: PROJECT_ID, title: 'T', scope: 'S', verificationCommand: 'bun test' }, 'POST', `/api/projects/${PROJECT_ID}/issues`],
-			['issues.create_approved', { projectId: PROJECT_ID, title: 'T', scope: 'S', verificationCommand: 'bun test', authorization: 'Operator approves this contract.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/create-approved`],
-			['issues.specify', { projectId: PROJECT_ID, issueId: 'GSHIP-1', scope: 'S', verificationCommand: 'bun test' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/spec`],
+			['issues.create', { projectId: PROJECT_ID, title: 'T', objective: 'S', acceptance: ['S'], verify: ['bun test'] }, 'POST', `/api/projects/${PROJECT_ID}/issues`],
+			['issues.create_approved', { projectId: PROJECT_ID, title: 'T', objective: 'S', acceptance: ['S'], verify: ['bun test'], authorization: 'Operator approves this contract.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/create-approved`],
+			['issues.specify', { projectId: PROJECT_ID, issueId: 'GSHIP-1', objective: 'S', acceptance: ['S'], verify: ['bun test'] }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/spec`],
 			['issues.approve', { projectId: PROJECT_ID, issueId: 'GSHIP-1', fingerprint: 'abc', authorization: 'Operator approves.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/approve`],
 			['issues.abandon', { projectId: PROJECT_ID, issueId: 'GSHIP-1', reason: 'No longer needed.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/abandon`],
 			['brief.update', { projectId: PROJECT_ID, objective: 'O', decisions: [], constraints: [], openItems: [], authorization: 'Operator authorizes.' }, 'PUT', `/api/projects/${PROJECT_ID}/brief`],

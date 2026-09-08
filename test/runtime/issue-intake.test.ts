@@ -7,6 +7,7 @@ import {
 	approveOperatorIssue,
 	createOperatorIssue,
 	IssueIntakeError,
+	parseOperatorSpecInput,
 	specifyOperatorIssue,
 } from '../../src/runtime/issue-intake.ts';
 import type { GitIdentityResult } from '../../src/runtime/git-identity.ts';
@@ -90,6 +91,13 @@ done
 }
 
 describe('remote-main operator issue intake', () => {
+	test('accepts a verify command longer than 1000 characters', () => {
+		const command = 'x'.repeat(1001);
+		expect(parseOperatorSpecInput({ objective: 'Objetivo.', acceptance: ['Critério.'], verify: [command] })).toEqual({
+			objective: 'Objetivo.', acceptance: ['Critério.'], verify: [command],
+		});
+	});
+
 	test('uses the shared PR lifecycle for the Reporter protection message across every intake write', async () => {
 		const fixture = seedFixture();
 		blockDirectPushToMain(fixture.local, `BLOCKED: direct push to refs/heads/main is not allowed.
@@ -108,10 +116,10 @@ Open a PR: gh pr create --base main`);
 		};
 
 		const created = await createOperatorIssue(fixture.local, {
-			title: 'PR protected intake', scope: 'Use a protected main.', verificationCommand: 'true',
+			title: 'PR protected intake', objective: 'Use a protected main.', acceptance: ['Use a protected main.'], verify: ['true'],
 		}, { approve: true, shipper });
 		await specifyOperatorIssue(fixture.local, 'CAM-2', {
-			scope: 'Specify through the same PR.', verificationCommand: 'true',
+			objective: 'Specify through the same PR.', acceptance: ['Specify through the same PR.'], verify: ['true'],
 		}, undefined, undefined, { shipper });
 		await approveOperatorIssue(fixture.local, 'CAM-2', undefined, undefined, { shipper });
 		await abandonOperatorIssue(fixture.local, 'CAM-1', { reason: 'No longer needed.' }, undefined, undefined, { shipper });
@@ -146,7 +154,7 @@ Open a PR: gh pr create --base main`);
 			chmodSync(hook, 0o755);
 			let merged = false;
 			await expect(createOperatorIssue(fixture.local, {
-				title: 'No fallback', scope: 'A generic rejection is closed.', verificationCommand: 'true',
+				title: 'No fallback', objective: 'A generic rejection is closed.', acceptance: ['A generic rejection is closed.'], verify: ['true'],
 			}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } }))
 				.rejects.toMatchObject({ code: 'source-unavailable' });
 			expect(merged).toBe(false);
@@ -164,7 +172,7 @@ Open a PR: gh pr create --base main`);
 			let merged = false;
 
 			await createOperatorIssue(fixture.local, {
-				title: 'Proteção local', scope: 'A proteção local usa a PR.', verificationCommand: 'true',
+				title: 'Proteção local', objective: 'A proteção local usa a PR.', acceptance: ['A proteção local usa a PR.'], verify: ['true'],
 			}, { shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } });
 
 			expect(merged).toBe(true);
@@ -183,7 +191,7 @@ Open a PR: gh pr create --base main`);
 			blockDirectPushToMain(fixture.local, rejection);
 			let merged = false;
 			await expect(createOperatorIssue(fixture.local, {
-				title: 'Sem fallback', scope: 'Uma recusa imprecisa falha fechada.', verificationCommand: 'true',
+				title: 'Sem fallback', objective: 'Uma recusa imprecisa falha fechada.', acceptance: ['Uma recusa imprecisa falha fechada.'], verify: ['true'],
 			}, { approve: true, shipper: { mergePullRequest: async () => { merged = true; return { outcome: 'merged', prNumber: 1 }; } } }))
 				.rejects.toMatchObject({ code: 'source-unavailable' });
 			expect(merged).toBe(false);
@@ -194,8 +202,9 @@ Open a PR: gh pr create --base main`);
 		const fixture = seedFixture();
 		await createOperatorIssue(fixture.local, {
 			title: 'Approved intake',
-			scope: 'Ship the approved contract.',
-			verificationCommand: 'bun test',
+			objective: 'Ship the approved contract.',
+			acceptance: ['Ship the approved contract.'],
+			verify: ['bun test'],
 		}, { approve: true }, () => '2026-08-16T02:00:00.000Z');
 		const issue = JSON.parse(
 			git(fixture.remote, ['show', 'main:.gateship/issues/GSHIP-0003.json']),
@@ -222,8 +231,9 @@ Open a PR: gh pr create --base main`);
 			fixture.local,
 			{
 				title: 'Intake direto',
-				scope: 'O formulário cria uma tarefa executável sem planner.',
-				verificationCommand: 'bun test test/runtime/issue-intake.test.ts',
+				objective: 'O formulário cria uma tarefa executável sem planner.',
+				acceptance: ['O formulário cria uma tarefa executável sem planner.'],
+				verify: ['bun test test/runtime/issue-intake.test.ts'],
 			},
 			{},
 			() => '2026-08-16T03:00:00.000Z',
@@ -237,10 +247,12 @@ Open a PR: gh pr create --base main`);
 			stage: 'specified',
 			status: 'open',
 			specSource: 'operator',
-			description: 'O formulário cria uma tarefa executável sem planner.',
+			spec: { version: 2, objective: 'O formulário cria uma tarefa executável sem planner.', acceptance: ['O formulário cria uma tarefa executável sem planner.'], verify: ['bun test test/runtime/issue-intake.test.ts'] },
 		});
 		expect(issue['spec']).toMatchObject({
-			scope: 'O formulário cria uma tarefa executável sem planner.',
+			version: 2,
+			objective: 'O formulário cria uma tarefa executável sem planner.',
+			acceptance: ['O formulário cria uma tarefa executável sem planner.'],
 			verify: ['bun test test/runtime/issue-intake.test.ts'],
 		});
 		expect(issue['approval']).toBeUndefined();
@@ -256,8 +268,9 @@ Open a PR: gh pr create --base main`);
 
 		const created = await createOperatorIssue(fixture.local, {
 			title: 'Intake com evidência',
-			scope: 'O intake executa e captura a evidência.',
-			verificationCommand: 'bun test',
+			objective: 'O intake executa e captura a evidência.',
+			acceptance: ['O intake executa e captura a evidência.'],
+			verify: ['bun test'],
 			evidence: [{ command: 'git rev-parse HEAD', output: '' }],
 		}, {}, () => '2026-08-16T08:00:00.000Z');
 
@@ -274,8 +287,9 @@ Open a PR: gh pr create --base main`);
 		let observedTimeout: number | undefined;
 		await createOperatorIssue(fixture.local, {
 			title: 'Intake evidence timeout',
-			scope: 'Filing evidence has a bounded deadline.',
-			verificationCommand: 'true',
+			objective: 'Filing evidence has a bounded deadline.',
+			acceptance: ['Filing evidence has a bounded deadline.'],
+			verify: ['true'],
 			evidence: [{ command: 'printf captured', output: '' }],
 		}, {
 			runCommand: async ({ timeoutMs }) => {
@@ -294,8 +308,9 @@ Open a PR: gh pr create --base main`);
 		try {
 			await createOperatorIssue(fixture.local, {
 				title: 'Divergent evidence',
-				scope: 'Refuse an invented premise.',
-				verificationCommand: 'true',
+				objective: 'Refuse an invented premise.',
+				acceptance: ['Refuse an invented premise.'],
+				verify: ['true'],
 				evidence: [{ command: 'printf observed', output: 'expected' }],
 			});
 			throw new Error('expected divergent evidence to fail');
@@ -316,8 +331,9 @@ Open a PR: gh pr create --base main`);
 			try {
 				await createOperatorIssue(fixture.local, {
 					title: 'Exact evidence expectation',
-					scope: 'Supplied output must match byte for byte.',
-					verificationCommand: 'true',
+					objective: 'Supplied output must match byte for byte.',
+					acceptance: ['Supplied output must match byte for byte.'],
+					verify: ['true'],
 					evidence: [{ command: 'printf observed', output: expected }],
 				});
 				throw new Error('expected whitespace-sensitive evidence to fail');
@@ -341,8 +357,9 @@ Open a PR: gh pr create --base main`);
 			try {
 				await createOperatorIssue(fixture.local, {
 					title: 'Unconfirmed evidence',
-					scope: 'Only confirmed evidence may publish.',
-					verificationCommand: 'true',
+					objective: 'Only confirmed evidence may publish.',
+					acceptance: ['Only confirmed evidence may publish.'],
+					verify: ['true'],
 					evidence: [{ command: testCase.command, output: '' }],
 				}, testCase.options);
 				throw new Error('expected evidence command to fail');
@@ -362,8 +379,9 @@ Open a PR: gh pr create --base main`);
 		try {
 			await createOperatorIssue(fixture.local, {
 				title: 'Evidência demais',
-				scope: 'Excede o limite de itens.',
-				verificationCommand: 'bun test',
+				objective: 'Excede o limite de itens.',
+				acceptance: ['Excede o limite de itens.'],
+				verify: ['bun test'],
 				evidence: [
 					{ command: 'a', output: '1' },
 					{ command: 'b', output: '2' },
@@ -382,8 +400,9 @@ Open a PR: gh pr create --base main`);
 	test('a specified draft revised without resending evidence loses it, same as any other spec replacement', async () => {
 		const fixture = seedFixture();
 		await specifyOperatorIssue(fixture.local, 'CAM-1', {
-			scope: 'Contrato com evidência.',
-			verificationCommand: 'bun test',
+			objective: 'Contrato com evidência.',
+			acceptance: ['Contrato com evidência.'],
+			verify: ['bun test'],
 			evidence: [{ command: 'printf ok', output: 'ok' }],
 		}, () => '2026-08-16T09:00:00.000Z');
 		let issue = JSON.parse(
@@ -392,8 +411,9 @@ Open a PR: gh pr create --base main`);
 		expect(issue['spec']).toMatchObject({ evidence: [{ command: 'printf ok', output: 'ok' }] });
 
 		await specifyOperatorIssue(fixture.local, 'CAM-1', {
-			scope: 'Contrato revisado sem reenviar evidência.',
-			verificationCommand: 'bun test',
+			objective: 'Contrato revisado sem reenviar evidência.',
+			acceptance: ['Contrato revisado sem reenviar evidência.'],
+			verify: ['bun test'],
 		}, () => '2026-08-16T09:01:00.000Z');
 		issue = JSON.parse(
 			git(fixture.remote, ['show', 'main:.gateship/issues/CAM-0001.json']),
@@ -404,8 +424,9 @@ Open a PR: gh pr create --base main`);
 	test('re-specification captures omitted output and cancellation refuses without publishing', async () => {
 		const fixture = seedFixture();
 		await specifyOperatorIssue(fixture.local, 'CAM-1', {
-			scope: 'Capture the revised premise.',
-			verificationCommand: 'true',
+			objective: 'Capture the revised premise.',
+			acceptance: ['Capture the revised premise.'],
+			verify: ['true'],
 			evidence: [{ command: 'printf revised' }],
 		});
 		const issue = JSON.parse(
@@ -424,8 +445,9 @@ Open a PR: gh pr create --base main`);
 				fixture.local,
 				'CAM-1',
 				{
-					scope: 'Cancelled revision.',
-					verificationCommand: 'true',
+					objective: 'Cancelled revision.',
+					acceptance: ['Cancelled revision.'],
+					verify: ['true'],
 					evidence: [{ command: 'sleep 5' }],
 				},
 				undefined,
@@ -448,8 +470,9 @@ Open a PR: gh pr create --base main`);
 		try {
 			await createOperatorIssue(fixture.local, {
 				title: 'Never published',
-				scope: 'Remote must be reachable.',
-				verificationCommand: 'bun test',
+				objective: 'Remote must be reachable.',
+				acceptance: ['Remote must be reachable.'],
+				verify: ['bun test'],
 			});
 			throw new Error('expected createOperatorIssue to fail');
 		} catch (error) {
@@ -468,8 +491,9 @@ Open a PR: gh pr create --base main`);
 			fixture.local,
 			'CAM-2',
 			{
-				scope: 'A ideia fica executável sem planner.',
-				verificationCommand: 'bun test test/runtime/issue-intake.test.ts',
+				objective: 'A ideia fica executável sem planner.',
+				acceptance: ['A ideia fica executável sem planner.'],
+				verify: ['bun test test/runtime/issue-intake.test.ts'],
 			},
 			() => '2026-08-16T04:00:00.000Z',
 		);
@@ -484,7 +508,9 @@ Open a PR: gh pr create --base main`);
 			updatedAt: '2026-08-16T04:00:00.000Z',
 		});
 		expect(issue['spec']).toMatchObject({
-			scope: 'A ideia fica executável sem planner.',
+			version: 2,
+			objective: 'A ideia fica executável sem planner.',
+			acceptance: ['A ideia fica executável sem planner.'],
 			verify: ['bun test test/runtime/issue-intake.test.ts'],
 		});
 		expect(issue['approval']).toBeUndefined();
@@ -494,7 +520,7 @@ Open a PR: gh pr create --base main`);
 
 	test('revises a specified draft, always invalidates approval, and can reapprove it', async () => {
 		const fixture = seedFixture();
-		const input = { scope: 'Contrato revisado.', verificationCommand: 'bun test focused' };
+		const input = { objective: 'Contrato revisado.', acceptance: ['Contrato revisado.'], verify: ['bun test focused'] };
 
 		await specifyOperatorIssue(fixture.local, 'CAM-1', input, () => '2026-08-16T06:00:00.000Z');
 		await approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:01:00.000Z');
@@ -523,7 +549,7 @@ Open a PR: gh pr create --base main`);
 		await specifyOperatorIssue(
 			fixture.local,
 			'CAM-1',
-			{ scope: 'Contrato aprovado.', verificationCommand: 'bun test focused' },
+			{ objective: 'Contrato aprovado.', acceptance: ['Contrato aprovado.'], verify: ['bun test focused'] },
 			() => '2026-08-16T07:00:00.000Z',
 		);
 		const first = await approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T07:01:00.000Z');
@@ -668,8 +694,9 @@ describe('git author identity on the commit path (GSHIP-654)', () => {
 			fixture.local,
 			{
 				title: 'First intake, no identity yet',
-				scope: 'Prove derivation happens before the first commit, not after a snapshot.',
-				verificationCommand: 'true',
+				objective: 'Prove derivation happens before the first commit, not after a snapshot.',
+				acceptance: ['Prove derivation happens before the first commit, not after a snapshot.'],
+				verify: ['true'],
 			},
 			{},
 			() => '2026-08-19T00:00:00.000Z',
@@ -695,8 +722,9 @@ describe('git author identity on the commit path (GSHIP-654)', () => {
 				fixture.local,
 				{
 					title: 'Should never publish',
-					scope: 'A missing identity must refuse before any write.',
-					verificationCommand: 'true',
+					objective: 'A missing identity must refuse before any write.',
+					acceptance: ['A missing identity must refuse before any write.'],
+					verify: ['true'],
 				},
 				{},
 				() => '2026-08-19T00:00:00.000Z',

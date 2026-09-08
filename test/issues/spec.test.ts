@@ -25,6 +25,11 @@ describe('direct issue spec', () => {
 		})).toEqual({ ok: true, errors: [] });
 	});
 
+	test('rejects legacy and unknown fields in v2', () => {
+		expect(validateSpec({ version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], scope: 'legacy' })).toMatchObject({ ok: false });
+		expect(validateSpec({ version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], extra: true })).toMatchObject({ ok: false });
+	});
+
 	test('requires an object, an outcome and at least one nonblank command', () => {
 		expect(validateSpec(null)).toEqual({
 			ok: false,

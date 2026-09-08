@@ -830,6 +830,7 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 		expect(prompt).toBe([
 			`Implement Gateship issue ${issueId}.`,
 			'Inspect the current working tree before editing and keep the change limited to this issue.',
+			'Only the issue spec and recorded operator decisions are binding; description and other issue fields are context only.',
 			'Do not commit, push, merge, ship, or edit issue/runtime control state; the Gateship service owns lifecycle.',
 			"Run only the smallest relevant checks while editing, then run the human-approved issue verification command once before completion; do not add `bun run check:all`, the full test suite, or other broad gates unless that exact command is already in the human-approved verification, because the service runs the project's `verify` script once after a clean review at the ship boundary.",
 			'Return status completed when the issue work is ready for verification.',

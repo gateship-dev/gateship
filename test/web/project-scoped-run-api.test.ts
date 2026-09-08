@@ -170,15 +170,17 @@ describe('project-scoped work API', () => {
 		try {
 			const created = await post('/issues', {
 				title: 'Intake escopado',
-				scope: 'Cria a tarefa no projeto selecionado.',
-				verificationCommand: 'bun test',
+				objective: 'Cria a tarefa no projeto selecionado.',
+				acceptance: ['Cria a tarefa no projeto selecionado.'],
+				verify: ['bun test'],
 			});
 			expect(created.status).toBe(201);
 			const createdId = ((await created.json()) as { issue: { id: string } }).issue.id;
 
 			const specified = await post('/issues/GSHIP-1/spec', {
-				scope: 'Especifica a ideia do projeto selecionado.',
-				verificationCommand: 'bun test focused',
+				objective: 'Especifica a ideia do projeto selecionado.',
+				acceptance: ['Especifica a ideia do projeto selecionado.'],
+				verify: ['bun test focused'],
 			});
 			expect(specified.status).toBe(200);
 
@@ -291,8 +293,9 @@ describe('project-scoped work API', () => {
 					headers: { origin, 'content-type': 'application/json' },
 					body: JSON.stringify({
 						title: 'Intake boot',
-						scope: 'Mantém o comportamento herdado.',
-						verificationCommand: 'bun test',
+						objective: 'Mantém o comportamento herdado.',
+						acceptance: ['Mantém o comportamento herdado.'],
+						verify: ['bun test'],
 					}),
 				});
 				expect(created.status).toBe(201);

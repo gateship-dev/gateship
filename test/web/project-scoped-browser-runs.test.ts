@@ -236,8 +236,9 @@ describe('project-scoped browser runs', () => {
 		const proposal = (runId: string) => `${runId}-proposal-1`;
 		const body = {
 			title: 'Draft promovido no projeto estrangeiro',
-			scope: 'Escopo do projeto estrangeiro.',
-			verificationCommand: 'bun test focused',
+			objective: 'Escopo do projeto estrangeiro.',
+			acceptance: ['Escopo do projeto estrangeiro.'],
+			verify: ['bun test focused'],
 		};
 
 		try {

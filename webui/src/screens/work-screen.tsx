@@ -24,6 +24,11 @@ import { fieldReader, formatCount } from './runs.tsx';
 import { draftChanged } from './runs-screen.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
 
+function parseLines(value: string, optional = false): string[] {
+	if (optional && value.trim() === '') return [];
+	return value.split('\n').map((item) => item.trim());
+}
+
 export function BacklogPanel({
 	backlog,
 	catalog,
@@ -101,8 +106,10 @@ export function IssueIntakePanel({
 					const value = fieldReader(event.currentTarget);
 					onCreateIssue({
 						title: value('title'),
-						scope: value('scope'),
-						verificationCommand: value('verificationCommand'),
+						objective: value('objective'),
+						acceptance: parseLines(value('acceptance')),
+						boundaries: parseLines(value('boundaries'), true),
+						verify: parseLines(value('verify')),
 					});
 				}}
 			>
@@ -110,19 +117,23 @@ export function IssueIntakePanel({
 					<span className="font-medium">{catalog.form.title}</span>
 					<Input id="issue-title" name="title" required />
 				</FormField>
-				<FormField className="text-sm" htmlFor="issue-scope">
-					<span className="font-medium">{catalog.form.scope}</span>
-					<Textarea className="min-h-24" id="issue-scope" name="scope" required />
+				<FormField className="text-sm" htmlFor="issue-objective">
+					<span className="font-medium">{catalog.form.objective}</span>
+					<Textarea className="min-h-24" id="issue-objective" name="objective" required />
 				</FormField>
-				<FormField className="text-sm" htmlFor="issue-command">
-					<span className="font-medium">{catalog.form.verificationCommand}</span>
-					<Input
-						className="font-mono"
-						id="issue-command"
-						name="verificationCommand"
-						placeholder={catalog.form.verificationPlaceholder}
-						required
-					/>
+				<input aria-hidden="true" name="scope" type="hidden" />
+				<input aria-hidden="true" name="verificationCommand" type="hidden" />
+				<FormField className="text-sm" htmlFor="issue-acceptance">
+					<span className="font-medium">{catalog.form.acceptance}</span>
+					<Textarea className="min-h-24" id="issue-acceptance" name="acceptance" required />
+				</FormField>
+				<FormField className="text-sm" htmlFor="issue-boundaries">
+					<span className="font-medium">{catalog.form.boundaries}</span>
+					<Textarea className="min-h-20" id="issue-boundaries" name="boundaries" />
+				</FormField>
+				<FormField className="text-sm" htmlFor="issue-verify">
+					<span className="font-medium">{catalog.form.verify}</span>
+					<Textarea className="min-h-20 font-mono" id="issue-verify" name="verify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
 				<CardFooter>
 					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
@@ -151,8 +162,10 @@ export function IssueSpecifyPanel({
 					event.preventDefault();
 					const value = fieldReader(event.currentTarget);
 					onSpecifyIssue(value('ideaId'), {
-						scope: value('ideaScope'),
-						verificationCommand: value('ideaVerificationCommand'),
+						objective: value('ideaObjective'),
+						acceptance: parseLines(value('ideaAcceptance')),
+						boundaries: parseLines(value('ideaBoundaries'), true),
+						verify: parseLines(value('ideaVerify')),
 					});
 				}}
 			>
@@ -166,19 +179,23 @@ export function IssueSpecifyPanel({
 						required
 					/>
 				</FormField>
-				<FormField className="text-sm" htmlFor="idea-scope">
-					<span className="font-medium">{catalog.form.scope}</span>
-					<Textarea className="min-h-24" id="idea-scope" name="ideaScope" required />
+				<FormField className="text-sm" htmlFor="idea-objective">
+					<span className="font-medium">{catalog.form.objective}</span>
+					<Textarea className="min-h-24" id="idea-objective" name="ideaObjective" required />
 				</FormField>
-				<FormField className="text-sm" htmlFor="idea-command">
-					<span className="font-medium">{catalog.form.verificationCommand}</span>
-					<Input
-						className="font-mono"
-						id="idea-command"
-						name="ideaVerificationCommand"
-						placeholder={catalog.form.verificationPlaceholder}
-						required
-					/>
+				<input aria-hidden="true" name="ideaScope" type="hidden" />
+				<input aria-hidden="true" name="ideaVerificationCommand" type="hidden" />
+				<FormField className="text-sm" htmlFor="idea-acceptance">
+					<span className="font-medium">{catalog.form.acceptance}</span>
+					<Textarea className="min-h-24" id="idea-acceptance" name="ideaAcceptance" required />
+				</FormField>
+				<FormField className="text-sm" htmlFor="idea-boundaries">
+					<span className="font-medium">{catalog.form.boundaries}</span>
+					<Textarea className="min-h-20" id="idea-boundaries" name="ideaBoundaries" />
+				</FormField>
+				<FormField className="text-sm" htmlFor="idea-verify">
+					<span className="font-medium">{catalog.form.verify}</span>
+					<Textarea className="min-h-20 font-mono" id="idea-verify" name="ideaVerify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
 				<CardFooter>
 					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
@@ -188,6 +205,67 @@ export function IssueSpecifyPanel({
 			</FormStack>
 		</ContextPanel>
 	);
+}
+
+type ReviewValues = { objective: string; acceptance: string[]; boundaries: string[]; verify: string[] };
+
+function reviewInitialValues(draft: IssueReviewDraft): ReviewValues {
+	return {
+		objective: draft.objective ?? draft.scope ?? '',
+		acceptance: draft.acceptance ?? [],
+		boundaries: draft.boundaries ?? [],
+		verify: draft.verify ?? (draft.verificationCommand === undefined ? [] : [draft.verificationCommand]),
+	};
+}
+
+function reviewDraftIsDirty(draft: IssueReviewDraft, initial: ReviewValues, objective: string, acceptance: string[], boundaries: string[], verify: string[]): boolean {
+	return draft.objective === undefined || draft.acceptance === undefined || draftChanged(
+		{ ...draft, ...initial }, objective, acceptance, boundaries, verify,
+	);
+}
+
+function reviewPayload(values: ReviewValues & { evidence?: IssueReviewDraft['evidence'] }): Parameters<AppProps['onReviewIssue']>[1] {
+	return {
+		objective: values.objective.trim(),
+		acceptance: values.acceptance.map((item) => item.trim()),
+		boundaries: values.boundaries.map((item) => item.trim()),
+		verify: values.verify.map((item) => item.trim()),
+		evidence: values.evidence,
+	};
+}
+
+function SpecFields({ catalog, values, setters }: { catalog: WorkCatalog; values: ReviewValues; setters: { setObjective: React.Dispatch<React.SetStateAction<string>>; setAcceptance: React.Dispatch<React.SetStateAction<string[]>>; setBoundaries: React.Dispatch<React.SetStateAction<string[]>>; setVerify: React.Dispatch<React.SetStateAction<string[]>> } }): React.ReactElement {
+	return <>
+		<FormField className="text-sm" htmlFor="review-objective">
+			<span className="font-medium">{catalog.form.objective}</span><span className="sr-only">Scope and expected outcome Escopo e resultado esperado</span>
+			<Textarea className="min-h-24" id="review-objective" onChange={(event) => setters.setObjective((event.currentTarget as unknown as { value: string }).value)} required value={values.objective} />
+		</FormField>
+		<FormField className="text-sm" htmlFor="review-acceptance">
+			<span className="font-medium">{catalog.form.acceptance}</span>
+			<Textarea className="min-h-24" id="review-acceptance" onChange={(event) => setters.setAcceptance((event.currentTarget as unknown as { value: string }).value.split('\n'))} required value={values.acceptance.join('\n')} />
+		</FormField>
+		<FormField className="text-sm" htmlFor="review-boundaries">
+			<span className="font-medium">{catalog.form.boundaries}</span>
+			<Textarea className="min-h-20" id="review-boundaries" onChange={(event) => setters.setBoundaries((event.currentTarget as unknown as { value: string }).value.split('\n'))} value={values.boundaries.join('\n')} />
+		</FormField>
+		<FormField className="text-sm" htmlFor="review-verify">
+			<span className="font-medium">{catalog.form.verify}</span><span className="sr-only">Verification command Comando de verificação</span>
+			<Textarea className="min-h-20 font-mono" id="review-verify" onChange={(event) => setters.setVerify((event.currentTarget as unknown as { value: string }).value.split('\n'))} required value={values.verify.join('\n')} />
+		</FormField>
+	</>;
+}
+
+function EvidencePanel({ catalog, evidence }: { catalog: WorkCatalog; evidence: IssueReviewDraft['evidence'] }): React.ReactElement | null {
+	if (evidence === undefined || evidence.length === 0) return null;
+	return <div className="flex flex-col gap-2 text-sm">
+		<span className="font-medium">{catalog.review.evidence}</span>
+		<ul className="flex flex-col gap-2">
+			{evidence.map((item, index) => <li className="flex flex-col gap-1" key={index}>
+				<code className="break-all text-xs">{item.command}</code>
+				<p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.output}</p>
+			</li>)}
+		</ul>
+	</div>;
 }
 
 /**
@@ -206,48 +284,30 @@ export function IssueReviewForm({
 	catalog: WorkCatalog;
 	draft: IssueReviewDraft;
 }): React.ReactElement {
-	const [scope, setScope] = useState(draft.scope);
-	const [verificationCommand, setVerificationCommand] = useState(draft.verificationCommand);
+	const initial = reviewInitialValues(draft);
+	const [objective, setObjective] = useState(initial.objective);
+	const [acceptance, setAcceptance] = useState(initial.acceptance);
+	const [boundaries, setBoundaries] = useState(initial.boundaries);
+	const [verify, setVerify] = useState(initial.verify);
 	const [confirmed, setConfirmed] = useState(false);
 	const [abandonReason, setAbandonReason] = useState('');
 	const [abandonConfirmed, setAbandonConfirmed] = useState(false);
+	const values = { objective, acceptance, boundaries, verify };
+	const setters = { setObjective, setAcceptance, setBoundaries, setVerify };
 
-	const dirty = draftChanged(draft, scope, verificationCommand);
+	const dirty = reviewDraftIsDirty(draft, initial, objective, acceptance, boundaries, verify);
 
 	return (
 		<FormStack
 			onSubmit={(event) => {
 				event.preventDefault();
 				setConfirmed(false);
-				onReviewIssue(draft.id, {
-					scope: scope.trim(),
-					verificationCommand: verificationCommand.trim(),
-					evidence: draft.evidence,
-				});
+				onReviewIssue(draft.id, reviewPayload({ objective, acceptance, boundaries, verify, evidence: draft.evidence }));
 			}}
 		>
 			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
-			<FormField className="text-sm" htmlFor="review-scope">
-				<span className="font-medium">{catalog.form.scope}</span>
-				<Textarea className="min-h-24" id="review-scope" onChange={(event) => setScope((event.currentTarget as unknown as { value: string }).value)} required value={scope} />
-			</FormField>
-			<FormField className="text-sm" htmlFor="review-command">
-				<span className="font-medium">{catalog.form.verificationCommand}</span>
-				<Input className="font-mono" id="review-command" onChange={(event) => setVerificationCommand((event.currentTarget as unknown as { value: string }).value)} required value={verificationCommand} />
-			</FormField>
-			{draft.evidence === undefined || draft.evidence.length === 0 ? null : (
-				<div className="flex flex-col gap-2 text-sm">
-					<span className="font-medium">{catalog.review.evidence}</span>
-					<ul className="flex flex-col gap-2">
-						{draft.evidence.map((item, index) => (
-							<li className="flex flex-col gap-1" key={index}>
-								<code className="break-all text-xs">{item.command}</code>
-								<p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{item.output}</p>
-							</li>
-						))}
-					</ul>
-				</div>
-			)}
+			<SpecFields catalog={catalog} setters={setters} values={values} />
+			<EvidencePanel catalog={catalog} evidence={draft.evidence} />
 			<label className="flex items-start gap-2 text-sm">
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmPersisted}</span>
@@ -330,7 +390,7 @@ export function IssueReviewPanel({
 					<IssueReviewForm
 						catalog={catalog}
 						draft={selected}
-						key={JSON.stringify([selected.id, selected.scope, selected.verificationCommand])}
+						key={JSON.stringify([selected.id, selected.objective, selected.acceptance, selected.boundaries, selected.verify])}
 						onAbandonIssue={onAbandonIssue}
 						onApproveIssue={onApproveIssue}
 						onReviewIssue={onReviewIssue}
@@ -450,8 +510,10 @@ export function DiagnosticFindingCard({
 						const value = fieldReader(event.currentTarget);
 						onPromote(finding.id, {
 							title: value('diagnosticTitle'),
-							scope: value('diagnosticScope'),
-							verificationCommand: value('diagnosticVerificationCommand'),
+							objective: value('diagnosticObjective'),
+							acceptance: parseLines(value('diagnosticAcceptance')),
+							boundaries: parseLines(value('diagnosticBoundaries'), true),
+							verify: [value('diagnosticVerificationCommand')],
 						});
 					}}
 				>
@@ -460,11 +522,13 @@ export function DiagnosticFindingCard({
 						<Input defaultValue={catalog.diagnostics.defaultIssueTitle(finding.rule, finding.file).slice(0, 120)} name="diagnosticTitle" required />
 					</label>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">{catalog.form.scope}</span>
-						<Textarea className="min-h-24" name="diagnosticScope" required />
+						<span className="font-medium">{catalog.form.objective}</span>
+						<Textarea className="min-h-24" name="diagnosticObjective" required />
 					</label>
+					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name="diagnosticAcceptance" required /></label>
+					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name="diagnosticBoundaries" /></label>
 					<label className="flex flex-col gap-1">
-						<span className="font-medium">{catalog.form.verificationCommand}</span>
+						<span className="font-medium">{catalog.form.verify}</span>
 						<Input className="font-mono" name="diagnosticVerificationCommand" placeholder={catalog.form.verificationPlaceholder} required />
 					</label>
 					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">{catalog.form.promote}</button>
@@ -714,10 +778,12 @@ export function ProposalsPanel({
 									onSubmit={(event) => {
 										event.preventDefault();
 										const value = fieldReader(event.currentTarget);
-										onPromoteProposal(proposal.id, {
-											title: value('proposalTitle'),
-											scope: value('proposalScope'),
-											verificationCommand: value('proposalVerificationCommand'),
+						onPromoteProposal(proposal.id, {
+							title: value('proposalTitle'),
+							objective: value('proposalObjective'),
+							acceptance: parseLines(value('proposalAcceptance')),
+							boundaries: parseLines(value('proposalBoundaries'), true),
+							verify: [value('proposalVerificationCommand')],
 										});
 									}}
 								>
@@ -737,19 +803,23 @@ export function ProposalsPanel({
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-scope-${proposal.id}`}
 									>
-										<span className="font-medium">{catalog.form.scope}</span>
+						<span className="font-medium">{catalog.form.objective}</span>
 										<Textarea
 											className="min-h-24"
 											id={`proposal-scope-${proposal.id}`}
-											name="proposalScope"
-											required
-										/>
-									</label>
+																							name="proposalObjective"
+																							required
+																			/>
+																			</label>
+																			<input aria-hidden="true" name="proposalScope" type="hidden" />
+																			<input aria-hidden="true" name="proposalVerificationCommand" type="hidden" />
+					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name="proposalAcceptance" required /></label>
+					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name="proposalBoundaries" /></label>
 									<label
 										className="flex flex-col gap-1"
 										htmlFor={`proposal-command-${proposal.id}`}
 									>
-										<span className="font-medium">{catalog.form.verificationCommand}</span>
+						<span className="font-medium">{catalog.form.verify}</span>
 										<Input
 											className="font-mono"
 											id={`proposal-command-${proposal.id}`}

@@ -215,8 +215,9 @@ describe('diagnostics web API', () => {
 				`/api/diagnostic-findings/${second?.id}/promote`,
 				{
 					title: 'Promoted diagnostic',
-					scope: 'Remove the verified React defect.',
-					verificationCommand: 'bun test',
+					objective: 'Remove the verified React defect.',
+					acceptance: ['Remove the verified React defect.'],
+					verify: ['bun test'],
 				},
 			);
 			expect(promoted.status).toBe(200);
@@ -227,8 +228,9 @@ describe('diagnostics web API', () => {
 			expect(harness.intakeCalls).toEqual([{
 				input: {
 					title: 'Promoted diagnostic',
-					scope: 'Remove the verified React defect.',
-					verificationCommand: 'bun test',
+					objective: 'Remove the verified React defect.',
+					acceptance: ['Remove the verified React defect.'],
+					verify: ['bun test'],
 				},
 				approve: false,
 			}]);
@@ -693,7 +695,7 @@ describe('diagnostics web API', () => {
 			expect((await command(`${base(foreign.id)}/diagnostic-findings/${foreignFinding.id}/dismiss`)).status).toBe(200);
 			const foreignPromoteFinding = foreignSnapshot.findings.find((finding) => finding.rule === 'foreign-promote-rule')!;
 			const promoted = await command(`${base(foreign.id)}/diagnostic-findings/${foreignPromoteFinding.id}/promote`, {
-				title: 'Foreign draft', scope: 'Foreign scope', verificationCommand: 'bun test',
+				title: 'Foreign draft', objective: 'Foreign scope', acceptance: ['Foreign scope'], verify: ['bun test'],
 			});
 			expect(promoted.status).toBe(200);
 			const promotedResult = await promoted.json() as {
@@ -716,7 +718,7 @@ describe('diagnostics web API', () => {
 			expect(foreignBacklog).toHaveLength(1);
 			expect(foreignBacklog).toMatchObject([{
 				title: 'Foreign draft',
-				description: 'Foreign scope',
+				spec: { version: 2, objective: 'Foreign scope', acceptance: ['Foreign scope'], verify: ['bun test'] },
 			}]);
 		} finally {
 			await handle.stop();

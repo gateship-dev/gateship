@@ -382,6 +382,7 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 			'when they are public, contractual, used to operate the system, or able to',
 			'induce incorrect execution or verification.',
 			'Speculation is not a finding.',
+			'Only the issue specification and recorded operator decisions are binding; description and other issue fields are context only.',
 			'',
 			'End your reply with a single JSON object on the last line and nothing after it:',
 			'{"verdict":"CLEAN","findings":[]}',
