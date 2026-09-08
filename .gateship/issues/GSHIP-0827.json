@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-827",
+  "title": "Criar um harness interno para os componentes compartilhados",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:44:49.968Z",
+  "updatedAt": "2026-09-08T14:44:49.968Z",
+  "description": "Criar um harness de desenvolvimento e testes, excluído das rotas e do bundle de produção, que renderize fixtures determinísticas dos componentes compartilhados da shell e das runs. Cobrir cards e suas variantes tipográficas, header, botões, badges, kbd, estados vazios, atenção do operador, notification center, outputs longos e combinações responsivas. Permitir inspeção em light/dark, pt-BR/en-US, medida central/larga e 390 px sem adicionar Storybook nem outra framework. O harness deve reutilizar os componentes reais, não cópias, e servir como contrato visual/reprodutível para as issues seguintes.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Criar um harness de desenvolvimento e testes, excluído das rotas e do bundle de produção, que renderize fixtures determinísticas dos componentes compartilhados da shell e das runs. Cobrir cards e suas variantes tipográficas, header, botões, badges, kbd, estados vazios, atenção do operador, notification center, outputs longos e combinações responsivas. Permitir inspeção em light/dark, pt-BR/en-US, medida central/larga e 390 px sem adicionar Storybook nem outra framework. O harness deve reutilizar os componentes reais, não cópias, e servir como contrato visual/reprodutível para as issues seguintes.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
