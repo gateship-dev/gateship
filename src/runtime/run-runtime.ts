@@ -2447,7 +2447,11 @@ export class RunRuntime {
 		const started = performance.now();
 		const result = await reconciler.reconcile({
 			 runId: run.id, sourceIssueId: run.issueId, targetIssueId,
-			workspace: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
+			// The source run's worktree is released immediately after its terminal
+			// transition. Reconciliation therefore runs from the registered project
+			// root, which remains readable while it compares origin/main and the
+			// prior delivery.
+			workspace: this.#cwd,
 			originMain: 'origin/main',
 			priorDelivery: { runId: run.id, issueId: run.issueId },
 			nextSpecification: JSON.stringify(target.spec), providerId: run.providerId,
