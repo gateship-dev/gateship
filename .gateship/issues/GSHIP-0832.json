@@ -1,0 +1,33 @@
+{
+  "id": "GSHIP-832",
+  "title": "Fechar o contrato de escalada do executor",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T16:29:37.607Z",
+  "updatedAt": "2026-09-08T16:29:37.607Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Impedir que uma combinação inválida entre status e reconciliação derrube a run e reduzir perguntas humanas quando a própria spec já autoriza a correção.",
+    "acceptance": [
+      "O schema estruturado compartilhado pelos executores Claude e Codex aceita somente completed com reconciliation unchanged ou adapted, e waiting-user com contract-change-required.",
+      "O parser continua rejeitando respostas ausentes, malformadas ou fora do schema como defesa em profundidade; nenhuma saída inválida é convertida silenciosamente.",
+      "Os prompts declaram que testes ou fixtures que contradigam diretamente uma aceitação aprovada devem ser atualizados como trabalho da issue, não escalados ao operador.",
+      "Uma escolha sem resposta dedutível na spec continua retornando waiting-user com contract-change-required e segue para o resolvedor do ciclo existente.",
+      "Testes reproduzem a combinação inválida observada na primeira run da GSHIP-831 para os dois providers e preservam os caminhos válidos atuais."
+    ],
+    "boundaries": [
+      "Não criar retry adicional, novo modelo, novo estágio ou novo tipo de status.",
+      "Não resolver automaticamente uma ambiguidade sem resposta no contrato aprovado.",
+      "Não alterar a máquina de estados nem o comportamento público de runs.respond."
+    ],
+    "verify": [
+      "bun test test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts test/runtime/run-runtime.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "cf958af1be68b209d5b0605fe537d3936689f759ed23bda39c0ed0c5f07d5f89",
+    "approvedAt": "2026-09-08T16:29:37.607Z"
+  }
+}
