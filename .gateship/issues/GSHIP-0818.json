@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-818",
+  "title": "Estabilizar o workspace da reconciliação entre runs",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T00:17:24.764Z",
+  "updatedAt": "2026-09-08T00:17:24.764Z",
+  "description": "Corrigir o lifecycle da reconciliação entre runs para que a sessão somente leitura nunca use como diretório de trabalho um worktree que pode ser liberado enquanto o modelo ainda está inspecionando a entrega anterior. Executar a reconciliação a partir de um diretório estável e legível, como a raiz principal registrada do projeto sincronizada com origin/main, ou adiar a liberação até o término da reconciliação, escolhendo a solução mais simples que preserve isolamento e estado somente leitura. Reproduzir em teste a ordem observada nas transições de GSHIP-817 e GSHIP-814: reconciliação iniciada, workspace liberado e primeiro comando falhando com CreateProcess/No such file or directory. Demonstrar que a inspeção permanece disponível até produzir o resultado tipado e que o workspace temporário ainda é liberado ao final. Não alterar as categorias unchanged, clarified e material, não enfraquecer o checkpoint, não fazer fallback silencioso para inferência sem evidência e não ampliar permissões da sessão.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir o lifecycle da reconciliação entre runs para que a sessão somente leitura nunca use como diretório de trabalho um worktree que pode ser liberado enquanto o modelo ainda está inspecionando a entrega anterior. Executar a reconciliação a partir de um diretório estável e legível, como a raiz principal registrada do projeto sincronizada com origin/main, ou adiar a liberação até o término da reconciliação, escolhendo a solução mais simples que preserve isolamento e estado somente leitura. Reproduzir em teste a ordem observada nas transições de GSHIP-817 e GSHIP-814: reconciliação iniciada, workspace liberado e primeiro comando falhando com CreateProcess/No such file or directory. Demonstrar que a inspeção permanece disponível até produzir o resultado tipado e que o workspace temporário ainda é liberado ao final. Não alterar as categorias unchanged, clarified e material, não enfraquecer o checkpoint, não fazer fallback silencioso para inferência sem evidência e não ampliar permissões da sessão.",
+    "verify": [
+      "bun run check:all"
+    ]
+  },
+  "approval": {
+    "fingerprint": "8b3c593fb835377b14eada8b39abbb6bfbc1e580dd3dd86723aa851c36674c4f",
+    "approvedAt": "2026-09-08T00:17:24.764Z"
+  }
+}
