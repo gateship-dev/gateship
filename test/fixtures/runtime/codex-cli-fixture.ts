@@ -53,7 +53,9 @@ if (mode === 'wait') {
 				? []
 				: [{ title: proposal, evidence: 'fixture evidence' }],
 			reconciliation: {
-				outcome: status === 'waiting-user' ? 'contract-change-required' : 'unchanged',
+				outcome: mode === 'invalid-reconciliation'
+					? 'contract-change-required'
+					: status === 'waiting-user' ? 'contract-change-required' : 'unchanged',
 				summary: 'fixture reconciliation',
 			},
 		};

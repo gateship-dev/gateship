@@ -131,6 +131,20 @@ export const EXECUTION_RESULT_SCHEMA = {
 	},
 	required: ['status', 'summary', 'proposals', 'reconciliation'],
 	additionalProperties: false,
+	oneOf: [
+		{
+			properties: {
+				status: { const: 'completed' },
+				reconciliation: { properties: { outcome: { enum: ['unchanged', 'adapted'] } } },
+			},
+		},
+		{
+			properties: {
+				status: { const: 'waiting-user' },
+				reconciliation: { properties: { outcome: { const: 'contract-change-required' } } },
+			},
+		},
+	],
 } as const;
 
 export function buildClaudeCliArgv(input: ClaudeInvocation): string[] {
@@ -292,6 +306,7 @@ export function buildWorkPrompt(
 		"Run only the smallest relevant checks while editing, then run the human-approved issue verification command once before completion; do not add `bun run check:all`, the full test suite, or other broad gates unless that exact command is already in the human-approved verification, because the service runs the project's `verify` script once after a clean review at the ship boundary.",
 		'Return status completed when the issue work is ready for verification.',
 		'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
+		'Tests or fixtures that directly contradict an approved acceptance are part of this issue and must be updated; do not escalate them to the operator.',
 		'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 		`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
 		'The fresh worktree and the current main are the sources of truth. Before editing, compare the current code with the approved contract below.',
@@ -326,17 +341,38 @@ export function parseExecutionResult(
 		throw new Error('executor did not return structured run status');
 	}
 	const result = structuredOutput as Record<string, unknown>;
+	const keys = Object.keys(result).sort();
+	if (keys.join('\0') !== ['proposals', 'reconciliation', 'status', 'summary'].join('\0')) {
+		throw new Error('executor returned an invalid structured run status');
+	}
 	const status = result['status'];
 	const summary = result['summary'];
+	const proposals = result['proposals'];
 	const reconciliation = result['reconciliation'];
 	const reconciliationRecord = reconciliation !== null && typeof reconciliation === 'object' && !Array.isArray(reconciliation)
 		? reconciliation as Record<string, unknown>
 		: null;
+	const reconciliationKeys = reconciliationRecord === null ? '' : Object.keys(reconciliationRecord).sort().join('\0');
 	const reconciliationOutcome = reconciliationRecord?.['outcome'];
 	const reconciliationSummary = reconciliationRecord?.['summary'];
-	if ((status !== 'completed' && status !== 'waiting-user')
+	if (!Array.isArray(proposals)
+		|| proposals.length > PROPOSAL_LIMITS.maxItems
+		|| proposals.some((proposal) => {
+			if (proposal === null || typeof proposal !== 'object' || Array.isArray(proposal)) return true;
+			const record = proposal as Record<string, unknown>;
+			const proposalKeys = Object.keys(record).sort();
+			return proposalKeys.join('\0') !== ['evidence', 'title'].join('\0')
+				|| typeof record['title'] !== 'string'
+				|| record['title'].trim().length === 0
+				|| record['title'].length > PROPOSAL_LIMITS.title
+				|| typeof record['evidence'] !== 'string'
+				|| record['evidence'].trim().length === 0
+				|| record['evidence'].length > PROPOSAL_LIMITS.evidence;
+		})
+		|| (status !== 'completed' && status !== 'waiting-user')
 		|| typeof summary !== 'string'
 		|| summary.trim().length === 0
+		|| reconciliationKeys !== ['outcome', 'summary'].join('\0')
 		|| (reconciliationOutcome !== 'unchanged'
 			&& reconciliationOutcome !== 'adapted'
 			&& reconciliationOutcome !== 'contract-change-required')
@@ -357,7 +393,7 @@ export function parseExecutionResult(
 		outcome: status,
 		summary: summary.trim(),
 		reconciliation: parsedReconciliation,
-		proposals: normalizeProposalDrafts(result['proposals']),
+		proposals: normalizeProposalDrafts(proposals),
 	};
 }
 
