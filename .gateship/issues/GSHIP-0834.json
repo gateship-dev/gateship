@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-834",
   "title": "Restaurar compatibilidade do schema com o Codex",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T16:59:39.174Z",
-  "updatedAt": "2026-09-08T16:59:39.174Z",
+  "updatedAt": "2026-09-08T17:07:22.261Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

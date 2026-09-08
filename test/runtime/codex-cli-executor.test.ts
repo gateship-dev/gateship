@@ -389,6 +389,19 @@ describe('Codex CLI runtime executor', () => {
 		expect(summary.input).toContain('Continue dentro do contrato aprovado.');
 	});
 
+	test('maps the adapted discriminant to the existing runtime result', async () => {
+		const executor = new CodexCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-outcome=completed-adapted'],
+			loadIssue: () => '{"id":"CAM-834"}',
+		});
+		const result = await executor.execute({
+			runId: 'run-834-codex', issueId: 'GSHIP-834', sessionId: 'session-834-codex',
+			resume: false, cwd: createTestTmpdir('gship-834-codex-'),
+			signal: new AbortController().signal, emit: () => {},
+		});
+		expect(result).toMatchObject({ outcome: 'completed', reconciliation: { outcome: 'adapted' } });
+	});
+
 	test('rejects the invalid completed and contract-change-required combination from GSHIP-831', async () => {
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-mode=invalid-reconciliation'],

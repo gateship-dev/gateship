@@ -39,6 +39,8 @@ if (mode === 'wait') {
 	const status = mode === 'waiting-user' ? 'waiting-user' : 'completed';
 	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
 	const proposal = fixtureArgument('proposal');
+	const outputOutcome = fixtureArgument('outcome')
+		?? (status === 'waiting-user' ? 'waiting-user-contract-change-required' : 'completed-unchanged');
 	const output = mode === 'review'
 		? {
 			verdict,
@@ -46,19 +48,24 @@ if (mode === 'wait') {
 				? []
 				: [{ file: 'src/reviewed.ts', summary: 'fixture finding' }],
 		}
-		: {
+		: mode === 'invalid-reconciliation'
+			? {
 			status,
 			summary: JSON.stringify({ argv: process.argv.slice(2), input }),
 			proposals: proposal === undefined
 				? []
 				: [{ title: proposal, evidence: 'fixture evidence' }],
 			reconciliation: {
-				outcome: mode === 'invalid-reconciliation'
-					? 'contract-change-required'
-					: status === 'waiting-user' ? 'contract-change-required' : 'unchanged',
+				outcome: 'contract-change-required',
 				summary: 'fixture reconciliation',
 			},
-		};
+			}
+			: {
+				outcome: outputOutcome,
+				summary: JSON.stringify({ argv: process.argv.slice(2), input }),
+				proposals: proposal === undefined ? [] : [{ title: proposal, evidence: 'fixture evidence' }],
+				reconciliation: { summary: 'fixture reconciliation' },
+			};
 	process.stdout.write(`${JSON.stringify({
 		type: 'item.completed',
 		item: {

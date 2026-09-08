@@ -112,23 +112,26 @@ if (mode === 'wait') {
 	})}\n`);
 	const proposal = fixtureArgument('proposal');
 	const cost = fixtureArgument('cost');
+	const outputOutcome = fixtureArgument('outcome')
+		?? (status === 'waiting-user' ? 'waiting-user-contract-change-required' : 'completed-unchanged');
+	const structuredOutput = mode === 'invalid-reconciliation'
+		? {
+			status,
+			summary,
+			proposals: proposal === undefined ? [] : [{ title: proposal, evidence: 'fixture evidence' }],
+			reconciliation: { outcome: 'contract-change-required', summary: 'fixture reconciliation' },
+		}
+		: {
+			outcome: outputOutcome,
+			summary,
+			proposals: proposal === undefined ? [] : [{ title: proposal, evidence: 'fixture evidence' }],
+			reconciliation: { summary: 'fixture reconciliation' },
+		};
 	process.stdout.write(`${JSON.stringify({
 		type: 'result',
 		is_error: false,
 		result: summary,
-		structured_output: {
-			status,
-			summary,
-			proposals: proposal === undefined
-				? []
-				: [{ title: proposal, evidence: 'fixture evidence' }],
-			reconciliation: {
-				outcome: mode === 'invalid-reconciliation'
-					? 'contract-change-required'
-					: status === 'waiting-user' ? 'contract-change-required' : 'unchanged',
-				summary: 'fixture reconciliation',
-			},
-		},
+		structured_output: structuredOutput,
 		...(cost === 'full' ? {
 			total_cost_usd: 0.1234,
 			usage: {
