@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-830",
+  "title": "Exibir a atividade completa da run como timeline semântica",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:45:00.826Z",
+  "updatedAt": "2026-09-08T14:45:00.826Z",
+  "description": "Depois do mapa de estados e da paginação, transformar RunActivity em uma única coluna full-width, no scroll principal do conteúdo, agrupada por fases com âncoras compartilhadas com a state machine. Renderizar mensagens de executor, reviewer, orquestrador, operador e runtime com labels humanos; agrupar tool calls; mostrar comandos, exit code e duração em Saans Mono; preservar whitespace de outputs; recolher conteúdo longo; destacar findings e decisões sem converter toda entrada em card. O raw event kind fica como metadado secundário. Carregar eventos anteriores pela paginação até tornar todo o histórico durável alcançável, manter SSE e live edge, e nunca apresentar raciocínio privado não persistido como conversa. Cobrir teclado, leitores de tela, pt-BR/en-US, estados sem atividade, outputs extremos, 390 px e performance de runs longas.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Depois do mapa de estados e da paginação, transformar RunActivity em uma única coluna full-width, no scroll principal do conteúdo, agrupada por fases com âncoras compartilhadas com a state machine. Renderizar mensagens de executor, reviewer, orquestrador, operador e runtime com labels humanos; agrupar tool calls; mostrar comandos, exit code e duração em Saans Mono; preservar whitespace de outputs; recolher conteúdo longo; destacar findings e decisões sem converter toda entrada em card. O raw event kind fica como metadado secundário. Carregar eventos anteriores pela paginação até tornar todo o histórico durável alcançável, manter SSE e live edge, e nunca apresentar raciocínio privado não persistido como conversa. Cobrir teclado, leitores de tela, pt-BR/en-US, estados sem atividade, outputs extremos, 390 px e performance de runs longas.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
