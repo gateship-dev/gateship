@@ -19,16 +19,31 @@ export const EVIDENCE_LIMITS = {
 	output: 600,
 } as const;
 
-/**
- * The executable task contract: an outcome (`scope`) and one or more
- * commands that prove it (`verify`).
- */
-export interface Spec {
+export const SPEC_V2_LIMITS = {
+	objective: 300,
+	acceptance: 300,
+	maxAcceptance: 7,
+	boundary: 200,
+	maxBoundaries: 5,
+} as const;
+
+export interface LegacySpec {
 	scope: string;
 	verify?: string[];
 	/** Executable premise, captured at intake and checked again before any provider runs. */
 	evidence?: EvidenceItem[];
 }
+
+export interface SpecV2 {
+	version: 2;
+	objective: string;
+	acceptance: string[];
+	boundaries?: string[];
+	verify: string[];
+	evidence?: EvidenceItem[];
+}
+
+export type Spec = LegacySpec | SpecV2;
 
 export interface ValidationResult {
 	ok: boolean;
@@ -41,11 +56,24 @@ export function fingerprintSpec(spec: Spec): string {
 		command: item.command.trim(),
 		output: item.output.trim(),
 	}));
-	const canonical = JSON.stringify({
-		scope: spec.scope.trim(),
-		verify: (spec.verify ?? []).map((command) => command.trim()),
-		...(evidence.length === 0 ? {} : { evidence }),
-	});
+	let canonical: string;
+	if ('version' in spec && spec.version === 2) {
+		canonical = JSON.stringify({
+			version: 2,
+			objective: spec.objective.trim(),
+			acceptance: spec.acceptance.map((item) => item.trim()),
+			...(spec.boundaries === undefined || spec.boundaries.length === 0
+				? {} : { boundaries: spec.boundaries.map((item) => item.trim()) }),
+			verify: spec.verify.map((command) => command.trim()),
+			...(evidence.length === 0 ? {} : { evidence }),
+		});
+	} else {
+		canonical = JSON.stringify({
+			scope: (spec as LegacySpec).scope.trim(),
+			verify: (spec.verify ?? []).map((command) => command.trim()),
+			...(evidence.length === 0 ? {} : { evidence }),
+		});
+	}
 	return createHash('sha256').update(canonical).digest('hex');
 }
 
@@ -55,6 +83,25 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isNonEmptyStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.length > 0 && value.every(isNonEmptyString);
+}
+
+function validateStringList(value: unknown, label: string, maxItems: number, maxLength: number, errors: string[]): void {
+	if (!Array.isArray(value) || value.length === 0) {
+		errors.push(`${label} must be a non-empty list`);
+		return;
+	}
+	if (value.length > maxItems) errors.push(`${label} accepts at most ${maxItems} items`);
+	const normalized = new Set<string>();
+	value.forEach((item, index) => {
+		if (!isNonEmptyString(item)) {
+			errors.push(`${label}[${index}] must be a non-empty string`);
+			return;
+		}
+		const trimmed = item.trim();
+		if (trimmed.length > maxLength) errors.push(`${label}[${index}] exceeds ${maxLength} characters`);
+		if (normalized.has(trimmed)) errors.push(`${label}[${index}] is duplicated`);
+		normalized.add(trimmed);
+	});
 }
 
 /** Validate one evidence item's shape and size, appending to `errors` in place. */
@@ -89,6 +136,37 @@ function validateEvidence(value: unknown, errors: string[]): void {
 	value.forEach((item, index) => validateEvidenceItem(item, index, errors));
 }
 
+function validateAllowedFields(candidate: Record<string, unknown>, allowed: Set<string>, label: string, errors: string[]): void {
+	for (const key of Object.keys(candidate)) if (!allowed.has(key)) errors.push(`${key} is not allowed in a ${label} spec`);
+}
+
+function validateOptionalStringList(value: unknown, label: string, maxItems: number, maxLength: number, errors: string[]): void {
+	if (value === undefined) return;
+	if (!Array.isArray(value)) {
+		errors.push(`${label} must be a list`);
+		return;
+	}
+	if (value.length === 0) return;
+	validateStringList(value, label, maxItems, maxLength, errors);
+}
+
+function validateV2Spec(candidate: Record<string, unknown>, errors: string[]): void {
+	validateAllowedFields(candidate, new Set(['version', 'objective', 'acceptance', 'boundaries', 'verify', 'evidence']), 'v2', errors);
+	if (!isNonEmptyString(candidate['objective'])) errors.push('objective must be a non-empty string');
+	else if (candidate['objective'].trim().length > SPEC_V2_LIMITS.objective) errors.push(`objective exceeds ${SPEC_V2_LIMITS.objective} characters`);
+	validateStringList(candidate['acceptance'], 'acceptance', SPEC_V2_LIMITS.maxAcceptance, SPEC_V2_LIMITS.acceptance, errors);
+	validateOptionalStringList(candidate['boundaries'], 'boundaries', SPEC_V2_LIMITS.maxBoundaries, SPEC_V2_LIMITS.boundary, errors);
+	validateStringList(candidate['verify'], 'verify', Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER, errors);
+	validateEvidence(candidate['evidence'], errors);
+}
+
+function validateLegacySpec(candidate: Record<string, unknown>, errors: string[]): void {
+	validateAllowedFields(candidate, new Set(['scope', 'verify', 'evidence']), 'legacy', errors);
+	if (!isNonEmptyString(candidate['scope'])) errors.push('scope must be a non-empty string');
+	if (!isNonEmptyStringArray(candidate['verify'])) errors.push('spec requires non-empty verify commands');
+	validateEvidence(candidate['evidence'], errors);
+}
+
 /** Accept the direct contract. */
 export function validateSpec(value: unknown): ValidationResult {
 	if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -96,13 +174,15 @@ export function validateSpec(value: unknown): ValidationResult {
 	}
 	const candidate = value as Record<string, unknown>;
 	const errors: string[] = [];
-	if (!isNonEmptyString(candidate['scope'])) {
-		errors.push('scope must be a non-empty string');
+	if (candidate['version'] !== undefined && candidate['version'] !== 2) {
+		errors.push('version must be 2');
+		return { ok: false, errors };
 	}
-	if (!isNonEmptyStringArray(candidate['verify'])) {
-		errors.push('spec requires non-empty verify commands');
+	if (candidate['version'] === 2) {
+		validateV2Spec(candidate, errors);
+		return { ok: errors.length === 0, errors };
 	}
-	validateEvidence(candidate['evidence'], errors);
+	validateLegacySpec(candidate, errors);
 	return { ok: errors.length === 0, errors };
 }
 

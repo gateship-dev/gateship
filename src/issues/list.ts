@@ -174,8 +174,14 @@ export interface BacklogJsonView {
 export interface DraftJsonRow {
 	id: string;
 	title: string;
-	scope: string;
-	verificationCommand: string;
+	version?: 2;
+	objective?: string;
+	acceptance?: string[];
+	boundaries?: string[];
+	verify?: string[];
+	/** Legacy fields are returned only for legacy specs. */
+	scope?: string;
+	verificationCommand?: string;
 	/** The spec's executable premise, checked in the run's own workspace before any provider runs (GSHIP-629). Absent when the spec has none. */
 	evidence?: EvidenceItem[];
 	state: 'draft' | 'approved' | 'stale';
@@ -188,6 +194,46 @@ function toJsonRow(issue: IssueEntry): BacklogJsonRow {
 		title: issue.title,
 		createdAt: issue.createdAt,
 		updatedAt: issue.updatedAt,
+	};
+}
+
+function projectDraftSpec(issue: IssueEntry): Pick<DraftJsonRow, 'version' | 'objective' | 'acceptance' | 'boundaries' | 'verify' | 'scope' | 'verificationCommand'> {
+	const spec = issue.spec;
+	if (spec !== undefined && 'version' in spec && spec.version === 2) {
+		return {
+			version: 2,
+			objective: spec.objective,
+			acceptance: spec.acceptance,
+			...(spec.boundaries === undefined ? {} : { boundaries: spec.boundaries }),
+			verify: spec.verify,
+		};
+	}
+	return {
+		scope: spec !== undefined && 'scope' in spec ? spec.scope : '',
+		verificationCommand: spec?.verify?.[0] ?? '',
+	};
+}
+
+function draftState(issue: IssueEntry): DraftJsonRow['state'] {
+	const approval = issue.approval;
+	if (approval === undefined) return 'draft';
+	return issue.spec !== undefined && approval.fingerprint === fingerprintSpec(issue.spec) ? 'approved' : 'stale';
+}
+
+function draftOptionalFields(issue: IssueEntry): Pick<DraftJsonRow, 'evidence' | 'approvedAt'> {
+	const fields: Pick<DraftJsonRow, 'evidence' | 'approvedAt'> = {};
+	if (issue.spec?.evidence !== undefined && issue.spec.evidence.length > 0) fields.evidence = issue.spec.evidence;
+	if (issue.approval !== undefined) fields.approvedAt = issue.approval.approvedAt;
+	return fields;
+}
+
+function toDraftJsonRow(issue: IssueEntry): DraftJsonRow {
+	return {
+		id: issue.id,
+		title: issue.title,
+		...projectDraftSpec(issue),
+		...draftOptionalFields(issue),
+		state: draftState(issue),
 	};
 }
 
@@ -238,22 +284,7 @@ export function deriveBacklogJson(
 	const drafts = backlog
 		.filter((issue) => issue.status === 'open' && issue.stage === 'specified')
 		.sort(compareBacklogEntries)
-		.map((issue): DraftJsonRow => {
-			const approval = issue.approval;
-			const evidence = issue.spec?.evidence;
-			return {
-				id: issue.id,
-				title: issue.title,
-				scope: issue.spec?.scope ?? '',
-				verificationCommand: issue.spec?.verify?.[0] ?? '',
-				...(evidence === undefined || evidence.length === 0 ? {} : { evidence }),
-				state: approval === undefined
-					? 'draft'
-					: issue.spec !== undefined && approval.fingerprint === fingerprintSpec(issue.spec)
-						? 'approved' : 'stale',
-				...(approval === undefined ? {} : { approvedAt: approval.approvedAt }),
-			};
-		});
+		.map(toDraftJsonRow);
 
 	return { counts, plannable, byStage, drafts };
 }

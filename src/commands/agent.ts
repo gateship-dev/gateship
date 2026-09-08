@@ -62,9 +62,9 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'runs.list': { method: 'GET', path: projectPath('/runs'), input: '{projectId, limit?, offset?}', listField: 'runs' },
 	'runs.get': { method: 'GET', path: runPath(''), input: '{projectId, runId}' },
 	'runs.events': { method: 'GET', path: runPath('/events'), input: '{projectId, runId, limit?, offset?}', listField: 'events' },
-	'issues.create': { method: 'POST', path: projectPath('/issues'), input: '{projectId, title, scope, verificationCommand, evidence?}' },
-	'issues.create_approved': { method: 'POST', path: projectPath('/issues/create-approved'), input: '{projectId, title, scope, verificationCommand, evidence?, authorization}' },
-	'issues.specify': { method: 'POST', path: issuePath('/spec'), input: '{projectId, issueId, scope, verificationCommand, evidence?}' },
+	'issues.create': { method: 'POST', path: projectPath('/issues'), input: '{projectId, title, objective, acceptance, boundaries?, verify, evidence?}' },
+	'issues.create_approved': { method: 'POST', path: projectPath('/issues/create-approved'), input: '{projectId, title, objective, acceptance, boundaries?, verify, evidence?, authorization}' },
+	'issues.specify': { method: 'POST', path: issuePath('/spec'), input: '{projectId, issueId, objective, acceptance, boundaries?, verify, evidence?}' },
 	'issues.approve': { method: 'POST', path: issuePath('/approve'), input: '{projectId, issueId, fingerprint, authorization}' },
 	'issues.abandon': { method: 'POST', path: issuePath('/abandon'), input: '{projectId, issueId, reason}' },
 	'brief.get': { method: 'GET', path: projectPath('/brief'), input: '{projectId}' },
@@ -207,7 +207,7 @@ function issueListItem(value: unknown): Record<string, unknown> {
 	const spec = record(issue['spec']);
 	const approval = record(issue['approval']);
 	const approved = typeof approval['fingerprint'] === 'string'
-		&& typeof spec['scope'] === 'string'
+		&& (typeof spec['scope'] === 'string' || spec['version'] === 2)
 		&& approval['fingerprint'] === fingerprintSpec(spec as unknown as Spec);
 	return {
 		id: shortString(issue['id'], 48),

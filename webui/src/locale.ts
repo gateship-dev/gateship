@@ -326,6 +326,10 @@ export interface WorkCatalog {
 	};
 	form: {
 		title: string;
+		objective: string;
+		acceptance: string;
+		boundaries: string;
+		verify: string;
 		scope: string;
 		verificationCommand: string;
 		verificationPlaceholder: string;
@@ -870,8 +874,9 @@ export const LOCALE_CATALOG = {
 					`${formattedCount} ${count === 1 ? 'admissible issue' : 'admissible issues'} right now.`,
 				start: 'Start run',
 			},
-			form: {
-				title: 'Title',
+		form: {
+			title: 'Title',
+			objective: 'Objective', acceptance: 'Acceptance criteria, one per line', boundaries: 'Boundaries, one per line', verify: 'Verification commands, one per line',
 				scope: 'Scope and expected outcome',
 				verificationCommand: 'Verification command',
 				verificationPlaceholder: 'bun test',
@@ -1324,8 +1329,9 @@ export const LOCALE_CATALOG = {
 					`${formattedCount} ${count === 1 ? 'issue admissível' : 'issues admissíveis'} agora.`,
 				start: 'Iniciar execução',
 			},
-			form: {
-				title: 'Título',
+		form: {
+			title: 'Título',
+			objective: 'Objetivo', acceptance: 'Critérios de aceitação, um por linha', boundaries: 'Limites vinculantes, um por linha', verify: 'Comandos de verificação, um por linha',
 				scope: 'Escopo e resultado esperado',
 				verificationCommand: 'Comando de verificação',
 				verificationPlaceholder: 'bun test',

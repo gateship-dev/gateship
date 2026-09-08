@@ -23,8 +23,9 @@ describe('operator issue intake API', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 		const body = {
 			title: '  Intake web  ',
-			scope: '  Criar uma tarefa sem planner.  ',
-			verificationCommand: '  bun test test/web/issue-intake-api.test.ts  ',
+			objective: '  Criar uma tarefa sem planner.  ',
+			acceptance: ['  Criar uma tarefa sem planner.  '],
+			verify: ['  bun test test/web/issue-intake-api.test.ts  '],
 		};
 
 		try {
@@ -48,8 +49,9 @@ describe('operator issue intake API', () => {
 			});
 			expect(received).toEqual([{
 				title: 'Intake web',
-				scope: 'Criar uma tarefa sem planner.',
-				verificationCommand: 'bun test test/web/issue-intake-api.test.ts',
+				objective: 'Criar uma tarefa sem planner.',
+				acceptance: ['Criar uma tarefa sem planner.'],
+				verify: ['bun test test/web/issue-intake-api.test.ts'],
 			}]);
 		} finally {
 			await handle.stop();
@@ -74,7 +76,7 @@ describe('operator issue intake API', () => {
 			const response = await fetch(`${origin}/api/issues`, {
 				method: 'POST',
 				headers: { origin, 'content-type': 'application/json' },
-				body: JSON.stringify({ title: '', scope: 'scope', verificationCommand: 'bun test' }),
+				body: JSON.stringify({ title: '', objective: 'scope', acceptance: ['scope'], verify: ['bun test'] }),
 			});
 			expect(response.status).toBe(400);
 			expect(await response.json()).toMatchObject({ code: 'invalid-request' });
@@ -100,8 +102,9 @@ describe('operator issue intake API', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 		const contract = {
 			title: '  Approved intake  ',
-			scope: '  Publicar uma única versão aprovada.  ',
-			verificationCommand: '  bun test test/web/issue-intake-api.test.ts  ',
+			objective: '  Publicar uma única versão aprovada.  ',
+			acceptance: ['  Publicar uma única versão aprovada.  '],
+			verify: ['  bun test test/web/issue-intake-api.test.ts  '],
 		};
 		try {
 			const missing = await fetch(`${origin}/api/issues/create-approved`, {
@@ -121,8 +124,9 @@ describe('operator issue intake API', () => {
 			expect(received).toEqual([{
 				input: {
 					title: 'Approved intake',
-					scope: 'Publicar uma única versão aprovada.',
-					verificationCommand: 'bun test test/web/issue-intake-api.test.ts',
+					objective: 'Publicar uma única versão aprovada.',
+					acceptance: ['Publicar uma única versão aprovada.'],
+					verify: ['bun test test/web/issue-intake-api.test.ts'],
 				},
 				options: { approve: true },
 			}]);
@@ -150,7 +154,7 @@ describe('operator issue intake API', () => {
 			const response = await fetch(`${origin}/api/issues/CAM-42/spec`, {
 				method: 'POST',
 				headers: { origin, 'content-type': 'application/json' },
-				body: JSON.stringify({ scope: '  Escopo direto.  ', verificationCommand: '  bun test  ' }),
+				body: JSON.stringify({ objective: '  Escopo direto.  ', acceptance: ['  Escopo direto.  '], verify: ['  bun test  '] }),
 			});
 			expect(response.status).toBe(200);
 			expect(await response.json()).toMatchObject({
@@ -159,7 +163,7 @@ describe('operator issue intake API', () => {
 			});
 			expect(received).toEqual([{
 				id: 'CAM-42',
-				input: { scope: 'Escopo direto.', verificationCommand: 'bun test' },
+				input: { objective: 'Escopo direto.', acceptance: ['Escopo direto.'], verify: ['bun test'] },
 			}]);
 		} finally {
 			await handle.stop();
@@ -198,8 +202,9 @@ describe('operator issue intake API', () => {
 		const origin = `http://${handle.hostname}:${handle.port}`;
 		const body = {
 			title: '  Cobrir o retry do shipper  ',
-			scope: '  Adicionar o teste que falta.  ',
-			verificationCommand: '  bun test test/runtime/run-ship.test.ts  ',
+			objective: '  Adicionar o teste que falta.  ',
+			acceptance: ['  Adicionar o teste que falta.  '],
+			verify: ['  bun test test/runtime/run-ship.test.ts  '],
 		};
 		try {
 			const forbidden = await fetch(`${origin}/api/proposals/run-1-proposal-1/promote`, {
@@ -237,8 +242,9 @@ describe('operator issue intake API', () => {
 			expect(received).toEqual([{
 				input: {
 					title: 'Cobrir o retry do shipper',
-					scope: 'Adicionar o teste que falta.',
-					verificationCommand: 'bun test test/runtime/run-ship.test.ts',
+					objective: 'Adicionar o teste que falta.',
+					acceptance: ['Adicionar o teste que falta.'],
+					verify: ['bun test test/runtime/run-ship.test.ts'],
 				},
 				options: { approve: false },
 			}]);
@@ -296,7 +302,7 @@ describe('operator issue intake API', () => {
 			const failed = await fetch(`${origin}/api/proposals/run-2-proposal-1/promote`, {
 				method: 'POST',
 				headers: { origin, 'content-type': 'application/json' },
-				body: JSON.stringify({ title: 'Publicar', scope: 'Escopo.', verificationCommand: 'bun test' }),
+				body: JSON.stringify({ title: 'Publicar', objective: 'Escopo.', acceptance: ['Escopo.'], verify: ['bun test'] }),
 			});
 			expect(failed.status).toBe(409);
 			expect(await failed.json()).toMatchObject({ code: 'publish-conflict' });
@@ -306,7 +312,7 @@ describe('operator issue intake API', () => {
 			const invalid = await fetch(`${origin}/api/proposals/run-2-proposal-1/promote`, {
 				method: 'POST',
 				headers: { origin, 'content-type': 'application/json' },
-				body: JSON.stringify({ title: 'Sem comando', scope: 'Escopo.', verificationCommand: '' }),
+				body: JSON.stringify({ title: 'Sem comando', objective: 'Escopo.', acceptance: ['Escopo.'], verify: [''] }),
 			});
 			expect(invalid.status).toBe(400);
 			expect(await invalid.json()).toMatchObject({ code: 'invalid-request' });
@@ -314,7 +320,7 @@ describe('operator issue intake API', () => {
 			const unknown = await fetch(`${origin}/api/proposals/run-2-proposal-9/promote`, {
 				method: 'POST',
 				headers: { origin, 'content-type': 'application/json' },
-				body: JSON.stringify({ title: 'Fantasma', scope: 'Escopo.', verificationCommand: 'bun test' }),
+				body: JSON.stringify({ title: 'Fantasma', objective: 'Escopo.', acceptance: ['Escopo.'], verify: ['bun test'] }),
 			});
 			expect(unknown.status).toBe(404);
 			expect(await unknown.json()).toMatchObject({ code: 'proposal-not-found' });
@@ -386,7 +392,7 @@ describe('operator issue intake API', () => {
 			},
 		});
 		const origin = `http://${handle.hostname}:${handle.port}`;
-		const spec = { scope: 'Escopo revisado.', verificationCommand: 'bun test' };
+		const spec = { objective: 'Escopo revisado.', acceptance: ['Escopo revisado.'], verify: ['bun test'] };
 		try {
 			const revise = await fetch(`${origin}/api/issues/CAM-42/spec`, {
 				method: 'POST',

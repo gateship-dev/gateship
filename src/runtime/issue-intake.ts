@@ -9,6 +9,7 @@ import {
 	EVIDENCE_LIMITS,
 	fingerprintSpec,
 	type Spec,
+	SPEC_V2_LIMITS,
 	validateSpec,
 } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
@@ -34,8 +35,10 @@ export interface IssueEvidenceExecutionOptions {
 }
 
 export interface OperatorSpecInput {
-	scope: string;
-	verificationCommand: string;
+	objective: string;
+	acceptance: string[];
+	boundaries?: string[];
+	verify: string[];
 	/** Executable premise captured against the fresh remote snapshot at intake. */
 	evidence?: EvidenceItem[];
 }
@@ -83,6 +86,20 @@ function requiredString(value: unknown, label: string): string {
 	return value.trim();
 }
 
+function requiredStringList(value: unknown, label: string, maxItems: number | undefined, maxLength?: number): string[] {
+	if (!Array.isArray(value) || value.length === 0 || (maxItems !== undefined && value.length > maxItems)) {
+		throw new IssueIntakeError('invalid-request', maxItems === undefined ? `${label} must be non-empty.` : `${label} must contain 1 to ${maxItems} items.`, 400);
+	}
+	const values = value.map((item) => requiredString(item, label));
+	const unique = new Set<string>();
+	for (const item of values) {
+		if (maxLength !== undefined && item.length > maxLength) throw new IssueIntakeError('invalid-request', `${label} items accept at most ${maxLength} characters.`, 400);
+		if (unique.has(item)) throw new IssueIntakeError('invalid-request', `${label} items must be unique.`, 400);
+		unique.add(item);
+	}
+	return values;
+}
+
 /**
  * Shape-coerce the optional evidence payload. `validateSpec` is the single place that
  * enforces item count and size, so a malformed field surfaces one consistent
@@ -114,12 +131,19 @@ export function parseOperatorSpecInput(value: unknown): OperatorSpecInput {
 	}
 	const input = value as Record<string, unknown>;
 	const evidence = optionalEvidence(input['evidence']);
+	const objective = requiredString(input['objective'], 'Objective');
+	if (objective.length > SPEC_V2_LIMITS.objective) throw new IssueIntakeError('invalid-request', `Objective accepts at most ${SPEC_V2_LIMITS.objective} characters.`, 400);
+	const acceptance = requiredStringList(input['acceptance'], 'Acceptance', SPEC_V2_LIMITS.maxAcceptance, SPEC_V2_LIMITS.acceptance);
+	let boundaries: string[] | undefined;
+	if (input['boundaries'] !== undefined) {
+		if (!Array.isArray(input['boundaries']) || input['boundaries'].length > SPEC_V2_LIMITS.maxBoundaries) throw new IssueIntakeError('invalid-request', `Boundaries accept at most ${SPEC_V2_LIMITS.maxBoundaries} items.`, 400);
+		boundaries = input['boundaries'].length === 0 ? undefined : requiredStringList(input['boundaries'], 'Boundaries', SPEC_V2_LIMITS.maxBoundaries, SPEC_V2_LIMITS.boundary);
+	}
 	return {
-		scope: requiredString(input['scope'], 'Scope'),
-		verificationCommand: requiredString(
-			input['verificationCommand'],
-			'Verification command',
-		),
+		objective,
+		acceptance,
+		...(boundaries === undefined ? {} : { boundaries }),
+		verify: requiredStringList(input['verify'], 'Verify', undefined),
 		...(evidence === undefined ? {} : { evidence }),
 	};
 }
@@ -169,8 +193,11 @@ function nextIssueNumber(cwd: string, sourceSha: string): number {
 
 function buildSpec(input: OperatorSpecInput): Spec {
 	const spec: Spec = {
-		scope: input.scope,
-		verify: [input.verificationCommand],
+		version: 2,
+		objective: input.objective!,
+		acceptance: input.acceptance!,
+		...(input.boundaries === undefined ? {} : { boundaries: input.boundaries }),
+		verify: input.verify!,
 		...(input.evidence === undefined ? {} : { evidence: input.evidence }),
 	};
 	const validated = validateSpec(spec);
@@ -299,7 +326,6 @@ function buildIssue(
 		blockedBy: [],
 		createdAt: now,
 		updatedAt: now,
-		description: input.scope,
 		specSource: 'operator',
 		spec,
 		...(approve ? { approval: { fingerprint: fingerprintSpec(spec), approvedAt: now } } : {}),
@@ -519,6 +545,7 @@ export async function specifyOperatorIssue(
 					specSource: 'operator',
 					spec: buildSpec(await captureEvidence(worktree, input, options)),
 				};
+				delete specified.description;
 				delete specified.approval;
 				return specified;
 			},

@@ -101,7 +101,8 @@ export const REVIEW_MATERIALITY_CONTRACT = [
 	'reveal a real gap in behaviour. Comments and documentation stay material',
 	'when they are public, contractual, used to operate the system, or able to',
 	'induce incorrect execution or verification.',
-	'Speculation is not a finding.',
+		'Speculation is not a finding.',
+		'Only the issue specification and recorded operator decisions are binding; description and other issue fields are context only.',
 ] as const;
 
 export interface ClaudeCliReviewerOptions {

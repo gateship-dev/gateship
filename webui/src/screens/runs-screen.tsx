@@ -106,8 +106,9 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 	);
 }
 
-export function draftChanged(draft: IssueReviewDraft, scope: string, command: string): boolean {
-	return scope !== draft.scope || command !== draft.verificationCommand;
+export function draftChanged(draft: IssueReviewDraft, objective: string, acceptance: string[], boundaries: string[], verify: string[]): boolean {
+	return objective !== draft.objective || JSON.stringify(acceptance) !== JSON.stringify(draft.acceptance)
+		|| JSON.stringify(boundaries) !== JSON.stringify(draft.boundaries ?? []) || JSON.stringify(verify) !== JSON.stringify(draft.verify);
 }
 
 /** The editable contract of one draft: its revision, its approval, and its abandonment. */

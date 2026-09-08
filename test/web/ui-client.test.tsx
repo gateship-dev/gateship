@@ -556,8 +556,9 @@ describe('operational snapshot reads', () => {
 const DRAFT = {
 	id: 'CAM-940',
 	title: 'draft para revisar',
-	scope: 'Escopo persistido',
-	verificationCommand: 'bun test focused',
+	objective: 'Escopo persistido',
+	acceptance: ['Escopo persistido'],
+	verify: ['bun test focused'],
 	state: 'stale' as const,
 };
 
@@ -1926,8 +1927,9 @@ describe('work surface', () => {
 				drafts: [{
 					id: 'GSHIP-AUTHORED',
 					title: 'Título autoral sem tradução',
-					scope: 'Escopo autoral sem tradução',
-					verificationCommand: 'bun test --filter autoral',
+					objective: 'Escopo autoral sem tradução',
+					acceptance: ['Escopo autoral sem tradução'],
+					verify: ['bun test --filter autoral'],
 					state: 'stale',
 				}],
 				ideas: [{ id: 'GSHIP-IDEA', title: 'Título autoral sem tradução' }],
@@ -1974,8 +1976,9 @@ describe('work surface', () => {
 		const html = workPage({ drafts: [{
 			id: 'CAM-42',
 			title: 'Draft revisável',
-			scope: 'Escopo persistido',
-			verificationCommand: 'bun test focused',
+			objective: 'Escopo persistido',
+			acceptance: ['Escopo persistido'],
+			verify: ['bun test focused'],
 			state: 'stale',
 		}] });
 		const card = panel(html, 'Review and approve');
@@ -2004,8 +2007,9 @@ describe('work surface', () => {
 		const html = workPage({ drafts: [{
 			id: 'CAM-42',
 			title: 'Draft revisável',
-			scope: 'Escopo persistido',
-			verificationCommand: 'bun test focused',
+			objective: 'Escopo persistido',
+			acceptance: ['Escopo persistido'],
+			verify: ['bun test focused'],
 			evidence: [
 				{ command: 'wc -l src/domain-models.ts', output: '3 src/domain-models.ts' },
 				{ command: 'git log --oneline -1', output: 'abc1234 seed' },
@@ -2029,8 +2033,9 @@ describe('work surface', () => {
 		const draft = {
 			id: 'CAM-900',
 			title: 'Draft em execução',
-			scope: 'Escopo persistido',
-			verificationCommand: 'bun test focused',
+			objective: 'Escopo persistido',
+			acceptance: ['Escopo persistido'],
+			verify: ['bun test focused'],
 			state: 'approved' as const,
 		};
 		const owned = panel(workPage({ drafts: [draft], runs: [runIn('working')] }), 'Review and approve');
@@ -5193,8 +5198,9 @@ describe('same-origin transport', () => {
 		// Promotion posts the operator's contract and answers with the filed issue.
 		const draft = {
 			title: 'Cobrir o retry do shipper',
-			scope: 'Adicionar o teste que falta.',
-			verificationCommand: 'bun test',
+			objective: 'Adicionar o teste que falta.',
+			acceptance: ['Adicionar o teste que falta.'],
+			verify: ['bun test'],
 		};
 		await withRecordedFetch(
 			{ ok: true, issue: { id: 'CAM-950', title: draft.title } },
@@ -5242,8 +5248,9 @@ describe('same-origin transport', () => {
 					.toBe('Proposal run-1-proposal-1 is already promoted.');
 				await expect(promoteProposal('run-1-proposal-1', {
 					title: 'Título',
-					scope: 'Escopo.',
-					verificationCommand: 'bun test',
+					objective: 'Escopo.',
+					acceptance: ['Escopo.'],
+					verify: ['bun test'],
 				})).rejects.toThrow('Proposal run-1-proposal-1 is already promoted.');
 			},
 		);
@@ -5461,8 +5468,9 @@ describe('same-origin transport', () => {
 	test('issue intake posts the operator contract and returns the created issue', async () => {
 		const draft = {
 			title: 'Intake web',
-			scope: 'Cria uma tarefa specified.',
-			verificationCommand: 'bun test',
+			objective: 'Cria uma tarefa specified.',
+			acceptance: ['Cria uma tarefa specified.'],
+			verify: ['bun test'],
 		};
 		const calls = await withRecordedFetch(
 			{ ok: true, issue: { id: 'CAM-902', title: draft.title } },
@@ -5479,8 +5487,9 @@ describe('same-origin transport', () => {
 
 	test('idea specification posts the operator contract to the issue-scoped route', async () => {
 		const draft = {
-			scope: 'Promove a ideia sem planner.',
-			verificationCommand: 'bun test',
+			objective: 'Promove a ideia sem planner.',
+			acceptance: ['Promove a ideia sem planner.'],
+			verify: ['bun test'],
 		};
 		const calls = await withRecordedFetch(
 			{ ok: true, issue: { id: 'CAM-42', title: 'ideia antiga' } },
@@ -5501,7 +5510,7 @@ describe('same-origin transport', () => {
 	});
 
 	test('draft review and approval use only the existing issue-scoped endpoints', async () => {
-		const draft = { scope: 'Escopo revisto.', verificationCommand: 'bun test focused' };
+		const draft = { objective: 'Escopo revisto.', acceptance: ['Escopo revisto.'], verify: ['bun test focused'] };
 		await withRecordedFetch(
 			{ ok: true, issue: { id: 'CAM-42', title: 'Draft' } },
 			200,
@@ -5705,8 +5714,8 @@ describe('same-origin transport', () => {
 	// GSHIP-712: every Work write derives its route from the selected project,
 	// so none of them can reach the boot runtime while another project is named.
 	test('every work action addresses the selected project, never the boot routes', async () => {
-		const draft = { title: 'Intake escopado', scope: 'Escopo.', verificationCommand: 'bun test' };
-		const spec = { scope: 'Escopo revisto.', verificationCommand: 'bun test focused' };
+		const draft = { title: 'Intake escopado', objective: 'Escopo.', acceptance: ['Escopo.'], verify: ['bun test'] };
+		const spec = { objective: 'Escopo revisto.', acceptance: ['Escopo revisto.'], verify: ['bun test focused'] };
 		const calls = await withRecordedFetch(
 			{ ok: true, issue: { id: 'CAM-902', title: draft.title } },
 			200,
@@ -5876,8 +5885,9 @@ describe('same-origin transport', () => {
 		});
 		const issueDraft = {
 			title: 'Promote diagnostic',
-			scope: 'Fix the verified defect.',
-			verificationCommand: 'bun test',
+			objective: 'Fix the verified defect.',
+			acceptance: ['Fix the verified defect.'],
+			verify: ['bun test'],
 		};
 		await withRecordedFetch({ issue: { id: 'GSHIP-900', title: issueDraft.title } }, 200, async (calls) => {
 			expect((await promoteDiagnosticFinding('finding-2', issueDraft)).id).toBe('GSHIP-900');

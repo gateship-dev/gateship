@@ -155,13 +155,17 @@ export interface EvidenceView {
 
 export interface OperatorIssueDraft {
 	title: string;
-	scope: string;
-	verificationCommand: string;
+	objective: string;
+	acceptance: string[];
+	boundaries?: string[];
+	verify: string[];
 }
 
 export interface OperatorSpecDraft {
-	scope: string;
-	verificationCommand: string;
+	objective: string;
+	acceptance: string[];
+	boundaries?: string[];
+	verify: string[];
 	evidence?: EvidenceView[];
 }
 
@@ -479,7 +483,15 @@ export function emptyDiagnostics(): DiagnosticsView {
 	};
 }
 
-export interface IssueReviewDraft extends CreatedIssue, OperatorSpecDraft {
+export interface IssueReviewDraft extends CreatedIssue {
+	objective?: string;
+	acceptance?: string[];
+	boundaries?: string[];
+	verify?: string[];
+	/** Legacy read-only projection fields. */
+	scope?: string;
+	verificationCommand?: string;
+	evidence?: EvidenceView[];
 	state: 'draft' | 'approved' | 'stale';
 	approvedAt?: string;
 }
