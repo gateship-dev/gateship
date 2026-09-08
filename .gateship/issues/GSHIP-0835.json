@@ -1,0 +1,36 @@
+{
+  "id": "GSHIP-835",
+  "title": "Expor coortes factuais de consumo da especificação",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T18:06:35.003Z",
+  "updatedAt": "2026-09-08T18:06:35.003Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Permitir que o operador compare como specs são consumidas em runs historicamente comparáveis, sem reduzir qualidade a uma nota nem converter correlação em política automática.",
+    "acceptance": [
+      "O histórico agrega somente runs terminais em coortes identificadas pela combinação exata de workflowRevision e versão da spec: legacy, v2 ou unknown.",
+      "Cada coorte expõe tamanho da amostra e contagens absolutas com denominadores para outcomes, runs com correções por origem, perguntas do ciclo por origem, reconciliações, pedidos de atenção, intervenções do operador e esperas de provider.",
+      "Coortes com menos de 5 runs permanecem visíveis com os valores brutos e uma marca explícita de evidência insuficiente; o limite é constante, público e testado.",
+      "Workflow revisions diferentes nunca são combinadas nem apresentadas como comparação equivalente; revision ausente permanece em uma coorte unknown separada.",
+      "A API tipada de overview e a tela Insights expõem as coortes respeitando os filtros existentes de projeto e período, com workflowRevision abreviada apenas na apresentação.",
+      "Toda porcentagem apresentada inclui ou referencia diretamente seu numerador e denominador; estados vazio, histórico antigo e dados parciais continuam verdadeiros.",
+      "Testes cobrem agrupamento, separação por revisão e versão, coorte pequena, filtros, projeção HTTP, localização e renderização."
+    ],
+    "boundaries": [
+      "Não adicionar chamada de modelo, banco, migração, evento ou estado persistido.",
+      "Não criar score composto, ranking, rótulo causal, vencedor, recomendação automática ou autoajuste de workflow.",
+      "Não alterar gates, modelo, esforço, limites ou autonomia.",
+      "Não inferir perfil ausente nem comparar coortes entre revisões como se fossem equivalentes."
+    ],
+    "verify": [
+      "bun test test/runtime/project-status.test.ts test/web/project-status-api.test.ts test/web/ui-client.test.tsx && bun run typecheck && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "d649793bf649192cf1ad932f6ede67b7471cf14da64fa193861508096fd4fe08",
+    "approvedAt": "2026-09-08T18:06:35.003Z"
+  }
+}
