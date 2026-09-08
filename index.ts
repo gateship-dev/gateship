@@ -10,15 +10,17 @@ import { renderHelp } from './src/logging/help.ts';
 import { GSHIP_VERSION } from './src/version.ts';
 import { captureBootClaudeToken } from './src/runtime/claude-credential.ts';
 import { executeSelfUpdateHandoff, type HandoffPlan } from './src/runtime/self-update.ts';
+import { runDoctor } from './src/commands/doctor.ts';
 
 const HELP = renderHelp({
 	title: 'gship',
 	tagline: 'Gateship: a local web runtime for coding agents',
-	usage: 'gship [--port N]\n    gship agent <guide|operations|call>',
+	usage: 'gship [--port N]\n    gship doctor [--json]\n    gship agent <guide|operations|call>',
 	sections: [
 		{
 			heading: 'Commands',
 			entries: [
+				{ name: 'doctor', description: 'Verifica o ambiente do container sem expor credenciais' },
 				{ name: 'agent', description: 'Machine-readable interface for shell-capable agents' },
 			],
 		},
@@ -123,6 +125,7 @@ export async function main(argv: string[]): Promise<number> {
 		return 0;
 	}
 	if (command === 'agent') return runAgent(argv.slice(3));
+	if (command === 'doctor') return await runDoctor(argv.slice(3));
 	printError(`unknown command: ${command}`);
 	printFatalHint('run `gship --help` for usage');
 	return 1;

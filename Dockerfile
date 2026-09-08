@@ -100,4 +100,7 @@ ENV GATESHIP_BIND_HOST=0.0.0.0 \
 WORKDIR /projects
 EXPOSE 7777
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD curl --fail --silent http://127.0.0.1:7777/api/snapshot >/dev/null || exit 1
+
 ENTRYPOINT ["gateship"]

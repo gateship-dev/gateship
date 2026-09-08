@@ -267,6 +267,29 @@ the two filesystem capabilities needed for bind-mounted repositories whose
 host uid differs from the container's. The project mount and the named state
 volume remain writable by design.
 
+### Atualização e recuperação
+
+Atualizações são explícitas e devem usar uma tag versionada com o digest
+SHA-256 do manifesto, por exemplo:
+
+```bash
+export GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3@sha256:<digest>
+docker compose pull && docker compose up -d
+```
+
+Antes de atualizar, pare o serviço e faça backup do volume único e do diretório
+`.gship` do projeto. O backup do volume pode ser exportado pelo Docker Desktop
+ou pela sequência `mkdir -p ./backup` seguida de
+`docker compose cp gateship:/var/lib/gateship ./backup/gateship-state`.
+Guarde o digest anterior. Para rollback, restaure o backup se necessário,
+retorne `GATESHIP_IMAGE` ao digest anterior e execute `docker compose up -d`.
+Não remova `gateship-state` durante atualização ou recuperação.
+
+Para diagnosticar uma instalação, execute `docker compose exec gateship
+gship doctor --json`. O diagnóstico verifica arquitetura `linux/amd64` ou
+`linux/arm64`, imagem container, permissão do volume, Git, `gh`, Claude, Codex,
+os logins, conectividade local e responde apenas com estados, sem credenciais.
+
 ## Runtime flow
 
 ```text

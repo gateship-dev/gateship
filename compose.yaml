@@ -55,6 +55,13 @@ services:
       - /tmp:rw,nosuid,nodev,mode=1777
     ports:
       - "127.0.0.1:${GATESHIP_PORT:-7777}:7777"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:7777/api/snapshot >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     volumes:
       # Long syntax keeps Windows drive letters from being interpreted as a
       # short-syntax field separator by Docker Compose.

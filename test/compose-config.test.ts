@@ -61,6 +61,13 @@ describe('compose.yaml image consumption (GSHIP-657)', () => {
 		expect(compose).not.toContain('gateship-state:/projects');
 		expect(compose.match(/^\s+- gateship-state:/gm) ?? []).toHaveLength(1);
 	});
+
+	test('restarts after failure and reports a local health endpoint', () => {
+		expect(compose).toContain('restart: unless-stopped');
+		expect(compose).toContain('healthcheck:');
+		expect(compose).toContain('http://127.0.0.1:7777/api/snapshot');
+		expect(dockerfile).toContain('HEALTHCHECK --interval=30s');
+	});
 });
 
 describe('container provider CLI installation', () => {
@@ -95,5 +102,12 @@ describe('canonical portable container documentation (GSHIP-699)', () => {
 		expect(credentialsDoc).toContain(login);
 		expect(readme).not.toContain('ChatGPT sign-in does not work from inside this container');
 		expect(credentialsDoc).not.toContain("ChatGPT sign-in cannot complete from\ninside the container");
+	});
+
+	test('documents digest-pinned update, backup, rollback and container diagnosis', () => {
+		expect(readme).toContain('GATESHIP_IMAGE=ghcr.io/gateship-dev/gateship:v1.2.3@sha256:<digest>');
+		expect(readme).toContain('docker compose pull && docker compose up -d');
+		expect(readme).toContain('docker compose cp gateship:/var/lib/gateship ./backup/gateship-state');
+		expect(readme).toContain('gship doctor --json');
 	});
 });
