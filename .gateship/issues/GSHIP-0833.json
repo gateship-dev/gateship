@@ -1,0 +1,35 @@
+{
+  "id": "GSHIP-833",
+  "title": "Registrar fatos de consumo da especificação",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T16:57:11.654Z",
+  "updatedAt": "2026-09-08T16:57:11.654Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Tornar a qualidade operacional de cada spec observável por fatos reproduzíveis da run, sem criar um avaliador, uma nota ou julgamento persistido.",
+    "acceptance": [
+      "run.created registra um perfil imutável e sanitizado da spec aprovada: versão legacy, v2 ou unknown, fingerprint e contagens de acceptance, boundaries, verify e evidence, sem copiar o texto da spec.",
+      "RunEvaluation expõe o perfil e contagens derivadas do log completo para correções de verification, review, full verify e CI, perguntas do ciclo por origem e reconciliações unchanged, adapted ou contract-change-required.",
+      "Todos os fatos são recalculáveis a partir do registro da run e de seus eventos; reabrir o runtime produz a mesma avaliação sem gravar score ou novo julgamento.",
+      "Runs históricas sem perfil aparecem como unknown e usam somente os eventos realmente existentes, sem inferir campos ou migrar histórico.",
+      "Agent CLI, HTTP tipado e detalhes da run apresentam esses fatos com denominadores e nomes de origem; o fingerprint pode ser abreviado visualmente, mas permanece completo na API.",
+      "Testes cobrem spec legacy, spec v2, histórico desconhecido, cada origem de correção e pergunta, reconciliações, persistência e projeções públicas."
+    ],
+    "boundaries": [
+      "Não adicionar chamada de modelo, score composto, ranking, rótulo causal ou recomendação automática.",
+      "Não criar banco, migração, novo estado da run nem armazenar o conteúdo textual da spec nos eventos.",
+      "Não alterar gates, limites, seleção de modelo ou política de autonomia nesta entrega.",
+      "Não implementar ainda agregação de coortes ou tela de insights."
+    ],
+    "verify": [
+      "bun test test/runtime/run-evaluation.test.ts test/runtime/run-runtime.test.ts test/web/project-scoped-run-api.test.ts test/web/ui-client.test.tsx && bun run typecheck && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "b00c771cb265f4faf00428b0171bf34ab58d09b54ce9e59690992a170e3efc96",
+    "approvedAt": "2026-09-08T16:57:11.654Z"
+  }
+}
