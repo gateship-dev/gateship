@@ -2,7 +2,7 @@
 //
 // Gateship's textarea uses the same composed control as
 // Input -- a span wrapper with the chrome, the field inside bare -- with
-// content-driven sizing. The focus ring stays Gateship's acid --ring token.
+// content-driven sizing. The focus ring uses Gateship's neutral --ring token.
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';

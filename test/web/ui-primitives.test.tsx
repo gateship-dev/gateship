@@ -134,7 +134,7 @@ describe('ui primitives', () => {
 
 		expect(html).toContain('data-slot="tabs-scroll"');
 		expect(html).toContain('overflow-x-auto');
-		expect(html).toContain('after:to-muted');
+		expect(html).toContain('scroll-container');
 		expect(html).toContain('pr-8');
 		expect(html).toContain('sm:pr-0.5');
 		expect(html).toContain('py-0.5');

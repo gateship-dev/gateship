@@ -2,8 +2,8 @@
 //
 // Gateship's input uses a span wrapper for the visual chrome
 // (rounded-lg border, hairline bevel, bevel and shadow dropping away while
-// focused) and the real input inside stays bare. The focus ring stays
-// Gateship's acid --ring token.
+// focused) and the real input inside stays bare. The focus ring uses the
+// neutral --ring token.
 
 import { Input as InputPrimitive } from '@base-ui/react/input';
 import type React from 'react';

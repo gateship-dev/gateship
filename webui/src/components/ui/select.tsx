@@ -4,7 +4,7 @@
 // is the same composed control chrome as Input, the popup is a bordered
 // popover with its own hairline bevel and scroll arrows. The glyphs come
 // from Hugeicons' free set, the product's icon source (operator decision,
-// 2026-08-25). The focus ring stays the acid --ring.
+// 2026-08-25). The focus ring uses the neutral --ring token.
 //
 // `SelectField` is the one-call form most of this screen needs: items, a
 // hidden input via `name` for plain form submission, and the same controlled
@@ -76,7 +76,7 @@ export function SelectContent({
 				>
 					<div className="relative h-full min-w-(--anchor-width) rounded-lg border bg-popover not-dark:bg-clip-padding shadow-lg/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
 						<SelectPrimitive.List
-							className={cn('max-h-(--available-height) overflow-y-auto p-1', className)}
+							className={cn('scroll-container scroll-fade max-h-(--available-height) overflow-y-auto p-1', className)}
 							data-slot="select-list"
 						>
 							{children}

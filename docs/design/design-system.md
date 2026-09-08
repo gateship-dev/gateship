@@ -10,7 +10,7 @@ the web UI.
   commands, timestamps, durations, costs and counters. The existing vector
   wordmark is the only branded lettering.
 - Keep neutral canvases and surfaces in both themes. `#c8ff00` is reserved for
-  operator attention and its focus family. Success, warning, failure and merged
+  operator attention. Focus rings use the neutral ring tokens. Success, warning, failure and merged
   use their semantic green, amber, red and purple families. Cancelled stays gray.
 - Use the token ladder in `webui/src/index.css`. Components consume semantic
   tokens rather than literal theme colors.
@@ -91,6 +91,10 @@ styling. Hugeicons supplies the icon set.
 
 - Preserve semantic elements, keyboard navigation, the skip link and visible
   focus rings.
+- Scroll containers use the shared `scroll-container` utility for stable gutters
+  and neutral native chrome. Long vertical surfaces also use `scroll-fade`, a
+  CSS mask driven by the scroll position; the mask is applied inside the
+  viewport, never around the card.
 - Pressable controls respond immediately with a short shadow or transform change.
   Do not animate routine navigation or use `transition: all`.
 - Live output stays pinned only while the operator is already at the live edge.

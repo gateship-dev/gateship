@@ -8,7 +8,7 @@
 //
 // The `attention` variant is the acid form of the
 // solid button, reserved for actions that resolve an item waiting on the
-// operator; and the focus ring, which stays the acid --ring token.
+// operator; and the focus ring, which uses the neutral --ring token.
 
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva, type VariantProps } from 'class-variance-authority';

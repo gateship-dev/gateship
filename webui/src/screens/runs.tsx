@@ -169,6 +169,8 @@ export function RunActivity({
 	const {
 		canReturnToLiveEdge: _canReturnToLiveEdge,
 		returnToLiveEdge: _returnToLiveEdge,
+		ref: liveEdgeRef,
+		onScroll: handleLiveEdgeScroll,
 		...liveEdge
 	} = useLiveEdge<HTMLOListElement>(visible.at(-1)?.seq ?? null, run?.id ?? null);
 	if (run === null) return null;
@@ -178,31 +180,35 @@ export function RunActivity({
 			open
 			title={catalog.activity.title}
 		>
-			<ol
-				{...liveEdge}
-				aria-label={catalog.activity.title}
-				className="flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-			>
-				{visible.map((event) => {
-					const detail = eventDetail(event, catalog.activity.toolsLabel);
-					return (
-						<li className="min-w-0 border-border border-l-2 pl-3 text-sm" key={event.seq}>
-							<div className="flex items-baseline justify-between gap-3">
-							<code className="min-w-0 break-all">{event.kind}</code>
-							{event.kind === 'run.cycle-response' ? <Badge>{catalog.activity.cycleResponseLabel}</Badge> : null}
-								<time className="shrink-0 font-mono text-muted-foreground text-xs">
-									{formatEventTime(event.createdAt, locale)}
-								</time>
-							</div>
-							{detail === null ? null : (
-								<p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
-									{detail}
-								</p>
-							)}
-						</li>
-					);
-				})}
-			</ol>
+			<div className="max-h-80 rounded-sm has-focus-visible:ring-2 has-focus-visible:ring-ring">
+				<ol
+					{...liveEdge}
+					aria-label={catalog.activity.title}
+					className="scroll-container scroll-fade flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto outline-none"
+					ref={liveEdgeRef}
+					onScroll={handleLiveEdgeScroll}
+				>
+					{visible.map((event) => {
+						const detail = eventDetail(event, catalog.activity.toolsLabel);
+						return (
+							<li className="min-w-0 border-border border-l-2 pl-3 text-sm" key={event.seq}>
+								<div className="flex items-baseline justify-between gap-3">
+									<code className="min-w-0 break-all">{event.kind}</code>
+									{event.kind === 'run.cycle-response' ? <Badge>{catalog.activity.cycleResponseLabel}</Badge> : null}
+									<time className="shrink-0 font-mono text-muted-foreground text-xs">
+										{formatEventTime(event.createdAt, locale)}
+									</time>
+								</div>
+								{detail === null ? null : (
+									<p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
+										{detail}
+									</p>
+								)}
+							</li>
+						);
+					})}
+				</ol>
+			</div>
 		</ContextPanel>
 	);
 }

@@ -38,10 +38,10 @@ export function TabsList({
 }: Omit<TabsPrimitive.List.Props, 'className'> & { className?: string }): React.ReactElement {
 	return (
 		<div
-			className="relative max-w-full after:pointer-events-none after:absolute after:inset-y-0 after:right-0 after:w-8 after:rounded-r-lg after:bg-linear-to-r after:from-transparent after:to-muted sm:after:hidden"
+			className="relative max-w-full"
 			data-slot="tabs-scroll-frame"
 		>
-			<div className="max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
+			<div className="scroll-container max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
 				<TabsPrimitive.List
 					className={cn(
 						'relative z-0 flex w-max min-w-full items-center justify-start gap-x-0.5 rounded-lg bg-muted py-0.5 pr-8 pl-0.5 text-muted-foreground/72 sm:pr-0.5',
