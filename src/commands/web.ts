@@ -2856,8 +2856,15 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					...(role === null ? {} : { role }),
 					...(params.get('effort') === null ? {} : { effort: params.get('effort')! }),
 				};
+				const parsePageNumber = (name: string): number | undefined => {
+					const value = params.get(name);
+					if (value === null) return undefined;
+					const parsed = Number(value);
+					return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
+				};
 				return Response.json(readProjectOperationalOverview(
 					projectRegistry.list(projectRoot).filter((project) => filters.projectId === undefined || project.id === filters.projectId), undefined, undefined, rawWindow as OverviewWindow, new Date(), filters,
+					{ cohortLimit: parsePageNumber('cohortLimit'), cohortOffset: parsePageNumber('cohortOffset') },
 				));
 			},
 			'/api/overview/queues': () => {

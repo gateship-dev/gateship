@@ -448,6 +448,31 @@ describe('canonical agent CLI', () => {
 		expect(Buffer.byteLength(JSON.stringify(runDetail.output))).toBeLessThanOrEqual(AGENT_MAX_OUTPUT_BYTES);
 	});
 
+	test('projects.overview preserves cohort pages, filters and the Agent CLI output budget', async () => {
+		const cohorts = Array.from({ length: 11 }, (_, index) => ({ workflowRevision: `revision-${index}`, specVersion: 'v2', sampleSize: 1, evidenceSufficient: false }));
+		const calls: string[] = [];
+		const defaultPage = await executeAgent(['call', 'projects.overview', '--input', '{}'], async (url) => {
+			calls.push(String(url));
+			return jsonResponse({ overview: { cohorts, cohortsPage: { limit: 10, offset: 0, returned: 10, total: 11 } } });
+		});
+		expect(calls[0]).toBe('http://127.0.0.1:7777/api/overview');
+		expect(defaultPage.exitCode).toBe(0);
+		expect(Buffer.byteLength(JSON.stringify(defaultPage.output))).toBeLessThan(AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES);
+		expect((defaultPage.output['result'] as { overview: { cohorts: unknown[]; cohortsPage: unknown } }).overview.cohorts).toHaveLength(11);
+		expect((defaultPage.output['result'] as { overview: { cohortsPage: unknown } }).overview.cohortsPage).toEqual({ limit: 10, offset: 0, returned: 10, total: 11 });
+
+		const explicit = await executeAgent(['call', 'projects.overview', '--input', JSON.stringify({
+			cohortLimit: 2, cohortOffset: 4, projectId: 'project / 1', providerId: 'codex', model: 'model-a', role: 'executor', effort: 'high',
+		})], async (url) => {
+			calls.push(String(url));
+			return jsonResponse({ overview: { cohorts: cohorts.slice(4, 6), cohortsPage: { limit: 2, offset: 4, returned: 2, total: 11 } } });
+		});
+		expect(calls[1]).toBe('http://127.0.0.1:7777/api/overview?cohortLimit=2&cohortOffset=4&projectId=project+%2F+1&providerId=codex&model=model-a&role=executor&effort=high');
+		expect(explicit.exitCode).toBe(0);
+		expect((explicit.output['result'] as { overview: { cohorts: unknown[]; cohortsPage: unknown } }).overview.cohorts).toHaveLength(2);
+		expect((explicit.output['result'] as { overview: { cohortsPage: unknown } }).overview.cohortsPage).toEqual({ limit: 2, offset: 4, returned: 2, total: 11 });
+	});
+
 	test('preserves more than one hundred blockers instead of silently clamping them', async () => {
 		const blockers = Array.from({ length: 125 }, (_, index) => `GSHIP-${1_000 + index}`);
 		const result = await executeAgent([

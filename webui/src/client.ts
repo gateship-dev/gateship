@@ -314,13 +314,14 @@ export interface HistoricalOverviewView {
 	configurations: Array<{ provider: string; role: string; model?: string; effort?: string }>;
 	cohorts: Array<{
 		workflowRevision: string | null;
-		specVersion: 'legacy' | 'v2' | 'unknown'; sampleSize: number; evidenceSufficient: boolean;
+		specVersion: 'legacy' | 'v2' | 'unknown'; latestTerminalRunAt: string | null; sampleSize: number; evidenceSufficient: boolean;
 		outcomes: Record<'shipped' | 'failed' | 'cancelled', { count: number; denominator: number }>;
 		corrections: Record<'verification' | 'review' | 'fullVerify' | 'ci', { count: number; denominator: number }>;
 		cycleQuestions: Record<'executor' | 'review' | 'fullVerify', { count: number; denominator: number }>;
 		reconciliations: Record<'unchanged' | 'adapted' | 'contract-change-required', { count: number; denominator: number }>;
 		attentionRequests: { count: number; denominator: number }; operatorInterventions: { count: number; denominator: number }; providerHolds: { count: number; denominator: number };
 	}>;
+	cohortsPage?: { limit: number; offset: number; returned: number; total: number };
 }
 
 export interface HistoricalOverviewFilters {
@@ -329,6 +330,8 @@ export interface HistoricalOverviewFilters {
 	model?: string;
 	role?: 'orchestrator' | 'executor' | 'reviewer';
 	effort?: string;
+	cohortLimit?: number;
+	cohortOffset?: number;
 }
 
 export interface ProjectOperationalOverviewView {

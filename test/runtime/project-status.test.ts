@@ -7,6 +7,8 @@ import {
 	readProjectHistoricalOverview,
 	readQueueOverview,
 	COHORT_MINIMUM_SAMPLE,
+	COHORT_DEFAULT_LIMIT,
+	COHORT_MAX_LIMIT,
 	type ProjectOperationalStatus,
 	type QueueRuntime,
 } from '../../src/runtime/project-status.ts';
@@ -100,6 +102,34 @@ test('agrupa somente runs terminais pela combinação exata de revisão e versã
 	});
 	expect(overview?.cohorts.some((cohort) => cohort.workflowRevision === null && cohort.specVersion === 'unknown')).toBe(true);
 	expect(read('7d')?.cohorts.find((cohort) => cohort.workflowRevision === 'revision-a' && cohort.specVersion === 'v2')?.sampleSize).toBe(2);
+});
+
+test('ordena e pagina coortes estavelmente sem descartar versões factuais', () => {
+	const histories = Array.from({ length: 12 }, (_, index) => cohortHistory(`paged-${index}`, {
+		revision: `revision-${String(index).padStart(2, '0')}`, version: 'v2',
+		createdAt: `2026-09-${String(20 - index).padStart(2, '0')}T00:00:00.000Z`,
+	}));
+	histories.push(
+		cohortHistory('tie-z', { revision: 'revision-z', version: 'legacy', createdAt: '2026-09-20T00:00:00.000Z' }),
+		cohortHistory('tie-a', { revision: 'revision-a', version: 'unknown', createdAt: '2026-09-20T00:00:00.000Z' }),
+	);
+	const read = (pagination?: { cohortLimit?: number; cohortOffset?: number }) => readProjectHistoricalOverview(
+		project, 'all', new Date('2026-09-21T00:00:00.000Z'), () => histories, {}, pagination,
+	).overview!;
+	const first = read();
+	expect(first.cohorts).toHaveLength(COHORT_DEFAULT_LIMIT);
+	expect(first.cohortsPage).toEqual({ limit: COHORT_DEFAULT_LIMIT, offset: 0, returned: 10, total: 14 });
+	expect(first.cohorts.slice(0, 3).map((cohort) => `${cohort.workflowRevision}:${cohort.specVersion}`)).toEqual(['revision-00:v2', 'revision-a:unknown', 'revision-z:legacy']);
+	expect(read({ cohortLimit: 100 }).cohorts).toHaveLength(14);
+	expect(read({ cohortLimit: 100 }).cohortsPage.limit).toBe(COHORT_MAX_LIMIT);
+	const middle = read({ cohortLimit: 3, cohortOffset: 3 });
+	const last = read({ cohortLimit: 3, cohortOffset: 12 });
+	expect(middle.cohortsPage).toEqual({ limit: 3, offset: 3, returned: 3, total: 14 });
+	expect(last.cohortsPage).toEqual({ limit: 3, offset: 12, returned: 2, total: 14 });
+	expect(middle.cohorts.map((cohort) => cohort.workflowRevision)).toEqual(first.cohorts.slice(3, 6).map((cohort) => cohort.workflowRevision));
+	expect(last.cohorts.map((cohort) => cohort.workflowRevision)).toEqual(['revision-10', 'revision-11']);
+	expect(read({ cohortLimit: 1, cohortOffset: 1 }).cohorts[0]).toMatchObject({ specVersion: 'unknown' });
+	expect(read({ cohortLimit: 1, cohortOffset: 2 }).cohorts[0]).toMatchObject({ specVersion: 'legacy' });
 });
 
 function runTime(run: HistoryRun, suffix: number): string {
