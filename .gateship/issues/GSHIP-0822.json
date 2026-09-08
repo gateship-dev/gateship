@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-822",
+  "title": "Recompor o header e mover avisos para uma central de notificações",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:38:34.917Z",
+  "updatedAt": "2026-09-08T14:38:34.917Z",
+  "description": "Na web UI, transformar ShellControls em um header estrutural com divisória inferior, toggle da sidebar à esquerda, título humano da superfície realmente centralizado em Saans proporcional e controles alinhados à direita. Criar um NotificationCenter reutilizável, ancorado em botão icon-only da Hugeicons, que agregue condições operacionais ativas de run, fila encadeada, serviço desatualizado, identidade Git e workspaces preservados. O contador representa condições ativas, nunca notificações não lidas; verde ácido aparece somente quando uma ação do operador é possível. O popover deve agrupar ação, aviso e informação, oferecer links contextuais e manter a configuração de browser, ntfy e email em Ajustes. Remover da sidebar expandida, do rail e do seletor os callouts e sinais de atenção duplicados, preservando navegação pura. Cobrir pt-BR/en-US, 390 px, teclado, foco, contraste, tema escuro e prefers-reduced-motion sem nova dependência.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Na web UI, transformar ShellControls em um header estrutural com divisória inferior, toggle da sidebar à esquerda, título humano da superfície realmente centralizado em Saans proporcional e controles alinhados à direita. Criar um NotificationCenter reutilizável, ancorado em botão icon-only da Hugeicons, que agregue condições operacionais ativas de run, fila encadeada, serviço desatualizado, identidade Git e workspaces preservados. O contador representa condições ativas, nunca notificações não lidas; verde ácido aparece somente quando uma ação do operador é possível. O popover deve agrupar ação, aviso e informação, oferecer links contextuais e manter a configuração de browser, ntfy e email em Ajustes. Remover da sidebar expandida, do rail e do seletor os callouts e sinais de atenção duplicados, preservando navegação pura. Cobrir pt-BR/en-US, 390 px, teclado, foco, contraste, tema escuro e prefers-reduced-motion sem nova dependência.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
