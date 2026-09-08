@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-838",
+  "title": "Decompor a duração da run por fase",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T21:43:59.202Z",
+  "updatedAt": "2026-09-08T21:43:59.202Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Tornar o tempo de uma run explicável por fatos duráveis, separando trabalho ativo, verificações, revisão, entrega e esperas sem transformar velocidade em score ou gate.",
+    "acceptance": [
+      "A avaliação da run expõe wall time e durações tipadas para queued, working, verify, review, full-verify, shipping, waiting-provider e waiting-user, com contagem de entradas por fase.",
+      "Tempo ativo, espera de provider e espera do operador permanecem separados; nenhuma espera é apresentada como trabalho do agente.",
+      "As durações são reconstituídas da sequência durável de eventos para runs novas e legadas, sem migração destrutiva.",
+      "Intervalos ausentes, eventos incompletos e relógios inválidos produzem estado desconhecido ou tempo não atribuído, nunca zero inventado.",
+      "Agent CLI e HTTP expõem a projeção compacta; o detalhe da run mostra a decomposição sem ampliar listagens além dos limites existentes.",
+      "A soma dos intervalos classificados e não atribuídos reconcilia com o wall time dentro de uma tolerância explicitamente testada.",
+      "Fixtures cobrem run limpa, correções, provider hold, espera humana, interrupção e shipping até merge."
+    ],
+    "boundaries": [
+      "Não criar score, SLA, timeout, ranking de modelo ou cancelamento automático.",
+      "Não atribuir causalidade à duração nem comparar tarefas incompatíveis.",
+      "Não adicionar serviço, daemon, tracer externo ou nova dependência.",
+      "Não alterar a ordem nem a autoridade das fases do ciclo.",
+      "Não usar eventos de atividade verbosos como relógio quando transições duráveis já definem o intervalo."
+    ],
+    "verify": [
+      "bun test test/runtime/run-evaluation.test.ts test/runtime/project-status.test.ts test/commands/agent.test.ts test/web/ui-client.test.tsx"
+    ]
+  },
+  "approval": {
+    "fingerprint": "fe6d45017afa94ff58d086542124faab7bbc501a6da4800087061c7e59489726",
+    "approvedAt": "2026-09-08T21:43:59.202Z"
+  }
+}
