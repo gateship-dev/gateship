@@ -5,11 +5,11 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:43:57.104Z",
-  "updatedAt": "2026-09-08T14:43:57.104Z",
+  "updatedAt": "2026-09-08T14:45:39.587Z",
   "description": "Depois da matriz tipográfica, transformar ShellControls em um header estrutural comum: divisória inferior separando-o do main content, toggle da sidebar alinhado à esquerda, título humano da superfície realmente centralizado e controles de preferência alinhados à direita. O título deve variar por rota, permanecer em Saans proporcional e não deslocar quando os grupos laterais têm larguras diferentes. Preservar o frame de conteúdo, o skip linklink, foco visível, pt-BR/en-US, 390 px e a regra de que somente o content panel rola. Não incluir notificações nesta issue.",
   "specSource": "operator",
   "spec": {
-    "scope": "Depois da matriz tipográfica, transformar ShellControls em um header estrutural comum: divisória inferior separando-o do main content, toggle da sidebar alinhado à esquerda, título humano da superfície realmente centralizado e controles de preferência alinhados à direita. O título deve variar por rota, permanecer em Saans proporcional e não deslocar quando os grupos laterais têm larguras diferentes. Preservar o frame de conteúdo, o skip linklink, foco visível, pt-BR/en-US, 390 px e a regra de que somente o content panel rola. Não incluir notificações nesta issue.",
+    "scope": "Depois da matriz tipográfica, transformar ShellControls em um header estrutural comum: divisória inferior separando-o do main content, toggle da sidebar alinhado à esquerda, título humano da superfície realmente centralizado e controles de preferência alinhados à direita. O título deve variar por rota, permanecer em Saans proporcional e não deslocar quando os grupos laterais têm larguras diferentes. Preservar o frame de conteúdo, o skip link, foco visível, pt-BR/en-US, 390 px e a regra de que somente o content panel rola. Não incluir notificações nesta issue.",
     "verify": [
       "bun run check:all"
     ]
