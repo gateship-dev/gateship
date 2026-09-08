@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-828",
+  "title": "Substituir o percentual da run por um mapa editorial de estados",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:44:53.597Z",
+  "updatedAt": "2026-09-08T14:44:53.597Z",
+  "description": "Na superfície de Runs, remover a barra percentual derivada da posição linear e apresentar o progresso como state machine editorial fiel ao runtime. Manter os estados reais da espinha queued, working, verify, review, full-verify, ready-to-ship, shipping e done com labels humanos concisos; estados waiting-user, waiting-provider, failed, interrupted e cancelled aparecem como modificadores do estágio correspondente. Mostrar no máximo um retorno visual de correção com contador e origem agregada, deixando detalhes na timeline. O estágio atual é o foco principal e verde ácido aparece somente em ready-to-ship ou outra ação real do operador. Usar HTML semântico e SVG/CSS decorativo mínimo, versão vertical no mobile, navegação para a seção correspondente da atividade e movimento curto opcional, sem pulso contínuo e com fallback completo para prefers-reduced-motion. Não adicionar biblioteca de diagramas ou animação.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Na superfície de Runs, remover a barra percentual derivada da posição linear e apresentar o progresso como state machine editorial fiel ao runtime. Manter os estados reais da espinha queued, working, verify, review, full-verify, ready-to-ship, shipping e done com labels humanos concisos; estados waiting-user, waiting-provider, failed, interrupted e cancelled aparecem como modificadores do estágio correspondente. Mostrar no máximo um retorno visual de correção com contador e origem agregada, deixando detalhes na timeline. O estágio atual é o foco principal e verde ácido aparece somente em ready-to-ship ou outra ação real do operador. Usar HTML semântico e SVG/CSS decorativo mínimo, versão vertical no mobile, navegação para a seção correspondente da atividade e movimento curto opcional, sem pulso contínuo e com fallback completo para prefers-reduced-motion. Não adicionar biblioteca de diagramas ou animação.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
