@@ -1,6 +1,6 @@
 // webui/src/screens/projects.tsx
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectOverviewView, RegisteredProjectView } from '../client.ts';
 import { Card, CardFooter, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
@@ -15,8 +15,14 @@ export function RegisterProjectPanel({
 	catalog,
 	pending,
 	onRegisterProject,
+	onboardingConfirmed = true,
+	value,
+	onValueChange,
 }: Pick<AppProps, 'pending' | 'onRegisterProject'> & {
 	catalog: ProjectsCatalog;
+	onboardingConfirmed?: boolean;
+	value?: string;
+	onValueChange?: (value: string) => void;
 }): React.ReactElement {
 	return (
 		<Card>
@@ -26,8 +32,9 @@ export function RegisterProjectPanel({
 			<CardPanel>
 				<p className="text-muted-foreground text-sm">{catalog.register.description}</p>
 				<FormStack
-					onSubmit={(event) => {
+					 onSubmit={(event) => {
 						event.preventDefault();
+						if (!onboardingConfirmed) return;
 						const root = fieldReader(event.currentTarget)('project-root');
 						if (root !== '') onRegisterProject(root);
 					}}
@@ -37,13 +44,15 @@ export function RegisterProjectPanel({
 						<Input
 							id="project-root"
 							name="project-root"
+							onChange={onValueChange === undefined ? undefined : (event) => onValueChange((event.currentTarget as unknown as { value: string }).value)}
 							placeholder={catalog.register.rootPlaceholder}
+							value={value}
 						/>
 						<span className="text-muted-foreground text-xs">{catalog.register.rootGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.register.containerGuidance}</span>
 					</FormField>
 					<CardFooter>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !onboardingConfirmed} type="submit">
 						{catalog.register.submit}
 					</button>
 					</CardFooter>
@@ -63,8 +72,14 @@ export function ImportProjectPanel({
 	pending,
 	projectOnboardingPending,
 	onImportProject,
+	onboardingConfirmed = true,
+		value,
+		onValueChange,
 }: Pick<AppProps, 'pending' | 'projectOnboardingPending' | 'onImportProject'> & {
 	catalog: ProjectsCatalog;
+	onboardingConfirmed?: boolean;
+	value?: string;
+	onValueChange?: (value: string) => void;
 }): React.ReactElement {
 	return (
 		<Card>
@@ -76,6 +91,7 @@ export function ImportProjectPanel({
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
+						if (!onboardingConfirmed) return;
 						const repository = fieldReader(event.currentTarget)('project-import-repository');
 						if (repository !== '') onImportProject(repository);
 					}}
@@ -85,7 +101,9 @@ export function ImportProjectPanel({
 						<Input
 							id="project-import-repository"
 							name="project-import-repository"
+							onChange={onValueChange === undefined ? undefined : (event) => onValueChange((event.currentTarget as unknown as { value: string }).value)}
 							placeholder={catalog.import.repositoryPlaceholder}
+							value={value}
 						/>
 						<span className="text-muted-foreground text-xs">{catalog.import.destinationGuidance}</span>
 						<span className="text-muted-foreground text-xs">{catalog.import.credentialGuidance}</span>
@@ -94,7 +112,7 @@ export function ImportProjectPanel({
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p>
 						: null}
 					<CardFooter>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+							<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !onboardingConfirmed} type="submit">
 							{catalog.import.submit}
 						</button>
 					</CardFooter>
@@ -110,10 +128,16 @@ export function CreateProjectPanel({
 	pending,
 	projectOnboardingPending,
 	onCreateProject,
+	onboardingConfirmed = true,
+		value,
+		onValueChange,
 }: Pick<AppProps, 'pending' | 'projectOnboardingPending' | 'onCreateProject'> & {
 	catalog: ProjectsCatalog;
+	onboardingConfirmed?: boolean;
+	value?: string;
+	onValueChange?: (value: string) => void;
 }): React.ReactElement {
-	const [repository, setRepository] = useState('');
+	const [repository, setRepository] = useState(value ?? '');
 	const [description, setDescription] = useState('');
 	const [visibility, setVisibility] = useState<'private' | 'public'>('private');
 	const [confirmed, setConfirmed] = useState(false);
@@ -122,6 +146,8 @@ export function CreateProjectPanel({
 		? catalog.create.privateLabel.toLocaleLowerCase()
 		: catalog.create.publicLabel.toLocaleLowerCase();
 	const authorization = catalog.create.confirm(namedRepository, visibilityLabel);
+	useEffect(() => { if (value !== undefined) setRepository(value); }, [value]);
+	const updateRepository = (next: string): void => { setRepository(next); onValueChange?.(next); };
 	return (
 		<Card>
 			<CardHeader>
@@ -132,7 +158,7 @@ export function CreateProjectPanel({
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
-						if (namedRepository === '' || !confirmed) return;
+						if (namedRepository === '' || !confirmed || !onboardingConfirmed) return;
 						onCreateProject({
 							repository: namedRepository,
 							visibility,
@@ -146,12 +172,12 @@ export function CreateProjectPanel({
 						<Input
 							id="project-create-repository"
 							name="project-create-repository"
-							onChange={(event) => {
-								setRepository((event.currentTarget as unknown as { value: string }).value);
+								onChange={(event) => {
+									updateRepository((event.currentTarget as unknown as { value: string }).value);
 								setConfirmed(false);
 							}}
 							placeholder={catalog.create.repositoryPlaceholder}
-							value={repository}
+							value={value ?? repository}
 						/>
 					</FormField>
 					<FormField className="text-sm" htmlFor="project-create-description">
@@ -202,7 +228,7 @@ export function CreateProjectPanel({
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.create.pending}</p>
 						: null}
 					<CardFooter>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !confirmed || namedRepository === ''} type="submit">
+						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !confirmed || !onboardingConfirmed || namedRepository === ''} type="submit">
 							{catalog.create.submit}
 						</button>
 					</CardFooter>

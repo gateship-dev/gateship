@@ -19,6 +19,7 @@ import type {
 export const SNAPSHOT_PATH = '/api/snapshot';
 export const PROJECT_PATH = '/api/project';
 export const PROJECTS_PATH = '/api/projects';
+export const PROJECT_ONBOARDING_PATH = '/api/project/onboarding';
 export const OPERATOR_PROFILE_PATH = '/api/operator-profile';
 export const DIAGNOSTICS_PATH = '/api/diagnostics';
 export const DIAGNOSTIC_SCHEDULE_PATH = '/api/diagnostics/schedule';
@@ -48,6 +49,22 @@ export const OVERVIEW_QUEUES_PATH = '/api/overview/queues';
  * and keeps the unscoped routes the boot runtime already answers.
  */
 export type ProjectScope = string | null;
+
+export interface ProjectOnboardingSnapshot {
+	project: ProjectStatusView;
+	checks: Array<{ key: string; state: 'ready' | 'missing' | 'attention' | 'not-applicable'; detail: string }>;
+	verificationCommands: string[];
+	manifestProposal: { commands: string[]; exclusions: string[]; risks: string[] } | null;
+}
+
+export async function fetchProjectOnboarding(target: { operation?: 'register' | 'import' | 'create'; value?: string } = {}): Promise<ProjectOnboardingSnapshot> {
+	const query = new URLSearchParams();
+	const value = target.value?.trim();
+	if (target.operation !== undefined) query.set('operation', target.operation);
+	if (value !== undefined && value !== '') query.set('target', value);
+	const suffix = query.size === 0 ? '' : `?${query.toString()}`;
+	return readJson<ProjectOnboardingSnapshot>(await fetch(`${PROJECT_ONBOARDING_PATH}${suffix}`), 'Project onboarding');
+}
 
 function projectApiPath(projectId: string, suffix = ''): string {
 	return `${PROJECTS_PATH}/${encodeURIComponent(projectId)}${suffix}`;

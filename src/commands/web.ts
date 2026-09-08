@@ -96,6 +96,7 @@ import {
 	ProjectImportError,
 } from '../runtime/project-import.ts';
 import { inspectProject } from '../runtime/project-readiness.ts';
+import { inspectProjectOnboarding } from '../runtime/project-onboarding.ts';
 import {
 	ensureProjectStateIgnored,
 	PROJECT_STATE_DIRECTORY,
@@ -2824,6 +2825,15 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
 			'/api/snapshot': readSnapshot,
 			'/api/project': () => Response.json({ project: inspectProject(projectRoot) }),
+			'/api/project/onboarding': (request) => {
+				const params = new URL(request.url).searchParams;
+				const operation = params.get('operation');
+				const target = params.get('target')?.trim() || undefined;
+				if (operation !== null && operation !== 'register' && operation !== 'import' && operation !== 'create') {
+					return Response.json({ ok: false, code: 'invalid-operation', message: 'operation must be register, import, or create.' }, { status: 400 });
+				}
+				return Response.json(inspectProjectOnboarding(operation === 'register' || operation === null ? (target ?? projectRoot) : null, operation === 'import' || operation === 'create' ? target : undefined));
+			},
 			// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: query validation keeps the public overview contract explicit
 			'/api/overview': (request) => {
 				const params = new URL(request.url).searchParams;
