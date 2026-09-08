@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-829",
+  "title": "Adicionar paginação por cursor ao histórico de eventos da run",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:44:57.376Z",
+  "updatedAt": "2026-09-08T14:44:57.376Z",
+  "description": "Substituir as janelas silenciosas que hoje limitam a atividade visível a 30 eventos na tela e 200 no cliente/runtime por um contrato paginado por cursor ou sequence, escopado à run. A leitura inicial pode continuar limitada, mas deve permitir recuperar todo o histórico durável anterior sem duplicação ou lacunas enquanto SSE acrescenta novos eventos. Preservar ordenação, isolamento por projeto, reconexão, live edge apenas quando o operador já está no final e memória previsível em runs longas. Expor metadados suficientes para a UI saber se há eventos anteriores e testar limites, paginação concorrente com append e runs acima de 200 eventos. Não alterar a semântica de decisões duráveis nem inventar conteúdo não persistido.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Substituir as janelas silenciosas que hoje limitam a atividade visível a 30 eventos na tela e 200 no cliente/runtime por um contrato paginado por cursor ou sequence, escopado à run. A leitura inicial pode continuar limitada, mas deve permitir recuperar todo o histórico durável anterior sem duplicação ou lacunas enquanto SSE acrescenta novos eventos. Preservar ordenação, isolamento por projeto, reconexão, live edge apenas quando o operador já está no final e memória previsível em runs longas. Expor metadados suficientes para a UI saber se há eventos anteriores e testar limites, paginação concorrente com append e runs acima de 200 eventos. Não alterar a semântica de decisões duráveis nem inventar conteúdo não persistido.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
