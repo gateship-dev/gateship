@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-837",
   "title": "Tornar projects.overview fiel ao orçamento real do Agent CLI",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T20:08:57.942Z",
-  "updatedAt": "2026-09-08T20:23:11.432Z",
+  "updatedAt": "2026-09-08T20:49:59.855Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
