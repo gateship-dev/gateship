@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-825",
+  "title": "Mover avisos operacionais para uma central de notificações no header",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:44:00.805Z",
+  "updatedAt": "2026-09-08T14:44:00.805Z",
+  "description": "Depois do header comum, criar NotificationCenter reutilizável com botão Hugeicons e popover ancorado. Agregar condições derivadas do snapshot de runs, fila encadeada, serviço desatualizado, identidade Git e workspaces; contar e usar verde ácido somente para itens que realmente exigem ação do operador. Avisos advisory podem aparecer na lista, mas não no contador de urgência. Não criar estado lido/não lido nem persistência artificial. Oferecer links contextuais, estado vazio, aria-live sem roubar foco e manter configuração de browser, ntfy e email em Ajustes. Remover callouts e sinais duplicados da sidebar e rail apenas depois de provar que o trigger continua visível e inequívoco em desktop e 390 px. Cobrir teclado, contraste, temas, idiomas e prefers-reduced-motion.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Depois do header comum, criar NotificationCenter reutilizável com botão Hugeicons e popover ancorado. Agregar condições derivadas do snapshot de runs, fila encadeada, serviço desatualizado, identidade Git e workspaces; contar e usar verde ácido somente para itens que realmente exigem ação do operador. Avisos advisory podem aparecer na lista, mas não no contador de urgência. Não criar estado lido/não lido nem persistência artificial. Oferecer links contextuais, estado vazio, aria-live sem roubar foco e manter configuração de browser, ntfy e email em Ajustes. Remover callouts e sinais duplicados da sidebar e rail apenas depois de provar que o trigger continua visível e inequívoco em desktop e 390 px. Cobrir teclado, contraste, temas, idiomas e prefers-reduced-motion.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
