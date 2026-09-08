@@ -338,13 +338,17 @@ describe('Claude CLI runtime executor', () => {
 	});
 
 	test('accepts only the two structured executor outcomes', () => {
+		expect(EXECUTION_RESULT_SCHEMA.oneOf).toEqual([
+			expect.objectContaining({ properties: expect.objectContaining({ status: { const: 'completed' } }) }),
+			expect.objectContaining({ properties: expect.objectContaining({ status: { const: 'waiting-user' } }) }),
+		]);
 		expect(parseExecutionResult({ status: 'completed', summary: 'done', proposals: [], reconciliation: { outcome: 'unchanged', summary: 'same contract' } })).toEqual({
 			outcome: 'completed',
 			summary: 'done',
 			proposals: [],
 			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
 		});
-		expect(parseExecutionResult({ status: 'waiting-user', summary: 'choose A or B', reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' } })).toEqual({
+		expect(parseExecutionResult({ status: 'waiting-user', summary: 'choose A or B', proposals: [], reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' } })).toEqual({
 			outcome: 'waiting-user',
 			summary: 'choose A or B',
 			reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' },
@@ -352,6 +356,22 @@ describe('Claude CLI runtime executor', () => {
 		expect(() => parseExecutionResult({ status: 'unknown', summary: 'no' })).toThrow(
 			'invalid structured run status',
 		);
+	});
+
+	test('rejects the invalid completed and contract-change-required combination from GSHIP-831', async () => {
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-mode=invalid-reconciliation'],
+			loadIssue: () => '{"id":"GSHIP-831"}',
+		});
+		await expect(executor.execute({
+			runId: 'run-invalid-reconciliation-claude',
+			issueId: 'GSHIP-831',
+			sessionId: 'session-invalid-reconciliation-claude',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-invalid-reconciliation-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		})).rejects.toThrow('invalid structured run status');
 	});
 
 	// GSHIP-612: the executor reports out-of-scope ideas instead of building them.
@@ -448,10 +468,8 @@ describe('Claude CLI runtime executor', () => {
 			reconciliation: { outcome: 'adapted', summary: 'mechanical drift only' },
 			proposals: [
 				{ title: '  Extrair o parser  ', evidence: '  Duplicado em dois adaptadores.  ' },
-				{ title: '', evidence: 'sem título' },
 				{ title: 'Ideia 2', evidence: 'Evidência 2.' },
 				{ title: 'Ideia 3', evidence: 'Evidência 3.' },
-				{ title: 'Ideia 4', evidence: 'Evidência 4.' },
 			],
 		})).toEqual({
 			outcome: 'completed',
@@ -463,13 +481,7 @@ describe('Claude CLI runtime executor', () => {
 				{ title: 'Ideia 3', evidence: 'Evidência 3.' },
 			],
 		});
-		// A missing or malformed array never fails an otherwise valid result.
-		expect(parseExecutionResult({ status: 'completed', summary: 'done', reconciliation: { outcome: 'unchanged', summary: 'same contract' } })).toEqual({
-			outcome: 'completed',
-			summary: 'done',
-			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
-			proposals: [],
-		});
+		expect(() => parseExecutionResult({ status: 'completed', summary: 'done', reconciliation: { outcome: 'unchanged', summary: 'same contract' } })).toThrow('invalid structured run status');
 		// This slice captures nothing from a paused turn.
 		expect(parseExecutionResult({
 			status: 'waiting-user',
@@ -487,6 +499,18 @@ describe('Claude CLI runtime executor', () => {
 			status: 'waiting-user',
 			summary: 'choose',
 			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
+		})).toThrow('invalid structured run status');
+		expect(() => parseExecutionResult({
+			status: 'completed',
+			summary: 'done',
+			proposals: [{ title: '', evidence: 'evidence' }],
+			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
+		})).toThrow('invalid structured run status');
+		expect(() => parseExecutionResult({
+			status: 'completed',
+			summary: 'done',
+			proposals: [],
+			reconciliation: { outcome: 'unchanged', summary: 'same contract', extra: true },
 		})).toThrow('invalid structured run status');
 	});
 
@@ -835,6 +859,7 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 			"Run only the smallest relevant checks while editing, then run the human-approved issue verification command once before completion; do not add `bun run check:all`, the full test suite, or other broad gates unless that exact command is already in the human-approved verification, because the service runs the project's `verify` script once after a clean review at the ship boundary.",
 			'Return status completed when the issue work is ready for verification.',
 			'Return status waiting-user only when a concrete operator decision is required; summarize the exact question and options.',
+			'Tests or fixtures that directly contradict an approved acceptance are part of this issue and must be updated; do not escalate them to the operator.',
 			'Keep this issue closed to its scope: work you discover outside it is not part of this run and must not be implemented here.',
 			`Report such work in proposals instead, at most ${PROPOSAL_LIMITS.maxItems} items, each with a short title and the concrete evidence you saw while implementing. Return an empty array when nothing outside the scope came up.`,
 			'The fresh worktree and the current main are the sources of truth. Before editing, compare the current code with the approved contract below.',

@@ -389,6 +389,22 @@ describe('Codex CLI runtime executor', () => {
 		expect(summary.input).toContain('Continue dentro do contrato aprovado.');
 	});
 
+	test('rejects the invalid completed and contract-change-required combination from GSHIP-831', async () => {
+		const executor = new CodexCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-mode=invalid-reconciliation'],
+			loadIssue: () => '{"id":"GSHIP-831"}',
+		});
+		await expect(executor.execute({
+			runId: 'run-invalid-reconciliation-codex',
+			issueId: 'GSHIP-831',
+			sessionId: 'session-invalid-reconciliation-codex',
+			resume: false,
+			cwd: createTestTmpdir('gship-codex-invalid-reconciliation-'),
+			signal: new AbortController().signal,
+			emit: () => {},
+		})).rejects.toThrow('invalid structured run status');
+	});
+
 	// GSHIP-720: the ephemeral CI diagnosis guidance is role-specific, and both
 	// executors share buildWorkPrompt, so the real Codex child receives it too.
 	test('forwards the CI correction diagnosis guidance into the prompt the real child receives', async () => {
