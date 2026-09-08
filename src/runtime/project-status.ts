@@ -161,6 +161,7 @@ export interface HistoricalOverview {
 	thinkingTokens: number | null;
 	};
 	configurations: Array<{ provider: string; role: string; model?: string; effort?: string }>;
+	cohorts: HistoricalCohort[];
 	daily: Array<{
 		date: string;
 		totalRuns: number;
@@ -173,6 +174,21 @@ export interface HistoricalOverview {
 		inputTokens: number | null;
 		outputTokens: number | null;
 	}>;
+}
+
+export interface CohortMetric { count: number; denominator: number }
+export interface HistoricalCohort {
+	workflowRevision: string | null;
+	specVersion: 'legacy' | 'v2' | 'unknown';
+	sampleSize: number;
+	evidenceSufficient: boolean;
+	outcomes: Record<'shipped' | 'failed' | 'cancelled', CohortMetric>;
+	corrections: Record<'verification' | 'review' | 'fullVerify' | 'ci', CohortMetric>;
+	cycleQuestions: Record<'executor' | 'review' | 'fullVerify', CohortMetric>;
+	reconciliations: Record<'unchanged' | 'adapted' | 'contract-change-required', CohortMetric>;
+	attentionRequests: CohortMetric;
+	operatorInterventions: CohortMetric;
+	providerHolds: CohortMetric;
 }
 
 export interface HistoricalOverviewRead {
@@ -211,7 +227,88 @@ function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 		reportedTokens: { inputTokens: null, outputTokens: null, cacheCreationInputTokens: null,
 			cacheReadInputTokens: null, thinkingTokens: null },
 		configurations: [], daily: [],
+		cohorts: [],
 	};
+}
+
+export const COHORT_MINIMUM_SAMPLE = 5;
+
+function cohortMetric(count: number, denominator: number): CohortMetric {
+	return { count, denominator };
+}
+
+function emptyCohort(workflowRevision: string | null, specVersion: HistoricalCohort['specVersion']): HistoricalCohort {
+	const metric = (): CohortMetric => cohortMetric(0, 0);
+	return {
+		workflowRevision, specVersion, sampleSize: 0, evidenceSufficient: false,
+		outcomes: { shipped: metric(), failed: metric(), cancelled: metric() },
+		corrections: { verification: metric(), review: metric(), fullVerify: metric(), ci: metric() },
+		cycleQuestions: { executor: metric(), review: metric(), fullVerify: metric() },
+		reconciliations: { unchanged: metric(), adapted: metric(), 'contract-change-required': metric() },
+		attentionRequests: metric(), operatorInterventions: metric(), providerHolds: metric(),
+	};
+}
+
+function cohortMetricFromEvents(item: PersistedRunHistory, kind: string, origin?: string): number {
+	return item.events.filter((event) => event.kind === kind && (origin === undefined || event.payload['origin'] === origin)).length;
+}
+
+function updateCohortOutcomes(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	for (const outcome of Object.keys(cohort.outcomes) as Array<keyof typeof cohort.outcomes>) {
+		cohort.outcomes[outcome] = cohortMetric(cohort.outcomes[outcome].count + (item.evaluation.outcome === outcome ? 1 : 0), denominator);
+	}
+}
+
+function updateCohortCorrections(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	for (const source of Object.keys(cohort.corrections) as Array<keyof typeof cohort.corrections>) {
+		const eventKind = `run.${source === 'fullVerify' ? 'full-verify' : source}-fix-requested`;
+		cohort.corrections[source] = cohortMetric(cohort.corrections[source].count + (cohortMetricFromEvents(item, eventKind) > 0 ? 1 : 0), denominator);
+	}
+}
+
+function updateCohortQuestions(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	for (const source of Object.keys(cohort.cycleQuestions) as Array<keyof typeof cohort.cycleQuestions>) {
+		const origin = source === 'fullVerify' ? 'full-verify' : source;
+		cohort.cycleQuestions[source] = cohortMetric(cohort.cycleQuestions[source].count + cohortMetricFromEvents(item, 'run.cycle-question', origin), denominator);
+	}
+}
+
+function updateCohortReconciliations(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	for (const outcome of Object.keys(cohort.reconciliations) as Array<keyof typeof cohort.reconciliations>) {
+		const eventOutcome = outcome === 'adapted' ? 'clarified' : outcome === 'contract-change-required' ? 'material' : outcome;
+		const count = item.events.filter((event) => event.kind === 'run.chain-reconciliation' && event.payload['outcome'] === eventOutcome).length;
+		cohort.reconciliations[outcome] = cohortMetric(cohort.reconciliations[outcome].count + count, denominator);
+	}
+}
+
+function updateCohortScalars(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	cohort.attentionRequests = cohortMetric(cohort.attentionRequests.count + item.evaluation.attentionRequests, denominator);
+	cohort.operatorInterventions = cohortMetric(cohort.operatorInterventions.count + item.evaluation.operatorInterventions, denominator);
+	cohort.providerHolds = cohortMetric(cohort.providerHolds.count + item.evaluation.providerHolds, denominator);
+}
+
+function finalizeCohortEvidence(cohort: HistoricalCohort): HistoricalCohort {
+	return { ...cohort, evidenceSufficient: cohort.sampleSize >= COHORT_MINIMUM_SAMPLE };
+}
+
+function historicalCohorts(items: readonly PersistedRunHistory[]): HistoricalCohort[] {
+	const groups = new Map<string, HistoricalCohort>();
+	for (const item of items) {
+		if (item.evaluation.outcome === 'incomplete') continue;
+		const revision = item.evaluation.workflowRevision;
+		const specVersion = item.evaluation.specProfile.version;
+		const key = `${revision ?? ''}\0${specVersion}`;
+		const cohort = groups.get(key) ?? emptyCohort(revision, specVersion);
+		groups.set(key, cohort);
+		cohort.sampleSize += 1;
+		const denominator = cohort.sampleSize;
+		updateCohortOutcomes(cohort, item, denominator);
+		updateCohortCorrections(cohort, item, denominator);
+		updateCohortQuestions(cohort, item, denominator);
+		updateCohortReconciliations(cohort, item, denominator);
+		updateCohortScalars(cohort, item, denominator);
+	}
+	return [...groups.values()].map(finalizeCohortEvidence);
 }
 
 function median(values: readonly number[]): number | null {
@@ -408,6 +505,7 @@ function historicalOverview(
 	result.configurations = [...configurations].map((value) => JSON.parse(value) as HistoricalOverview['configurations'][number]);
 	result.configurations.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 	result.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
+	result.cohorts = historicalCohorts(selected);
 	return result;
 }
 
@@ -674,6 +772,28 @@ function combineHistoricalOverviews(overviews: readonly HistoricalOverview[], wi
 	for (const item of overviews) addHistoricalOverview(combined, item, configurations, daily);
 	combined.medianDispatchToMergeMs = median(dispatchToMergeSamples.get(combined) ?? []);
 	combined.configurations = [...configurations].map((value) => JSON.parse(value) as HistoricalOverview['configurations'][number]);
+	const cohortGroups = new Map<string, HistoricalCohort>();
+	for (const item of overviews.flatMap((overview) => overview.cohorts)) {
+		const key = `${item.workflowRevision ?? ''}\0${item.specVersion}`;
+		const existing = cohortGroups.get(key);
+		if (existing === undefined) { cohortGroups.set(key, structuredClone(item)); continue; }
+		const denominator = existing.sampleSize + item.sampleSize;
+		existing.sampleSize = denominator;
+		existing.evidenceSufficient = denominator >= COHORT_MINIMUM_SAMPLE;
+		const mergeMetrics = <T extends Record<string, CohortMetric>>(target: T, source: T): void => {
+			for (const key of Object.keys(target)) {
+				const targetMetric = target[key];
+				const sourceMetric = source[key];
+				Object.assign(target, { [key]: cohortMetric((targetMetric?.count ?? 0) + (sourceMetric?.count ?? 0), denominator) });
+			}
+		};
+		mergeMetrics(existing.outcomes, item.outcomes);
+		mergeMetrics(existing.corrections, item.corrections);
+		mergeMetrics(existing.cycleQuestions, item.cycleQuestions);
+		mergeMetrics(existing.reconciliations, item.reconciliations);
+		for (const field of ['attentionRequests', 'operatorInterventions', 'providerHolds'] as const) existing[field] = cohortMetric(existing[field].count + item[field].count, denominator);
+	}
+	combined.cohorts = [...cohortGroups.values()];
 	combined.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
 	return combined;
 }
