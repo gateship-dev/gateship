@@ -1,0 +1,27 @@
+{
+  "id": "GSHIP-819",
+  "title": "Corrigir a semântica do diagnóstico nativo",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T02:39:13.056Z",
+  "updatedAt": "2026-09-08T02:39:13.056Z",
+  "description": "Corrigir gship doctor para distinguir requisitos acionáveis da distribuição ativa de informações contextuais. Em binários nativos suportados de macOS e Linux, arquitetura compatível deve passar e ausência de container deve ser informativa ou not-applicable, sem tornar o resultado global falso. Dentro da imagem, manter validação estrita de linux/amd64 ou linux/arm64, marcador de build, volume, ferramentas, logins e conectividade. Dar identificadores e rótulos únicos aos checks de disponibilidade e autenticação de gh, Claude e Codex, preservando saída humana e JSON sem credenciais. O código de saída deve falhar apenas por requisito acionável no modo atual. Adicionar testes para darwin/arm64 nativo, linux/x64 nativo, container válido, arquitetura incompatível, nomes únicos e cálculo do resultado global. Não criar novo subsistema nem ampliar suporte de sistemas operacionais.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Corrigir gship doctor para distinguir requisitos acionáveis da distribuição ativa de informações contextuais. Em binários nativos suportados de macOS e Linux, arquitetura compatível deve passar e ausência de container deve ser informativa ou not-applicable, sem tornar o resultado global falso. Dentro da imagem, manter validação estrita de linux/amd64 ou linux/arm64, marcador de build, volume, ferramentas, logins e conectividade. Dar identificadores e rótulos únicos aos checks de disponibilidade e autenticação de gh, Claude e Codex, preservando saída humana e JSON sem credenciais. O código de saída deve falhar apenas por requisito acionável no modo atual. Adicionar testes para darwin/arm64 nativo, linux/x64 nativo, container válido, arquitetura incompatível, nomes únicos e cálculo do resultado global. Não criar novo subsistema nem ampliar suporte de sistemas operacionais.",
+    "verify": [
+      "bun run check:all"
+    ],
+    "evidence": [
+      {
+        "command": "gship doctor --json | jq -c '{ok,names:[.checks[].name],failed:[.checks[]|select(.ok==false)|.name]}'",
+        "output": "{\"ok\":false,\"names\":[\"arquitetura\",\"container\",\"volume\",\"git\",\"gh\",\"claude\",\"codex\",\"gh\",\"claude\",\"codex\",\"conectividade-local\"],\"failed\":[\"arquitetura\",\"container\",\"claude\"]}"
+      }
+    ]
+  },
+  "approval": {
+    "fingerprint": "0c1e72327ad8bd0cba8ed5592462695e33e3e3e1f30eb575e4816db1167633eb",
+    "approvedAt": "2026-09-08T02:39:13.056Z"
+  }
+}
