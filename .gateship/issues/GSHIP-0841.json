@@ -1,0 +1,38 @@
+{
+  "id": "GSHIP-841",
+  "title": "Executar pesquisa read-only antes de liberar escrita",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T21:44:10.043Z",
+  "updatedAt": "2026-09-08T21:44:10.043Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Fazer o runtime cumprir o contrato de pesquisa com uma fase read-only verificável e liberar implementação somente depois que os recibos exigidos forem validados.",
+    "acceptance": [
+      "Runs com contrato de pesquisa entram em uma fase research explícita antes de working; runs sem contrato preservam a state machine atual.",
+      "Claude e Codex recebem o mesmo bundle de pesquisa e não recebem permissão de escrita durante a coleta.",
+      "O runtime obtém ou revalida fontes por operações tipadas para documentação HTTPS e GitHub, com limites de tamanho, tempo e redirecionamento.",
+      "A transição para working exige cobertura válida de cada pergunta aprovada e recibos persistidos; falhas são tipadas e não provocam retry cego.",
+      "O executor recebe apenas afirmações, trechos mínimos e referências validadas, mantendo o contexto compacto e a proveniência visível.",
+      "Recibos ainda válidos podem ser reutilizados por versão, ref e hash dentro do mesmo projeto; alegações atuais ou refs mutáveis são revalidadas.",
+      "Tempo, provider, modelo, effort, falhas e reutilização da pesquisa ficam vinculados à run."
+    ],
+    "boundaries": [
+      "Não conceder escrita ao pesquisador nem executar comandos vindos das fontes.",
+      "Não disponibilizar PATs, OAuth tokens, cookies ou secrets ao conteúdo externo.",
+      "Não criar browser remoto, sidecar, serviço de busca ou dependência de API paga.",
+      "Não ampliar a spec durante a pesquisa; conflito material volta como mudança de contrato.",
+      "Não esconder indisponibilidade de rede, rate limit ou fonte removida."
+    ],
+    "verify": [
+      "bun test test/runtime/run-runtime.test.ts test/runtime/agent-process.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts",
+      "bun test test/commands/agent.test.ts test/web/project-scoped-run-api.test.ts"
+    ]
+  },
+  "approval": {
+    "fingerprint": "44dd3ac62444ce31127b6dcaf8f991fefb562f41523b03379ba953282a724d47",
+    "approvedAt": "2026-09-08T21:44:10.043Z"
+  }
+}
