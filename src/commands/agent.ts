@@ -308,8 +308,45 @@ function statusResult(snapshotValue: unknown, runsValue: unknown): Record<string
 	};
 }
 
+function projectOverviewItem(value: unknown): Record<string, unknown> {
+	const project = record(value);
+	const metadata = record(project['project']);
+	const root = record(project['root']);
+	const database = record(project['database']);
+	const history = record(project['overview']);
+	const activeRun = project['activeRun'];
+	return {
+		id: metadata['id'] ?? null,
+		name: metadata['name'] ?? null,
+		repository: metadata['repository'] ?? null,
+		current: metadata['current'] ?? null,
+		readiness: metadata['readiness'] ?? null,
+		rootState: root['state'] ?? null,
+		databaseState: database['state'] ?? null,
+		activeRunState: activeRun === null ? null : record(activeRun)['state'] ?? null,
+		latestRunOutcome: project['latestRunOutcome'] ?? null,
+		historyState: history['overview'] === null || history['overview'] === undefined ? 'unavailable' : 'available',
+	};
+}
+
+function projectsOverviewResult(value: unknown): Record<string, unknown> {
+	const result = record(value);
+	const projects = Array.isArray(result['projects']) ? result['projects'].map(projectOverviewItem) : [];
+	const historical = record(result['overview']);
+	return {
+		window: result['window'] ?? null,
+		summary: result['summary'] ?? null,
+		overview: {
+			cohorts: Array.isArray(historical['cohorts']) ? historical['cohorts'] : [],
+			cohortsPage: historical['cohortsPage'] ?? null,
+		},
+		projects,
+	};
+}
+
 function projectResult(operation: string, value: unknown): Record<string, unknown> {
 	const result = record(value);
+	if (operation === 'projects.overview') return projectsOverviewResult(result);
 	if (operation === 'issues.list') {
 		return {
 			issues: (Array.isArray(result['issues']) ? result['issues'] : []).map(issueListItem),
@@ -349,6 +386,7 @@ function outputObject(
 	value: unknown,
 	maxBytes = AGENT_MAX_OUTPUT_BYTES,
 	shouldClamp = true,
+	sizeContext?: { operation: string; pagination: string },
 ): Record<string, unknown> {
 	const limited = shouldClamp ? clamp(value) : value;
 	const object = limited !== null && typeof limited === 'object' && !Array.isArray(limited)
@@ -359,9 +397,11 @@ function outputObject(
 	return {
 		ok: false,
 		code: 'output-too-large',
-		message: maxBytes === AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES
-			? `Response exceeds ${maxBytes} bytes; retry issues.list with a smaller explicit "limit".`
-			: `Response exceeds ${maxBytes} bytes; request a smaller page.`,
+		message: sizeContext === undefined
+			? maxBytes === AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES
+				? `Response exceeds ${maxBytes} bytes; retry issues.list with a smaller explicit "limit".`
+				: `Response exceeds ${maxBytes} bytes; request a smaller page.`
+			: `Response exceeds ${maxBytes} bytes for ${sizeContext.operation}; request smaller explicit ${sizeContext.pagination} values.`,
 	};
 }
 
@@ -376,7 +416,7 @@ function operationOutput(
 ): Record<string, unknown> {
 	if (operation === 'projects.overview') {
 		const explicitLimit = Number.isSafeInteger(input['cohortLimit']) && Number(input['cohortLimit']) > 0;
-		return outputObject(value, explicitLimit ? AGENT_MAX_OUTPUT_BYTES : AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES, false);
+		return outputObject(value, explicitLimit ? AGENT_MAX_OUTPUT_BYTES : AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES, false, { operation, pagination: 'cohortLimit" and "cohortOffset' });
 	}
 	if (operation !== 'issues.list') return outputObject(value);
 	const maxBytes = hasExplicitListLimit(input)
