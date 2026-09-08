@@ -99,10 +99,19 @@ export function buildClaudeReadOnlyArgv(input: ClaudeInvocation): string[] {
 	return argv;
 }
 
+export const EXECUTION_RESULT_DISCRIMINANTS = [
+	'completed-unchanged',
+	'completed-adapted',
+	'waiting-user-contract-change-required',
+] as const;
+
 export const EXECUTION_RESULT_SCHEMA = {
 	type: 'object',
 	properties: {
-		status: { type: 'string', enum: ['completed', 'waiting-user'] },
+		// Codex accepts a flat enum but rejects the conditional combination of
+		// status and reconciliation. Keep the wire contract to one discriminant;
+		// parseExecutionResult expands it back to the existing runtime result.
+		outcome: { type: 'string', enum: EXECUTION_RESULT_DISCRIMINANTS },
 		summary: { type: 'string', minLength: 1 },
 		// Always present so the executor answers the question every time, even
 		// when the honest answer is that nothing outside the issue came up.
@@ -122,29 +131,14 @@ export const EXECUTION_RESULT_SCHEMA = {
 		reconciliation: {
 			type: 'object',
 			properties: {
-				outcome: { type: 'string', enum: ['unchanged', 'adapted', 'contract-change-required'] },
 				summary: { type: 'string', minLength: 1 },
 			},
-			required: ['outcome', 'summary'],
+			required: ['summary'],
 			additionalProperties: false,
 		},
 	},
-	required: ['status', 'summary', 'proposals', 'reconciliation'],
+	required: ['outcome', 'summary', 'proposals', 'reconciliation'],
 	additionalProperties: false,
-	oneOf: [
-		{
-			properties: {
-				status: { const: 'completed' },
-				reconciliation: { properties: { outcome: { enum: ['unchanged', 'adapted'] } } },
-			},
-		},
-		{
-			properties: {
-				status: { const: 'waiting-user' },
-				reconciliation: { properties: { outcome: { const: 'contract-change-required' } } },
-			},
-		},
-	],
 } as const;
 
 export function buildClaudeCliArgv(input: ClaudeInvocation): string[] {
@@ -313,6 +307,7 @@ export function buildWorkPrompt(
 		'Adapt autonomously only files, seams, dependencies and mechanical details changed by earlier deliveries. Never ask the operator about purely technical drift.',
 		'Report reconciliation as unchanged when the approved contract still maps directly to the current code, adapted when only that technical drift was incorporated, or contract-change-required when the objective, observable acceptance, risk, exclusions, evidence or verify commands must change.',
 		'Use status completed only with reconciliation outcome unchanged or adapted. Use status waiting-user only with contract-change-required, and summarize the exact decision required.',
+		'In the structured output, use exactly one outcome discriminant: completed-unchanged, completed-adapted, or waiting-user-contract-change-required. These are the only three values; never treat a fixture conflict with the approved spec as a human decision.',
 		...handoffSection,
 		...decisionsSection,
 		...guidanceSection,
@@ -342,10 +337,10 @@ export function parseExecutionResult(
 	}
 	const result = structuredOutput as Record<string, unknown>;
 	const keys = Object.keys(result).sort();
-	if (keys.join('\0') !== ['proposals', 'reconciliation', 'status', 'summary'].join('\0')) {
+	if (keys.join('\0') !== ['outcome', 'proposals', 'reconciliation', 'summary'].join('\0')) {
 		throw new Error('executor returned an invalid structured run status');
 	}
-	const status = result['status'];
+	const outcome = result['outcome'];
 	const summary = result['summary'];
 	const proposals = result['proposals'];
 	const reconciliation = result['reconciliation'];
@@ -353,8 +348,14 @@ export function parseExecutionResult(
 		? reconciliation as Record<string, unknown>
 		: null;
 	const reconciliationKeys = reconciliationRecord === null ? '' : Object.keys(reconciliationRecord).sort().join('\0');
-	const reconciliationOutcome = reconciliationRecord?.['outcome'];
 	const reconciliationSummary = reconciliationRecord?.['summary'];
+	const mapped = outcome === 'completed-unchanged'
+		? { status: 'completed' as const, reconciliationOutcome: 'unchanged' as const }
+		: outcome === 'completed-adapted'
+			? { status: 'completed' as const, reconciliationOutcome: 'adapted' as const }
+			: outcome === 'waiting-user-contract-change-required'
+				? { status: 'waiting-user' as const, reconciliationOutcome: 'contract-change-required' as const }
+				: null;
 	if (!Array.isArray(proposals)
 		|| proposals.length > PROPOSAL_LIMITS.maxItems
 		|| proposals.some((proposal) => {
@@ -369,28 +370,24 @@ export function parseExecutionResult(
 				|| record['evidence'].trim().length === 0
 				|| record['evidence'].length > PROPOSAL_LIMITS.evidence;
 		})
-		|| (status !== 'completed' && status !== 'waiting-user')
+		|| mapped === null
 		|| typeof summary !== 'string'
 		|| summary.trim().length === 0
-		|| reconciliationKeys !== ['outcome', 'summary'].join('\0')
-		|| (reconciliationOutcome !== 'unchanged'
-			&& reconciliationOutcome !== 'adapted'
-			&& reconciliationOutcome !== 'contract-change-required')
+		|| reconciliationKeys !== ['summary'].join('\0')
 		|| typeof reconciliationSummary !== 'string'
 		|| reconciliationSummary.trim().length === 0
-		|| (status === 'completed' && reconciliationOutcome === 'contract-change-required')
-		|| (status === 'waiting-user' && reconciliationOutcome !== 'contract-change-required')) {
+	) {
 		throw new Error('executor returned an invalid structured run status');
 	}
 	const parsedReconciliation = {
-		outcome: reconciliationOutcome as RuntimeReconciliationOutcome,
+		outcome: mapped.reconciliationOutcome as RuntimeReconciliationOutcome,
 		summary: reconciliationSummary.trim(),
 	};
 	// A paused turn reports a question, not a finding: only a completed result
 	// carries ideas worth keeping.
-	if (status === 'waiting-user') return { outcome: status, summary: summary.trim(), reconciliation: parsedReconciliation };
+	if (mapped.status === 'waiting-user') return { outcome: mapped.status, summary: summary.trim(), reconciliation: parsedReconciliation };
 	return {
-		outcome: status,
+		outcome: mapped.status,
 		summary: summary.trim(),
 		reconciliation: parsedReconciliation,
 		proposals: normalizeProposalDrafts(proposals),

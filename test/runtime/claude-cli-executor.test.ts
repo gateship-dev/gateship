@@ -8,6 +8,7 @@ import {
 	buildWorkPrompt,
 	ClaudeAgentSession,
 	ClaudeCliExecutor,
+	EXECUTION_RESULT_DISCRIMINANTS,
 	EXECUTION_RESULT_SCHEMA,
 	parseExecutionResult,
 	probeClaudeModel,
@@ -337,23 +338,28 @@ describe('Claude CLI runtime executor', () => {
 		expect(events.map((event) => event.kind)).toContain('provider.model');
 	});
 
-	test('accepts only the two structured executor outcomes', () => {
-		expect(EXECUTION_RESULT_SCHEMA.oneOf).toEqual([
-			expect.objectContaining({ properties: expect.objectContaining({ status: { const: 'completed' } }) }),
-			expect.objectContaining({ properties: expect.objectContaining({ status: { const: 'waiting-user' } }) }),
+	test('accepts the three structured executor outcomes through one discriminant', () => {
+		expect(EXECUTION_RESULT_SCHEMA).not.toHaveProperty('oneOf');
+		expect(EXECUTION_RESULT_SCHEMA.properties.outcome.enum).toEqual([
+			'completed-unchanged', 'completed-adapted', 'waiting-user-contract-change-required',
 		]);
-		expect(parseExecutionResult({ status: 'completed', summary: 'done', proposals: [], reconciliation: { outcome: 'unchanged', summary: 'same contract' } })).toEqual({
+		expect(EXECUTION_RESULT_DISCRIMINANTS).toHaveLength(3);
+		expect(parseExecutionResult({ outcome: 'completed-unchanged', summary: 'done', proposals: [], reconciliation: { summary: 'same contract' } })).toEqual({
 			outcome: 'completed',
 			summary: 'done',
 			proposals: [],
 			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
 		});
-		expect(parseExecutionResult({ status: 'waiting-user', summary: 'choose A or B', proposals: [], reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' } })).toEqual({
+		expect(parseExecutionResult({ outcome: 'completed-adapted', summary: 'done', proposals: [], reconciliation: { summary: 'adapted' } })).toMatchObject({
+			outcome: 'completed',
+			reconciliation: { outcome: 'adapted', summary: 'adapted' },
+		});
+		expect(parseExecutionResult({ outcome: 'waiting-user-contract-change-required', summary: 'choose A or B', proposals: [], reconciliation: { summary: 'contract changed' } })).toEqual({
 			outcome: 'waiting-user',
 			summary: 'choose A or B',
 			reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' },
 		});
-		expect(() => parseExecutionResult({ status: 'unknown', summary: 'no' })).toThrow(
+		expect(() => parseExecutionResult({ outcome: 'unknown', summary: 'no' })).toThrow(
 			'invalid structured run status',
 		);
 	});
@@ -463,9 +469,9 @@ describe('Claude CLI runtime executor', () => {
 		expect(prompt).toContain('Report such work in proposals instead');
 
 		expect(parseExecutionResult({
-			status: 'completed',
+			outcome: 'completed-adapted',
 			summary: 'done',
-			reconciliation: { outcome: 'adapted', summary: 'mechanical drift only' },
+			reconciliation: { summary: 'mechanical drift only' },
 			proposals: [
 				{ title: '  Extrair o parser  ', evidence: '  Duplicado em dois adaptadores.  ' },
 				{ title: 'Ideia 2', evidence: 'Evidência 2.' },
@@ -481,12 +487,12 @@ describe('Claude CLI runtime executor', () => {
 				{ title: 'Ideia 3', evidence: 'Evidência 3.' },
 			],
 		});
-		expect(() => parseExecutionResult({ status: 'completed', summary: 'done', reconciliation: { outcome: 'unchanged', summary: 'same contract' } })).toThrow('invalid structured run status');
+		expect(() => parseExecutionResult({ status: 'completed', summary: 'done', reconciliation: { summary: 'same contract' }, proposals: [] })).toThrow('invalid structured run status');
 		// This slice captures nothing from a paused turn.
 		expect(parseExecutionResult({
-			status: 'waiting-user',
+			outcome: 'waiting-user-contract-change-required',
 			summary: 'choose A or B',
-			reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' },
+			reconciliation: { summary: 'contract changed' },
 			proposals: [{ title: 'Ideia', evidence: 'Evidência.' }],
 		})).toEqual({ outcome: 'waiting-user', summary: 'choose A or B', reconciliation: { outcome: 'contract-change-required', summary: 'contract changed' } });
 		expect(() => parseExecutionResult({
@@ -496,21 +502,21 @@ describe('Claude CLI runtime executor', () => {
 			reconciliation: { outcome: 'contract-change-required', summary: 'needs approval' },
 		})).toThrow('invalid structured run status');
 		expect(() => parseExecutionResult({
-			status: 'waiting-user',
+			outcome: 'waiting-user-contract-change-required',
 			summary: 'choose',
-			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
+			reconciliation: { summary: 'same contract', extra: true },
 		})).toThrow('invalid structured run status');
 		expect(() => parseExecutionResult({
-			status: 'completed',
+			outcome: 'completed-unchanged',
 			summary: 'done',
 			proposals: [{ title: '', evidence: 'evidence' }],
-			reconciliation: { outcome: 'unchanged', summary: 'same contract' },
+			reconciliation: { summary: 'same contract' },
 		})).toThrow('invalid structured run status');
 		expect(() => parseExecutionResult({
-			status: 'completed',
+			outcome: 'completed-unchanged',
 			summary: 'done',
 			proposals: [],
-			reconciliation: { outcome: 'unchanged', summary: 'same contract', extra: true },
+			reconciliation: { summary: 'same contract', extra: true },
 		})).toThrow('invalid structured run status');
 	});
 
@@ -696,6 +702,19 @@ describe('Claude CLI runtime executor', () => {
 		expect(result).toMatchObject({ approvedContract: '{"id":"CAM-22"}' });
 	});
 
+	test('maps the adapted discriminant to the existing runtime result', async () => {
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-outcome=completed-adapted'],
+			loadIssue: () => '{"id":"CAM-834"}',
+		});
+		const result = await executor.execute({
+			runId: 'run-834-claude', issueId: 'GSHIP-834', sessionId: 'session-834-claude',
+			resume: false, cwd: createTestTmpdir('gship-834-claude-'),
+			signal: new AbortController().signal, emit: () => {},
+		});
+		expect(result).toMatchObject({ outcome: 'completed', reconciliation: { outcome: 'adapted' } });
+	});
+
 	test('labels internal orchestrator guidance as binding and non-human', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
@@ -866,6 +885,7 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 			'Adapt autonomously only files, seams, dependencies and mechanical details changed by earlier deliveries. Never ask the operator about purely technical drift.',
 			'Report reconciliation as unchanged when the approved contract still maps directly to the current code, adapted when only that technical drift was incorporated, or contract-change-required when the objective, observable acceptance, risk, exclusions, evidence or verify commands must change.',
 			'Use status completed only with reconciliation outcome unchanged or adapted. Use status waiting-user only with contract-change-required, and summarize the exact decision required.',
+			'In the structured output, use exactly one outcome discriminant: completed-unchanged, completed-adapted, or waiting-user-contract-change-required. These are the only three values; never treat a fixture conflict with the approved spec as a human decision.',
 			'',
 			...OPERATOR_LANGUAGE_CONTRACT,
 			'',
