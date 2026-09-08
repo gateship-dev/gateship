@@ -1,0 +1,21 @@
+{
+  "id": "GSHIP-821",
+  "title": "Completar scrollbar compartilhada nas tabelas da visão geral",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T12:56:42.491Z",
+  "updatedAt": "2026-09-08T12:56:42.491Z",
+  "description": "Objetivo\nFechar a única lacuna remanescente do contrato visual de GSHIP-820: as duas tabelas legadas da visão geral que criam overflow horizontal diretamente ainda não usam a scrollbar compartilhada.\n\nComportamento observável\n1. Em webui/src/screens/overview-runs-screen.tsx e webui/src/screens/overview-insights-screen.tsx, aplicar o utilitário scroll-container ao wrapper que já possui overflow-x-auto.\n2. Preservar integralmente bordas, tabela, dados, responsividade e navegação.\n3. Não aplicar scroll-fade vertical nem criar fade horizontal nesta correção.\n4. Não refatorar as tabelas para outro componente, não adicionar dependência e não modificar o utilitário global.\n5. Confirmar por busca final que todo overflow-x-auto ou overflow-y-auto do web UI usa scroll-container, exceto quando houver uma justificativa explícita no próprio código.\n\nLimites\nCorreção estritamente mecânica de duas classes. Não alterar design, semântica, testes globais ou contratos operacionais.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Objetivo\nFechar a única lacuna remanescente do contrato visual de GSHIP-820: as duas tabelas legadas da visão geral que criam overflow horizontal diretamente ainda não usam a scrollbar compartilhada.\n\nComportamento observável\n1. Em webui/src/screens/overview-runs-screen.tsx e webui/src/screens/overview-insights-screen.tsx, aplicar o utilitário scroll-container ao wrapper que já possui overflow-x-auto.\n2. Preservar integralmente bordas, tabela, dados, responsividade e navegação.\n3. Não aplicar scroll-fade vertical nem criar fade horizontal nesta correção.\n4. Não refatorar as tabelas para outro componente, não adicionar dependência e não modificar o utilitário global.\n5. Confirmar por busca final que todo overflow-x-auto ou overflow-y-auto do web UI usa scroll-container, exceto quando houver uma justificativa explícita no próprio código.\n\nLimites\nCorreção estritamente mecânica de duas classes. Não alterar design, semântica, testes globais ou contratos operacionais.",
+    "verify": [
+      "bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "696b17a12ec56353aba4e80a273f6b6c74884a5c6f6becb9c8f4bee0c9ba4c6f",
+    "approvedAt": "2026-09-08T12:56:42.491Z"
+  }
+}
