@@ -1,0 +1,36 @@
+{
+  "id": "GSHIP-836",
+  "title": "Limitar e paginar coortes históricas sem perder evidência",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T19:20:47.634Z",
+  "updatedAt": "2026-09-08T19:20:47.634Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Manter a leitura histórica de consumo de especificações útil, recente e dentro dos limites do Agent CLI, sem apagar nem combinar coortes factualmente distintas.",
+    "acceptance": [
+      "A visão histórica ordena coortes pela execução terminal mais recente e expõe total, limite e deslocamento; o padrão retorna no máximo 10 coortes e aceita paginação com limite máximo determinístico.",
+      "projects.overview aceita paginação de coortes e sua resposta padrão permanece abaixo do limite de saída do Agent CLI no histórico atual do projeto.",
+      "A API web aplica a mesma paginação preservando filtros de projeto, período, provider, modelo, função e esforço.",
+      "Insights mostra uma única tabela compacta com uma linha por coorte, informa a faixa exibida e permite navegar entre páginas sem duplicar cabeçalhos por coorte.",
+      "Coortes legacy, v2 e unknown continuam acessíveis; nenhuma revisão, versão ou métrica é combinada, inferida ou descartada.",
+      "Estados vazio, uma página, primeira página e última página são verdadeiros, localizados e acessíveis.",
+      "Testes cobrem ordenação, limites, paginação estável, projeção do Agent CLI, HTTP e renderização/navegação de Insights."
+    ],
+    "boundaries": [
+      "Não alterar eventos, banco, perfil de especificação, métricas, denominadores, limiar de evidência ou regras do ciclo.",
+      "Não criar score, ranking, causalidade, recomendação, gate ou ajuste automático.",
+      "Não migrar nem reescrever histórico.",
+      "Não ocultar coortes antigas; apenas paginar a leitura."
+    ],
+    "verify": [
+      "bun test test/runtime/project-status.test.ts test/web/project-status-api.test.ts test/web/ui-client.test.tsx test/commands/agent.test.ts && bun run typecheck && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "db551a8b781ddbfc00f76743c1c00aaa62c215d28028e93264ff4c490025deb5",
+    "approvedAt": "2026-09-08T19:20:47.634Z"
+  }
+}
