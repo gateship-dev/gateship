@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-826",
+  "title": "Mapear atalhos e kbd por sistema operacional",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:44:04.308Z",
+  "updatedAt": "2026-09-08T14:44:04.308Z",
+  "description": "Inventariar todos os atalhos implementados e todos os elementos kbd exibidos pela web UI, separando o evento canônico da apresentação para macOS, Windows e Linux. Mostrar símbolos e nomes corretos por plataforma, com fallback neutro quando a detecção não for confiável; não inferir comportamento apenas por user agent. Revisar colisões com navegador e sistema, incluindo sidebar, seletor de projetos, inspector e eventual abertura da central de notificações. Preservar navegação sem mouse, não animar ações disparadas por teclado e adicionar testes da detecção, dos labels pt-BR/en-US e dos handlers.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Inventariar todos os atalhos implementados e todos os elementos kbd exibidos pela web UI, separando o evento canônico da apresentação para macOS, Windows e Linux. Mostrar símbolos e nomes corretos por plataforma, com fallback neutro quando a detecção não for confiável; não inferir comportamento apenas por user agent. Revisar colisões com navegador e sistema, incluindo sidebar, seletor de projetos, inspector e eventual abertura da central de notificações. Preservar navegação sem mouse, não animar ações disparadas por teclado e adicionar testes da detecção, dos labels pt-BR/en-US e dos handlers.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
