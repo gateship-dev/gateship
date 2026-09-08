@@ -88,6 +88,38 @@ describe('GET /api/overview/queues', () => {
 	});
 });
 
+describe('GET /api/overview', () => {
+	test(
+		'projects typed factual cohorts with intact denominators and project filters',
+		async () => {
+		const cwd = createTestTmpdir('gship-cohorts-api-');
+		const target = createTestTmpdir('gship-cohorts-api-target-');
+		readyCheckout(cwd);
+		readyCheckout(target);
+		const store = new RunStore(join(cwd, '.gship', 'runtime.sqlite'));
+		store.createRun({ id: 'run-cohort-api', issueId: 'GSHIP-835', sessionId: 'session-cohort-api', workspacePath: '/workspace/cohort-api', createdAt: '2026-09-07T10:00:00.000Z', workflowRevision: 'revision-api', specProfile: { version: 'v2', fingerprint: null, counts: { acceptance: 1, boundaries: 1, verify: 1, evidence: 0 } } });
+		for (const [index, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) store.transition({ runId: 'run-cohort-api', toState: state, kind: `run.${state}`, createdAt: `2026-09-07T10:0${index + 1}:00.000Z` });
+		store.close();
+		const handle = startWebServer({ port: 0, cwd });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const registered = await fetch(`${origin}/api/projects`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ root: target }) }).then((response) => response.json()) as { project: { id: string } };
+			const targetStore = new RunStore(join(target, '.gship', 'runtime.sqlite'));
+			targetStore.createRun({ id: 'run-cohort-target', issueId: 'GSHIP-835', sessionId: 'session-cohort-target', workspacePath: '/workspace/cohort-target', createdAt: '2026-09-07T11:00:00.000Z', workflowRevision: 'revision-api', specProfile: { version: 'v2', fingerprint: null, counts: { acceptance: 1, boundaries: 1, verify: 1, evidence: 0 } } });
+			for (const [index, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) targetStore.transition({ runId: 'run-cohort-target', toState: state, kind: `run.${state}`, createdAt: `2026-09-07T11:1${index}:00.000Z` });
+			targetStore.close();
+			const all = await fetch(`${origin}/api/overview?window=all`).then((response) => response.json()) as { projects: Array<{ project: { id: string } }>; overview: { cohorts: Array<Record<string, unknown>> } };
+			const filtered = await fetch(`${origin}/api/overview?window=all&projectId=${encodeURIComponent(registered.project.id)}`).then((response) => response.json()) as typeof all;
+			expect(all.overview.cohorts).toContainEqual(expect.objectContaining({ workflowRevision: 'revision-api', specVersion: 'v2', sampleSize: 2, outcomes: expect.objectContaining({ shipped: { count: 2, denominator: 2 } }) }));
+			expect(filtered.overview.cohorts).toContainEqual(expect.objectContaining({ workflowRevision: 'revision-api', specVersion: 'v2', sampleSize: 1, outcomes: expect.objectContaining({ shipped: { count: 1, denominator: 1 } }) }));
+		} finally {
+			await handle.stop();
+		}
+		},
+		{ timeout: 15_000 },
+	);
+});
+
 describe('GET /api/projects', () => {
 	test('lists the durable current-project registration with a stable identity', async () => {
 		const cwd = createTestTmpdir('gship-project-list-api-');

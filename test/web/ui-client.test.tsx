@@ -596,7 +596,7 @@ const DIAGNOSTICS_WITH_FINDING: AppProps['diagnostics'] = {
 };
 
 function renderAt(route: OperatorRoute, overrides: Omit<Partial<AppProps>, 'overview'> & { overview?: unknown } = {}): string {
-	return renderToStaticMarkup(
+	const app = (
 		<App
 			backlog={BACKLOG}
 			chainRuns={EMPTY_CHAIN_RUNS}
@@ -676,8 +676,13 @@ function renderAt(route: OperatorRoute, overrides: Omit<Partial<AppProps>, 'over
 			version=""
 			workspaceNotices={[]}
 			{...overrides as Partial<AppProps>}
-		/>,
+		/>
 	);
+	return renderToStaticMarkup(app);
+}
+
+function renderInsightsWithLoadedOverview(locale: Locale, overview: unknown): string {
+	return renderAt('/overview/insights', { locale, projects: [CURRENT_PROJECT], overview });
 }
 
 const home = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current', overrides);
@@ -3266,6 +3271,53 @@ function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 }
 
 describe('operator shell', () => {
+	test('Insights renders localized empty and loading states for both locales', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const html = renderAt('/overview/insights', { locale, projects: [CURRENT_PROJECT], overview: null });
+			const catalog = LOCALE_CATALOG[locale].overviewInsights;
+			expect(html).toContain(catalog.title);
+			expect(html).toContain(catalog.description);
+			expect(html).toContain(catalog.loading);
+			expect(html).not.toContain(catalog.cohortEvidenceInsufficient);
+		}
+	});
+
+	test('Insights accepts a factual cohort overview in both locales without exposing the full revision', () => {
+		const revision = 'revision-1234567890abcdef';
+		const smallCohort = {
+			workflowRevision: revision, specVersion: 'v2', sampleSize: 3, evidenceSufficient: false,
+			outcomes: { shipped: { count: 2, denominator: 3 }, failed: { count: 1, denominator: 3 }, cancelled: { count: 0, denominator: 3 } },
+			corrections: { verification: { count: 1, denominator: 3 }, review: { count: 2, denominator: 3 }, fullVerify: { count: 0, denominator: 3 }, ci: { count: 1, denominator: 3 } },
+			cycleQuestions: { executor: { count: 2, denominator: 3 }, review: { count: 1, denominator: 3 }, fullVerify: { count: 0, denominator: 3 } },
+			reconciliations: { unchanged: { count: 1, denominator: 3 }, adapted: { count: 1, denominator: 3 }, 'contract-change-required': { count: 0, denominator: 3 } },
+			attentionRequests: { count: 2, denominator: 3 }, operatorInterventions: { count: 1, denominator: 3 }, providerHolds: { count: 1, denominator: 3 },
+		};
+		const overviewFor = (cohorts: unknown[]) => ({ overview: {
+			window: '7d', totalRuns: 3, runsWithKnownCost: 0, knownCostUsd: null,
+			runsByOutcome: { shipped: 2, failed: 1, cancelled: 0, incomplete: 0 }, activeRuns: 0, terminalRuns: 3,
+			terminalWallTimeMs: null, terminalWallTimeRuns: 0, shippedWithoutIntervention: 0, dispatchToMergeMs: null,
+			dispatchToMergeRuns: 0, medianDispatchToMergeMs: null, firstReviewPasses: 0, firstReviewPassKnownRuns: 0,
+			ciCorrections: 0, fixRounds: 0, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0,
+			resolvedCycleQuestions: 0, reportedTokens: { inputTokens: null, outputTokens: null, cacheCreationInputTokens: null, cacheReadInputTokens: null, thinkingTokens: null },
+			daily: [], configurations: [], cohorts,
+		} });
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const catalog = LOCALE_CATALOG[locale].overviewInsights;
+			const smallHtml = renderInsightsWithLoadedOverview(locale, overviewFor([smallCohort]));
+			const sufficientHtml = renderInsightsWithLoadedOverview(locale, overviewFor([{ ...smallCohort, sampleSize: 5, evidenceSufficient: true }]));
+			expect(smallHtml).toContain(catalog.title);
+			expect(smallHtml).toContain('revision…');
+			expect(smallHtml).not.toContain(revision);
+			expect(smallHtml).toContain('v2');
+			expect(smallHtml).toContain(`>3 (${catalog.cohortEvidenceInsufficient})</td>`);
+			expect(smallHtml).toContain(catalog.cohortEvidenceInsufficient);
+			for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(smallHtml).toContain(label);
+			for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
+			expect(sufficientHtml).toContain('>5</td>');
+			expect(sufficientHtml).not.toContain(catalog.cohortEvidenceInsufficient);
+		}
+	});
+
 	test('queue empty states distinguish no projects, an unknown filter and an unavailable filtered project in both locales', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const catalog = LOCALE_CATALOG[locale].overview.queues;

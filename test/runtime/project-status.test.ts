@@ -6,6 +6,7 @@ import {
 	readProjectOperationalOverview,
 	readProjectHistoricalOverview,
 	readQueueOverview,
+	COHORT_MINIMUM_SAMPLE,
 	type ProjectOperationalStatus,
 	type QueueRuntime,
 } from '../../src/runtime/project-status.ts';
@@ -23,6 +24,21 @@ const project = {
 	current: true,
 };
 
+test('publicly defines and applies the minimum cohort evidence threshold', () => {
+	expect(COHORT_MINIMUM_SAMPLE).toBe(5);
+	const terminal = history('cohort-threshold', '2026-09-01T00:01:00.000Z');
+	const read = (count: number) => readProjectHistoricalOverview(
+		project, 'all', new Date('2026-09-02T00:00:00.000Z'), () => Array.from({ length: count }, (_, index) => ({
+			...terminal,
+			run: { ...terminal.run, id: `cohort-${index}` },
+			evaluation: { ...terminal.evaluation, workflowRevision: 'revision-a' },
+			events: [{ seq: 1, runId: `cohort-${index}`, kind: 'run.created', fromState: null, toState: 'queued', payload: { workflowRevision: 'revision-a' }, createdAt: terminal.run.createdAt, eventClass: 'decision' as const }],
+		}))
+	);
+	expect(read(COHORT_MINIMUM_SAMPLE - 1)).toMatchObject({ overview: { cohorts: [{ sampleSize: 4, evidenceSufficient: false }] } });
+	expect(read(COHORT_MINIMUM_SAMPLE)).toMatchObject({ overview: { cohorts: [{ sampleSize: 5, evidenceSufficient: true }] } });
+});
+
 type HistoryRun = { id: string; createdAt: string; terminal: 'shipped' | 'failed' | 'cancelled' };
 
 function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' = 'claude'): PersistedRunHistory {
@@ -39,6 +55,52 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 		cost: { totalCostUsd: null, breakdown: [], roles: [] },
 	};
 }
+
+function cohortHistory(
+	id: string,
+	input: { revision: string | null; version: 'legacy' | 'v2' | 'unknown'; outcome?: 'shipped' | 'failed' | 'cancelled' | 'incomplete'; createdAt?: string; events?: string[] },
+): PersistedRunHistory {
+	const item = history(id, input.createdAt ?? '2026-09-05T00:00:00.000Z');
+	item.run.createdAt = input.createdAt ?? item.run.createdAt;
+	item.run.updatedAt = item.run.createdAt;
+	item.evaluation = {
+		...item.evaluation,
+		workflowRevision: input.revision,
+		specProfile: { ...item.evaluation.specProfile, version: input.version },
+		outcome: input.outcome ?? 'shipped',
+		attentionRequests: 1,
+		operatorInterventions: 2,
+		providerHolds: 3,
+	};
+	item.events = (input.events ?? []).map((kind, seq) => ({ seq, runId: id, kind, fromState: 'working', toState: 'working', payload: { origin: kind === 'run.cycle-question' ? 'executor' : undefined, outcome: kind === 'run.chain-reconciliation' ? 'unchanged' : undefined }, createdAt: item.run.createdAt, eventClass: 'decision' as const }));
+	return item;
+}
+
+test('agrupa somente runs terminais pela combinação exata de revisão e versão, preserva contagens e filtros', () => {
+	const histories = [
+		cohortHistory('v2-a', { revision: 'revision-a', version: 'v2', events: ['run.verification-fix-requested', 'run.cycle-question', 'run.chain-reconciliation'] }),
+		cohortHistory('v2-b', { revision: 'revision-a', version: 'v2', events: ['run.review-fix-requested'] }),
+		cohortHistory('legacy-a', { revision: 'revision-a', version: 'legacy' }),
+		cohortHistory('v2-other-revision', { revision: 'revision-b', version: 'v2' }),
+		cohortHistory('unknown-revision', { revision: null, version: 'unknown' }),
+		cohortHistory('active', { revision: 'revision-a', version: 'v2', outcome: 'incomplete' }),
+		cohortHistory('old', { revision: 'revision-a', version: 'v2', createdAt: '2026-08-01T00:00:00.000Z' }),
+	];
+	const read = (window: '7d' | 'all' = 'all') => readProjectHistoricalOverview(project, window, new Date('2026-09-07T00:00:00.000Z'), () => histories).overview;
+	const overview = read();
+	expect(overview?.cohorts).toHaveLength(4);
+	expect(overview?.cohorts.find((cohort) => cohort.workflowRevision === 'revision-a' && cohort.specVersion === 'v2')).toMatchObject({
+		sampleSize: 3,
+		evidenceSufficient: false,
+		outcomes: { shipped: { count: 3, denominator: 3 } },
+		corrections: { verification: { count: 1, denominator: 3 }, review: { count: 1, denominator: 3 } },
+		cycleQuestions: { executor: { count: 1, denominator: 3 } },
+		reconciliations: { unchanged: { count: 1, denominator: 3 } },
+		attentionRequests: { count: 3, denominator: 3 }, operatorInterventions: { count: 6, denominator: 3 }, providerHolds: { count: 9, denominator: 3 },
+	});
+	expect(overview?.cohorts.some((cohort) => cohort.workflowRevision === null && cohort.specVersion === 'unknown')).toBe(true);
+	expect(read('7d')?.cohorts.find((cohort) => cohort.workflowRevision === 'revision-a' && cohort.specVersion === 'v2')?.sampleSize).toBe(2);
+});
 
 function runTime(run: HistoryRun, suffix: number): string {
 	return `${run.createdAt.slice(0, -1)}${suffix}Z`;
