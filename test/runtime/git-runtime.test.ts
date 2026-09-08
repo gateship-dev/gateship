@@ -1,19 +1,19 @@
+import { describe, expect, test } from 'bun:test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
 import {
 	createGitRuntimePreflight,
 	defaultRunGit,
+	type GitCommandRunner,
 	GitEvidenceChecker,
 	GitFullVerifier,
 	GitIssueVerifier,
-	type GitCommandRunner,
 	runVerificationCommand,
 	VERIFICATION_COMMAND_TIMEOUT_MS,
 } from '../../src/runtime/git-runtime.ts';
 import { readProjectVerificationManifest } from '../../src/runtime/project-verification.ts';
-import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 function gitRunner(values: { branch?: string; status?: string; diffExit?: number }): GitCommandRunner {
@@ -40,6 +40,28 @@ const verificationInput = {
 
 function issueWithVerification(commands: string[]): string {
 	return JSON.stringify({ spec: { scope: 'Expected outcome.', verify: commands } });
+}
+
+function focusedGitRunner(packageJson: string, manifest?: string): GitCommandRunner {
+	return (_cwd, args) => {
+		const path = args.at(-1);
+		switch (args[0]) {
+		case 'diff': return { exitCode: 0, stdout: '', stderr: '' };
+			case 'status': return { exitCode: 0, stdout: ' M src/a.ts\n', stderr: '' };
+			case 'fetch': return { exitCode: 0, stdout: '', stderr: '' };
+			case 'rev-parse': return { exitCode: 0, stdout: 'base-sha\n', stderr: '' };
+			case 'merge-base': return { exitCode: 0, stdout: 'base-sha\n', stderr: '' };
+			case 'ls-tree': return { exitCode: 0, stdout: path === 'package.json' || (path === '.gateship/project.json' && manifest !== undefined) ? `${path}\n` : '', stderr: '' };
+			case 'show': return { exitCode: 0, stdout: args[1] === 'base-sha:package.json' ? packageJson : manifest ?? '', stderr: '' };
+			default: return { exitCode: 1, stdout: '', stderr: 'unexpected Git call' };
+		}
+	};
+}
+
+function aliasPreflightRunner(withHook: boolean): GitCommandRunner {
+	return focusedGitRunner(JSON.stringify({ scripts: {
+		verify: 'bun run check:all', 'check:all': 'bun test', ...(withHook ? { preverify: 'echo hook' } : {}),
+	} }), JSON.stringify({ version: 1, verify: ['bun run verify'] }));
 }
 
 function fullVerifyGitRunner(): GitCommandRunner {
@@ -92,6 +114,24 @@ describe('git runtime boundary', () => {
 		expect(() => stale('CAM-3')).toThrow('CAM-3 has stale approval');
 	});
 
+	test('does not reject alias overlap when the full verify script has hooks', () => {
+		const spec = { scope: 'Approved outcome.', verify: ['bun run check:all'] };
+		const dir = createTestTmpdir('gship-preflight-alias-');
+		writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } }));
+		let withHook = true;
+		const input = () => JSON.stringify({ spec, approval: { fingerprint: fingerprintSpec(spec) } });
+		let options = { runGit: aliasPreflightRunner(withHook), issueExists: () => true, loadIssue: input };
+		expect(() => createGitRuntimePreflight(dir, options)('CAM-4')).not.toThrow();
+		withHook = false;
+		options = { ...options, runGit: aliasPreflightRunner(withHook) };
+		expect(() => createGitRuntimePreflight(dir, options)('CAM-4')).toThrow('focused verification command');
+		const externalSpec = { scope: 'Approved outcome.', verify: ['check:all'] };
+		expect(() => createGitRuntimePreflight('/project', {
+			...options,
+			loadIssue: () => JSON.stringify({ spec: externalSpec, approval: { fingerprint: fingerprintSpec(externalSpec) } }),
+		})('CAM-5')).not.toThrow();
+	});
+
 	test('verifies diff integrity and requires an actual working-tree change', async () => {
 		const valid = new GitIssueVerifier({
 			runGit: gitRunner({ status: ' M src/a.ts' }),
@@ -138,11 +178,136 @@ describe('git runtime boundary', () => {
 		expect(commands).toEqual(['bun test one', 'test -f output.txt']);
 		expect(timeouts).toEqual([undefined, undefined]);
 		expect(events.map((event) => event.kind)).toEqual([
+			'verify.started',
 			'verify.command.started',
 			'verify.command.completed',
 			'verify.command.started',
 			'verify.command.completed',
 		]);
+	});
+
+	test('skips a focused command when the project harness proves it is the full verify alias', async () => {
+		const dir = createTestTmpdir('gship-focused-equivalent-');
+		writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } }));
+		const commands: string[] = [];
+		const events: string[] = [];
+		const verifier = new GitIssueVerifier({
+			runGit: focusedGitRunner(JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } })),
+			loadIssue: () => issueWithVerification(['bun run check:all', 'bun run verify']),
+			runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+		});
+		expect(await verifier.verify({ ...verificationInput, cwd: dir, emit: (kind) => events.push(kind) }))
+			.toEqual({ ok: true, skipped: true });
+		expect(commands).toEqual([]);
+		expect(events).toEqual(['verify.skipped-equivalent', 'verify.skipped-equivalent', 'verify.skipped']);
+	});
+
+	test('keeps distinct focused commands when another command is equivalent', async () => {
+		const dir = createTestTmpdir('gship-focused-mixed-');
+		writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } }));
+		const commands: string[] = [];
+		const verifier = new GitIssueVerifier({
+			runGit: focusedGitRunner(JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } })),
+			loadIssue: () => issueWithVerification(['bun test test/unit.ts', 'bun run check:all']),
+			runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+		});
+		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true });
+		expect(commands).toEqual(['bun test test/unit.ts']);
+	});
+
+	test('keeps alias equivalence unknown when verify has lifecycle hooks', async () => {
+		const commands: string[] = [];
+		for (const hook of ['preverify', 'postverify']) {
+			const dir = createTestTmpdir(`gship-focused-${hook}-`);
+			writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: {
+				verify: 'bun run check:all', 'check:all': 'bun test', [hook]: 'echo hook',
+			} }));
+			const verifier = new GitIssueVerifier({
+				runGit: focusedGitRunner(JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test', [hook]: 'echo hook' } })),
+				loadIssue: () => issueWithVerification(['bun run check:all']),
+				runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+			});
+			expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true });
+		}
+		expect(commands).toEqual(['bun run check:all', 'bun run check:all']);
+	});
+
+	test('preserves alias equivalence when only the terminal script has lifecycle hooks', async () => {
+		const commands: string[] = [];
+		for (const hook of ['precheck:all', 'postcheck:all']) {
+			const dir = createTestTmpdir(`gship-focused-terminal-${hook}-`);
+			const packageJson = JSON.stringify({ scripts: {
+				verify: 'bun run check:all', 'check:all': 'bun test', [hook]: 'echo hook',
+			} });
+			writeFileSync(join(dir, 'package.json'), packageJson);
+			const verifier = new GitIssueVerifier({
+				runGit: focusedGitRunner(packageJson),
+				loadIssue: () => issueWithVerification(['bun run check:all']),
+				runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+			});
+			expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true, skipped: true });
+		}
+		expect(commands).toEqual([]);
+	});
+
+	test('keeps focused aliases executable when the working tree changes the script chain or hooks', async () => {
+		const commands: string[] = [];
+		for (const workingTree of [
+			{ verify: 'bun run other', 'check:all': 'bun test', other: 'bun test' },
+			{ verify: 'bun run check:all', 'check:all': 'bun test', preverify: 'echo changed' },
+		]) {
+			const dir = createTestTmpdir('gship-focused-working-tree-drift-');
+			const basePackage = JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } });
+			writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: workingTree }));
+			const verifier = new GitIssueVerifier({
+				runGit: focusedGitRunner(basePackage),
+				loadIssue: () => issueWithVerification(['bun run check:all']),
+				runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+			});
+			expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true });
+		}
+		expect(commands).toEqual(['bun run check:all', 'bun run check:all']);
+	});
+
+	test('does not equate distinct scripts with identical bodies', async () => {
+		const dir = createTestTmpdir('gship-focused-identical-bodies-');
+		writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: {
+			verify: 'bun test "$npm_lifecycle_event"', 'check:all': 'bun test "$npm_lifecycle_event"',
+		} }));
+		const commands: string[] = [];
+		const verifier = new GitIssueVerifier({
+			runGit: focusedGitRunner(JSON.stringify({ scripts: { verify: 'bun test "$npm_lifecycle_event"', 'check:all': 'bun test "$npm_lifecycle_event"' } })),
+			loadIssue: () => issueWithVerification(['bun run check:all']),
+			runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+		});
+		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true });
+		expect(commands).toEqual(['bun run check:all']);
+	});
+
+	test('keeps an external command executable when verify aliases to it by name', async () => {
+		const dir = createTestTmpdir('gship-focused-external-command-');
+		writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } }));
+		const commands: string[] = [];
+		const verifier = new GitIssueVerifier({
+			runGit: focusedGitRunner(JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } })),
+			loadIssue: () => issueWithVerification(['check:all']),
+			runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+		});
+		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true });
+		expect(commands).toEqual(['check:all']);
+	});
+
+	test('does not infer full verify identity when the base manifest is invalid', async () => {
+		const dir = createTestTmpdir('gship-focused-invalid-manifest-');
+		writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } }));
+		const commands: string[] = [];
+		const verifier = new GitIssueVerifier({
+			runGit: focusedGitRunner(JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } }), '{invalid'),
+			loadIssue: () => issueWithVerification(['bun run check:all']),
+			runCommand: async ({ command }) => { commands.push(command); return { exitCode: 0, stdout: '', stderr: '' }; },
+		});
+		expect(await verifier.verify({ ...verificationInput, cwd: dir })).toEqual({ ok: true });
+		expect(commands).toEqual(['bun run check:all']);
 	});
 
 	test('fails closed when the issue has no verification commands', async () => {

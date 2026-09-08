@@ -541,6 +541,53 @@ Open a PR: gh pr create --base main`);
 		});
 	});
 
+	test('does not block approval when verify aliases have lifecycle hooks', async () => {
+		const fixture = seedFixture();
+		writeFileSync(join(fixture.seed, 'package.json'), JSON.stringify({ scripts: {
+			verify: 'echo same', 'check:all': 'echo same', postverify: 'echo hook',
+		} }));
+		git(fixture.seed, ['add', 'package.json']);
+		git(fixture.seed, ['commit', '-q', '-m', 'add verification hooks']);
+		git(fixture.seed, ['remote', 'add', 'origin', fixture.remote]);
+		git(fixture.seed, ['push', '-q', 'origin', 'main']);
+		await specifyOperatorIssue(fixture.local, 'CAM-1', {
+			objective: 'Contrato com hook.', acceptance: ['Contrato com hook.'], verify: ['check:all'],
+		}, () => '2026-08-16T06:30:00.000Z');
+		await expect(approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:31:00.000Z')).resolves.toMatchObject({ id: 'CAM-1' });
+	});
+
+	test('blocks approval when only the terminal alias has a lifecycle hook', async () => {
+		const fixture = seedFixture();
+		writeFileSync(join(fixture.seed, 'package.json'), JSON.stringify({ scripts: {
+			verify: 'bun run check:all', 'check:all': 'bun test', 'precheck:all': 'echo hook',
+		} }));
+		git(fixture.seed, ['add', 'package.json']);
+		git(fixture.seed, ['commit', '-q', '-m', 'add terminal verification hook']);
+		git(fixture.seed, ['remote', 'add', 'origin', fixture.remote]);
+		git(fixture.seed, ['push', '-q', 'origin', 'main']);
+		writeFileSync(join(fixture.local, 'package.json'), JSON.stringify({ scripts: {
+			verify: 'bun run check:all', 'check:all': 'bun test', 'precheck:all': 'echo hook',
+		} }));
+		await specifyOperatorIssue(fixture.local, 'CAM-1', {
+			objective: 'Contrato com hook terminal.', acceptance: ['Contrato com hook terminal.'], verify: ['bun run verify'],
+		}, () => '2026-08-16T06:35:00.000Z');
+		await expect(approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:36:00.000Z')).rejects.toThrow('focused verification command');
+	});
+
+	test('does not infer an alias when the project verification manifest is invalid', async () => {
+		const fixture = seedFixture();
+		writeFileSync(join(fixture.seed, 'package.json'), JSON.stringify({ scripts: { verify: 'bun run check:all', 'check:all': 'bun test' } }));
+		writeFileSync(join(fixture.seed, '.gateship', 'project.json'), '{invalid');
+		git(fixture.seed, ['add', 'package.json', '.gateship/project.json']);
+		git(fixture.seed, ['commit', '-q', '-m', 'add invalid verification manifest']);
+		git(fixture.seed, ['remote', 'add', 'origin', fixture.remote]);
+		git(fixture.seed, ['push', '-q', 'origin', 'main']);
+		await specifyOperatorIssue(fixture.local, 'CAM-1', {
+			objective: 'Contrato sem manifest válido.', acceptance: ['Contrato sem manifest válido.'], verify: ['bun run check:all'],
+		}, () => '2026-08-16T06:40:00.000Z');
+		await expect(approveOperatorIssue(fixture.local, 'CAM-1', () => '2026-08-16T06:41:00.000Z')).resolves.toMatchObject({ id: 'CAM-1' });
+	});
+
 	// GSHIP-614: the second approval of the same published contract is the same
 	// decision, so it must not publish a commit that a run in flight would then
 	// have to merge around.
