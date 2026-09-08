@@ -160,10 +160,8 @@
 	--destructive-foreground: var(--color-red-700);
 	--border: --alpha(var(--color-black) / 12%);
 	--input: --alpha(var(--color-black) / 16%);
-	/* Focus stays the pastel acid wash, the same tone as the attention
-	 * surface (operator decision, 2026-08-24): a soft halo, not a saturated
-	 * outline. */
-	--ring: var(--attention-surface);
+	/* Focus is neutral and remains distinct from the attention family. */
+	--ring: var(--color-neutral-600);
 	/* Cancelled and neutral activity always render gray. */
 	--chart-1: #dedede;
 	--chart-2: #909090;
@@ -178,7 +176,7 @@
 	--sidebar-accent: --alpha(var(--color-black) / 4%);
 	--sidebar-accent-foreground: var(--color-neutral-800);
 	--sidebar-border: --alpha(var(--color-black) / 10%);
-	--sidebar-ring: var(--attention-surface);
+	--sidebar-ring: var(--color-neutral-600);
 
 	/*
 	 * The attention family. Pure acid works on light only as a fill under
@@ -255,9 +253,9 @@
 	--destructive-foreground: var(--color-red-400);
 	--border: --alpha(var(--color-white) / 10%);
 	--input: --alpha(var(--color-white) / 12%);
-	/* The same pastel family, translucent so it reads as a halo on dark.
-	 * Kept out of the Gateship import: it is the attention family. */
-	--ring: rgba(238, 247, 204, 0.45);
+	/* Neutral focus remains visible against the dark canvas without borrowing
+	 * the attention family. */
+	--ring: var(--color-neutral-300);
 	/* Kept out of the Gateship import: cancelled always renders gray. */
 	--chart-1: #dedede;
 	--chart-2: #a6a6a6;
@@ -271,7 +269,7 @@
 	--sidebar-accent: --alpha(var(--color-white) / 4%);
 	--sidebar-accent-foreground: var(--color-neutral-100);
 	--sidebar-border: --alpha(var(--color-white) / 8%);
-	--sidebar-ring: rgba(238, 247, 204, 0.45);
+	--sidebar-ring: var(--color-neutral-300);
 
 	/* Pure acid carries every attention role on dark surfaces. */
 	--attention: #c8ff00;
@@ -369,6 +367,64 @@
 	}
 }
 
+/* Shared native scroll chrome. The gutter is reserved even before overflow
+ * appears, so operational columns do not move when content becomes taller. */
+@utility scroll-container {
+	scrollbar-gutter: stable both-edges;
+	scrollbar-width: thin;
+	scrollbar-color: var(--scrollbar-thumb) transparent;
+
+	&::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+
+	&::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	&::-webkit-scrollbar-thumb {
+		background: var(--scrollbar-thumb);
+		border: 2px solid transparent;
+		border-radius: 999px;
+		background-clip: padding-box;
+	}
+
+	&::-webkit-scrollbar-thumb:hover {
+		background: var(--scrollbar-thumb-hover);
+		background-clip: padding-box;
+	}
+}
+
+/* CSS-only position-aware fade. Without a scroll timeline the initial
+ * opaque mask keeps short content unmasked. */
+@utility scroll-fade {
+	--scroll-fade-size: 1rem;
+	mask-image: linear-gradient(to bottom, black 0, black 100%);
+	mask-repeat: no-repeat;
+	mask-size: 100% 100%;
+
+	@supports (animation-timeline: scroll()) {
+		animation: scroll-fade both linear;
+		animation-timeline: scroll(self);
+	}
+}
+
+@keyframes scroll-fade {
+	0% {
+		mask-image: linear-gradient(to bottom, black 0, black calc(100% - var(--scroll-fade-size)), transparent 100%);
+	}
+
+	1%,
+	99% {
+		mask-image: linear-gradient(to bottom, transparent 0, black var(--scroll-fade-size), black calc(100% - var(--scroll-fade-size)), transparent 100%);
+	}
+
+	100% {
+		mask-image: linear-gradient(to bottom, transparent 0, black var(--scroll-fade-size), black 100%);
+	}
+}
+
 @layer base {
 	* {
 		@apply border-border outline-ring/50;
@@ -382,6 +438,16 @@
 	 */
 	body {
 		@apply bg-sidebar text-foreground;
+	}
+
+	html {
+		@apply scroll-container;
+		background: var(--sidebar);
+	}
+
+	:where(html, .scroll-container) {
+		--scrollbar-thumb: color-mix(in srgb, var(--foreground) 34%, transparent);
+		--scrollbar-thumb-hover: color-mix(in srgb, var(--foreground) 48%, transparent);
 	}
 
 	html {

@@ -4669,6 +4669,9 @@ describe('shared live edge and responsive surface content', () => {
 		expect(activity).toContain('aria-label="Activity"');
 		expect(activity).toContain('tabindex="0"');
 		expect(activity).toContain('overflow-y-auto');
+		expect(activity).toContain('scroll-fade');
+		expect(activity).toContain('outline-none');
+		expect(html).toContain('has-focus-visible:ring-2');
 	});
 
 	test('the shell content frame gives current routes one responsive measure', () => {

@@ -2,7 +2,7 @@
 //
 // The panel surface of the operator shell. The outer frame provides the border,
 // hairline bevel; CardPanel supplies the nested content surface.
-// The shared card ring lives in index.css, focus uses the acid --ring token, and
+// The shared card ring lives in index.css, focus uses the neutral --ring token, and
 // details/summary disclosure pair (a disclosure has to be a real <details>;
 // collapsed is a rendering state, never an unmounted branch, ADR-0067).
 

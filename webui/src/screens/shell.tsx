@@ -707,7 +707,7 @@ export function ShellSidebar({
 	 * @theme inline makes bg-sidebar read the var in cascade, so the
 	 * element-level override is all it takes. */
 	return (
-		<header className="flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:w-64 lg:gap-4 lg:overflow-y-auto lg:p-6 lg:pt-8">
+		<header className="scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:w-64 lg:gap-4 lg:overflow-y-auto lg:p-6 lg:pt-8">
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
