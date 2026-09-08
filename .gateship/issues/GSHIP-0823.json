@@ -1,0 +1,17 @@
+{
+  "id": "GSHIP-823",
+  "title": "Padronizar a hierarquia tipográfica da interface",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T14:43:53.703Z",
+  "updatedAt": "2026-09-08T14:43:53.703Z",
+  "description": "Auditar todas as superfícies e componentes da web UI e estabelecer uma matriz tipográfica reproduzível: títulos de página, navegação e prosa em Saans proporcional; títulos de cards, métricas, identificadores, comandos, timestamps, durações, custos, contadores e kbd em Saans Mono conforme sua função. Verificar a disponibilidade e licença dos assets antes de incorporá-los; se não estiverem disponíveis no repositório, preservar fallback honesto e registrar o bloqueio em vez de baixar ou substituir silenciosamente. Consolidar tokens/primitives, atualizar o contrato de design e cobrir light/dark, pt-BR/en-US e 390 px sem alterar a semântica dos dados.",
+  "specSource": "operator",
+  "spec": {
+    "scope": "Auditar todas as superfícies e componentes da web UI e estabelecer uma matriz tipográfica reproduzível: títulos de página, navegação e prosa em Saans proporcional; títulos de cards, métricas, identificadores, comandos, timestamps, durações, custos, contadores e kbd em Saans Mono conforme sua função. Verificar a disponibilidade e licença dos assets antes de incorporá-los; se não estiverem disponíveis no repositório, preservar fallback honesto e registrar o bloqueio em vez de baixar ou substituir silenciosamente. Consolidar tokens/primitives, atualizar o contrato de design e cobrir light/dark, pt-BR/en-US e 390 px sem alterar a semântica dos dados.",
+    "verify": [
+      "bun run check:all"
+    ]
+  }
+}
