@@ -551,6 +551,10 @@ export interface OnboardingCatalog {
 	incompleteBadge: string;
 	recoveryGuidance: string;
 	settingsGuidance: { beforeLink: string; linkLabel: string; afterLink: string };
+	choice: { title: string; description: string; existing: string; fresh: string; back: string; targetLabel: string; targetPlaceholder: string; repositoryPlaceholder: string; localTargetGuidance: string; remoteTargetGuidance: string };
+	checks: { title: string; loading: string; labels: Readonly<Record<string, string>>; ready: string; missing: string; attention: string; notApplicable: string };
+	proposal: { title: string; description: string; commands: string; exclusions: string; risks: string; confirmation: string };
+	nextSteps: { title: string; description: string; notification: string; test: string; reversible: string };
 }
 
 export interface LocaleCatalog {
@@ -1016,6 +1020,10 @@ export const LOCALE_CATALOG = {
 			incompleteBadge: 'incomplete configuration',
 			recoveryGuidance: 'After correcting it, restart Gateship. In a container, update GATESHIP_PROJECT_DIR and recreate the service.',
 			settingsGuidance: { beforeLink: 'Agent and subscription settings remain available under ', linkLabel: 'Settings', afterLink: '.' },
+			choice: { title: 'What are you setting up?', description: 'Choose the project path first. Gateship will inspect the environment before any write.', existing: 'Existing project', fresh: 'New project', back: 'Back to project type', targetLabel: 'Project to inspect', targetPlaceholder: '/home/operator/code/project', repositoryPlaceholder: 'owner/repo', localTargetGuidance: 'The inspection is read-only. Leave blank to inspect the current project.', remoteTargetGuidance: 'Enter owner/repo to inspect that GitHub repository. No repository is inspected until you provide it.' },
+			checks: { title: 'Readiness checks', loading: 'Checking Git, tools and project files…', labels: { git: 'Git repository', github: 'GitHub remote', branch: 'Main branch', container: 'Container', claude: 'Claude', codex: 'Codex', gh: 'GitHub CLI', manifest: 'Project manifest', verification: 'Verification' }, ready: 'ready', missing: 'not found', attention: 'needs attention', notApplicable: 'not applicable yet' },
+			proposal: { title: 'Reviewable manifest proposal', description: 'No file is written and no command is executed. Review this proposal before confirming it with the operator.', commands: 'Detected commands', exclusions: 'Exclusions', risks: 'Risks', confirmation: 'I reviewed this proposal' },
+			nextSteps: { title: 'Before the first run', description: 'These actions are explicit and optional. Gateship never starts them automatically.', notification: 'Test notification', test: 'Send test', reversible: 'Suggested reversible change: create a small documentation-only issue, review it, and keep it unapproved until the project brief and verification command are confirmed.' },
 		},
 	},
 	'pt-BR': {
@@ -1466,6 +1474,10 @@ export const LOCALE_CATALOG = {
 			incompleteBadge: 'configuração incompleta',
 			recoveryGuidance: 'Depois de corrigir, reinicie o Gateship. Em um contêiner, atualize GATESHIP_PROJECT_DIR e recrie o serviço.',
 			settingsGuidance: { beforeLink: 'Os ajustes de agentes e assinaturas continuam disponíveis em ', linkLabel: 'Ajustes', afterLink: '.' },
+			choice: { title: 'O que você está configurando?', description: 'Escolha primeiro o caminho do projeto. O Gateship verificará o ambiente antes de qualquer gravação.', existing: 'Projeto existente', fresh: 'Projeto novo', back: 'Voltar ao tipo de projeto', targetLabel: 'Projeto a inspecionar', targetPlaceholder: '/home/operador/codigo/projeto', repositoryPlaceholder: 'owner/repo', localTargetGuidance: 'A inspeção é somente leitura. Deixe em branco para inspecionar o projeto atual.', remoteTargetGuidance: 'Informe owner/repo para inspecionar esse repositório do GitHub. Nenhum repositório é inspecionado antes desse preenchimento.' },
+			checks: { title: 'Verificações de prontidão', loading: 'Verificando Git, ferramentas e arquivos do projeto…', labels: { git: 'Repositório Git', github: 'Remote GitHub', branch: 'Branch principal', container: 'Contêiner', claude: 'Claude', codex: 'Codex', gh: 'GitHub CLI', manifest: 'Manifesto do projeto', verification: 'Verificação' }, ready: 'pronto', missing: 'não encontrado', attention: 'requer atenção', notApplicable: 'ainda não aplicável' },
+			proposal: { title: 'Proposta revisável de manifesto', description: 'Nenhum arquivo é gravado e nenhum comando é executado. Revise a proposta antes de confirmá-la com a operadora.', commands: 'Comandos detectados', exclusions: 'Exclusões', risks: 'Riscos', confirmation: 'Revisei esta proposta' },
+			nextSteps: { title: 'Antes da primeira execução', description: 'Estas ações são explícitas e opcionais. O Gateship nunca as inicia automaticamente.', notification: 'Testar notificação', test: 'Enviar teste', reversible: 'Mudança reversível sugerida: crie uma issue pequena somente de documentação, revise-a e mantenha-a sem aprovação até confirmar o brief e o comando de verificação do projeto.' },
 		},
 	},
 } as const satisfies Record<Locale, LocaleCatalog>;

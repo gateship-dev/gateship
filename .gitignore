@@ -26,6 +26,7 @@ webui/dist/
 
 # Local runtime and test state.
 .gship/
+.local/
 .claude/
 .gship-test-tmp/
 
