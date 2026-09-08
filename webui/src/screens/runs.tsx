@@ -515,6 +515,7 @@ function SpecFactsPanel({
 	if (evaluation === null || evaluation === undefined) return null;
 	const { specProfile: profile, corrections, cycleQuestions, reconciliations } = evaluation;
 	const count = (value: number | null): string => value === null ? catalog.specFacts.unknown : String(value);
+	const duration = (value: number | null): string => value === null ? catalog.specFacts.unknown : `${Math.round(value / 1000)}s`;
 	return (
 		<ContextPanel description={catalog.specFacts.description} title={catalog.specFacts.title}>
 			<dl className="grid gap-2 text-sm sm:grid-cols-[10rem_1fr]">
@@ -525,6 +526,15 @@ function SpecFactsPanel({
 				<dt className="text-muted-foreground">{catalog.specFacts.questions}</dt><dd>{catalog.specFacts.questionCounts(cycleQuestions.executor, cycleQuestions.review, cycleQuestions.fullVerify, cycleQuestions.total)}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.reconciliations}</dt><dd>{catalog.specFacts.reconciliationCounts(reconciliations.unchanged, reconciliations.adapted, reconciliations['contract-change-required'], reconciliations.total)}</dd>
 			</dl>
+			<div className="mt-4 border-t pt-3">
+				<h3 className="text-sm font-medium">{catalog.specFacts.durationTitle}</h3>
+				<dl className="mt-2 grid gap-1 text-sm sm:grid-cols-[10rem_1fr]">
+					<dt className="text-muted-foreground">{catalog.specFacts.wallTime}</dt><dd>{duration(evaluation.wallTimeMs)}</dd>
+					{Object.entries(evaluation.phaseDurations).map(([phase, value]) => <React.Fragment key={phase}><dt className="text-muted-foreground">{catalog.specFacts.phaseLabels[phase] ?? phase}</dt><dd>{duration(value.durationMs)} · {catalog.specFacts.entries(value.entries)}</dd></React.Fragment>)}
+					<dt className="text-muted-foreground">{catalog.specFacts.unassigned}</dt><dd>{duration(evaluation.unassignedDuration.durationMs)}</dd>
+					<dt className="text-muted-foreground">{catalog.specFacts.reconciliation}</dt><dd>{evaluation.durationReconciliation.reconciles === null ? catalog.specFacts.unknown : evaluation.durationReconciliation.reconciles ? catalog.specFacts.yes : catalog.specFacts.no}</dd>
+				</dl>
+			</div>
 		</ContextPanel>
 	);
 }

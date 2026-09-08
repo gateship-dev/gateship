@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-838",
   "title": "Decompor a duração da run por fase",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T21:43:59.202Z",
-  "updatedAt": "2026-09-08T21:43:59.202Z",
+  "updatedAt": "2026-09-08T22:29:30.725Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

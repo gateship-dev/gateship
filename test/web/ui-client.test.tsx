@@ -211,6 +211,12 @@ function evaluation(
 		provider: 'claude',
 		outcome,
 		wallTimeMs: 10 * 60_000,
+		phaseDurations: {
+			queued: { durationMs: 0, entries: 0 }, working: { durationMs: 0, entries: 0 }, verify: { durationMs: 0, entries: 0 }, review: { durationMs: 0, entries: 0 },
+			'full-verify': { durationMs: 0, entries: 0 }, shipping: { durationMs: 0, entries: 0 }, 'waiting-provider': { durationMs: 0, entries: 0 }, 'waiting-user': { durationMs: 0, entries: 0 },
+		},
+		unassignedDuration: { durationMs: 0, entries: 0 },
+		durationReconciliation: { classifiedMs: 0, unassignedMs: 0, totalMs: 0, toleranceMs: 1000, reconciles: true },
 		attentionRequests: 0,
 		operatorInterventions: 0,
 		providerHolds: 0,

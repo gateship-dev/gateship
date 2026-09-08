@@ -36,6 +36,10 @@ function event(
 	};
 }
 
+function timedEvent(kind: string, fromState: RunEvent['fromState'], toState: RunEvent['toState'], createdAt: string): RunEvent {
+	return { ...event(kind, fromState, toState), createdAt };
+}
+
 describe('replayable run evaluation', () => {
 	test('profiles legacy, v2 and missing specs without copying their text', () => {
 		const legacy = { scope: 'texto legacy', verify: ['bun test'], evidence: [{ command: 'pwd', output: '/repo' }] };
@@ -73,6 +77,12 @@ describe('replayable run evaluation', () => {
 			provider: 'claude',
 			outcome: 'shipped',
 			wallTimeMs: 12 * 60_000,
+			phaseDurations: {
+				queued: { durationMs: null, entries: 1 }, working: { durationMs: 0, entries: 0 }, verify: { durationMs: 0, entries: 0 }, review: { durationMs: 0, entries: 0 },
+				'full-verify': { durationMs: 0, entries: 0 }, shipping: { durationMs: 0, entries: 0 }, 'waiting-provider': { durationMs: 720_000, entries: 1 }, 'waiting-user': { durationMs: null, entries: 1 },
+			},
+			unassignedDuration: { durationMs: 0, entries: 0 },
+			durationReconciliation: { classifiedMs: null, unassignedMs: null, totalMs: 720_000, toleranceMs: 1000, reconciles: null },
 			attentionRequests: 1,
 			operatorInterventions: 2,
 			providerHolds: 1,
@@ -223,5 +233,82 @@ describe('replayable run evaluation', () => {
 			.toMatchObject({ workflowRevision: null, outcome: 'incomplete', wallTimeMs: null });
 		expect(evaluateRun({ ...RUN, createdAt: 'invalid' }, []))
 			.toMatchObject({ outcome: 'shipped', wallTimeMs: null });
+	});
+
+	test('reconstructs active work, both waits, corrections and shipping from transitions', () => {
+		const run = { ...RUN, updatedAt: '2026-08-20T10:10:00.000Z' };
+		const evaluation = evaluateRun(run, [
+			timedEvent('run.created', null, 'queued', '2026-08-20T10:00:00.000Z'),
+			timedEvent('run.started', 'queued', 'working', '2026-08-20T10:01:00.000Z'),
+			timedEvent('provider.activity', 'working', 'working', 'invalid'),
+			timedEvent('run.provider-waiting', 'working', 'waiting-provider', '2026-08-20T10:02:00.000Z'),
+			timedEvent('run.provider-retry-started', 'waiting-provider', 'working', '2026-08-20T10:03:00.000Z'),
+			timedEvent('run.verification-started', 'working', 'verify', '2026-08-20T10:04:00.000Z'),
+			timedEvent('run.verification-fix-requested', 'verify', 'working', '2026-08-20T10:05:00.000Z'),
+			timedEvent('run.waiting-user', 'working', 'waiting-user', '2026-08-20T10:06:00.000Z'),
+			timedEvent('run.operator-guidance', 'waiting-user', 'waiting-user', '2026-08-20T10:07:00.000Z'),
+			timedEvent('run.resume', 'waiting-user', 'working', '2026-08-20T10:08:00.000Z'),
+			timedEvent('run.ready-to-ship', 'working', 'ready-to-ship', '2026-08-20T10:09:00.000Z'),
+			timedEvent('run.ship-started', 'ready-to-ship', 'shipping', '2026-08-20T10:09:00.000Z'),
+			timedEvent('run.shipped', 'shipping', 'done', '2026-08-20T10:10:00.000Z'),
+		]);
+		expect(evaluation.phaseDurations).toMatchObject({
+			queued: { durationMs: 60_000, entries: 1 }, working: { durationMs: 240_000, entries: 4 }, verify: { durationMs: 60_000, entries: 1 },
+			'waiting-provider': { durationMs: 60_000, entries: 1 }, 'waiting-user': { durationMs: 120_000, entries: 1 }, shipping: { durationMs: 60_000, entries: 1 },
+		});
+		expect(evaluation.durationReconciliation).toMatchObject({ classifiedMs: 600_000, unassignedMs: 0, totalMs: 600_000, reconciles: true });
+	});
+
+	test('does not invent time for incomplete or invalid historical clocks', () => {
+		const incomplete = evaluateRun({ ...RUN, state: 'interrupted' }, [timedEvent('run.created', null, 'queued', 'invalid')]);
+		expect(incomplete.phaseDurations.queued.durationMs).toBeNull();
+		expect(incomplete.durationReconciliation.reconciles).toBeNull();
+		const legacy = evaluateRun({ ...RUN, createdAt: '2026-08-20T10:00:00.000Z', updatedAt: '2026-08-20T10:02:00.000Z' }, []);
+		expect(legacy.unassignedDuration.durationMs).toBe(120_000);
+		expect(legacy.durationReconciliation.reconciles).toBe(true);
+	});
+
+	test('marks the interval unknown when a durable transition is missing', () => {
+		const evaluation = evaluateRun(RUN, [
+			timedEvent('run.created', null, 'queued', '2026-08-20T10:00:00.000Z'),
+			timedEvent('run.review-started', 'working', 'review', '2026-08-20T10:02:00.000Z'),
+		]);
+		expect(evaluation.phaseDurations.queued.durationMs).toBeNull();
+		expect(evaluation.phaseDurations.review.durationMs).toBe(600_000);
+		expect(evaluation.durationReconciliation).toMatchObject({ classifiedMs: null, unassignedMs: null, reconciles: null });
+	});
+
+	test('marks an intermediate null origin as an incomplete transition', () => {
+		const evaluation = evaluateRun(RUN, [
+			timedEvent('run.created', null, 'queued', '2026-08-20T10:00:00.000Z'),
+			timedEvent('run.started', 'queued', 'working', '2026-08-20T10:01:00.000Z'),
+			timedEvent('run.review-started', null, 'review', '2026-08-20T10:02:00.000Z'),
+		]);
+		expect(evaluation.phaseDurations.working.durationMs).toBeNull();
+		expect(evaluation.durationReconciliation.reconciles).toBeNull();
+	});
+
+	test('does not count a terminal transition after the run ended', () => {
+		const evaluation = evaluateRun({ ...RUN, updatedAt: '2026-08-20T10:12:00.000Z' }, [
+			timedEvent('run.created', null, 'queued', '2026-08-20T10:00:00.000Z'),
+			timedEvent('run.started', 'queued', 'working', '2026-08-20T10:01:00.000Z'),
+			timedEvent('run.review-started', 'working', 'review', '2026-08-20T10:13:00.000Z'),
+		]);
+		expect(evaluation.phaseDurations.working.durationMs).toBeNull();
+		expect(evaluation.durationReconciliation.reconciles).toBeNull();
+	});
+
+	test('does not infer active work from an empty legacy history', () => {
+		const evaluation = evaluateRun({ ...RUN, state: 'working' }, []);
+		expect(evaluation.phaseDurations.working).toEqual({ durationMs: 0, entries: 0 });
+		expect(evaluation.unassignedDuration.durationMs).toBe(720_000);
+		expect(evaluation.durationReconciliation.reconciles).toBeNull();
+	});
+
+	test('keeps the prefix unassigned when the first durable event is late', () => {
+		const evaluation = evaluateRun(RUN, [timedEvent('run.review-started', 'working', 'review', '2026-08-20T10:11:00.000Z')]);
+		expect(evaluation.unassignedDuration.durationMs).toBeNull();
+		expect(evaluation.phaseDurations.review.durationMs).toBe(60_000);
+		expect(evaluation.durationReconciliation.reconciles).toBeNull();
 	});
 });
