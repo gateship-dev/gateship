@@ -183,7 +183,7 @@ export interface RunInspectorCatalog {
 	expectedCost: (formattedCost: string) => string;
 	correctionRounds: (executor: number, ci: number, decision: number, orchestrator: number, indeterminate: number) => string;
 	specFacts: {
-		title: string; description: string; version: string; fingerprint: string; specCounts: string; corrections: string; questions: string; reconciliations: string; unknown: string;
+		title: string; description: string; version: string; fingerprint: string; specCounts: string; corrections: string; questions: string; reconciliations: string; unknown: string; durationTitle: string; wallTime: string; unassigned: string; reconciliation: string; entries: (count: number) => string; yes: string; no: string; phaseLabels: Readonly<Record<string, string>>;
 		counts: (acceptance: string, boundaries: string, verify: string, evidence: string) => string;
 		correctionCounts: (verification: number, review: number, fullVerify: number, ci: number, total: number) => string;
 		questionCounts: (executor: number, review: number, fullVerify: number, total: number) => string;
@@ -715,8 +715,8 @@ export const LOCALE_CATALOG = {
 				}
 				return `${total === 1 ? 'Correction round' : 'Correction rounds'}: ${parts.join(', ')}`;
 			},
-			specFacts: {
-				title: 'Specification facts', description: 'Immutable profile and replayed run facts; no score or judgment.', version: 'Version', fingerprint: 'Fingerprint', specCounts: 'Spec counts', corrections: 'Corrections', questions: 'Cycle questions', reconciliations: 'Reconciliations', unknown: 'unknown',
+				specFacts: {
+				title: 'Specification facts', description: 'Immutable profile and replayed run facts; no score or judgment.', version: 'Version', fingerprint: 'Fingerprint', specCounts: 'Spec counts', corrections: 'Corrections', questions: 'Cycle questions', reconciliations: 'Reconciliations', unknown: 'unknown', durationTitle: 'Run duration by phase', wallTime: 'Wall time', unassigned: 'Unassigned', reconciliation: 'Reconciles with wall time', entries: (count) => `${count} ${count === 1 ? 'entry' : 'entries'}`, yes: 'yes', no: 'no', phaseLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', shipping: 'Shipping', 'waiting-provider': 'Waiting for provider', 'waiting-user': 'Waiting for operator' },
 				counts: (acceptance, boundaries, verify, evidence) => `acceptance ${acceptance}, boundaries ${boundaries}, verify ${verify}, evidence ${evidence}`,
 				correctionCounts: (verification, review, fullVerify, ci, total) => `verification ${verification}/${total}, review ${review}/${total}, full verify ${fullVerify}/${total}, CI ${ci}/${total}`,
 				questionCounts: (executor, review, fullVerify, total) => `executor ${executor}/${total}, review ${review}/${total}, full verify ${fullVerify}/${total}`,
@@ -1177,8 +1177,8 @@ export const LOCALE_CATALOG = {
 				}
 				return `${total === 1 ? 'Rodada de correção' : 'Rodadas de correção'}: ${parts.join(', ')}`;
 			},
-			specFacts: {
-				title: 'Fatos da especificação', description: 'Perfil imutável e fatos reconstituídos da run, sem nota ou julgamento.', version: 'Versão', fingerprint: 'Fingerprint', specCounts: 'Contagens da spec', corrections: 'Correções', questions: 'Perguntas do ciclo', reconciliations: 'Reconciliações', unknown: 'desconhecido',
+				specFacts: {
+				title: 'Fatos da especificação', description: 'Perfil imutável e fatos reconstituídos da run, sem nota ou julgamento.', version: 'Versão', fingerprint: 'Fingerprint', specCounts: 'Contagens da spec', corrections: 'Correções', questions: 'Perguntas do ciclo', reconciliations: 'Reconciliações', unknown: 'desconhecido', durationTitle: 'Duração da run por fase', wallTime: 'Tempo total', unassigned: 'Não atribuído', reconciliation: 'Reconcilia com o tempo total', entries: (count) => `${count} entrada${count === 1 ? '' : 's'}`, yes: 'sim', no: 'não', phaseLabels: { queued: 'Na fila', working: 'Trabalho ativo', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', shipping: 'Entrega', 'waiting-provider': 'Espera do provedor', 'waiting-user': 'Espera do operador' },
 				counts: (acceptance, boundaries, verify, evidence) => `acceptance ${acceptance}, boundaries ${boundaries}, verify ${verify}, evidence ${evidence}`,
 				correctionCounts: (verification, review, fullVerify, ci, total) => `verification ${verification}/${total}, revisão ${review}/${total}, full verify ${fullVerify}/${total}, CI ${ci}/${total}`,
 				questionCounts: (executor, review, fullVerify, total) => `executor ${executor}/${total}, revisão ${review}/${total}, full verify ${fullVerify}/${total}`,

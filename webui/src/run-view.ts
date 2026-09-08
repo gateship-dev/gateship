@@ -174,6 +174,9 @@ export interface RunEvaluationView {
 	provider: 'claude' | 'codex';
 	outcome: 'shipped' | 'failed' | 'cancelled' | 'incomplete';
 	wallTimeMs: number | null;
+	phaseDurations: Record<'queued' | 'working' | 'verify' | 'review' | 'full-verify' | 'shipping' | 'waiting-provider' | 'waiting-user', { durationMs: number | null; entries: number }>;
+	unassignedDuration: { durationMs: number | null; entries: number };
+	durationReconciliation: { classifiedMs: number | null; unassignedMs: number | null; totalMs: number | null; toleranceMs: number; reconciles: boolean | null };
 	attentionRequests: number;
 	operatorInterventions: number;
 	providerHolds: number;
