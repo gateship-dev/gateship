@@ -32,6 +32,37 @@ async function waitFor(
 }
 
 describe('durable run runtime', () => {
+	test('records an unknown spec profile when no backlog reader is configured', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-unknown-profile',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = await runtime.startRun('GSHIP-833');
+		expect(runtime.listRunEvents(run.id)[0]?.payload['specProfile']).toEqual({
+			version: 'unknown', fingerprint: null,
+			counts: { acceptance: null, boundaries: null, verify: null, evidence: null },
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('preserves an unknown spec profile when the backlog reader fails', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-failed-profile-read',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => { throw new Error('backlog unavailable'); },
+		});
+		const run = await runtime.startRun('GSHIP-833');
+		expect(runtime.listRunEvents(run.id)[0]?.payload['specProfile']).toEqual({
+			version: 'unknown', fingerprint: null,
+			counts: { acceptance: null, boundaries: null, verify: null, evidence: null },
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('persists transitions and events across a database reopen', () => {
 		const dbPath = join(createTestTmpdir('gship-run-store-'), '.gship', 'runtime.sqlite');
 		const store = new RunStore(dbPath);
@@ -40,6 +71,10 @@ describe('durable run runtime', () => {
 			issueId: 'CAM-1',
 			sessionId: 'session-1',
 			workflowRevision: 'revision-1',
+			specProfile: {
+				version: 'legacy', fingerprint: 'a'.repeat(64),
+				counts: { acceptance: 0, boundaries: 0, verify: 1, evidence: 0 },
+			},
 			workspacePath: '/workspaces/run-1',
 			createdAt: '2026-08-15T10:00:00Z',
 		});
@@ -70,7 +105,13 @@ describe('durable run runtime', () => {
 			'run.started',
 			'executor.output',
 		]);
-		expect(reopened.listEvents()[0]?.payload).toEqual({ workflowRevision: 'revision-1' });
+		expect(reopened.listEvents()[0]?.payload).toEqual({
+			specProfile: {
+				version: 'legacy', fingerprint: 'a'.repeat(64),
+				counts: { acceptance: 0, boundaries: 0, verify: 1, evidence: 0 },
+			},
+			workflowRevision: 'revision-1',
+		});
 		expect(reopened.listEvents()[2]?.payload).toEqual({ text: 'working' });
 		reopened.close();
 	});

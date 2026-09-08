@@ -29,7 +29,13 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 	return {
 		run: { id, issueId: `GSHIP-${id}`, sessionId: id, providerId, workspacePath: '/private/workspace', state: 'done', fixRounds: 0, createdAt: '2026-09-01T00:00:00.000Z', updatedAt, summary: null, error: null },
 		events: [],
-		evaluation: { workflowRevision: null, provider: providerId, outcome: 'shipped', wallTimeMs: 1, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, roles: [] },
+		evaluation: {
+			specProfile: { version: 'unknown', fingerprint: null, counts: { acceptance: null, boundaries: null, verify: null, evidence: null } },
+			corrections: { verification: 0, review: 0, fullVerify: 0, ci: 0, total: 0 },
+			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
+			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
+			workflowRevision: null, provider: providerId, outcome: 'shipped', wallTimeMs: 1, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, roles: [],
+		},
 		cost: { totalCostUsd: null, breakdown: [], roles: [] },
 	};
 }

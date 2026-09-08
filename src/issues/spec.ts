@@ -45,6 +45,46 @@ export interface SpecV2 {
 
 export type Spec = LegacySpec | SpecV2;
 
+export interface SpecProfile {
+	version: 'legacy' | 'v2' | 'unknown';
+	fingerprint: string | null;
+	counts: {
+		acceptance: number | null;
+		boundaries: number | null;
+		verify: number | null;
+		evidence: number | null;
+	};
+}
+
+/** The immutable, text-free spec facts recorded on a new run. */
+export function profileSpec(spec: Spec | undefined): SpecProfile {
+	if (spec === undefined) {
+		return { version: 'unknown', fingerprint: null, counts: { acceptance: null, boundaries: null, verify: null, evidence: null } };
+	}
+	if ('version' in spec && spec.version === 2) {
+		return {
+			version: 'v2',
+			fingerprint: fingerprintSpec(spec),
+			counts: {
+				acceptance: spec.acceptance.length,
+				boundaries: spec.boundaries?.length ?? 0,
+				verify: spec.verify.length,
+				evidence: spec.evidence?.length ?? 0,
+			},
+		};
+	}
+	return {
+		version: 'legacy',
+		fingerprint: fingerprintSpec(spec),
+		counts: {
+			acceptance: 0,
+			boundaries: 0,
+			verify: spec.verify?.length ?? 0,
+			evidence: spec.evidence?.length ?? 0,
+		},
+	};
+}
+
 export interface ValidationResult {
 	ok: boolean;
 	errors: string[];

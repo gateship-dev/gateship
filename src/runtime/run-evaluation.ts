@@ -3,6 +3,7 @@ import { REVIEW_FALLBACK_EVENT } from './agent-reviewer-router.ts';
 import type { AgentProviderId } from './agent-session.ts';
 import { isTerminalRunState } from './run-state.ts';
 import type { RunCostRole, RunEvent, RunRecord } from './run-store.ts';
+import type { SpecProfile } from '../issues/spec.ts';
 
 export type RunEvaluationOutcome = 'shipped' | 'failed' | 'cancelled' | 'incomplete';
 
@@ -26,6 +27,10 @@ export interface RunRoleConfiguration {
  * complete durable decision log; no evaluator model or stored score exists.
  */
 export interface RunEvaluation {
+	specProfile: SpecProfile;
+	corrections: { verification: number; review: number; fullVerify: number; ci: number; total: number };
+	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
+	reconciliations: { unchanged: number; adapted: number; 'contract-change-required': number; total: number };
 	workflowRevision: string | null;
 	provider: AgentProviderId;
 	outcome: RunEvaluationOutcome;
@@ -71,6 +76,35 @@ function wallTimeOf(run: RunRecord): number | null {
 function workflowRevisionOf(events: readonly RunEvent[]): string | null {
 	const created = events.find((event) => event.kind === 'run.created');
 	return normalizedText(created?.payload['workflowRevision']);
+}
+
+function specProfileOf(events: readonly RunEvent[]): SpecProfile {
+	const created = events.find((event) => event.kind === 'run.created');
+	const profile = created?.payload['specProfile'];
+	if (profile !== null && typeof profile === 'object' && !Array.isArray(profile)) {
+		const candidate = profile as Record<string, unknown>;
+		const counts = candidate['counts'];
+		if ((candidate['version'] === 'legacy' || candidate['version'] === 'v2' || candidate['version'] === 'unknown')
+			&& (typeof candidate['fingerprint'] === 'string' || candidate['fingerprint'] === null)
+			&& counts !== null && typeof counts === 'object' && !Array.isArray(counts)) {
+			const values = counts as Record<string, unknown>;
+			const count = (key: string): number | null => typeof values[key] === 'number' ? values[key] as number : null;
+			return { version: candidate['version'], fingerprint: candidate['fingerprint'], counts: {
+				acceptance: count('acceptance'), boundaries: count('boundaries'), verify: count('verify'), evidence: count('evidence'),
+			} } as SpecProfile;
+		}
+	}
+	return { version: 'unknown', fingerprint: null, counts: { acceptance: null, boundaries: null, verify: null, evidence: null } };
+}
+
+function countByOrigin(events: readonly RunEvent[], kind: string, field: string): Record<string, number> {
+	const result: Record<string, number> = {};
+	for (const event of events) {
+		if (event.kind !== kind) continue;
+		const origin = event.payload[field];
+		if (typeof origin === 'string') result[origin] = (result[origin] ?? 0) + 1;
+	}
+	return result;
 }
 
 interface RoleConfigurationAccumulator {
@@ -140,7 +174,28 @@ function roleConfigurations(run: RunRecord, events: readonly RunEvent[]): RunRol
 }
 
 export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEvaluation {
+	const corrections = {
+		verification: events.filter((event) => event.kind === 'run.verification-fix-requested').length,
+		review: events.filter((event) => event.kind === 'run.review-fix-requested').length,
+		fullVerify: events.filter((event) => event.kind === 'run.full-verify-fix-requested').length,
+		ci: events.filter((event) => event.kind === 'run.ci-fix-requested').length,
+	};
+	const cycleQuestionOrigins = countByOrigin(events, 'run.cycle-question', 'origin');
+	const cycleQuestions = {
+		executor: cycleQuestionOrigins['executor'] ?? 0,
+		review: cycleQuestionOrigins['review'] ?? 0,
+		fullVerify: cycleQuestionOrigins['full-verify'] ?? 0,
+	};
+	const reconciliations = {
+		unchanged: events.filter((event) => event.kind === 'run.chain-reconciliation' && event.payload['outcome'] === 'unchanged').length,
+		adapted: events.filter((event) => event.kind === 'run.chain-reconciliation' && event.payload['outcome'] === 'clarified').length,
+		'contract-change-required': events.filter((event) => event.kind === 'run.chain-reconciliation' && event.payload['outcome'] === 'material').length,
+	};
 	return {
+		specProfile: specProfileOf(events),
+		corrections: { ...corrections, total: Object.values(corrections).reduce((sum, count) => sum + count, 0) },
+		cycleQuestions: { ...cycleQuestions, total: Object.values(cycleQuestions).reduce((sum, count) => sum + count, 0) },
+		reconciliations: { ...reconciliations, total: Object.values(reconciliations).reduce((sum, count) => sum + count, 0) },
 		workflowRevision: workflowRevisionOf(events),
 		provider: run.providerId,
 		outcome: outcomeOf(run),

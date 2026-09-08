@@ -166,6 +166,10 @@ export interface ProviderUsageView {
 
 /** Mirrors the provider-neutral replay derived in src/runtime/run-evaluation.ts. */
 export interface RunEvaluationView {
+	specProfile: { version: 'legacy' | 'v2' | 'unknown'; fingerprint: string | null; counts: { acceptance: number | null; boundaries: number | null; verify: number | null; evidence: number | null } };
+	corrections: { verification: number; review: number; fullVerify: number; ci: number; total: number };
+	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
+	reconciliations: { unchanged: number; adapted: number; 'contract-change-required': number; total: number };
 	workflowRevision: string | null;
 	provider: 'claude' | 'codex';
 	outcome: 'shipped' | 'failed' | 'cancelled' | 'incomplete';

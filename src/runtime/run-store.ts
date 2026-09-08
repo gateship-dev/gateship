@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { AgentProviderId } from './agent-session.ts';
+import type { SpecProfile } from '../issues/spec.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import {
 	type DiagnosticDraft,
@@ -288,6 +289,7 @@ export interface CreateRunInput {
 	workspacePath: string;
 	createdAt: string;
 	reconciliationGuidance?: string;
+	specProfile?: SpecProfile;
 }
 
 export interface TransitionRunInput {
@@ -910,6 +912,7 @@ export class RunStore {
 		const workflowRevision = input.workflowRevision?.trim();
 		const source = input.source?.trim();
 		const createdPayload = {
+			...(input.specProfile === undefined ? {} : { specProfile: input.specProfile }),
 			...(workflowRevision === undefined || workflowRevision.length === 0
 				? {} : { workflowRevision: workflowRevision.slice(0, 200) }),
 			...(source === undefined || source.length === 0 ? {} : { source: source.slice(0, 100) }),

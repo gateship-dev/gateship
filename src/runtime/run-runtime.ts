@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isPlannable } from '../issues/plannable.ts';
+import { profileSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { type ExecutorHandoffRecord, selectExecutorHandoff } from './agent-executor-router.ts';
 import {
@@ -677,6 +678,14 @@ export class RunRuntime {
 		} finally {
 			this.#preparingWorkspace = false;
 		}
+		let specProfile = profileSpec(undefined);
+		if (this.#listBacklog !== undefined) {
+			try {
+				specProfile = profileSpec(this.#listBacklog().find((entry) => entry.id === normalizedIssueId)?.spec);
+			} catch {
+				// A profile is observational. A backlog read failure must not change run admission.
+			}
+		}
 		const created = this.#store.createRun({
 			id,
 			issueId: normalizedIssueId,
@@ -687,6 +696,7 @@ export class RunRuntime {
 			workspacePath,
 			createdAt: this.#now(),
 			...(reconciliationGuidance === undefined ? {} : { reconciliationGuidance }),
+			specProfile,
 		});
 		this.#publish(created.event);
 		this.#launch(created.run, {

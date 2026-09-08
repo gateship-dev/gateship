@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { fingerprintSpec, profileSpec } from '../../src/issues/spec.ts';
 import { evaluateRun } from '../../src/runtime/run-evaluation.ts';
 import type { RunEvent, RunRecord } from '../../src/runtime/run-store.ts';
 
@@ -36,6 +37,20 @@ function event(
 }
 
 describe('replayable run evaluation', () => {
+	test('profiles legacy, v2 and missing specs without copying their text', () => {
+		const legacy = { scope: 'texto legacy', verify: ['bun test'], evidence: [{ command: 'pwd', output: '/repo' }] };
+		const v2 = { version: 2 as const, objective: 'objetivo', acceptance: ['a', 'b'], boundaries: ['limite'], verify: ['bun test', 'bun run build'], evidence: [] };
+		expect(profileSpec(legacy)).toEqual({
+			version: 'legacy', fingerprint: fingerprintSpec(legacy), counts: { acceptance: 0, boundaries: 0, verify: 1, evidence: 1 },
+		});
+		expect(profileSpec(v2)).toEqual({
+			version: 'v2', fingerprint: fingerprintSpec(v2), counts: { acceptance: 2, boundaries: 1, verify: 2, evidence: 0 },
+		});
+		expect(profileSpec(undefined)).toEqual({
+			version: 'unknown', fingerprint: null, counts: { acceptance: null, boundaries: null, verify: null, evidence: null },
+		});
+	});
+
 	test('derives revision, attention, holds and provider configuration from the durable log', () => {
 		const evaluation = evaluateRun(RUN, [
 			event('run.created', null, 'queued', { workflowRevision: ' revision-b ' }),
@@ -50,6 +65,10 @@ describe('replayable run evaluation', () => {
 		]);
 
 		expect(evaluation).toEqual({
+			specProfile: { version: 'unknown', fingerprint: null, counts: { acceptance: null, boundaries: null, verify: null, evidence: null } },
+			corrections: { verification: 0, review: 0, fullVerify: 0, ci: 0, total: 0 },
+			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
+			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
 			workflowRevision: 'revision-b',
 			provider: 'claude',
 			outcome: 'shipped',
@@ -63,6 +82,27 @@ describe('replayable run evaluation', () => {
 				{ role: 'reviewer', models: ['opus'], efforts: ['medium'], providers: ['claude'] },
 			],
 		});
+	});
+
+	test('replays spec facts, correction origins, question origins and reconciliations', () => {
+		const evaluation = evaluateRun(RUN, [
+			event('run.created', null, 'queued', {
+				specProfile: { version: 'v2', fingerprint: 'f'.repeat(64), counts: { acceptance: 2, boundaries: 1, verify: 3, evidence: 1 } },
+		}),
+			event('run.verification-fix-requested', 'verify', 'working'),
+			event('run.review-fix-requested', 'review', 'working'),
+			event('run.full-verify-fix-requested', 'full-verify', 'working'),
+			event('run.ci-fix-requested', 'ready-to-ship', 'working'),
+			event('run.cycle-question', 'review', 'review', { origin: 'review' }),
+			event('run.cycle-question', 'working', 'working', { origin: 'executor' }),
+			event('run.chain-reconciliation', 'done', 'done', { outcome: 'unchanged' }),
+			event('run.chain-reconciliation', 'done', 'done', { outcome: 'clarified' }),
+			event('run.chain-reconciliation', 'done', 'done', { outcome: 'material' }),
+		]);
+		expect(evaluation.specProfile).toEqual({ version: 'v2', fingerprint: 'f'.repeat(64), counts: { acceptance: 2, boundaries: 1, verify: 3, evidence: 1 } });
+		expect(evaluation.corrections).toEqual({ verification: 1, review: 1, fullVerify: 1, ci: 1, total: 4 });
+		expect(evaluation.cycleQuestions).toEqual({ executor: 1, review: 1, fullVerify: 0, total: 2 });
+		expect(evaluation.reconciliations).toEqual({ unchanged: 1, adapted: 1, 'contract-change-required': 1, total: 3 });
 	});
 
 	// GSHIP-709: a review answered by the fallback is attributed to the

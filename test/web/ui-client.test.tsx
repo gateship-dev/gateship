@@ -202,6 +202,10 @@ function evaluation(
 	overrides: Partial<NonNullable<RunView['evaluation']>> = {},
 ): NonNullable<RunView['evaluation']> {
 	return {
+		specProfile: { version: 'unknown', fingerprint: null, counts: { acceptance: null, boundaries: null, verify: null, evidence: null } },
+		corrections: { verification: 0, review: 0, fullVerify: 0, ci: 0, total: 0 },
+		cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
+		reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
 		workflowRevision,
 		provider: 'claude',
 		outcome,
@@ -1356,6 +1360,32 @@ describe('runs surface', () => {
 
 		// No breakdown at all: no empty disclosure, same pattern as the report.
 		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Cost by role and model');
+	});
+
+	test('the run detail presents specification facts with totals and origins', () => {
+		const html = runsPage({ locale: 'pt-BR',
+			runs: [runIn('done', {
+				evaluation: evaluation('revision-facts', 'shipped', {
+					specProfile: { version: 'v2', fingerprint: 'f'.repeat(64), counts: { acceptance: 2, boundaries: 1, verify: 3, evidence: 1 } },
+					corrections: { verification: 1, review: 2, fullVerify: 1, ci: 0, total: 4 },
+					cycleQuestions: { executor: 1, review: 1, fullVerify: 0, total: 2 },
+					reconciliations: { unchanged: 1, adapted: 1, 'contract-change-required': 1, total: 3 },
+				}),
+			})],
+		});
+		const facts = panel(html, 'Fatos da especificação');
+		expect(facts).toContain('v2');
+		expect(facts).toContain('f'.repeat(64));
+		expect(facts).toContain('acceptance 2');
+		expect(facts).toContain('verification 1/4');
+		expect(facts).toContain('revisão 2/4');
+		expect(facts).toContain('full verify 1/4');
+		expect(facts).toContain('CI 0/4');
+		expect(facts).toContain('executor 1/2');
+		expect(facts).toContain('revisão 1/2');
+		expect(facts).toContain('unchanged 1/3');
+		expect(facts).toContain('adapted 1/3');
+		expect(facts).toContain('contract-change-required 1/3');
 	});
 
 	// GSHIP-628: effort and thinking are properties of the invocation, not of
