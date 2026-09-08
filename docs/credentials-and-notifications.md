@@ -51,6 +51,15 @@ never copies a host credential file into it or supplies a provider API key. On
 macOS the Claude CLI keeps its host credential in the Keychain, so there is no
 portable host file to copy in the first place.
 
+Para verificar a instalação container-first sem revelar credenciais, execute:
+
+```bash
+docker compose exec gateship gship doctor --json
+```
+
+O comando confirma a arquitetura suportada, a imagem, o volume gravável, Git,
+`gh`, Claude, Codex, os estados de login e a conectividade local.
+
 ## Dedicated Claude credential
 
 By default the Claude provider follows the same rule as everything else in

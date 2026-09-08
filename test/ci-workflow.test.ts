@@ -36,3 +36,21 @@ describe('ci.yml concurrency (GSHIP-734)', () => {
 		expect(concurrencyBlock).toContain('cancel-in-progress: true');
 	});
 });
+
+describe('ci.yml container architecture smoke coverage (GSHIP-816)', () => {
+	test('registers QEMU and Buildx, builds both Linux platforms and loads separate local tags', () => {
+		expect(workflow).toContain('uses: docker/setup-qemu-action@v3');
+		expect(workflow).toContain('platforms: arm64');
+		expect(workflow).toContain('uses: docker/setup-buildx-action@v3');
+		expect(workflow).toContain('docker buildx build --platform linux/amd64');
+		expect(workflow).toContain('docker buildx build --platform linux/arm64');
+		expect(workflow).toContain('-t gateship:ci-amd64 --load .');
+		expect(workflow).toContain('-t gateship:ci-arm64 --load .');
+	});
+
+	test('smokes amd64 health and runs CLI checks under arm64 emulation', () => {
+		expect(workflow).toContain('docker run --rm -d --name gateship-ci -p 127.0.0.1:17777:7777 gateship:ci-amd64');
+		expect(workflow).toContain('docker run --rm --entrypoint claude gateship:ci-arm64 --version');
+		expect(workflow).toContain('docker run --rm --entrypoint codex gateship:ci-arm64 --version');
+	});
+});
