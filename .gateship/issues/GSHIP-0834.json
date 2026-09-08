@@ -1,0 +1,34 @@
+{
+  "id": "GSHIP-834",
+  "title": "Restaurar compatibilidade do schema com o Codex",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T16:59:39.174Z",
+  "updatedAt": "2026-09-08T16:59:39.174Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Substituir o oneOf rejeitado pelo Codex por um contrato de saída que expresse as três combinações válidas e preserve o comportamento interno existente.",
+    "acceptance": [
+      "O schema enviado a Claude e Codex usa um único discriminante com exatamente três valores equivalentes a completed plus unchanged, completed plus adapted e waiting-user plus contract-change-required.",
+      "O schema raiz permanece object, não contém oneOf, anyOf, allOf, if, then ou else e continua estrito para propriedades requeridas e adicionais.",
+      "O parser converte o discriminante para o AgentExecutionResult atual e continua rejeitando valor desconhecido, propriedades extras, proposals inválidas e reconciliation inválida.",
+      "Prompts descrevem os três valores sem permitir que conflito de fixture com a spec seja tratado como decisão humana.",
+      "Testes de Claude e Codex cobrem as três combinações, a regressão de schema incompatível e todas as rejeições de defesa em profundidade.",
+      "Após a release, a primeira run Codex deve ultrapassar a criação da sessão; essa canary é evidência operacional, não um gate adicionado ao código."
+    ],
+    "boundaries": [
+      "Não adicionar retry, chamada de modelo, novo estado de run ou novo tipo público de resultado.",
+      "Não criar validador genérico de JSON Schema nem ampliar esta correção para outros schemas.",
+      "Não afrouxar o parser nem transformar uma decisão de produto real em continuação automática."
+    ],
+    "verify": [
+      "bun test test/runtime/claude-cli-executor.test.ts test/runtime/codex-cli-executor.test.ts && bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "246b4998b2ab00aa2ee246eee85f202b09f048211013723c601a4567d08db437",
+    "approvedAt": "2026-09-08T16:59:39.174Z"
+  }
+}
