@@ -17,6 +17,7 @@ function isOperatorPath(pathname: string): boolean {
 	return normalized === '/overview'
 		|| normalized === '/overview/runs'
 		|| normalized === '/overview/queues'
+		|| normalized === '/overview/insights'
 		|| normalized === '/'
 		|| normalized === '/runs'
 		|| normalized === '/work'

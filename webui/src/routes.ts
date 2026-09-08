@@ -1,14 +1,14 @@
 import type { ShellCatalog } from './locale.ts';
 
 /** The URL owns the surface and project scope; overview may retain navigation context. */
-export type OperatorRoute = '/overview' | '/overview/runs' | '/overview/queues' | '/projects' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
+export type OperatorRoute = '/overview' | '/overview/runs' | '/overview/queues' | '/overview/insights' | '/projects' | `/projects/${string}` | '/' | '/runs' | '/work' | '/settings';
 
 export type ProjectSurface = 'runs' | 'work' | 'settings';
 
 export interface RouteSelection {
 	projectId: string | null;
 	runId?: string;
-	surface: ProjectSurface | 'overview' | 'overview-runs' | 'overview-queues' | 'projects' | 'global-settings';
+	surface: ProjectSurface | 'overview' | 'overview-runs' | 'overview-queues' | 'overview-insights' | 'projects' | 'global-settings';
 }
 
 export const PROJECT_SURFACES: readonly {
@@ -24,7 +24,7 @@ export const PROJECT_SURFACES: readonly {
 export function routeOf(pathname: string): OperatorRoute {
 	const normalized = pathname.replace(/\/+$/, '');
 	const path = normalized === '' ? '/' : normalized;
-	if (path === '/overview' || path === '/overview/runs' || path === '/overview/queues') return path;
+	if (path === '/overview' || path === '/overview/runs' || path === '/overview/queues' || path === '/overview/insights') return path;
 	if (path === '/projects') return path;
 	if (path === '/' || path === '/runs' || path === '/work' || path === '/settings') return path;
 	if (/^\/projects\/[^/]+(?:\/runs(?:\/[^/]+)?|\/work|\/settings)?$/.test(path)) {
@@ -37,6 +37,7 @@ function overviewSelection(route: OperatorRoute, selectedProjectId: string | nul
 	if (route === '/overview') return { projectId: selectedProjectId, surface: 'overview' };
 	if (route === '/overview/runs') return { projectId: selectedProjectId, surface: 'overview-runs' };
 	if (route === '/overview/queues') return { projectId: selectedProjectId, surface: 'overview-queues' };
+	if (route === '/overview/insights') return { projectId: selectedProjectId, surface: 'overview-insights' };
 	return null;
 }
 

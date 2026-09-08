@@ -339,10 +339,10 @@ export function ShellNavigation({
 			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
 				<li className="shrink-0">
 					<a
-						aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' ? 'page' : undefined}
+						aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights' ? 'page' : undefined}
 						className={cn(
 							NAV_LINK_CLASS,
-							(selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues') && 'bg-sidebar-accent text-sidebar-accent-foreground',
+							(selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights') && 'bg-sidebar-accent text-sidebar-accent-foreground',
 						)}
 						href="/overview"
 					>
@@ -615,9 +615,9 @@ export function ShellRail({
 		<header className="flex shrink-0 items-center gap-3 p-4 lg:h-full lg:w-18 lg:flex-col lg:items-center lg:gap-2">
 			<nav aria-label={catalog.operatorNavigationLabel} className="hidden lg:flex lg:w-full lg:flex-1 lg:flex-col lg:items-center lg:gap-1">
 				<a
-					aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' ? 'page' : undefined}
+					aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights' ? 'page' : undefined}
 					aria-label={catalog.routeLabels.overview}
-					className={cn(RAIL_NAV_ITEM_CLASS, (selection.surface === 'overview' || selection.surface === 'overview-runs') && 'bg-sidebar-accent text-sidebar-accent-foreground')}
+					className={cn(RAIL_NAV_ITEM_CLASS, (selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights') && 'bg-sidebar-accent text-sidebar-accent-foreground')}
 					href="/overview"
 					title={catalog.routeLabels.overview}
 				>
