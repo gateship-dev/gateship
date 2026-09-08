@@ -17,6 +17,7 @@ import { OnboardingSurface } from './screens/onboarding-screen.tsx';
 import { OverviewSurface } from './screens/overview-screen.tsx';
 import { OverviewRunsSurface } from './screens/overview-runs-screen.tsx';
 import { OverviewQueuesSurface } from './screens/overview-queues-screen.tsx';
+import { OverviewInsightsSurface } from './screens/overview-insights-screen.tsx';
 import { ProjectsManagementSurface } from './screens/projects-management-screen.tsx';
 import { RunsSurface } from './screens/runs-screen.tsx';
 import { SettingsSurface } from './screens/settings-screen.tsx';
@@ -95,6 +96,7 @@ export function App(props: AppProps): React.ReactElement {
 					overview: () => <OverviewSurface {...props} />,
 					overviewRuns: () => <OverviewRunsSurface props={props} />,
 					overviewQueues: () => <OverviewQueuesSurface props={props} />,
+					overviewInsights: () => <OverviewInsightsSurface props={props} />,
 					projects: () => <ProjectsManagementSurface {...props} />,
 					globalSettings: () => <GlobalSettingsSurface {...props} />,
 					notFound: () => (
