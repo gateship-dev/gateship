@@ -162,6 +162,7 @@ export interface HistoricalOverview {
 	};
 	configurations: Array<{ provider: string; role: string; model?: string; effort?: string }>;
 	cohorts: HistoricalCohort[];
+	cohortsPage: { limit: number; offset: number; returned: number; total: number };
 	daily: Array<{
 		date: string;
 		totalRuns: number;
@@ -180,6 +181,7 @@ export interface CohortMetric { count: number; denominator: number }
 export interface HistoricalCohort {
 	workflowRevision: string | null;
 	specVersion: 'legacy' | 'v2' | 'unknown';
+	latestTerminalRunAt: string | null;
 	sampleSize: number;
 	evidenceSufficient: boolean;
 	outcomes: Record<'shipped' | 'failed' | 'cancelled', CohortMetric>;
@@ -203,6 +205,14 @@ export interface HistoricalOverviewFilters {
 	role?: 'orchestrator' | 'executor' | 'reviewer';
 	effort?: string;
 }
+
+export interface HistoricalOverviewPagination {
+	cohortLimit?: number;
+	cohortOffset?: number;
+}
+
+export const COHORT_DEFAULT_LIMIT = 10;
+export const COHORT_MAX_LIMIT = 100;
 
 const OVERVIEW_WINDOWS: Readonly<Record<OverviewWindow, number | null>> = { '7d': 7, '30d': 30, all: null };
 
@@ -228,6 +238,7 @@ function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 			cacheReadInputTokens: null, thinkingTokens: null },
 		configurations: [], daily: [],
 		cohorts: [],
+		cohortsPage: { limit: COHORT_DEFAULT_LIMIT, offset: 0, returned: 0, total: 0 },
 	};
 }
 
@@ -240,7 +251,7 @@ function cohortMetric(count: number, denominator: number): CohortMetric {
 function emptyCohort(workflowRevision: string | null, specVersion: HistoricalCohort['specVersion']): HistoricalCohort {
 	const metric = (): CohortMetric => cohortMetric(0, 0);
 	return {
-		workflowRevision, specVersion, sampleSize: 0, evidenceSufficient: false,
+		workflowRevision, specVersion, latestTerminalRunAt: null, sampleSize: 0, evidenceSufficient: false,
 		outcomes: { shipped: metric(), failed: metric(), cancelled: metric() },
 		corrections: { verification: metric(), review: metric(), fullVerify: metric(), ci: metric() },
 		cycleQuestions: { executor: metric(), review: metric(), fullVerify: metric() },
@@ -301,6 +312,7 @@ function historicalCohorts(items: readonly PersistedRunHistory[]): HistoricalCoh
 		const cohort = groups.get(key) ?? emptyCohort(revision, specVersion);
 		groups.set(key, cohort);
 		cohort.sampleSize += 1;
+		if (cohort.latestTerminalRunAt === null || item.run.createdAt > cohort.latestTerminalRunAt) cohort.latestTerminalRunAt = item.run.createdAt;
 		const denominator = cohort.sampleSize;
 		updateCohortOutcomes(cohort, item, denominator);
 		updateCohortCorrections(cohort, item, denominator);
@@ -308,7 +320,24 @@ function historicalCohorts(items: readonly PersistedRunHistory[]): HistoricalCoh
 		updateCohortReconciliations(cohort, item, denominator);
 		updateCohortScalars(cohort, item, denominator);
 	}
-	return [...groups.values()].map(finalizeCohortEvidence);
+	return [...groups.values()].map(finalizeCohortEvidence).sort((a, b) =>
+		(b.latestTerminalRunAt ?? '').localeCompare(a.latestTerminalRunAt ?? '')
+		|| `${a.workflowRevision ?? ''}\0${a.specVersion}`.localeCompare(`${b.workflowRevision ?? ''}\0${b.specVersion}`));
+}
+
+function cohortPagination(pagination: HistoricalOverviewPagination = {}): { limit: number; offset: number } {
+	const limit = Number.isSafeInteger(pagination.cohortLimit) && (pagination.cohortLimit ?? 0) > 0
+		? Math.min(pagination.cohortLimit!, COHORT_MAX_LIMIT) : COHORT_DEFAULT_LIMIT;
+	const offset = Number.isSafeInteger(pagination.cohortOffset) && (pagination.cohortOffset ?? 0) >= 0
+		? pagination.cohortOffset! : 0;
+	return { limit, offset };
+}
+
+function paginateHistoricalOverview(overview: HistoricalOverview, pagination: HistoricalOverviewPagination | null = {}): HistoricalOverview {
+	if (pagination === null) return { ...overview, cohortsPage: { limit: overview.cohorts.length, offset: 0, returned: overview.cohorts.length, total: overview.cohorts.length } };
+	const { limit, offset } = cohortPagination(pagination);
+	const total = overview.cohorts.length;
+	return { ...overview, cohorts: overview.cohorts.slice(offset, offset + limit), cohortsPage: { limit, offset, returned: Math.min(limit, Math.max(0, total - offset)), total } };
 }
 
 function median(values: readonly number[]): number | null {
@@ -470,6 +499,7 @@ function historicalOverview(
 	window: OverviewWindow,
 	now: Date,
 	filters: HistoricalOverviewFilters = {},
+	pagination: HistoricalOverviewPagination | null = {},
 ): HistoricalOverview {
 	const days = OVERVIEW_WINDOWS[window];
 	const cutoff = days === null ? -Infinity : now.getTime() - days * 24 * 60 * 60 * 1000;
@@ -506,7 +536,7 @@ function historicalOverview(
 	result.configurations.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 	result.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
 	result.cohorts = historicalCohorts(selected);
-	return result;
+	return paginateHistoricalOverview(result, pagination);
 }
 
 function runDate(value: string): string | null {
@@ -520,9 +550,10 @@ export function readProjectHistoricalOverview(
 	now = new Date(),
 	readHistory: typeof readPersistedRunHistory = readPersistedRunHistory,
 	filters: HistoricalOverviewFilters = {},
+	pagination: HistoricalOverviewPagination | null = {},
 ): HistoricalOverviewRead {
 	try {
-		return { overview: historicalOverview(readHistory(join(project.stateDir, 'runtime.sqlite')), window, now, filters) };
+		return { overview: historicalOverview(readHistory(join(project.stateDir, 'runtime.sqlite')), window, now, filters, pagination) };
 	} catch (error) {
 		return { overview: null, reason: error instanceof Error ? error.message : String(error) };
 	}
@@ -614,6 +645,7 @@ export function readProjectOperationalOverview(
 	window: OverviewWindow = '7d',
 	now = new Date(),
 	filters: HistoricalOverviewFilters = {},
+	pagination: HistoricalOverviewPagination = {},
 ): ProjectOperationalOverview {
 	const statuses = projects.map(readStatus);
 	const overviewProjects: Array<ProjectOperationalStatus & {
@@ -659,7 +691,7 @@ export function readProjectOperationalOverview(
 				.findLast((history) => history.evaluation.outcome === 'shipped');
 			return {
 				...status,
-				overview: readProjectHistoricalOverview(status.project, window, now, readPersistedRunHistory, filters),
+				overview: readProjectHistoricalOverview(status.project, window, now, readPersistedRunHistory, filters, null),
 				activeRun: runOverview.activeRun,
 				latestRun: latestDeliveredHistory?.run ?? null,
 				latestRunOutcome: latestDeliveredHistory === undefined ? null : 'shipped',
@@ -683,7 +715,7 @@ export function readProjectOperationalOverview(
 		.filter((overview): overview is HistoricalOverview => overview !== null);
 	// Re-aggregate from the same read-only histories to preserve project-level
 	// coverage while keeping the product view free of unavailable databases.
-	const productOverview = combineHistoricalOverviews(availableHistory, window);
+	const productOverview = paginateHistoricalOverview(combineHistoricalOverviews(availableHistory, window), pagination);
 	const backlog = { idea: 0, specified: 0, planned: 0 };
 	let readyProjects = 0;
 	let nonTerminalRuns = 0;
@@ -713,7 +745,12 @@ export function readProjectOperationalOverview(
 			nonTerminalRuns,
 			backlog,
 		},
-		projects: overviewProjects.map(({ nonTerminalRuns: _nonTerminalRuns, ...project }) => project),
+		projects: overviewProjects.map(({ nonTerminalRuns: _nonTerminalRuns, ...project }) => ({
+			...project,
+			overview: project.overview.overview === null
+				? project.overview
+				: { ...project.overview, overview: paginateHistoricalOverview(project.overview.overview, pagination) },
+		})),
 	};
 }
 
@@ -779,6 +816,7 @@ function combineHistoricalOverviews(overviews: readonly HistoricalOverview[], wi
 		if (existing === undefined) { cohortGroups.set(key, structuredClone(item)); continue; }
 		const denominator = existing.sampleSize + item.sampleSize;
 		existing.sampleSize = denominator;
+		if ((item.latestTerminalRunAt ?? '') > (existing.latestTerminalRunAt ?? '')) existing.latestTerminalRunAt = item.latestTerminalRunAt;
 		existing.evidenceSufficient = denominator >= COHORT_MINIMUM_SAMPLE;
 		const mergeMetrics = <T extends Record<string, CohortMetric>>(target: T, source: T): void => {
 			for (const key of Object.keys(target)) {
@@ -793,7 +831,9 @@ function combineHistoricalOverviews(overviews: readonly HistoricalOverview[], wi
 		mergeMetrics(existing.reconciliations, item.reconciliations);
 		for (const field of ['attentionRequests', 'operatorInterventions', 'providerHolds'] as const) existing[field] = cohortMetric(existing[field].count + item[field].count, denominator);
 	}
-	combined.cohorts = [...cohortGroups.values()];
+	combined.cohorts = [...cohortGroups.values()].sort((a, b) =>
+		(b.latestTerminalRunAt ?? '').localeCompare(a.latestTerminalRunAt ?? '')
+		|| `${a.workflowRevision ?? ''}\0${a.specVersion}`.localeCompare(`${b.workflowRevision ?? ''}\0${b.specVersion}`));
 	combined.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
 	return combined;
 }

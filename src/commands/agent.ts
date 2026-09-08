@@ -39,6 +39,14 @@ const overviewRunsPath = (input: Record<string, unknown>) => {
 	const suffix = query.toString();
 	return `/api/overview/runs${suffix.length === 0 ? '' : `?${suffix}`}`;
 };
+const overviewPath = (input: Record<string, unknown>) => {
+	const query = new URLSearchParams();
+	for (const field of ['cohortLimit', 'cohortOffset', 'projectId', 'providerId', 'model', 'role', 'effort'] as const) {
+		if (typeof input[field] === 'string' || typeof input[field] === 'number') query.set(field, String(input[field]));
+	}
+	const suffix = query.toString();
+	return `/api/overview${suffix.length === 0 ? '' : `?${suffix}`}`;
+};
 const issuePath = (suffix = '') => (input: Record<string, unknown>) =>
 	`${projectRootPath(input)}/issues/${encodeURIComponent(requiredString(input, 'issueId'))}${suffix}`;
 const runPath = (suffix: string) => (input: Record<string, unknown>) =>
@@ -47,7 +55,7 @@ const runPath = (suffix: string) => (input: Record<string, unknown>) =>
 export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
-	'projects.overview': { method: 'GET', path: () => '/api/overview', input: '{}' },
+	'projects.overview': { method: 'GET', path: overviewPath, input: '{cohortLimit?, cohortOffset?, projectId?, providerId?, model?, role?, effort?}' },
 	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?, period?, search?}' },
 	'queues.list': { method: 'GET', path: () => '/api/overview/queues', input: '{}' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
@@ -366,6 +374,10 @@ function operationOutput(
 	input: Record<string, unknown>,
 	value: Record<string, unknown>,
 ): Record<string, unknown> {
+	if (operation === 'projects.overview') {
+		const explicitLimit = Number.isSafeInteger(input['cohortLimit']) && Number(input['cohortLimit']) > 0;
+		return outputObject(value, explicitLimit ? AGENT_MAX_OUTPUT_BYTES : AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES, false);
+	}
 	if (operation !== 'issues.list') return outputObject(value);
 	const maxBytes = hasExplicitListLimit(input)
 		? AGENT_MAX_OUTPUT_BYTES : AGENT_DEFAULT_PAGE_MAX_OUTPUT_BYTES;

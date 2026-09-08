@@ -99,6 +99,7 @@ describe('GET /api/overview', () => {
 		const store = new RunStore(join(cwd, '.gship', 'runtime.sqlite'));
 		store.createRun({ id: 'run-cohort-api', issueId: 'GSHIP-835', sessionId: 'session-cohort-api', workspacePath: '/workspace/cohort-api', createdAt: '2026-09-07T10:00:00.000Z', workflowRevision: 'revision-api', specProfile: { version: 'v2', fingerprint: null, counts: { acceptance: 1, boundaries: 1, verify: 1, evidence: 0 } } });
 		for (const [index, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) store.transition({ runId: 'run-cohort-api', toState: state, kind: `run.${state}`, createdAt: `2026-09-07T10:0${index + 1}:00.000Z` });
+		store.appendEvent({ runId: 'run-cohort-api', kind: 'provider.model', payload: { provider: 'claude', model: 'model-api', effort: 'high' }, createdAt: '2026-09-07T10:06:00.000Z' });
 		store.close();
 		const handle = startWebServer({ port: 0, cwd });
 		try {
@@ -107,11 +108,16 @@ describe('GET /api/overview', () => {
 			const targetStore = new RunStore(join(target, '.gship', 'runtime.sqlite'));
 			targetStore.createRun({ id: 'run-cohort-target', issueId: 'GSHIP-835', sessionId: 'session-cohort-target', workspacePath: '/workspace/cohort-target', createdAt: '2026-09-07T11:00:00.000Z', workflowRevision: 'revision-api', specProfile: { version: 'v2', fingerprint: null, counts: { acceptance: 1, boundaries: 1, verify: 1, evidence: 0 } } });
 			for (const [index, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) targetStore.transition({ runId: 'run-cohort-target', toState: state, kind: `run.${state}`, createdAt: `2026-09-07T11:1${index}:00.000Z` });
+			targetStore.appendEvent({ runId: 'run-cohort-target', kind: 'provider.model', payload: { provider: 'claude', model: 'model-api', effort: 'high' }, createdAt: '2026-09-07T11:16:00.000Z' });
 			targetStore.close();
 			const all = await fetch(`${origin}/api/overview?window=all`).then((response) => response.json()) as { projects: Array<{ project: { id: string } }>; overview: { cohorts: Array<Record<string, unknown>> } };
 			const filtered = await fetch(`${origin}/api/overview?window=all&projectId=${encodeURIComponent(registered.project.id)}`).then((response) => response.json()) as typeof all;
 			expect(all.overview.cohorts).toContainEqual(expect.objectContaining({ workflowRevision: 'revision-api', specVersion: 'v2', sampleSize: 2, outcomes: expect.objectContaining({ shipped: { count: 2, denominator: 2 } }) }));
 			expect(filtered.overview.cohorts).toContainEqual(expect.objectContaining({ workflowRevision: 'revision-api', specVersion: 'v2', sampleSize: 1, outcomes: expect.objectContaining({ shipped: { count: 1, denominator: 1 } }) }));
+			const paged = await fetch(`${origin}/api/overview?window=all&projectId=${encodeURIComponent(registered.project.id)}&providerId=claude&model=model-api&role=executor&effort=high&cohortLimit=1&cohortOffset=0`).then((response) => response.json()) as { overview: { cohorts: Array<Record<string, unknown>>; cohortsPage: Record<string, number> } };
+			expect(paged.overview.cohorts).toHaveLength(1);
+			expect(paged.overview.cohorts[0]).toMatchObject({ workflowRevision: 'revision-api', specVersion: 'v2' });
+			expect(paged.overview.cohortsPage).toEqual({ limit: 1, offset: 0, returned: 1, total: 1 });
 		} finally {
 			await handle.stop();
 		}

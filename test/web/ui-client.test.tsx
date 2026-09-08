@@ -121,6 +121,7 @@ import {
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
 import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
+import { insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
 import {
 	beginOperationalReads,
 	beginOperationalRefresh,
@@ -3271,6 +3272,19 @@ function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 }
 
 describe('operator shell', () => {
+	test('normalizes a direct or refreshed Insights page beyond the available cohorts to the last page', () => {
+		expect(normalizedCohortOffset({ limit: 10, offset: 20, returned: 0, total: 20 })).toBe(10);
+		expect(normalizedCohortOffset({ limit: 10, offset: 20, returned: 0, total: 11 })).toBe(10);
+		expect(normalizedCohortOffset({ limit: 10, offset: 10, returned: 0, total: 0 })).toBeNull();
+	});
+	test('resets Insights pagination when removing the project filter', () => {
+		const next = updatedInsightsQuery({ window: 'all', projectId: 'project-1', cohortOffset: 20 }, { projectId: undefined });
+		expect(next).toEqual({ window: 'all', projectId: undefined, cohortOffset: 0 });
+		expect(insightUrl(next.window, next.projectId, next.cohortOffset)).toBe('/overview/insights?window=all');
+		const nextPage = updatedInsightsQuery({ window: 'all', projectId: 'project-1', cohortOffset: 0 }, { cohortOffset: 10 });
+		expect(insightUrl(nextPage.window, nextPage.projectId, nextPage.cohortOffset)).toBe('/overview/insights?window=all&projectId=project-1&cohortOffset=10');
+	});
+
 	test('Insights renders localized empty and loading states for both locales', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview/insights', { locale, projects: [CURRENT_PROJECT], overview: null });
@@ -3292,14 +3306,14 @@ describe('operator shell', () => {
 			reconciliations: { unchanged: { count: 1, denominator: 3 }, adapted: { count: 1, denominator: 3 }, 'contract-change-required': { count: 0, denominator: 3 } },
 			attentionRequests: { count: 2, denominator: 3 }, operatorInterventions: { count: 1, denominator: 3 }, providerHolds: { count: 1, denominator: 3 },
 		};
-		const overviewFor = (cohorts: unknown[]) => ({ overview: {
+		const overviewFor = (cohorts: unknown[], cohortsPage?: { limit: number; offset: number; returned: number; total: number }) => ({ overview: {
 			window: '7d', totalRuns: 3, runsWithKnownCost: 0, knownCostUsd: null,
 			runsByOutcome: { shipped: 2, failed: 1, cancelled: 0, incomplete: 0 }, activeRuns: 0, terminalRuns: 3,
 			terminalWallTimeMs: null, terminalWallTimeRuns: 0, shippedWithoutIntervention: 0, dispatchToMergeMs: null,
 			dispatchToMergeRuns: 0, medianDispatchToMergeMs: null, firstReviewPasses: 0, firstReviewPassKnownRuns: 0,
 			ciCorrections: 0, fixRounds: 0, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0,
 			resolvedCycleQuestions: 0, reportedTokens: { inputTokens: null, outputTokens: null, cacheCreationInputTokens: null, cacheReadInputTokens: null, thinkingTokens: null },
-			daily: [], configurations: [], cohorts,
+			daily: [], configurations: [], cohorts, ...(cohortsPage === undefined ? {} : { cohortsPage }),
 		} });
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const catalog = LOCALE_CATALOG[locale].overviewInsights;
@@ -3315,6 +3329,18 @@ describe('operator shell', () => {
 			for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
 			expect(sufficientHtml).toContain('>5</td>');
 			expect(sufficientHtml).not.toContain(catalog.cohortEvidenceInsufficient);
+			const pagedCohorts = [smallCohort, { ...smallCohort, workflowRevision: 'revision-second' }, { ...smallCohort, workflowRevision: 'revision-third' }];
+			const firstPage = renderInsightsWithLoadedOverview(locale, overviewFor(pagedCohorts.slice(0, 2), { limit: 2, offset: 0, returned: 2, total: 3 }));
+			const lastPage = renderInsightsWithLoadedOverview(locale, overviewFor(pagedCohorts.slice(2), { limit: 2, offset: 2, returned: 1, total: 3 }));
+			const onePage = renderInsightsWithLoadedOverview(locale, overviewFor(pagedCohorts.slice(0, 1), { limit: 10, offset: 0, returned: 1, total: 1 }));
+			expect(firstPage).toContain(catalog.cohortPage(1, 2, 3));
+			expect(lastPage).toContain(catalog.cohortPage(3, 3, 3));
+			expect(onePage).toContain(catalog.cohortPage(1, 1, 1));
+			expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(1);
+			expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
+			expect(firstPage).toContain(`aria-label="${catalog.previousCohorts}"`);
+			expect(lastPage).toContain(`aria-label="${catalog.nextCohorts}"`);
+			expect(onePage.match(/disabled=""/g)?.length).toBe(2);
 		}
 	});
 
