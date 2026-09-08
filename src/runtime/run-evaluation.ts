@@ -58,6 +58,11 @@ export interface RunEvaluation {
 	providerHolds: number;
 	resolvedCycleQuestions?: number;
 	roles: RunRoleConfiguration[];
+	/** The observed split between focused checks and the project full verify. */
+	verificationCadence?: {
+		focused: { executed: number; skipped: number };
+		full: { executed: number; skipped: number };
+	};
 }
 
 const MODEL_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
@@ -337,6 +342,13 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		adapted: events.filter((event) => event.kind === 'run.chain-reconciliation' && event.payload['outcome'] === 'clarified').length,
 		'contract-change-required': events.filter((event) => event.kind === 'run.chain-reconciliation' && event.payload['outcome'] === 'material').length,
 	};
+	const focusedExecuted = events.filter((event) => event.kind === 'verify.started').length;
+	const focusedSkipped = events.filter((event) => event.kind === 'verify.skipped').length;
+	const fullExecuted = events.filter((event) => event.kind === 'full-verify.command.started' && event.payload['commandIndex'] === 1).length;
+	const fullSkipped = events.filter((event) => event.kind === 'full-verify.skipped').length;
+	const verificationCadence = focusedExecuted + focusedSkipped + fullExecuted + fullSkipped > 0
+		? { focused: { executed: focusedExecuted, skipped: focusedSkipped }, full: { executed: fullExecuted, skipped: fullSkipped } }
+		: undefined;
 	return {
 		specProfile: specProfileOf(events),
 		corrections: { ...corrections, total: Object.values(corrections).reduce((sum, count) => sum + count, 0) },
@@ -353,5 +365,6 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		providerHolds: events.filter((event) => event.kind === 'run.provider-waiting').length,
 		resolvedCycleQuestions: events.filter((event) => event.kind === 'run.cycle-response').length,
 		roles: roleConfigurations(run, events),
+		...(verificationCadence === undefined ? {} : { verificationCadence }),
 	};
 }

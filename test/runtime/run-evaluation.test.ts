@@ -115,6 +115,24 @@ describe('replayable run evaluation', () => {
 		expect(evaluation.reconciliations).toEqual({ unchanged: 1, adapted: 1, 'contract-change-required': 1, total: 3 });
 	});
 
+	test('counts full verifier passes from command index one, not command count', () => {
+		const evaluation = evaluateRun(RUN, [
+			event('verify.started', 'verify', 'verify'),
+			event('verify.command.started', 'verify', 'verify', { commandIndex: 1 }),
+			event('verify.command.started', 'verify', 'verify', { commandIndex: 2 }),
+			event('verify.started', 'verify', 'verify'),
+			event('verify.skipped', 'verify', 'verify'),
+			event('full-verify.command.started', 'full-verify', 'full-verify', { commandIndex: 1 }),
+			event('full-verify.command.started', 'full-verify', 'full-verify', { commandIndex: 2 }),
+			event('full-verify.command.started', 'full-verify', 'full-verify', { commandIndex: 1 }),
+			event('full-verify.skipped', 'full-verify', 'ready-to-ship'),
+		]);
+		expect(evaluation.verificationCadence).toEqual({
+			focused: { executed: 2, skipped: 1 },
+			full: { executed: 2, skipped: 1 },
+		});
+	});
+
 	// GSHIP-709: a review answered by the fallback is attributed to the
 	// provider that produced it without erasing the origin it started from.
 	test('adds the review fallback provider to the reviewer role, keeping its origin', () => {

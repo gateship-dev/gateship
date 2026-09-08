@@ -218,6 +218,117 @@ function verificationCommands(issueContent: string): string[] {
 	throw new Error('issue has no verification commands');
 }
 
+type ScriptMap = Record<string, string>;
+
+function packageScripts(content: string | null): ScriptMap | null {
+	if (content === null) return null;
+	try {
+		const value = JSON.parse(content) as Record<string, unknown>;
+		const scripts = value.scripts;
+		if (scripts === null || typeof scripts !== 'object' || Array.isArray(scripts)) return null;
+		const result: ScriptMap = {};
+		for (const [name, command] of Object.entries(scripts)) {
+			if (typeof command === 'string' && command.trim().length > 0) result[name] = command.trim();
+		}
+		return result;
+	} catch {
+		return null;
+	}
+}
+
+/** Resolve only the shell-free script alias form the harness can prove. */
+function canonicalCommand(command: string, scripts: ScriptMap | null): string | null {
+	if (scripts === null) return null;
+	let current = command.trim();
+	const seen = new Set<string>();
+	for (let depth = 0; depth < 20; depth += 1) {
+		const match = /^bun run ([A-Za-z0-9:_-]+)$/.exec(current);
+		if (match === null) return null;
+		const scriptName = match[1];
+		if (scriptName === undefined || seen.has(scriptName)) return null;
+		seen.add(scriptName);
+		const replacement = scripts[scriptName];
+		if (replacement === undefined) return null;
+		if (!/^bun run ([A-Za-z0-9:_-]+)$/.test(replacement)) return scriptName;
+		if (scripts[`pre${scriptName}`] !== undefined || scripts[`post${scriptName}`] !== undefined) return null;
+		current = replacement;
+	}
+	return null;
+}
+
+interface VerificationOverlap {
+	command: string;
+	fullCommand: string;
+}
+
+function findTextualOverlap(focused: string[], full: string[]): VerificationOverlap | null {
+	for (const command of focused) {
+		for (const fullCommand of full) {
+			if (command.trim() === fullCommand.trim()) return { command, fullCommand };
+		}
+	}
+	return null;
+}
+
+function findCanonicalOverlap(focused: string[], full: string[], scripts: ScriptMap): VerificationOverlap | null {
+	for (const command of focused) {
+		const canonical = canonicalCommand(command, scripts);
+		if (canonical === null) continue;
+		for (const fullCommand of full) {
+			if (canonical === canonicalCommand(fullCommand, scripts)) return { command, fullCommand };
+		}
+	}
+	return null;
+}
+
+function workingTreePackageScripts(inputCwd: string): ScriptMap | null {
+	try {
+		return packageScripts(readFileSync(join(inputCwd, 'package.json'), 'utf8'));
+	} catch {
+		return null;
+	}
+}
+
+function packageScriptsFromWorkingTree(inputCwd: string, content?: string | null): ScriptMap | null {
+	return content === undefined ? workingTreePackageScripts(inputCwd) : packageScripts(content);
+}
+
+export function findVerificationOverlap(
+	options: GitRuntimeOptions,
+	inputCwd: string,
+	issueContent: string,
+	focusedCommand?: string,
+	currentPackageContent?: string | null,
+): VerificationOverlap | null {
+	const runGit = options.runGit ?? defaultRunGit;
+	const focused = focusedCommand === undefined ? verificationCommands(issueContent) : [focusedCommand];
+	let full: string[];
+	try {
+		full = projectVerificationCommands(options, inputCwd, currentPackageContent).commands;
+	} catch {
+		return null;
+	}
+	const textualOverlap = findTextualOverlap(focused, full);
+	if (textualOverlap !== null) return textualOverlap;
+	let packageContent: string | null;
+	try {
+		packageContent = baseFile(runGit, inputCwd, 'package.json');
+	} catch {
+		// The harness could not establish the immutable project identity.
+		// Unknown equivalence stays executable.
+		return null;
+	}
+	const scripts = packageScripts(packageContent);
+	if (scripts === null) return null;
+	const baseOverlap = findCanonicalOverlap(focused, full, scripts);
+	if (baseOverlap === null) return null;
+	const workingTreeScripts = packageScriptsFromWorkingTree(inputCwd, currentPackageContent);
+	if (workingTreeScripts === null) return null;
+	const focusedCanonical = canonicalCommand(baseOverlap.command, workingTreeScripts);
+	const fullCanonical = canonicalCommand(baseOverlap.fullCommand, workingTreeScripts);
+	return focusedCanonical !== null && focusedCanonical === fullCanonical ? baseOverlap : null;
+}
+
 function outputTail(result: CommandResult): string {
 	const output = `${result.stdout}\n${result.stderr}`.trim();
 	return output.length === 0 ? '(no output)' : output.slice(-DIAGNOSTIC_TAIL_LENGTH);
@@ -311,20 +422,9 @@ export function createGitRuntimePreflight(
 		if (source.exitCode !== 0) {
 			throw commandFailure(`cannot resolve ${RUNTIME_SOURCE_REF}`, source);
 		}
-		const issue = JSON.parse(loadIssue(cwd, issueId)) as {
-			spec?: Spec;
-			approval?: { fingerprint?: string };
-		};
-		if (issue.approval?.fingerprint === undefined) {
-			throw new RuntimePreflightError(
-				`${issueId} has no approval; approve this draft before starting a run`,
-			);
-		}
-		if (issue.spec === undefined || issue.approval.fingerprint !== fingerprintSpec(issue.spec)) {
-			throw new RuntimePreflightError(
-				`${issueId} has stale approval; its executable contract changed after approval`,
-			);
-		}
+		const issue = JSON.parse(loadIssue(cwd, issueId)) as PreflightIssue;
+		validatePreflightApproval(issueId, issue);
+		rejectPreflightOverlap(options, cwd, issueId, issue);
 	};
 }
 
@@ -390,11 +490,13 @@ export class GitEvidenceChecker implements RuntimeEvidenceCheck {
 }
 
 export class GitIssueVerifier implements RuntimeVerifier {
+	readonly #options: GitRuntimeOptions;
 	readonly #runGit: GitCommandRunner;
 	readonly #loadIssue: (cwd: string, issueId: string) => string;
 	readonly #runCommand: VerificationCommandRunner;
 
 	constructor(options: GitRuntimeOptions = {}) {
+		this.#options = options;
 		this.#runGit = options.runGit ?? defaultRunGit;
 		this.#loadIssue = options.loadIssue ?? defaultLoadIssue;
 		this.#runCommand = runtimeVerificationCommandRunner(options);
@@ -405,29 +507,31 @@ export class GitIssueVerifier implements RuntimeVerifier {
 		if (!workingTree.ok) return workingTree;
 
 		let commands: string[];
+		let issueContent: string;
 		try {
-			commands = verificationCommands(this.#loadIssue(input.cwd, input.issueId));
+			issueContent = this.#loadIssue(input.cwd, input.issueId);
+			commands = verificationCommands(issueContent);
 		} catch (error) {
 			return { ok: false, detail: error instanceof Error ? error.message : String(error) };
 		}
-
+		let executed = 0;
 		for (const [commandIndex, command] of commands.entries()) {
-			input.emit('verify.command.started', { commandIndex: commandIndex + 1 });
-			const result = await this.#runCommand({
-				cwd: input.cwd,
-				command,
-				signal: input.signal,
-			});
-			input.emit('verify.command.completed', {
-				commandIndex: commandIndex + 1,
-				exitCode: result.exitCode,
-			});
-			if (result.exitCode !== 0) {
-				return {
-					ok: false,
-					detail: `verification command ${commandIndex + 1} exited ${result.exitCode}: ${outputTail(result)}`,
-				};
+			let overlap: VerificationOverlap | null = null;
+			try { overlap = findVerificationOverlap(this.#options, input.cwd, issueContent, command); } catch { /* unknown equivalence */ }
+			if (overlap !== null) {
+				input.emit('verify.skipped-equivalent', { focusedCommand: overlap.command, fullCommand: overlap.fullCommand });
+				continue;
 			}
+			executed += 1;
+			if (executed === 1) input.emit('verify.started');
+			input.emit('verify.command.started', { commandIndex: commandIndex + 1 });
+			const result = await this.#runCommand({ cwd: input.cwd, command, signal: input.signal });
+			input.emit('verify.command.completed', { commandIndex: commandIndex + 1, exitCode: result.exitCode });
+			if (result.exitCode !== 0) return { ok: false, detail: `verification command ${commandIndex + 1} exited ${result.exitCode}: ${outputTail(result)}` };
+		}
+		if (executed === 0) {
+			input.emit('verify.skipped');
+			return { ok: true, skipped: true };
 		}
 		return { ok: true };
 	}
@@ -455,6 +559,11 @@ function hasVerifyScript(cwd: string): boolean {
 
 const PROJECT_VERIFICATION_PATH = '.gateship/project.json';
 
+interface PreflightIssue {
+	spec?: Spec;
+	approval?: { fingerprint?: string };
+}
+
 function baseFile(runGit: GitCommandRunner, cwd: string, path: string): string | null {
 	const base = runGit(cwd, ['merge-base', 'HEAD', RUNTIME_SOURCE_REF]);
 	if (base.exitCode !== 0 || base.stdout.trim().length === 0) {
@@ -472,15 +581,50 @@ function baseFile(runGit: GitCommandRunner, cwd: string, path: string): string |
 function projectVerificationCommands(
 	options: GitRuntimeOptions,
 	inputCwd: string,
+	packageContent?: string | null,
 ): { commands: string[]; origin: 'manifest' | 'package.json' | 'none' } {
 	const runGit = options.runGit ?? defaultRunGit;
 	const manifest = baseFile(runGit, inputCwd, PROJECT_VERIFICATION_PATH);
 	if (manifest !== null) {
 		return { commands: readProjectVerificationManifest(manifest).verify, origin: 'manifest' };
 	}
-	return hasVerifyScript(inputCwd)
+	const hasVerify = packageContent === undefined ? hasVerifyScript(inputCwd) : packageScripts(packageContent)?.verify !== undefined;
+	return hasVerify
 		? { commands: ['bun run verify'], origin: 'package.json' }
 		: { commands: [], origin: 'none' };
+}
+
+function validatePreflightApproval(issueId: string, issue: PreflightIssue): void {
+	if (issue.approval?.fingerprint === undefined) {
+		throw new RuntimePreflightError(
+			`${issueId} has no approval; approve this draft before starting a run`,
+		);
+	}
+	if (issue.spec === undefined || issue.approval.fingerprint !== fingerprintSpec(issue.spec)) {
+		throw new RuntimePreflightError(
+			`${issueId} has stale approval; its executable contract changed after approval`,
+		);
+	}
+}
+
+function rejectPreflightOverlap(
+	options: GitRuntimeOptions,
+	cwd: string,
+	issueId: string,
+	issue: PreflightIssue,
+): void {
+	try {
+		const overlap = findVerificationOverlap(options, cwd, JSON.stringify(issue));
+		if (overlap !== null) {
+			throw new RuntimePreflightError(
+				`${issueId} focused verification command \`${overlap.command}\` is equivalent to the project's full verification \`${overlap.fullCommand}\``,
+			);
+		}
+	} catch (error) {
+		if (error instanceof RuntimePreflightError) throw error;
+		// An unavailable identity is unknown equivalence, never a reason to
+		// discard the operator's command.
+	}
 }
 
 /**
@@ -506,7 +650,10 @@ export class GitFullVerifier implements RuntimeVerifier {
 	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {
 		const selected = projectVerificationCommands(this.#options, input.cwd);
 		this.#origin = selected.origin;
-		if (selected.commands.length === 0) return { ok: true, skipped: true };
+		if (selected.commands.length === 0) {
+			input.emit('full-verify.skipped', { reason: 'no-project-verification' });
+			return { ok: true, skipped: true };
+		}
 
 		for (const [commandIndex, command] of selected.commands.entries()) {
 			input.emit('full-verify.command.started', {

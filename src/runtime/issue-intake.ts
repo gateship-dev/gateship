@@ -16,6 +16,7 @@ import type { IssueEntry } from '../issues/types.ts';
 import {
 	defaultRunGit,
 	evidenceOutputText,
+	findVerificationOverlap,
 	runVerificationCommand,
 	type CommandResult,
 	type VerificationCommandRunner,
@@ -180,6 +181,11 @@ function git(cwd: string, args: string[]): { exitCode: number; stdout: string; s
 		stdout: result.stdout ?? '',
 		stderr: result.stderr ?? '',
 	};
+}
+
+function sourcePackageJson(cwd: string, sourceSha: string): string | null {
+	const result = git(cwd, ['show', `${sourceSha}:package.json`]);
+	return result.exitCode === 0 ? result.stdout : null;
 }
 
 function nextIssueNumber(cwd: string, sourceSha: string): number {
@@ -589,6 +595,14 @@ export async function approveOperatorIssue(
 			throw new IssueIntakeError(
 				'issue-not-eligible',
 				`${issueId} must be open, at stage:specified and have an executable spec.`,
+				409,
+			);
+		}
+		const overlap = findVerificationOverlap({}, cwd, JSON.stringify(entry), undefined, sourcePackageJson(cwd, sourceSha));
+		if (overlap !== null) {
+			throw new IssueIntakeError(
+				'issue-not-eligible',
+				`${issueId} focused verification command \`${overlap.command}\` is equivalent to the project's full verification \`${overlap.fullCommand}\``,
 				409,
 			);
 		}
