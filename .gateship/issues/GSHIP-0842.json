@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-842",
+  "title": "Avaliar tempo e pesquisa por coortes factuais",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-08T21:44:13.395Z",
+  "updatedAt": "2026-09-08T21:44:13.395Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Usar o histórico para identificar regressões mensuráveis de tempo e falhas de referência, propondo melhorias pequenas e humanas sem auto-otimização do workflow.",
+    "acceptance": [
+      "Coortes continuam separadas por workflow revision e spec version e acrescentam somente fatos nomeados de timing e pesquisa com numeradores, denominadores e cobertura.",
+      "A interface apresenta mediana e p90 de wall time, fases, esperas e correções, sem média isolada, nota composta ou declaração causal.",
+      "Comparações ficam ocultas até pelo menos cinco runs terminais compatíveis e mostram explicitamente diferenças de perfil factual como comandos, correções, arquivos alterados e pesquisa exigida.",
+      "Falhas podem ser classificadas como lacuna de spec, implementação, verificação ou provider/referência, preservando evidência e estado desconhecido.",
+      "Uma regressão apenas gera proposta versionada com baseline e hipótese; qualquer mudança de workflow exige aprovação humana e nova coorte.",
+      "A eficácia da pesquisa é mostrada por fatos como receipt coverage, fonte obsoleta, mismatch de versão e correção relacionada, nunca por contagem de links.",
+      "Agent CLI e HTTP mantêm paginação e orçamento compacto mesmo com o novo histórico."
+    ],
+    "boundaries": [
+      "Não criar winner de modelo, auto-ratchet, gate estatístico ou mutação automática.",
+      "Não comparar coortes incompatíveis nem usar menos de cinco runs como evidência.",
+      "Não transformar tamanho do diff ou duração em estimativa subjetiva de complexidade.",
+      "Não criar dashboard separado ou serviço analítico.",
+      "Não premiar menos testes, menos pesquisa ou menos revisão apenas por serem mais rápidos."
+    ],
+    "verify": [
+      "bun test test/runtime/project-status.test.ts test/runtime/run-evaluation.test.ts test/commands/agent.test.ts test/web/ui-client.test.tsx"
+    ]
+  },
+  "approval": {
+    "fingerprint": "f9e4d0092ccc7de62c4dd141e768bd4a6fee9a320eb84599c8db366f52a0cbff",
+    "approvedAt": "2026-09-08T21:44:13.395Z"
+  }
+}
