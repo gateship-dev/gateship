@@ -21,8 +21,12 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 		run,
 		events: [],
 		evaluation: {
-		workflowRevision: null, provider: providerId, outcome: 'shipped', wallTimeMs: 1,
-		attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, roles: [],
+			specProfile: { version: 'unknown', fingerprint: null, counts: { acceptance: null, boundaries: null, verify: null, evidence: null } },
+			corrections: { verification: 0, review: 0, fullVerify: 0, ci: 0, total: 0 },
+			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
+			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
+			workflowRevision: null, provider: providerId, outcome: 'shipped', wallTimeMs: 1,
+			attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, roles: [],
 	},
 		cost: { totalCostUsd: null, breakdown: [], roles: [] },
 	};

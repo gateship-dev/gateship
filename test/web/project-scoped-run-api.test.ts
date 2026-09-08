@@ -127,6 +127,36 @@ describe('project-scoped work API', () => {
 		}
 	});
 
+	test('projects the complete run evaluation over HTTP, including its full fingerprint', async () => {
+		const store = new RunStore(':memory:');
+		const fingerprint = 'f'.repeat(64);
+		store.createRun({
+			id: 'run-facts', issueId: 'GSHIP-833', sessionId: 'session-facts', workspacePath: '/project',
+			createdAt: '2026-09-08T00:00:00Z',
+			specProfile: { version: 'v2', fingerprint, counts: { acceptance: 2, boundaries: 1, verify: 3, evidence: 1 } },
+		});
+		store.appendEvent({ runId: 'run-facts', kind: 'run.verification-fix-requested', createdAt: '2026-09-08T00:00:01Z' });
+		store.appendEvent({ runId: 'run-facts', kind: 'run.cycle-question', payload: { origin: 'review' }, createdAt: '2026-09-08T00:00:02Z' });
+		store.appendEvent({ runId: 'run-facts', kind: 'run.chain-reconciliation', payload: { outcome: 'unchanged' }, createdAt: '2026-09-08T00:00:03Z' });
+		const runtime = new RunRuntime({ cwd: createTestTmpdir('gship-work-api-facts-'), store });
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-work-api-facts-cwd-'), runRuntime: runtime });
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const response = await fetch(`${origin}/api/runs`);
+			expect(response.status).toBe(200);
+			const body = await response.json() as { runs: Array<{ evaluation: Record<string, unknown> }> };
+			expect(body.runs[0]?.evaluation).toMatchObject({
+				specProfile: { version: 'v2', fingerprint, counts: { acceptance: 2, boundaries: 1, verify: 3, evidence: 1 } },
+				corrections: { verification: 1, review: 0, fullVerify: 0, ci: 0, total: 1 },
+				cycleQuestions: { executor: 0, review: 1, fullVerify: 0, total: 1 },
+				reconciliations: { unchanged: 1, adapted: 0, 'contract-change-required': 0, total: 1 },
+			});
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
 	test('intake, specification, approval and abandon write the named project backlog alone', async () => {
 		const boot = publishableProject('gship-work-api-boot-', []);
 		const foreign = publishableProject('gship-work-api-foreign-', [

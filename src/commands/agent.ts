@@ -225,6 +225,7 @@ function issueListItem(value: unknown): Record<string, unknown> {
 function runListItem(value: unknown): Record<string, unknown> {
 	const run = record(value);
 	const pullRequest = record(run['pullRequest']);
+	const evaluation = record(run['evaluation']);
 	return {
 		id: shortString(run['id'], 40),
 		issueId: shortString(run['issueId'], 40),
@@ -237,6 +238,7 @@ function runListItem(value: unknown): Record<string, unknown> {
 			url: shortString(pullRequest['url'], 80),
 			ciStatus: shortString(pullRequest['ciStatus'], 24),
 		},
+		...(Object.keys(evaluation).length === 0 ? {} : { evaluation }),
 	};
 }
 

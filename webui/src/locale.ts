@@ -180,6 +180,13 @@ export interface RunInspectorCatalog {
 	};
 	expectedCost: (formattedCost: string) => string;
 	correctionRounds: (executor: number, ci: number, decision: number, orchestrator: number, indeterminate: number) => string;
+	specFacts: {
+		title: string; description: string; version: string; fingerprint: string; specCounts: string; corrections: string; questions: string; reconciliations: string; unknown: string;
+		counts: (acceptance: string, boundaries: string, verify: string, evidence: string) => string;
+		correctionCounts: (verification: number, review: number, fullVerify: number, ci: number, total: number) => string;
+		questionCounts: (executor: number, review: number, fullVerify: number, total: number) => string;
+		reconciliationCounts: (unchanged: number, adapted: number, contractChange: number, total: number) => string;
+	};
 	pullRequestLabel: (number: number) => string;
 	ciCorrectionLabel: (checkName: string) => string;
 	ciLabels: Readonly<Record<'not-reported' | 'pending' | 'passed' | 'failed', string>>;
@@ -706,6 +713,13 @@ export const LOCALE_CATALOG = {
 				}
 				return `${total === 1 ? 'Correction round' : 'Correction rounds'}: ${parts.join(', ')}`;
 			},
+			specFacts: {
+				title: 'Specification facts', description: 'Immutable profile and replayed run facts; no score or judgment.', version: 'Version', fingerprint: 'Fingerprint', specCounts: 'Spec counts', corrections: 'Corrections', questions: 'Cycle questions', reconciliations: 'Reconciliations', unknown: 'unknown',
+				counts: (acceptance, boundaries, verify, evidence) => `acceptance ${acceptance}, boundaries ${boundaries}, verify ${verify}, evidence ${evidence}`,
+				correctionCounts: (verification, review, fullVerify, ci, total) => `verification ${verification}/${total}, review ${review}/${total}, full verify ${fullVerify}/${total}, CI ${ci}/${total}`,
+				questionCounts: (executor, review, fullVerify, total) => `executor ${executor}/${total}, review ${review}/${total}, full verify ${fullVerify}/${total}`,
+				reconciliationCounts: (unchanged, adapted, contractChange, total) => `unchanged ${unchanged}/${total}, adapted ${adapted}/${total}, contract-change-required ${contractChange}/${total}`,
+			},
 			pullRequestLabel: (number) => `PR #${number}`,
 			ciCorrectionLabel: (checkName) => `CI correction: ${checkName}`,
 			ciLabels: {
@@ -1160,6 +1174,13 @@ export const LOCALE_CATALOG = {
 					parts.push(`${indeterminate} ${indeterminate === 1 ? 'indeterminada' : 'indeterminadas'}`);
 				}
 				return `${total === 1 ? 'Rodada de correção' : 'Rodadas de correção'}: ${parts.join(', ')}`;
+			},
+			specFacts: {
+				title: 'Fatos da especificação', description: 'Perfil imutável e fatos reconstituídos da run, sem nota ou julgamento.', version: 'Versão', fingerprint: 'Fingerprint', specCounts: 'Contagens da spec', corrections: 'Correções', questions: 'Perguntas do ciclo', reconciliations: 'Reconciliações', unknown: 'desconhecido',
+				counts: (acceptance, boundaries, verify, evidence) => `acceptance ${acceptance}, boundaries ${boundaries}, verify ${verify}, evidence ${evidence}`,
+				correctionCounts: (verification, review, fullVerify, ci, total) => `verification ${verification}/${total}, revisão ${review}/${total}, full verify ${fullVerify}/${total}, CI ${ci}/${total}`,
+				questionCounts: (executor, review, fullVerify, total) => `executor ${executor}/${total}, revisão ${review}/${total}, full verify ${fullVerify}/${total}`,
+				reconciliationCounts: (unchanged, adapted, contractChange, total) => `unchanged ${unchanged}/${total}, adapted ${adapted}/${total}, contract-change-required ${contractChange}/${total}`,
 			},
 			pullRequestLabel: (number) => `PR #${number}`,
 			ciCorrectionLabel: (checkName) => `Correção de CI: ${checkName}`,

@@ -416,8 +416,14 @@ describe('canonical agent CLI', () => {
 			state: 'done',
 			providerId: 'codex',
 			updatedAt: '2026-08-22T10:00:00.000Z',
-			summary: detail,
+			 summary: detail,
 			pullRequest: { url: 'https://example.com/1', ciStatus: 'success' },
+			evaluation: {
+				specProfile: { version: 'v2', fingerprint: 'f'.repeat(64), counts: { acceptance: 2, boundaries: 1, verify: 3, evidence: 1 } },
+				corrections: { verification: 1, review: 1, fullVerify: 0, ci: 1, total: 3 },
+				cycleQuestions: { executor: 1, review: 0, fullVerify: 1, total: 2 },
+				reconciliations: { unchanged: 1, adapted: 0, 'contract-change-required': 0, total: 1 },
+			},
 		};
 		const issueDetail = await executeAgent(
 			['call', 'issues.get', '--input', `{"projectId":"${PROJECT_ID}","issueId":"GSHIP-1"}`],
@@ -431,6 +437,14 @@ describe('canonical agent CLI', () => {
 		expect(issueDetail.output['result']).toHaveProperty('issue.spec.evidence');
 		expect(issueDetail.output['result']).toHaveProperty('fingerprint');
 		expect(runDetail.output['result']).toHaveProperty('run.workspacePath');
+		expect(runDetail.output['result']).toMatchObject({
+			run: { evaluation: {
+				specProfile: { version: 'v2', fingerprint: 'f'.repeat(64) },
+				corrections: { verification: 1, total: 3 },
+				cycleQuestions: { executor: 1, fullVerify: 1, total: 2 },
+				reconciliations: { unchanged: 1, total: 1 },
+			} },
+		});
 		expect(Buffer.byteLength(JSON.stringify(runDetail.output))).toBeLessThanOrEqual(AGENT_MAX_OUTPUT_BYTES);
 	});
 

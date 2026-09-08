@@ -472,6 +472,7 @@ export function RunCardContent({
 	return (
 		<>
 			<RunProgress catalog={catalog} run={run} />
+			<SpecFactsPanel catalog={catalog} evaluation={run.evaluation} />
 			<PullRequestDelivery catalog={catalog} run={run} />
 			<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
 			<ExecutorHandoffCallout catalog={catalog} handoff={run.executorHandoff} />
@@ -504,6 +505,27 @@ export function RunCardContent({
 				run={run}
 			/>
 		</>
+	);
+}
+
+function SpecFactsPanel({
+	catalog,
+	evaluation,
+}: { catalog: RunInspectorCatalog; evaluation: RunView['evaluation'] }): React.ReactElement | null {
+	if (evaluation === null || evaluation === undefined) return null;
+	const { specProfile: profile, corrections, cycleQuestions, reconciliations } = evaluation;
+	const count = (value: number | null): string => value === null ? catalog.specFacts.unknown : String(value);
+	return (
+		<ContextPanel description={catalog.specFacts.description} title={catalog.specFacts.title}>
+			<dl className="grid gap-2 text-sm sm:grid-cols-[10rem_1fr]">
+				<dt className="text-muted-foreground">{catalog.specFacts.version}</dt><dd>{profile.version}</dd>
+				<dt className="text-muted-foreground">{catalog.specFacts.fingerprint}</dt><dd className="break-all font-mono text-xs">{profile.fingerprint ?? catalog.specFacts.unknown}</dd>
+				<dt className="text-muted-foreground">{catalog.specFacts.specCounts}</dt><dd>{catalog.specFacts.counts(count(profile.counts.acceptance), count(profile.counts.boundaries), count(profile.counts.verify), count(profile.counts.evidence))}</dd>
+				<dt className="text-muted-foreground">{catalog.specFacts.corrections}</dt><dd>{catalog.specFacts.correctionCounts(corrections.verification, corrections.review, corrections.fullVerify, corrections.ci, corrections.total)}</dd>
+				<dt className="text-muted-foreground">{catalog.specFacts.questions}</dt><dd>{catalog.specFacts.questionCounts(cycleQuestions.executor, cycleQuestions.review, cycleQuestions.fullVerify, cycleQuestions.total)}</dd>
+				<dt className="text-muted-foreground">{catalog.specFacts.reconciliations}</dt><dd>{catalog.specFacts.reconciliationCounts(reconciliations.unchanged, reconciliations.adapted, reconciliations['contract-change-required'], reconciliations.total)}</dd>
+			</dl>
+		</ContextPanel>
 	);
 }
 
