@@ -5,13 +5,29 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:43:53.703Z",
-  "updatedAt": "2026-09-08T14:43:53.703Z",
-  "description": "Auditar todas as superfícies e componentes da web UI e estabelecer uma matriz tipográfica reproduzível: títulos de página, navegação e prosa em Saans proporcional; títulos de cards, métricas, identificadores, comandos, timestamps, durações, custos, contadores e kbd em Saans Mono conforme sua função. Verificar a disponibilidade e licença dos assets antes de incorporá-los; se não estiverem disponíveis no repositório, preservar fallback honesto e registrar o bloqueio em vez de baixar ou substituir silenciosamente. Consolidar tokens/primitives, atualizar o contrato de design e cobrir light/dark, pt-BR/en-US e 390 px sem alterar a semântica dos dados.",
+  "updatedAt": "2026-09-09T22:43:00.316Z",
   "specSource": "operator",
   "spec": {
-    "scope": "Auditar todas as superfícies e componentes da web UI e estabelecer uma matriz tipográfica reproduzível: títulos de página, navegação e prosa em Saans proporcional; títulos de cards, métricas, identificadores, comandos, timestamps, durações, custos, contadores e kbd em Saans Mono conforme sua função. Verificar a disponibilidade e licença dos assets antes de incorporá-los; se não estiverem disponíveis no repositório, preservar fallback honesto e registrar o bloqueio em vez de baixar ou substituir silenciosamente. Consolidar tokens/primitives, atualizar o contrato de design e cobrir light/dark, pt-BR/en-US e 390 px sem alterar a semântica dos dados.",
+    "version": 2,
+    "objective": "Padronizar a tipografia da web UI pela função da informação, corrigindo monospace em títulos editoriais. Usar Saans somente se assets e licença existirem no repositório; caso contrário, declarar e manter o fallback de sistema.",
+    "acceptance": [
+      "Títulos de página, títulos editoriais de cards e disclosures, navegação, labels de formulário e prosa usam a voz sans proporcional compartilhada; um título como Atividade não usa monospace.",
+      "Eyebrows e labels operacionais pequenos, incluindo Requer atenção e labels de métricas, usam a voz monospace, uppercase e tracking compartilhados.",
+      "Identificadores, comandos, caminhos, fingerprints, timestamps, durações, custos, contadores numéricos e kbd usam monospace; números comparáveis preservam tabular-nums.",
+      "Os papéis tipográficos são centralizados em tokens ou primitives compartilhados e os call sites da web UI são auditados para remover exceções conflitantes, sem mudar a semântica dos dados.",
+      "O contrato de design descreve a matriz real e a política de assets e licença, sem afirmar que uma fonte ausente está incorporada.",
+      "Light, dark, pt-BR, en-US e 390 px permanecem completos e legíveis."
+    ],
+    "boundaries": [
+      "Não baixar, copiar ou gerar arquivos de fonte.",
+      "Não adicionar dependências.",
+      "Não redesenhar cards, navegação ou conteúdo além da tipografia necessária.",
+      "Não mudar rotas, dados, contratos de API ou comportamento do runtime."
+    ],
     "verify": [
-      "bun run check:all"
+      "bun test test/web/ui-primitives.test.tsx test/web/ui-client.test.tsx test/webui-scaffold.test.ts",
+      "bun run typecheck",
+      "bun run build:ui"
     ]
   }
 }
