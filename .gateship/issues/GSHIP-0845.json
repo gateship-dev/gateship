@@ -1,0 +1,46 @@
+{
+  "id": "GSHIP-845",
+  "title": "Corrigir a agenda diária do Renovate e validar sua configuração real",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-09T13:36:03.833Z",
+  "updatedAt": "2026-09-09T13:36:03.833Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Fazer a configuração publicada na GSHIP-844 ser aceita pelo Renovate atual, substituindo a expressão de agenda inválida por cron oficial e protegendo esse contrato contra regressão.",
+    "acceptance": [
+      "A regra exclusiva dos CLIs usa o cron diário oficial do Renovate, * 0-3 * * *, e nenhuma agenda é aplicada globalmente.",
+      "O arquivo renovate.json publicado é aceito sem Configuration Error pelo renovate-config-validator 44.71.2.",
+      "O teste determinístico de provider CLI exige a expressão cron suportada e falha se voltar a aceitar a expressão inválida every day.",
+      "Custom managers, agrupamento em uma PR, ausência de automerge e regras existentes de Bun, asdf e GitHub Actions permanecem inalterados.",
+      "A correção não altera os pins atuais, Dockerfile, runtime ou fluxo de release."
+    ],
+    "boundaries": [
+      "Modificar apenas renovate.json, test/provider-cli-updates.test.ts e o registro da issue.",
+      "Não adicionar dependência, workflow, serviço, segredo ou PAT.",
+      "Não executar nem simular atualizações de dependências durante a implementação.",
+      "Não ampliar o escopo para avisos de actions, versões dos providers ou outras regras do Renovate."
+    ],
+    "verify": [
+      "bun test test/provider-cli-updates.test.ts test/compose-config.test.ts",
+      "npx --yes --package renovate@44.71.2 -- renovate-config-validator renovate.json",
+      "bun check:all"
+    ],
+    "evidence": [
+      {
+        "command": "git show origin/main:renovate.json | jq -r \".packageRules[3].schedule[0]\"",
+        "output": "every day"
+      },
+      {
+        "command": "npm view renovate version",
+        "output": "44.71.2"
+      }
+    ]
+  },
+  "approval": {
+    "fingerprint": "820a1bc8fc249ca37f3afba1df718addf135928b8e1bab8071f268f063f15c03",
+    "approvedAt": "2026-09-09T13:36:03.833Z"
+  }
+}
