@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import type { AgentProviderId } from './agent-session.ts';
-import type { SpecProfile } from '../issues/spec.ts';
+import type { ResearchContract, SpecProfile } from '../issues/spec.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import {
 	type DiagnosticDraft,
@@ -290,6 +290,7 @@ export interface CreateRunInput {
 	createdAt: string;
 	reconciliationGuidance?: string;
 	specProfile?: SpecProfile;
+	research?: ResearchContract;
 }
 
 export interface TransitionRunInput {
@@ -918,6 +919,7 @@ export class RunStore {
 			...(source === undefined || source.length === 0 ? {} : { source: source.slice(0, 100) }),
 			...(input.reconciliationGuidance === undefined || input.reconciliationGuidance.length === 0
 				? {} : { reconciliationGuidance: input.reconciliationGuidance }),
+			...(input.research === undefined ? {} : { research: input.research }),
 		};
 		const create = this.#db.transaction(() => {
 			this.#db.query(`
@@ -1712,6 +1714,23 @@ export class RunStore {
 		return rows.map(decodeEvent);
 	}
 
+	/** Research receipts available only inside this project's store. */
+	listResearchBundles(): Array<{ runId: string; bundle: unknown }> {
+		const rows = this.#db.query(`
+			SELECT run_id, payload_json FROM run_events
+			WHERE kind = 'run.research-receipts' AND event_class = 'decision'
+			ORDER BY seq ASC
+		`).all() as Array<{ run_id: string; payload_json: string }>;
+		return rows.flatMap((row) => {
+			try {
+				const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+				return payload['bundle'] === undefined ? [] : [{ runId: row.run_id, bundle: payload['bundle'] }];
+			} catch {
+				return [];
+			}
+		});
+	}
+
 	/**
 	 * The most recent chain-pause reason across every run (GSHIP-638). Always
 	 * the one the latest terminal transition just recorded: chaining is
@@ -1803,6 +1822,7 @@ export class RunStore {
 	recoverUnownedRuns(createdAt: string): RunEvent[] {
 		const recovery: Readonly<Record<string, { toState: RunState; kind: string }>> = {
 			queued: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
+			research: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
 			working: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
 			verify: { toState: 'interrupted', kind: 'run.recovered-interrupted' },
 			review: { toState: 'interrupted', kind: 'run.recovered-interrupted' },

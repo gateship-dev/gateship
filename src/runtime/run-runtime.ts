@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isPlannable } from '../issues/plannable.ts';
-import { profileSpec, validateCurrentResearchAtRunStart, validateSpec } from '../issues/spec.ts';
+import { profileSpec, validateCurrentResearchAtRunStart, validateSpec, type ResearchContract } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { type ExecutorHandoffRecord, selectExecutorHandoff } from './agent-executor-router.ts';
 import {
@@ -31,6 +31,7 @@ import { type RunRoundOrigins, selectRunRoundOrigins } from './round-origin.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
+import { HttpResearcher, type ResearchBundle, ResearchFailure, type Researcher, type ResearchExcerpt, validateResearchBundle } from './research.ts';
 import {
 	type ClaudeUsageWindow,
 	type ProjectBrief,
@@ -125,6 +126,8 @@ export interface RuntimeExecutionInput {
 	 * provider the run started on regardless of where its executor now sits.
 	 */
 	executorRoute?: { providerId: AgentProviderId; sessionId: string };
+	/** Validated, compact research shared by every executor provider. */
+	research?: ResearchBundle;
 }
 
 /** See `RuntimeExecutionInput.executorHandoff` (GSHIP-722). */
@@ -317,6 +320,7 @@ export interface RunRuntimeOptions {
 	timer?: RuntimeTimer;
 	newId?: () => string;
 	newSessionId?: () => string;
+	researcher?: Researcher;
 	preflight?: (issueId: string) => void;
 	evidenceCheck?: RuntimeEvidenceCheck;
 	workspace?: RuntimeWorkspace;
@@ -593,6 +597,7 @@ export class RunRuntime {
 	readonly #timer: RuntimeTimer;
 	readonly #newId: () => string;
 	readonly #newSessionId: () => string;
+	readonly #researcher: Researcher;
 	readonly #preflight: ((issueId: string) => void) | undefined;
 	readonly #evidenceCheck: RuntimeEvidenceCheck | undefined;
 	readonly #workspace: RuntimeWorkspace | undefined;
@@ -628,6 +633,7 @@ export class RunRuntime {
 		this.#timer = options.timer ?? HOST_TIMER;
 		this.#newId = options.newId ?? randomUUID;
 		this.#newSessionId = options.newSessionId ?? randomUUID;
+		this.#researcher = options.researcher ?? new HttpResearcher();
 		this.#preflight = options.preflight;
 		this.#evidenceCheck = options.evidenceCheck;
 		this.#workspace = options.workspace;
@@ -712,7 +718,9 @@ export class RunRuntime {
 			workspacePath,
 			createdAt: this.#now(),
 			...(reconciliationGuidance === undefined ? {} : { reconciliationGuidance }),
-			specProfile,
+			 specProfile,
+			...(admittedIssue?.spec !== undefined && 'version' in admittedIssue.spec && admittedIssue.spec.version === 2 && admittedIssue.spec.research !== undefined
+				? { research: admittedIssue.spec.research } : {}),
 		});
 		this.#publish(created.event);
 		this.#launch(created.run, {
@@ -1222,11 +1230,13 @@ export class RunRuntime {
 		// `run.started` an interrupted run has always resumed with, so its round
 		// accounting does not change with the phase it re-enters.
 		const resumeKind = run.state === 'waiting-provider' ? 'run.provider-retry-started' : 'run.started';
-		if (resumePhase !== 'review' && resumePhase !== 'full-verify') {
-			this.#transition(run.id, 'working', resumePhase === 'working' ? resumeKind : 'run.started');
-		}
-
 		try {
+			const researchContract = this.#researchContract(run);
+			if ((run.state === 'queued' || resumePhase === 'research') && researchContract !== null) {
+				await this.#runResearch(run, signal, researchContract);
+			} else if (resumePhase !== 'review' && resumePhase !== 'full-verify' && run.state !== 'working') {
+				this.#transition(run.id, 'working', resumePhase === 'working' ? resumeKind : 'run.started');
+			}
 			if (await this.#checkEvidence(run, signal, firstAttempt)) return;
 			await this.#driveImplementation(
 				executor,
@@ -1239,6 +1249,94 @@ export class RunRuntime {
 		} catch (error) {
 			this.#settleDriveFailure(run.id, signal, error);
 		}
+	}
+
+	async #runResearch(run: RunRecord, signal: AbortSignal, contract: ResearchContract): Promise<void> {
+		if (run.state !== 'research') this.#transition(run.id, 'research', 'run.research-started');
+		const startedAt = performance.now();
+		try {
+			const reusable = this.#reusableResearch(contract);
+			const research = await this.#researcher.research({ contract, signal, reusable });
+			const bundle: ResearchBundle = { ...research, sources: this.#mergeResearchSources(reusable, research.sources) };
+			const validation = validateResearchBundle(contract, bundle);
+			if (validation !== null) throw validation;
+			const reused = bundle.sources.filter((source) => reusable.some((candidate) => this.#sameResearchSource(candidate, source)));
+			const revalidated = bundle.sources.filter((source) => !reused.some((candidate) => this.#sameResearchSource(candidate, source)));
+			this.#emit(run.id, 'run.research-receipts', {
+				bundle,
+				reused: reused.map((source) => this.#researchSourceReference(source)),
+				revalidated: revalidated.map((source) => this.#researchSourceReference(source)),
+			});
+			this.#transition(run.id, 'working', 'run.research-completed');
+		} catch (error) {
+			if (signal.aborted) throw error;
+			this.#emit(run.id, 'run.research-failed', {
+				code: error instanceof ResearchFailure ? error.code : 'unknown', error: errorMessage(error),
+				provider: this.#researcher.provider, model: this.#researcher.model, effort: this.#researcher.effort,
+				latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
+			});
+			throw error;
+		}
+	}
+
+	#researchContract(run: RunRecord): ResearchContract | null {
+		const created = this.#store.listRunDecisionEvents(run.id).find((event) => event.kind === 'run.created');
+		const research = created?.payload['research'];
+		return research !== null && typeof research === 'object' && !Array.isArray(research) ? research as ResearchContract : null;
+	}
+
+	#reusableResearch(contract: ResearchContract): ResearchExcerpt[] {
+		if (contract.freshness.mode === 'current') return [];
+		const reusable: ResearchExcerpt[] = [];
+		for (const { bundle } of this.#store.listResearchBundles()) {
+			for (const candidate of this.#bundleSources(bundle)) {
+				if (reusable.some((item) => this.#sameResearchSource(item, candidate))) continue;
+				if (contract.receipts?.some((item) => this.#researchReceiptMatches(item, candidate, contract))) reusable.push(candidate);
+			}
+		}
+		return reusable;
+	}
+
+	#bundleSources(bundle: unknown): ResearchExcerpt[] {
+		if (bundle === null || typeof bundle !== 'object' || Array.isArray(bundle)) return [];
+		const sources = (bundle as Record<string, unknown>)['sources'];
+		return Array.isArray(sources) ? sources.filter((source): source is ResearchExcerpt => source !== null && typeof source === 'object' && !Array.isArray(source)) : [];
+	}
+
+	#researchReceiptMatches(receipt: NonNullable<ResearchContract['receipts']>[number], source: ResearchExcerpt, contract: ResearchContract): boolean {
+		if (source.resolvedRef !== undefined
+			&& (source.resolvedRef.kind !== 'commit' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(source.resolvedRef.value))) return false;
+		if (receipt === undefined || receipt.sourceType !== source.sourceType || receipt.contentHash.toLowerCase() !== source.contentHash.toLowerCase()
+			|| receipt.url !== source.url
+			|| receipt.claim !== source.claim || receipt.applicability !== source.applicability
+			|| receipt.installedVersion !== source.installedVersion || receipt.targetVersion !== source.targetVersion
+			|| receipt.resolvedRef?.kind !== source.resolvedRef?.kind || receipt.resolvedRef?.value !== source.resolvedRef?.value) return false;
+		if (contract.freshness.mode === 'installed-version') return receipt.installedVersion === contract.freshness.installedVersion;
+		if (contract.freshness.mode === 'target-version') return receipt.installedVersion === contract.freshness.installedVersion && receipt.targetVersion === contract.freshness.targetVersion;
+		return false;
+	}
+
+	#sameResearchSource(left: ResearchExcerpt, right: ResearchExcerpt): boolean {
+		return left.url === right.url && left.sourceType === right.sourceType && left.contentHash.toLowerCase() === right.contentHash.toLowerCase()
+			&& left.claim === right.claim && left.applicability === right.applicability
+			&& left.resolvedRef?.kind === right.resolvedRef?.kind && left.resolvedRef?.value === right.resolvedRef?.value
+			&& left.installedVersion === right.installedVersion && left.targetVersion === right.targetVersion;
+	}
+
+	#researchSourceReference(source: ResearchExcerpt): Omit<ResearchExcerpt, 'excerpt'> {
+		const { excerpt: _excerpt, ...reference } = source;
+		return reference;
+	}
+
+	#mergeResearchSources(reusable: readonly ResearchExcerpt[], fresh: readonly ResearchExcerpt[]): ResearchExcerpt[] {
+		const merged = [...reusable];
+		for (const source of fresh) if (!merged.some((item) => this.#sameResearchSource(item, source))) merged.push(source);
+		return merged;
+	}
+
+	#researchBundle(run: RunRecord): ResearchBundle | undefined {
+		const payload = this.#store.listRunDecisionEvents(run.id).findLast((event) => event.kind === 'run.research-receipts')?.payload['bundle'];
+		return payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload as ResearchBundle : undefined;
 	}
 
 	/**
@@ -1358,14 +1456,15 @@ export class RunRuntime {
 	 * emitted while the run already sits there, such as the operator's own
 	 * guidance on the resume, carries the state forward and never names a phase.
 	 */
-	#resumePhase(run: RunRecord): 'working' | 'review' | 'full-verify' | null {
+	#resumePhase(run: RunRecord): 'research' | 'working' | 'review' | 'full-verify' | null {
 		if (run.state === 'waiting-provider') return this.#providerWaitPhase(run.id);
 		if (run.state !== 'interrupted') return null;
 		const interruption = this.#store.listRunDecisionEvents(run.id)
 			.findLast((event) => event.toState === 'interrupted' && event.fromState !== 'interrupted');
-		return interruption?.kind === 'run.recovered-interrupted' && interruption.fromState === 'review'
-			? 'review'
-			: null;
+		if (interruption?.fromState === 'research') return 'research';
+		if (interruption?.kind !== 'run.recovered-interrupted') return null;
+		if (interruption.fromState === 'review') return 'review';
+		return null;
 	}
 
 	#latestProviderWaitEvent(runId: string): RunEvent | null {
@@ -2158,6 +2257,7 @@ export class RunRuntime {
 			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
 			setSessionId: (sessionId: string) => this.#setSessionId(run, sessionId),
 			operatorDecisions: selectOperatorDecisions(decisionEvents),
+			...(this.#researchBundle(run) === undefined ? {} : { research: this.#researchBundle(run) }),
 			executorHandoffAllowed: handoff === null && this.#store.getRuntimeSetting(EXECUTOR_HANDOFF_ENABLED_KEY) === 'true',
 			...(onAlternate ? { executorRoute: { providerId: handoff.to, sessionId: handoff.sessionId } } : {}),
 			...(attempt.reviewFeedback === undefined

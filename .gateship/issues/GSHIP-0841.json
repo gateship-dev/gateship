@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-841",
   "title": "Executar pesquisa read-only antes de liberar escrita",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T21:44:10.043Z",
-  "updatedAt": "2026-09-08T21:44:10.043Z",
+  "updatedAt": "2026-09-09T03:17:54.658Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

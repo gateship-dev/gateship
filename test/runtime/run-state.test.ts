@@ -39,6 +39,10 @@ describe('the ship phase of the run state machine', () => {
 		expect(canTransition('interrupted', 'working')).toBe(true);
 		expect(canTransition('interrupted', 'verify')).toBe(false);
 	});
+
+	test('an interrupted research phase can resume research', () => {
+		expect(canTransition('interrupted', 'research')).toBe(true);
+	});
 });
 
 // GSHIP-611: an interrupted run has a second way out -- abandoning it ends the
