@@ -5,13 +5,30 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:44:00.805Z",
-  "updatedAt": "2026-09-08T14:44:00.805Z",
-  "description": "Depois do header comum, criar NotificationCenter reutilizável com botão Hugeicons e popover ancorado. Agregar condições derivadas do snapshot de runs, fila encadeada, serviço desatualizado, identidade Git e workspaces; contar e usar verde ácido somente para itens que realmente exigem ação do operador. Avisos advisory podem aparecer na lista, mas não no contador de urgência. Não criar estado lido/não lido nem persistência artificial. Oferecer links contextuais, estado vazio, aria-live sem roubar foco e manter configuração de browser, ntfy e email em Ajustes. Remover callouts e sinais duplicados da sidebar e rail apenas depois de provar que o trigger continua visível e inequívoco em desktop e 390 px. Cobrir teclado, contraste, temas, idiomas e prefers-reduced-motion.",
+  "updatedAt": "2026-09-09T23:20:35.235Z",
   "specSource": "operator",
   "spec": {
-    "scope": "Depois do header comum, criar NotificationCenter reutilizável com botão Hugeicons e popover ancorado. Agregar condições derivadas do snapshot de runs, fila encadeada, serviço desatualizado, identidade Git e workspaces; contar e usar verde ácido somente para itens que realmente exigem ação do operador. Avisos advisory podem aparecer na lista, mas não no contador de urgência. Não criar estado lido/não lido nem persistência artificial. Oferecer links contextuais, estado vazio, aria-live sem roubar foco e manter configuração de browser, ntfy e email em Ajustes. Remover callouts e sinais duplicados da sidebar e rail apenas depois de provar que o trigger continua visível e inequívoco em desktop e 390 px. Cobrir teclado, contraste, temas, idiomas e prefers-reduced-motion.",
+    "version": 2,
+    "objective": "Criar uma central de notificações no header que reúna condições operacionais reais, destaque somente o que exige ação do operador e substitua avisos duplicados da navegação.",
+    "acceptance": [
+      "Um botão com Hugeicons abre um popover Base UI ancorado no header e mostra contador ácido somente quando existem itens que realmente exigem ação do operador.",
+      "A lista é derivada do snapshot atual de run, fila, serviço desatualizado, identidade Git e workspaces preservados; não cria estado lido ou não lido nem persiste notificações.",
+      "Waiting-user, falha terminal, interrupção, ship bloqueado, fila que falhou ao iniciar, serviço desatualizado, identidade ausente e workspace preservado são acionáveis; espera de provider com retomada automática e fila concluída são advisory e não entram no contador.",
+      "Cada item usa título e detalhe humanos, severidade textual e link contextual quando existe destino seguro; o estado vazio é explícito e não contém uma região enquadrada sem conteúdo.",
+      "Depois que o trigger estiver presente, os callouts e o indicador Needs you duplicados são removidos da sidebar e do rail; a central continua acessível com a sidebar aberta ou recolhida.",
+      "O popover funciona por teclado, fecha com Escape, mantém foco visível, anuncia mudanças sem roubar foco e permanece utilizável em light, dark, pt-BR, en-US e 390 px."
+    ],
+    "boundaries": [
+      "Não adicionar dependências; usar Base UI, Hugeicons e primitives existentes.",
+      "Não criar persistência, estado de leitura, polling novo ou backend de notificações.",
+      "Não mover as configurações de browser, ntfy ou email para fora de Ajustes.",
+      "Não tratar atividade normal, sucesso ou espera com retry automático como urgência.",
+      "Não mudar o runtime, os estados da run ou os contratos de API."
+    ],
     "verify": [
-      "bun run check:all"
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
     ]
   }
 }
