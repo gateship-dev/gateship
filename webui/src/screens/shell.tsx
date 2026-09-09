@@ -2,7 +2,7 @@
 
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
-import { INSPECTOR_GRID_CLASS, ShellContentFrame } from '../app-shell.tsx';
+import { ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button } from '../components/ui/button.tsx';
@@ -450,6 +450,7 @@ export function ShellControls({
 	locale,
 	onSelectLocale,
 	catalog,
+	title,
 	sidebarOpen,
 	onToggleSidebar,
 	inspectorOpen,
@@ -457,6 +458,7 @@ export function ShellControls({
 	showInspectorToggle,
 }: Pick<AppProps, 'locale' | 'onSelectLocale'> & {
 	catalog: ShellCatalog;
+	title: string;
 	sidebarOpen: boolean;
 	onToggleSidebar: () => void;
 	inspectorOpen: boolean;
@@ -487,7 +489,6 @@ export function ShellControls({
 		setWide(next);
 	};
 	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
-	const inspectorColumnOpen = showInspectorToggle && inspectorOpen;
 	const inspectorToggle = (): React.ReactElement | null => showInspectorToggle ? (
 		<Button
 			aria-label={inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand}
@@ -500,23 +501,24 @@ export function ShellControls({
 		</Button>
 	) : null;
 	return (
-		<div className="w-full shrink-0 px-4 pt-4 lg:px-6">
-			<ShellContentFrame className={cn('flex items-center justify-between gap-2', inspectorColumnOpen && `${INSPECTOR_GRID_CLASS} xl:max-w-none`)} data-slot="shell-controls-layout">
-				<div className="shrink-0 xl:min-w-0">
-					<ShellContentFrame>
-						{/* The sidebar toggle lives in the content area, not the sidebar. */}
-						<Button
-							aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
-							onClick={onToggleSidebar}
-							size="icon"
-							type="button"
-							variant="outline"
-						>
-							<PanelToggleGlyph side="left" />
-						</Button>
-					</ShellContentFrame>
+		<div className="w-full shrink-0 border-b border-border px-4 py-3 lg:px-6">
+			<ShellContentFrame className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" data-slot="shell-controls-layout">
+				<div className="flex min-w-0 justify-start">
+					{/* The sidebar toggle lives in the content area, not the sidebar. */}
+					<Button
+						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
+						onClick={onToggleSidebar}
+						size="icon"
+						type="button"
+						variant="outline"
+					>
+						<PanelToggleGlyph side="left" />
+					</Button>
 				</div>
-				<div aria-label={catalog.languageLabel} className="flex shrink-0 items-center justify-end gap-2" role="group">
+				<div className="min-w-0 px-2 text-center type-editorial-title text-sm sm:text-base" data-slot="shell-surface-title" title={title}>
+					<span className="block overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
+				</div>
+				<div aria-label={catalog.languageLabel} className="flex min-w-0 items-center justify-end gap-2" role="group">
 						<Button
 							aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
 							id="gateship-locale"
@@ -561,6 +563,19 @@ export function ShellControls({
 			</ShellContentFrame>
 		</div>
 	);
+}
+
+export function shellSurfaceTitle(
+	selection: ReturnType<typeof routeSelection>,
+	catalog: ShellCatalog,
+): string {
+	if (selection.surface === 'overview') return catalog.routeLabels.overview;
+	if (selection.surface === 'overview-runs') return catalog.routeLabels.overviewRuns;
+	if (selection.surface === 'overview-queues') return catalog.routeLabels.overviewQueues;
+	if (selection.surface === 'overview-insights') return catalog.routeLabels.overviewInsights;
+	if (selection.surface === 'projects') return catalog.routeLabels.projects;
+	if (selection.surface === 'global-settings') return catalog.routeLabels.globalSettings;
+	return catalog.routeLabels[selection.surface];
 }
 
 /** A panel silhouette with its visible side fully filled in currentColor. */
