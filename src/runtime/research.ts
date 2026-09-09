@@ -24,10 +24,12 @@ export interface ResearchBundle {
 
 export class ResearchFailure extends Error {
 	readonly code: 'unavailable' | 'timeout' | 'too-large' | 'redirect' | 'invalid-source' | 'incomplete';
-	constructor(code: ResearchFailure['code'], message: string) {
+	override readonly cause: 'obsolete-source' | 'version-mismatch' | 'other';
+	constructor(code: ResearchFailure['code'], message: string, cause: ResearchFailure['cause'] = 'other') {
 		super(message);
 		this.name = 'ResearchFailure';
 		this.code = code;
+		this.cause = cause;
 	}
 }
 
@@ -43,40 +45,30 @@ function sameRef(left: ResearchReceipt['resolvedRef'], right: ResearchReceipt['r
 }
 
 /** Runtime boundary validation for injected researchers and persisted bundles. */
+function invalidQuestions(contract: ResearchContract, bundle: ResearchBundle): boolean { return !Array.isArray(bundle.questions) || bundle.questions.length !== contract.questions.length || bundle.questions.some((question, index) => question !== contract.questions[index]); }
+function invalidTelemetry(bundle: ResearchBundle): boolean { return typeof bundle.provider !== 'string' || bundle.provider.trim().length === 0 || typeof bundle.model !== 'string' || bundle.model.trim().length === 0 || typeof bundle.effort !== 'string' || bundle.effort.trim().length === 0 || !Number.isFinite(bundle.latencyMs) || bundle.latencyMs < 0; }
+function invalidSource(source: ResearchExcerpt): boolean { return typeof source.url !== 'string' || typeof source.sourceType !== 'string' || typeof source.contentHash !== 'string' || !/^sha256:[a-f0-9]{64}$/i.test(source.contentHash) || typeof source.claim !== 'string' || source.claim.trim().length === 0 || typeof source.applicability !== 'string' || source.applicability.trim().length === 0 || typeof source.excerpt !== 'string' || source.excerpt.length === 0 || source.excerpt.length > 2_000; }
+function matchesReceipt(receipt: ResearchReceipt, source: ResearchExcerpt): boolean {
+	return receipt.url === source.url && receipt.sourceType === source.sourceType && receipt.contentHash.toLowerCase() === source.contentHash.toLowerCase() && receipt.claim === source.claim && receipt.applicability === source.applicability && receipt.installedVersion === source.installedVersion && receipt.targetVersion === source.targetVersion && sameRef(receipt.resolvedRef, source.resolvedRef);
+}
+function unmatchedSourceFailure(receipts: readonly ResearchReceipt[], source: ResearchExcerpt): ResearchFailure {
+	const identityMatch = receipts.find((receipt) => receipt.url === source.url && receipt.sourceType === source.sourceType && receipt.claim === source.claim && receipt.applicability === source.applicability);
+	if (identityMatch === undefined) return new ResearchFailure('incomplete', 'Research bundle source does not match an approved receipt.');
+	if (identityMatch.contentHash.toLowerCase() !== source.contentHash.toLowerCase()) return new ResearchFailure('incomplete', 'Research source changed since the approved receipt.', 'obsolete-source');
+	const versionMismatch = identityMatch.installedVersion !== source.installedVersion || identityMatch.targetVersion !== source.targetVersion || !sameRef(identityMatch.resolvedRef, source.resolvedRef);
+	return new ResearchFailure('incomplete', 'Research source version does not match the approved receipt.', versionMismatch ? 'version-mismatch' : 'other');
+}
+
 export function validateResearchBundle(contract: ResearchContract, bundle: ResearchBundle): ResearchFailure | null {
-	if (!Array.isArray(bundle.questions) || bundle.questions.length !== contract.questions.length
-		|| bundle.questions.some((question, index) => question !== contract.questions[index])) {
-		return new ResearchFailure('incomplete', 'Research bundle questions do not match the approved contract.');
-	}
-	if (!Array.isArray(bundle.sources) || bundle.sources.length !== (contract.receipts?.length ?? 0)) {
-		return new ResearchFailure('incomplete', 'Research bundle does not contain one validated source for every approved receipt.');
-	}
-	if (typeof bundle.provider !== 'string' || bundle.provider.trim().length === 0
-		|| typeof bundle.model !== 'string' || bundle.model.trim().length === 0
-		|| typeof bundle.effort !== 'string' || bundle.effort.trim().length === 0
-		|| !Number.isFinite(bundle.latencyMs) || bundle.latencyMs < 0) {
-		return new ResearchFailure('incomplete', 'Research bundle telemetry is invalid.');
-	}
+	if (invalidQuestions(contract, bundle)) return new ResearchFailure('incomplete', 'Research bundle questions do not match the approved contract.');
+	if (!Array.isArray(bundle.sources) || bundle.sources.length !== (contract.receipts?.length ?? 0)) return new ResearchFailure('incomplete', 'Research bundle does not contain one validated source for every approved receipt.');
+	if (invalidTelemetry(bundle)) return new ResearchFailure('incomplete', 'Research bundle telemetry is invalid.');
 	const receipts = contract.receipts ?? [];
 	const matched = new Set<number>();
 	for (const source of bundle.sources) {
-		if (typeof source.url !== 'string' || typeof source.sourceType !== 'string'
-			|| typeof source.contentHash !== 'string' || !/^sha256:[a-f0-9]{64}$/i.test(source.contentHash)
-			|| typeof source.claim !== 'string' || source.claim.trim().length === 0
-			|| typeof source.applicability !== 'string' || source.applicability.trim().length === 0
-			|| typeof source.excerpt !== 'string' || source.excerpt.length === 0 || source.excerpt.length > 2_000) {
-			return new ResearchFailure('incomplete', 'Research bundle contains an invalid source.');
-		}
-		const index = receipts.findIndex((receipt, candidate) => !matched.has(candidate)
-			&& receipt.url === source.url
-			&& receipt.sourceType === source.sourceType
-			&& receipt.contentHash.toLowerCase() === source.contentHash.toLowerCase()
-			&& receipt.claim === source.claim
-			&& receipt.applicability === source.applicability
-			&& receipt.installedVersion === source.installedVersion
-			&& receipt.targetVersion === source.targetVersion
-			&& sameRef(receipt.resolvedRef, source.resolvedRef));
-		if (index < 0) return new ResearchFailure('incomplete', 'Research bundle source does not match an approved receipt.');
+		if (invalidSource(source)) return new ResearchFailure('incomplete', 'Research bundle contains an invalid source.');
+		const index = receipts.findIndex((receipt, candidate) => !matched.has(candidate) && matchesReceipt(receipt, source));
+		if (index < 0) return unmatchedSourceFailure(receipts, source);
 		matched.add(index);
 	}
 	const covered = contract.questions.every((question) => bundle.sources.some((source) => `${source.claim} ${source.applicability}`.toLowerCase().includes(question.toLowerCase())));
@@ -179,7 +171,7 @@ export class HttpResearcher implements Researcher {
 				&& sameRef(source.resolvedRef, receipt.resolvedRef))) continue;
 			const fetched = await fetchSource(receipt.url, signal);
 			const contentHash = `sha256:${createHash('sha256').update(fetched.body).digest('hex')}`;
-			if (contentHash !== receipt.contentHash) throw new ResearchFailure('incomplete', `Research source changed: ${receipt.url}`);
+			if (contentHash !== receipt.contentHash) throw new ResearchFailure('incomplete', `Research source changed: ${receipt.url}`, 'obsolete-source');
 			sources.push({
 				url: receipt.url,
 				sourceType: receipt.sourceType,

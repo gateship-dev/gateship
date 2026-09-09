@@ -313,6 +313,7 @@ export interface HistoricalOverviewView {
 	daily: Array<{ date: string; totalRuns: number; runsByOutcome: { shipped: number; failed: number; cancelled: number; incomplete: number }; runsWithKnownCost: number; knownCostUsd: number | null; terminalRuns: number; shippedWithoutIntervention: number; ciCorrections: number; inputTokens: number | null; outputTokens: number | null }>;
 	configurations: Array<{ provider: string; role: string; model?: string; effort?: string }>;
 	cohorts: Array<{
+		cohortId?: string;
 		workflowRevision: string | null;
 		specVersion: 'legacy' | 'v2' | 'unknown'; latestTerminalRunAt: string | null; sampleSize: number; evidenceSufficient: boolean;
 		outcomes: Record<'shipped' | 'failed' | 'cancelled', { count: number; denominator: number }>;
@@ -320,6 +321,10 @@ export interface HistoricalOverviewView {
 		cycleQuestions: Record<'executor' | 'review' | 'fullVerify', { count: number; denominator: number }>;
 		reconciliations: Record<'unchanged' | 'adapted' | 'contract-change-required', { count: number; denominator: number }>;
 		attentionRequests: { count: number; denominator: number }; operatorInterventions: { count: number; denominator: number }; providerHolds: { count: number; denominator: number };
+		timing?: { wallTimeMs: { median: number | null; p90: number | null; known: number; denominator: number }; phases: Record<string, { median: number | null; p90: number | null; known: number; denominator: number }>; waits: { provider: { median: number | null; p90: number | null; known: number; denominator: number }; user: { median: number | null; p90: number | null; known: number; denominator: number } }; corrections: Record<string, { median: number | null; p90: number | null; known: number; denominator: number }> };
+		research?: { requiredRuns: { count: number; denominator: number }; receiptCoverage: { count: number; denominator: number }; obsoleteSource: { count: number; denominator: number }; versionMismatch: { count: number; denominator: number }; relatedCorrection: { count: number; denominator: number } };
+		failures?: Record<string, { count: number; denominator: number }>;
+		profile?: { commands: { count: number; denominator: number }; corrections: { count: number; denominator: number }; filesAltered: { count: number; denominator: number }; researchRequired: { count: number; denominator: number } };
 	}>;
 	cohortsPage?: { limit: number; offset: number; returned: number; total: number };
 }

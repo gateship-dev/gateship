@@ -575,6 +575,7 @@ export class GithubShipper implements RuntimeShipper {
 		await this.#checked(input, 'git', ['add', '--all']);
 		const staged = await this.#run(input, 'git', ['diff', '--cached', '--quiet']);
 		if (staged.exitCode === 1) {
+			const changedPathCount = (await this.#checked(input, 'git', ['diff', '--cached', '--name-only', '-z'])).split('\0').filter((path) => path.length > 0).length;
 			// Right before the write it protects (GSHIP-654): a missing identity
 			// fails clearly here, on a retryable ship the run's diff survives,
 			// instead of surfacing later as git's own opaque "Author identity
@@ -585,7 +586,7 @@ export class GithubShipper implements RuntimeShipper {
 			}
 			const subject = `${input.issueId}: ${issue.title}`;
 			await this.#checked(input, 'git', ['commit', '--message', subject]);
-			input.emit('ship.committed', { branch });
+			input.emit('ship.committed', { branch, changedPathCount });
 		} else if (staged.exitCode !== 0) {
 			throw new Error(`cannot read the staged diff: ${failureDetail(staged)}`);
 		}

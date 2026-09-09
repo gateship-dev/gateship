@@ -116,6 +116,9 @@ import {
 } from '../runtime/project-runtime-manager.ts';
 import {
 	type OverviewWindow, type HistoricalOverviewFilters,
+	createCohortRegressionProposal,
+	type CohortRegressionProposalInput,
+	readProjectHistoricalOverview,
 	readProjectOperationalOverview,
 	readProjectOperationalStatus,
 	readQueueOverview,
@@ -155,6 +158,7 @@ import {
 	type RunRecord,
 	RunStore,
 } from '../runtime/run-store.ts';
+import { readPersistedRunHistory } from '../runtime/run-store.ts';
 import { SelfUpdateRuntime, type SelfUpdateSnapshot } from '../runtime/self-update.ts';
 import { RUNTIME_SOURCE_REF } from '../runtime/source-ref.ts';
 import { GSHIP_VERSION } from '../version.ts';
@@ -170,6 +174,26 @@ type IssueIntakeWriter = (
 type IssueSpecifier = (id: string, input: unknown) => MaybePromise<CreatedOperatorIssue>;
 type IssueApprover = (id: string) => MaybePromise<CreatedOperatorIssue>;
 type IssueAbandoner = (id: string, input: unknown) => MaybePromise<CreatedOperatorIssue>;
+
+
+function parseCohortRegressionProposalInput(input: unknown): CohortRegressionProposalInput {
+	const record = input !== null && typeof input === 'object' && !Array.isArray(input) ? input as Record<string, unknown> : {};
+	return {
+		baselineCohortId: typeof record['baselineCohortId'] === 'string' ? record['baselineCohortId'] : '',
+		candidateCohortId: typeof record['candidateCohortId'] === 'string' ? record['candidateCohortId'] : '',
+		metric: record['metric'] as CohortRegressionProposalInput['metric'],
+		direction: record['direction'] as CohortRegressionProposalInput['direction'],
+		threshold: typeof record['threshold'] === 'number' ? record['threshold'] : Number.NaN,
+		hypothesis: typeof record['hypothesis'] === 'string' ? record['hypothesis'] : '',
+	};
+}
+
+function cohortRegressionProposalResponse(overview: ReturnType<typeof readProjectHistoricalOverview>['overview'], input: CohortRegressionProposalInput): Response {
+	const proposal = overview === null ? null : createCohortRegressionProposal(overview.cohorts, input);
+	return proposal === null
+		? Response.json({ ok: false, code: 'invalid-cohort-regression-proposal', message: 'Cohorts, metric, threshold and hypothesis must be compatible and have at least 5 terminal runs.' }, { status: 422 })
+		: Response.json({ proposal });
+}
 
 /**
  * Overrides the interface `Bun.serve` binds to, independent from
@@ -2943,6 +2967,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					);
 				}
 				return Response.json(readProjectOperationalStatus(project));
+			},
+			'/api/projects/:projectId/cohort-regression-proposal': {
+				POST: (request) => projectOperation(request.params.projectId, async () => {
+					const proposalInput = parseCohortRegressionProposalInput(await request.json());
+					const overview = readProjectHistoricalOverview(projectRegistry.get(request.params.projectId, projectRoot)!, 'all', new Date(), readPersistedRunHistory, undefined, null).overview;
+					return cohortRegressionProposalResponse(overview, proposalInput);
+				}),
 			},
 			'/api/projects/:projectId/providers': (request) => projectOperation(
 				request.params.projectId,

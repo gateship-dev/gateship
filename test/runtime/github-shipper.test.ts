@@ -42,6 +42,7 @@ interface FakeRepo {
 	branch: string;
 	/** True while `git diff --cached --quiet` would report staged changes. */
 	staged: boolean;
+	changedPaths: string[];
 	commits: number;
 	pushes: number;
 	/** Post-merge refreshes of the runtime source ref (CAM-580), plus any post-update-branch worktree syncs (GSHIP-632). */
@@ -124,6 +125,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 	return {
 		branch: BRANCH,
 		staged: true,
+		changedPaths: ['src/changed.ts', 'test/changed.ts'],
 		commits: 0,
 		pushes: 0,
 		fetches: 0,
@@ -168,30 +170,32 @@ function result(exitCode: number, stdout = '', stderr = ''): CommandResult {
 	return { exitCode, stdout, stderr };
 }
 
+function runGitDiff(repo: FakeRepo, args: string[]): CommandResult {
+	if (args.includes('--quiet')) return result(repo.staged ? 1 : 0);
+	if (args.includes('--name-only')) return result(0, `${repo.changedPaths.join('\0')}\0`);
+	return result(0);
+}
+
+function runGitCommit(repo: FakeRepo): CommandResult {
+	repo.commits += 1;
+	repo.staged = false;
+	return result(0);
+}
+
+function runGitPush(repo: FakeRepo): CommandResult {
+	if (repo.pushFails) return result(1, '', 'fatal: unable to access origin');
+	repo.pushes += 1;
+	return result(0);
+}
+
 function runGitCommand(repo: FakeRepo, args: string[]): CommandResult | undefined {
-	if (args[0] === 'rev-parse') {
-		return result(0, `${args[1] === '--abbrev-ref' ? repo.branch : HEAD_SHA}\n`);
-	}
+	if (args[0] === 'rev-parse') return result(0, `${args[1] === '--abbrev-ref' ? repo.branch : HEAD_SHA}\n`);
 	if (args[0] === 'add') return result(0);
-	if (args[0] === 'diff') return result(repo.staged ? 1 : 0);
-	if (args[0] === 'commit') {
-		repo.commits += 1;
-		repo.staged = false;
-		return result(0);
-	}
-	if (args[0] === 'push') {
-		if (repo.pushFails) return result(1, '', 'fatal: unable to access origin');
-		repo.pushes += 1;
-		return result(0);
-	}
-	if (args[0] === 'fetch') {
-		repo.fetches += 1;
-		return result(0);
-	}
-	if (args[0] === 'reset') {
-		repo.resets += 1;
-		return result(0);
-	}
+	if (args[0] === 'diff') return runGitDiff(repo, args);
+	if (args[0] === 'commit') return runGitCommit(repo);
+	if (args[0] === 'push') return runGitPush(repo);
+	if (args[0] === 'fetch') { repo.fetches += 1; return result(0); }
+	if (args[0] === 'reset') { repo.resets += 1; return result(0); }
 	return undefined;
 }
 
@@ -472,12 +476,13 @@ describe('the GitHub shipper', () => {
 		const repo = createRepo();
 		const calls: RecordedCall[] = [];
 		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
 		const shipper = new GithubShipper({
 			runCommand: createRunner(repo, calls),
 			pollIntervalMs: 0,
 		});
 
-		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal));
+		const shipped = await shipper.ship(createShipInput(cwd, events, new AbortController().signal, payloads));
 
 		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
 		// The issue is closed on the branch: main only learns by merging the PR.
@@ -485,6 +490,7 @@ describe('the GitHub shipper', () => {
 		expect(repo.commits).toBe(1);
 		expect(repo.pushes).toBe(1);
 		expect(repo.prCreates).toBe(1);
+		expect(payloads.get('ship.committed')).toMatchObject({ changedPathCount: repo.changedPaths.length });
 		expect(findCall(calls, 'git', 'push')[0]?.args).toEqual([
 			'push', '--set-upstream', 'origin', BRANCH,
 		]);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { fingerprintSpec, type ResearchContract } from '../../src/issues/spec.ts';
+import { fingerprintSpec, type ResearchContract, type ResearchReceipt } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
@@ -170,7 +170,7 @@ describe('durable run runtime', () => {
 			freshness: { mode: 'installed-version', installedVersion: '1.0.0' },
 			receipts: [{ url: 'https://docs.example.com/v1', sourceType: 'official-documentation', fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}`, claim: 'Q', applicability: 'Q' }],
 		};
-		for (const failure of [new ResearchFailure('unavailable', 'offline'), new Error('unexpected')]) {
+		for (const failure of [new ResearchFailure('unavailable', 'offline'), new ResearchFailure('incomplete', 'obsolete', 'obsolete-source'), new Error('unexpected')]) {
 			const store = new RunStore(':memory:');
 			const issue: IssueEntry = { id: `GSHIP-841-${failure.message}`, title: 'research failure', stage: 'specified', status: 'open', blockedBy: [], createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z', spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research } };
 			const runtime = new RunRuntime({
@@ -184,6 +184,7 @@ describe('durable run runtime', () => {
 			const failureEvent = events.find((event) => event.kind === 'run.research-failed');
 			expect(failureEvent?.payload).toMatchObject({
 				code: failure instanceof ResearchFailure ? failure.code : 'unknown', error: failure.message,
+				cause: failure instanceof ResearchFailure ? failure.cause : 'other',
 				provider: 'test-provider', model: 'test-model', effort: 'test-effort',
 			});
 			expect(failureEvent?.payload['latencyMs']).toBeGreaterThanOrEqual(0);
@@ -209,6 +210,21 @@ describe('durable run runtime', () => {
 		const source = (claim: string) => ({ ...receipt(claim), excerpt: claim });
 		const bundle = { questions: ['Q1', 'Q2'], sources: [source('Q1'), source('Q2')], provider: 'test', model: 'test', effort: 'test', latencyMs: 1 } as ResearchBundle;
 		expect(validateResearchBundle(contract, bundle)).toBeNull();
+	});
+
+	test('classifies research source changes by structured cause', () => {
+		const receipt = (overrides: Partial<ResearchReceipt> = {}): ResearchReceipt => ({
+			url: 'https://docs.example.com/shared', sourceType: 'official-documentation' as const,
+			fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', targetVersion: '2.0.0',
+			resolvedRef: { kind: 'tag', value: 'v2' }, contentHash: `sha256:${'a'.repeat(64)}`, claim: 'Q', applicability: 'Q', ...overrides,
+		});
+		const contract: ResearchContract = { questions: ['Q'], sourceClasses: ['official-documentation'], freshness: { mode: 'installed-version', installedVersion: '1.0.0' }, receipts: [receipt()] };
+		const bundle = (overrides: Record<string, unknown> = {}) => ({ questions: ['Q'], sources: [{ ...receipt(), excerpt: 'validated', ...overrides }], provider: 'test', model: 'test', effort: 'test', latencyMs: 1 } as ResearchBundle);
+		expect(validateResearchBundle(contract, bundle({ contentHash: `sha256:${'b'.repeat(64)}` }))?.cause).toBe('obsolete-source');
+		expect(validateResearchBundle(contract, bundle({ installedVersion: '1.1.0' }))?.cause).toBe('version-mismatch');
+		expect(validateResearchBundle(contract, bundle({ targetVersion: '2.1.0' }))?.cause).toBe('version-mismatch');
+		expect(validateResearchBundle(contract, bundle({ resolvedRef: { kind: 'tag', value: 'v2.1' } }))?.cause).toBe('version-mismatch');
+		expect(validateResearchBundle(contract, bundle({ url: 'https://docs.example.com/other' }))?.cause).toBe('other');
 	});
 
 	test('classifies same-URL research sources by complete identity in telemetry', async () => {

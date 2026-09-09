@@ -7,6 +7,7 @@ import { createProjectFromOperator, startWebServer } from '../../src/commands/we
 import type { ProjectCreateCommandRunner } from '../../src/runtime/project-create.ts';
 import type { GitCloneRunner } from '../../src/runtime/project-import.ts';
 import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
+import { COHORT_MAX_LIMIT } from '../../src/runtime/project-status.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -174,6 +175,46 @@ describe('GET /api/projects', () => {
 			await second.stop();
 		}
 	});
+
+	test('cohort regression proposal reads explicit cohorts beyond the first page', async () => {
+		const cwd = createTestTmpdir('gship-cohort-proposal-api-');
+		const target = createTestTmpdir('gship-cohort-proposal-target-');
+		const gateshipHome = createTestTmpdir('gship-cohort-proposal-home-');
+		readyCheckout(cwd);
+		readyCheckout(target);
+		const handle = startWebServer({ port: 0, cwd, gateshipHome });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const registered = await fetch(`${origin}/api/projects`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ root: target }) }).then((response) => response.json()) as { project: { id: string } };
+			const targetStore = new RunStore(join(target, '.gship', 'runtime.sqlite'));
+			const cohortCount = COHORT_MAX_LIMIT + 1;
+			for (let cohortIndex = 0; cohortIndex < cohortCount; cohortIndex += 1) {
+				for (let runIndex = 0; runIndex < 5; runIndex += 1) {
+					const runId = `proposal-${cohortIndex}-${runIndex}`;
+					const minute = cohortIndex * 5 + runIndex;
+					targetStore.createRun({ id: runId, issueId: 'GSHIP-842', sessionId: runId, workspacePath: '/workspace/proposal', createdAt: `2026-09-01T${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}:00.000Z`, workflowRevision: `revision-${cohortIndex}`, specProfile: { version: 'v2', fingerprint: null, counts: { acceptance: 1, boundaries: 1, verify: 1, evidence: 0 } } });
+					for (const [stateIndex, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) targetStore.transition({ runId, toState: state, kind: `run.${state}`, createdAt: `2026-09-01T${String(Math.floor(minute / 60)).padStart(2, '0')}:${String((minute + stateIndex + 1) % 60).padStart(2, '0')}:00.000Z` });
+				}
+			}
+			targetStore.close();
+			const response = await fetch(`${origin}/api/projects/${encodeURIComponent(registered.project.id)}/cohort-regression-proposal`, {
+				method: 'POST', headers: { 'content-type': 'application/json', origin },
+				body: JSON.stringify({ baselineCohortId: 'workflow:"revision-0":spec:"v2"', candidateCohortId: `workflow:"revision-${cohortCount - 1}":spec:"v2"`, metric: 'wallTimeMs.median', direction: 'increase', threshold: 1, hypothesis: 'timing' }),
+			});
+			expect(response.status).toBe(200);
+			expect(await response.json()).toMatchObject({ proposal: { baselineCohortId: 'workflow:"revision-0":spec:"v2"', candidateCohortId: `workflow:"revision-${cohortCount - 1}":spec:"v2"` } });
+			const invalidBodies = [null, [], 'invalid', 1];
+			const invalidResponses = await Promise.all(invalidBodies.map((body) => fetch(`${origin}/api/projects/${encodeURIComponent(registered.project.id)}/cohort-regression-proposal`, {
+				method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify(body),
+			})));
+			for (const invalidResponse of invalidResponses) {
+				expect(invalidResponse.status).toBe(422);
+				expect(await invalidResponse.json()).toMatchObject({ ok: false, code: 'invalid-cohort-regression-proposal' });
+			}
+		} finally {
+			await handle.stop();
+		}
+	}, { timeout: 30_000 });
 });
 
 /** A checkout the operator already has: GitHub origin and a local origin/main. */

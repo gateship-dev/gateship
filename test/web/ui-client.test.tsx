@@ -3277,6 +3277,64 @@ function assertOverviewAvailability(locale: 'en-US' | 'pt-BR'): void {
 	expect(historyUnavailable).not.toContain(locale === 'en-US' ? 'No outcome in this window' : 'Nenhum resultado nesta janela');
 }
 
+function factualCohortOverview(cohorts: unknown[], cohortsPage?: { limit: number; offset: number; returned: number; total: number }) {
+	const history = { window: '7d', totalRuns: 3, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 2, failed: 1, cancelled: 0, incomplete: 0 }, activeRuns: 0, terminalRuns: 3, terminalWallTimeMs: null, terminalWallTimeRuns: 0, shippedWithoutIntervention: 0, dispatchToMergeMs: null, dispatchToMergeRuns: 0, medianDispatchToMergeMs: null, firstReviewPasses: 0, firstReviewPassKnownRuns: 0, ciCorrections: 0, fixRounds: 0, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, resolvedCycleQuestions: 0, reportedTokens: { inputTokens: null, outputTokens: null, cacheCreationInputTokens: null, cacheReadInputTokens: null, thinkingTokens: null }, daily: [], configurations: [], cohorts, ...(cohortsPage === undefined ? {} : { cohortsPage }) };
+	return { overview: history };
+}
+
+function factualSmallCohort() {
+	return {
+		workflowRevision: 'revision-1234567890abcdef', specVersion: 'v2', sampleSize: 3, evidenceSufficient: false,
+		outcomes: { shipped: { count: 2, denominator: 3 }, failed: { count: 1, denominator: 3 }, cancelled: { count: 0, denominator: 3 } },
+		corrections: { verification: { count: 1, denominator: 3 }, review: { count: 2, denominator: 3 }, fullVerify: { count: 0, denominator: 3 }, ci: { count: 1, denominator: 3 } },
+		cycleQuestions: { executor: { count: 2, denominator: 3 }, review: { count: 1, denominator: 3 }, fullVerify: { count: 0, denominator: 3 } },
+		reconciliations: { unchanged: { count: 1, denominator: 3 }, adapted: { count: 1, denominator: 3 }, 'contract-change-required': { count: 0, denominator: 3 } },
+		attentionRequests: { count: 2, denominator: 3 }, operatorInterventions: { count: 1, denominator: 3 }, providerHolds: { count: 1, denominator: 3 },
+	};
+}
+
+function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: ReturnType<typeof factualSmallCohort>): void {
+	const catalog = LOCALE_CATALOG[locale].overviewInsights;
+	const smallHtml = renderInsightsWithLoadedOverview(locale, factualCohortOverview([smallCohort]));
+	const sufficientHtml = renderInsightsWithLoadedOverview(locale, factualCohortOverview([{ ...smallCohort, sampleSize: 5, evidenceSufficient: true }]));
+	const comparable = renderInsightsWithLoadedOverview(locale, factualCohortOverview([
+		{ ...smallCohort, cohortId: 'cohort-a', sampleSize: 5, evidenceSufficient: true, profile: { commands: { count: 5, denominator: 5 }, corrections: { count: 1, denominator: 5 }, filesAltered: { count: 0, denominator: 0 }, researchRequired: { count: 2, denominator: 5 } } },
+		{ ...smallCohort, cohortId: 'cohort-b', workflowRevision: 'revision-second', sampleSize: 5, evidenceSufficient: true, profile: { commands: { count: 7, denominator: 5 }, corrections: { count: 2, denominator: 5 }, filesAltered: { count: 0, denominator: 0 }, researchRequired: { count: 3, denominator: 5 } } },
+	]));
+	const incompatible = renderInsightsWithLoadedOverview(locale, factualCohortOverview([{ ...smallCohort, cohortId: 'cohort-c', sampleSize: 5, evidenceSufficient: true, specVersion: 'legacy' }, { ...smallCohort, cohortId: 'cohort-d', sampleSize: 5, evidenceSufficient: true }]));
+	expect(smallHtml).toContain(catalog.title);
+	expect(smallHtml).toContain('revision…');
+	expect(smallHtml).not.toContain('revision-1234567890abcdef');
+	expect(smallHtml).toContain('v2');
+	expect(smallHtml).toContain(`>3 (${catalog.cohortEvidenceInsufficient})</td>`);
+	expect(smallHtml).toContain(catalog.cohortEvidenceInsufficient);
+	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(smallHtml).toContain(label);
+	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
+	expect(sufficientHtml).toContain('>5</td>');
+	expect(sufficientHtml).not.toContain(catalog.cohortEvidenceInsufficient);
+	expect(comparable).toContain(locale === 'en-US' ? 'Cohort A' : 'Coorte A');
+	expect(comparable).toContain(locale === 'en-US' ? 'commands' : 'comandos');
+	expect(comparable).toContain(locale === 'en-US' ? 'corrections' : 'correções');
+	expect(comparable).toContain('—');
+	expect(incompatible).not.toContain(locale === 'en-US' ? 'Cohort A' : 'Coorte A');
+}
+
+function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: ReturnType<typeof factualSmallCohort>): void {
+	const catalog = LOCALE_CATALOG[locale].overviewInsights;
+	const pagedCohorts = [smallCohort, { ...smallCohort, workflowRevision: 'revision-second' }, { ...smallCohort, workflowRevision: 'revision-third' }];
+	const firstPage = renderInsightsWithLoadedOverview(locale, factualCohortOverview(pagedCohorts.slice(0, 2), { limit: 2, offset: 0, returned: 2, total: 3 }));
+	const lastPage = renderInsightsWithLoadedOverview(locale, factualCohortOverview(pagedCohorts.slice(2), { limit: 2, offset: 2, returned: 1, total: 3 }));
+	const onePage = renderInsightsWithLoadedOverview(locale, factualCohortOverview(pagedCohorts.slice(0, 1), { limit: 10, offset: 0, returned: 1, total: 1 }));
+	expect(firstPage).toContain(catalog.cohortPage(1, 2, 3));
+	expect(lastPage).toContain(catalog.cohortPage(3, 3, 3));
+	expect(onePage).toContain(catalog.cohortPage(1, 1, 1));
+	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(1);
+	expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
+	expect(firstPage).toContain(`aria-label="${catalog.previousCohorts}"`);
+	expect(lastPage).toContain(`aria-label="${catalog.nextCohorts}"`);
+	expect(onePage.match(/disabled=""/g)?.length).toBe(2);
+}
+
 describe('operator shell', () => {
 	test('normalizes a direct or refreshed Insights page beyond the available cohorts to the last page', () => {
 		expect(normalizedCohortOffset({ limit: 10, offset: 20, returned: 0, total: 20 })).toBe(10);
@@ -3303,50 +3361,10 @@ describe('operator shell', () => {
 	});
 
 	test('Insights accepts a factual cohort overview in both locales without exposing the full revision', () => {
-		const revision = 'revision-1234567890abcdef';
-		const smallCohort = {
-			workflowRevision: revision, specVersion: 'v2', sampleSize: 3, evidenceSufficient: false,
-			outcomes: { shipped: { count: 2, denominator: 3 }, failed: { count: 1, denominator: 3 }, cancelled: { count: 0, denominator: 3 } },
-			corrections: { verification: { count: 1, denominator: 3 }, review: { count: 2, denominator: 3 }, fullVerify: { count: 0, denominator: 3 }, ci: { count: 1, denominator: 3 } },
-			cycleQuestions: { executor: { count: 2, denominator: 3 }, review: { count: 1, denominator: 3 }, fullVerify: { count: 0, denominator: 3 } },
-			reconciliations: { unchanged: { count: 1, denominator: 3 }, adapted: { count: 1, denominator: 3 }, 'contract-change-required': { count: 0, denominator: 3 } },
-			attentionRequests: { count: 2, denominator: 3 }, operatorInterventions: { count: 1, denominator: 3 }, providerHolds: { count: 1, denominator: 3 },
-		};
-		const overviewFor = (cohorts: unknown[], cohortsPage?: { limit: number; offset: number; returned: number; total: number }) => ({ overview: {
-			window: '7d', totalRuns: 3, runsWithKnownCost: 0, knownCostUsd: null,
-			runsByOutcome: { shipped: 2, failed: 1, cancelled: 0, incomplete: 0 }, activeRuns: 0, terminalRuns: 3,
-			terminalWallTimeMs: null, terminalWallTimeRuns: 0, shippedWithoutIntervention: 0, dispatchToMergeMs: null,
-			dispatchToMergeRuns: 0, medianDispatchToMergeMs: null, firstReviewPasses: 0, firstReviewPassKnownRuns: 0,
-			ciCorrections: 0, fixRounds: 0, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0,
-			resolvedCycleQuestions: 0, reportedTokens: { inputTokens: null, outputTokens: null, cacheCreationInputTokens: null, cacheReadInputTokens: null, thinkingTokens: null },
-			daily: [], configurations: [], cohorts, ...(cohortsPage === undefined ? {} : { cohortsPage }),
-		} });
+		const smallCohort = factualSmallCohort();
 		for (const locale of ['en-US', 'pt-BR'] as const) {
-			const catalog = LOCALE_CATALOG[locale].overviewInsights;
-			const smallHtml = renderInsightsWithLoadedOverview(locale, overviewFor([smallCohort]));
-			const sufficientHtml = renderInsightsWithLoadedOverview(locale, overviewFor([{ ...smallCohort, sampleSize: 5, evidenceSufficient: true }]));
-			expect(smallHtml).toContain(catalog.title);
-			expect(smallHtml).toContain('revision…');
-			expect(smallHtml).not.toContain(revision);
-			expect(smallHtml).toContain('v2');
-			expect(smallHtml).toContain(`>3 (${catalog.cohortEvidenceInsufficient})</td>`);
-			expect(smallHtml).toContain(catalog.cohortEvidenceInsufficient);
-			for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(smallHtml).toContain(label);
-			for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
-			expect(sufficientHtml).toContain('>5</td>');
-			expect(sufficientHtml).not.toContain(catalog.cohortEvidenceInsufficient);
-			const pagedCohorts = [smallCohort, { ...smallCohort, workflowRevision: 'revision-second' }, { ...smallCohort, workflowRevision: 'revision-third' }];
-			const firstPage = renderInsightsWithLoadedOverview(locale, overviewFor(pagedCohorts.slice(0, 2), { limit: 2, offset: 0, returned: 2, total: 3 }));
-			const lastPage = renderInsightsWithLoadedOverview(locale, overviewFor(pagedCohorts.slice(2), { limit: 2, offset: 2, returned: 1, total: 3 }));
-			const onePage = renderInsightsWithLoadedOverview(locale, overviewFor(pagedCohorts.slice(0, 1), { limit: 10, offset: 0, returned: 1, total: 1 }));
-			expect(firstPage).toContain(catalog.cohortPage(1, 2, 3));
-			expect(lastPage).toContain(catalog.cohortPage(3, 3, 3));
-			expect(onePage).toContain(catalog.cohortPage(1, 1, 1));
-			expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(1);
-			expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
-			expect(firstPage).toContain(`aria-label="${catalog.previousCohorts}"`);
-			expect(lastPage).toContain(`aria-label="${catalog.nextCohorts}"`);
-			expect(onePage.match(/disabled=""/g)?.length).toBe(2);
+			assertFactualCohortContent(locale, smallCohort);
+			assertFactualCohortPagination(locale, smallCohort);
 		}
 	});
 

@@ -13,6 +13,7 @@ import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { startWebServer } from '../../src/commands/web.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { type ProjectBrief, RunStore } from '../../src/runtime/run-store.ts';
+import { COHORT_MAX_LIMIT } from '../../src/runtime/project-status.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const jsonResponse = (body: unknown, status = 200): Response => Response.json(body, { status });
@@ -66,7 +67,7 @@ describe('canonical agent CLI', () => {
 		const result = await executeAgent(['operations']);
 		const operations = result.output['operations'] as Array<{ name: string; input: string }>;
 		expect(operations.map(({ name }) => name)).toEqual([
-			'project.inspect', 'projects.list', 'projects.overview', 'runs.list_all', 'queues.list', 'projects.status', 'projects.register',
+			'project.inspect', 'projects.list', 'projects.overview', 'projects.cohort_regression_proposal', 'runs.list_all', 'queues.list', 'projects.status', 'projects.register',
 			'projects.import', 'projects.create',
 			'projects.unregister', 'status.get',
 			'backlog.list', 'issues.list', 'issues.get',
@@ -489,6 +490,39 @@ describe('canonical agent CLI', () => {
 		expect((explicit.output['result'] as { overview: { cohorts: unknown[]; cohortsPage: unknown } }).overview.cohorts).toHaveLength(2);
 		expect((explicit.output['result'] as { overview: { cohortsPage: unknown } }).overview.cohortsPage).toEqual({ limit: 2, offset: 4, returned: 2, total: 11 });
 	});
+
+	test('projects.cohort_regression_proposal finds an eligible cohort beyond the first page through the service', async () => {
+		const cwd = createTestTmpdir('gship-agent-proposal-');
+		const target = createTestTmpdir('gship-agent-proposal-target-');
+		readyProject(cwd);
+		readyProject(target);
+		const handle = startWebServer({ port: 0, cwd });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const registered = await fetch(`${origin}/api/projects`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ root: target }) }).then((response) => response.json()) as { project: { id: string } };
+			const targetStore = new RunStore(join(target, '.gship', 'runtime.sqlite'));
+			const cohortCount = COHORT_MAX_LIMIT + 1;
+			for (let cohortIndex = 0; cohortIndex < cohortCount; cohortIndex += 1) {
+				for (let runIndex = 0; runIndex < 5; runIndex += 1) {
+					const runId = `agent-proposal-${cohortIndex}-${runIndex}`;
+					const minute = cohortIndex * 5 + runIndex;
+					targetStore.createRun({ id: runId, issueId: 'GSHIP-842', sessionId: runId, workspacePath: '/workspace/proposal', createdAt: `2026-09-01T${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}:00.000Z`, workflowRevision: `revision-${cohortIndex}`, specProfile: { version: 'v2', fingerprint: null, counts: { acceptance: 1, boundaries: 1, verify: 1, evidence: 0 } } });
+					for (const [stateIndex, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) targetStore.transition({ runId, toState: state, kind: `run.${state}`, createdAt: `2026-09-01T${String(Math.floor(minute / 60)).padStart(2, '0')}:${String((minute + stateIndex + 1) % 60).padStart(2, '0')}:00.000Z` });
+				}
+			}
+			targetStore.close();
+			const baselineCohortId = 'workflow:"revision-0":spec:"v2"';
+			const candidateCohortId = `workflow:"revision-${cohortCount - 1}":spec:"v2"`;
+			const result = await executeAgent([
+				'call', 'projects.cohort_regression_proposal', '--url', origin,
+				'--input', JSON.stringify({ projectId: registered.project.id, baselineCohortId, candidateCohortId, metric: 'wallTimeMs.median', direction: 'increase', threshold: 1, hypothesis: 'timing' }),
+			]);
+			expect(result.exitCode).toBe(0);
+			expect(result.output).toMatchObject({ ok: true, result: { proposal: { baselineCohortId, candidateCohortId } } });
+		} finally {
+			await handle.stop();
+		}
+	}, { timeout: 30_000 });
 
 	test('preserves more than one hundred blockers instead of silently clamping them', async () => {
 		const blockers = Array.from({ length: 125 }, (_, index) => `GSHIP-${1_000 + index}`);
