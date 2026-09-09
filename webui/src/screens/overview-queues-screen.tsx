@@ -89,7 +89,7 @@ function QueueDetails({ queue, catalog, locale, projectHref, currentState, pause
 			<div><dt className="text-muted-foreground">{catalog.lastDelivery}</dt><dd className="mt-1">{lastDelivery === null ? <span className="text-muted-foreground">{noDeliveryLabel}</span> : <span className="flex flex-wrap items-center gap-2"><a className={cn(TEXT_LINK_CLASS, 'font-mono text-xs')} href={`${projectHref}/runs/${encodeURIComponent(lastDelivery.id)}`}>{lastDelivery.issueId}</a><time className="text-muted-foreground text-xs" dateTime={lastDelivery.updatedAt}>{formatRunTimestamp(lastDelivery.updatedAt, locale)}</time></span>}</dd></div>
 			{queue.pause !== null ? <div className={needsOperator(queue.pause.reason) ? 'sm:col-span-2' : 'sm:col-span-2 text-muted-foreground'}><dt className="text-muted-foreground">{catalog.paused}</dt><dd className="mt-1">{pauseReason}{needsOperator(queue.pause.reason) ? '' : ` · ${catalog.automaticResume}`}</dd></div> : null}
 		</dl>
-		<div className="border-t px-4 py-4"><h3 className="mb-3 font-mono text-xs uppercase tracking-wide text-muted-foreground">{catalog.sequence}</h3><QueueSequence queue={queue} catalog={catalog} /></div>
+		<div className="border-t px-4 py-4"><h3 className="type-eyebrow mb-3 text-muted-foreground">{catalog.sequence}</h3><QueueSequence queue={queue} catalog={catalog} /></div>
 	</>;
 }
 
@@ -116,7 +116,7 @@ export function OverviewQueuesSurface({ props }: { props: AppProps }): React.Rea
 	const errors = queueErrorsForFilter(data?.errors ?? [], filter);
 	return <SurfaceColumn label={queueCatalog.title} status={props.status}>
 		<ControlCenterNavigation current="queues" locale={props.locale} />
-		<div className="flex flex-col gap-2"><h1 className="text-2xl font-semibold">{queueCatalog.title}</h1><p className="text-muted-foreground text-sm">{queueCatalog.description}</p></div>
+		<div className="flex flex-col gap-2"><h1 className="type-page-title">{queueCatalog.title}</h1><p className="text-muted-foreground text-sm">{queueCatalog.description}</p></div>
 		<select aria-label={queueCatalog.filterProject} className="min-h-10 w-full rounded-lg border bg-background px-3 text-sm sm:max-w-xs" value={filter ?? ''} onChange={(event) => updateFilter((event.currentTarget as unknown as { value: string }).value)}><option value="">{queueCatalog.allProjects}</option>{props.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
 		{data === null && error === null ? <p role="status">{queueCatalog.loading}</p> : null}
 		{error !== null ? <p role="alert">{queueCatalog.error}: {error}</p> : null}

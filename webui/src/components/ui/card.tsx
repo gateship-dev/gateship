@@ -92,7 +92,7 @@ export function CardSummary({
 export function CardTitle({ className, ...props }: React.ComponentProps<'h2'>): React.ReactElement {
 	return (
 		<h2
-			className={cn('self-center font-normal font-sans text-base', className)}
+			className={cn('type-editorial-title self-center text-base', className)}
 			data-slot="card-frame-title"
 			{...props}
 		/>

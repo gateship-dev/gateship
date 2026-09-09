@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-823",
   "title": "Padronizar a hierarquia tipográfica da interface",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:43:53.703Z",
-  "updatedAt": "2026-09-09T22:43:17.345Z",
+  "updatedAt": "2026-09-09T22:51:16.669Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
