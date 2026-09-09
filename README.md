@@ -184,10 +184,21 @@ same release tag. It contains the compiled binary, git, the GitHub CLI, the
 Claude Code CLI and the Codex CLI, with the port it already uses answering the
 same UI. Native macOS and Linux binaries remain a convenience.
 
-The image pins both provider CLI releases. Gateship also disables Claude Code
-self-updates in child sessions, so a run cannot silently replace the executable
-behind its recorded workflow revision; rebuilding the image is the explicit
-upgrade boundary.
+The image pins both provider CLI releases in `provider-cli-versions.json`.
+Renovate checks the official Claude Code releases and the official
+`@openai/codex` package weekly, grouping changes into one reviewed dependency
+PR. The PR must pass the repository gates, including the image build and CLI
+smoke checks; a failed install or unexpected `--version` blocks delivery.
+Gateship also disables Claude Code self-updates in child sessions, so a run
+cannot silently replace the executable behind its recorded workflow revision;
+rebuilding and releasing the image is the explicit upgrade boundary.
+
+A instalação nativa mantém as CLIs fora da imagem e deve ser atualizada pelos
+instaladores oficiais do próprio operador. No container, as versões efetivas
+vêm exclusivamente da imagem imutável: verifique-as com
+`docker compose exec gateship claude --version` e
+`docker compose exec gateship codex --version`. Uma run nunca instala nem
+atualiza uma CLI.
 
 The update panel may report a newer release from a container, but automatic
 apply is unavailable there. Gateship never receives the Docker socket and does

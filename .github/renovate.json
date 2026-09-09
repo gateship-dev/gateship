@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "schedule": ["before 5am on monday"],
+  "prConcurrentLimit": 1,
+  "prHourlyLimit": 1,
+  "automerge": false,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^provider-cli-versions\\.json$/"],
+      "matchStrings": ["\\\"claudeCode\\\"\\s*:\\s*\\\"(?<currentValue>[^\\\"]+)\\\""],
+      "depNameTemplate": "anthropics/claude-code",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^provider-cli-versions\\.json$/"],
+      "matchStrings": ["\\\"codexCli\\\"\\s*:\\s*\\\"(?<currentValue>[^\\\"]+)\\\""],
+      "depNameTemplate": "@openai/codex",
+      "datasourceTemplate": "npm",
+      "versioningTemplate": "npm"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": ["github-releases", "npm"],
+      "matchPackageNames": ["anthropics/claude-code", "@openai/codex"],
+      "groupName": "provider CLI versions",
+      "groupSlug": "provider-cli-versions",
+      "rangeStrategy": "pin"
+    }
+  ]
+}
