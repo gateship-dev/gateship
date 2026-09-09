@@ -22,6 +22,36 @@
       "matchUpdateTypes": ["patch", "minor", "major"],
       "enabled": true,
       "automerge": true
+    },
+    {
+      "description": "Check provider CLI pins daily and group them in one non-automatic PR.",
+      "matchDatasources": ["github-releases", "npm"],
+      "matchPackageNames": ["anthropics/claude-code", "@openai/codex"],
+      "schedule": ["every day"],
+      "prConcurrentLimit": 1,
+      "prHourlyLimit": 1,
+      "automerge": false,
+      "groupName": "provider CLI versions",
+      "groupSlug": "provider-cli-versions",
+      "rangeStrategy": "pin"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^provider-cli-versions\\.json$/"],
+      "matchStrings": ["\\\"claudeCode\\\"\\s*:\\s*\\\"(?<currentValue>[^\\\"]+)\\\""],
+      "depNameTemplate": "anthropics/claude-code",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^provider-cli-versions\\.json$/"],
+      "matchStrings": ["\\\"codexCli\\\"\\s*:\\s*\\\"(?<currentValue>[^\\\"]+)\\\""],
+      "depNameTemplate": "@openai/codex",
+      "datasourceTemplate": "npm",
+      "versioningTemplate": "npm"
     }
   ]
 }

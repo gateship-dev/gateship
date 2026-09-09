@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-844",
   "title": "Unificar a configuração do Renovate para ativar a atualização dos CLIs",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-09T12:42:20.488Z",
-  "updatedAt": "2026-09-09T12:42:20.488Z",
+  "updatedAt": "2026-09-09T13:08:20.022Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
