@@ -27,7 +27,7 @@
       "description": "Check provider CLI pins daily and group them in one non-automatic PR.",
       "matchDatasources": ["github-releases", "npm"],
       "matchPackageNames": ["anthropics/claude-code", "@openai/codex"],
-      "schedule": ["every day"],
+      "schedule": ["* 0-3 * * *"],
       "prConcurrentLimit": 1,
       "prHourlyLimit": 1,
       "automerge": false,

@@ -38,7 +38,7 @@ describe('provider CLI updates (GSHIP-843)', () => {
 		expect(providerRule).toMatchObject({
 			matchDatasources: ['github-releases', 'npm'],
 			matchPackageNames: ['anthropics/claude-code', '@openai/codex'],
-			schedule: ['every day'],
+			schedule: ['* 0-3 * * *'],
 			prConcurrentLimit: 1,
 			prHourlyLimit: 1,
 			automerge: false,

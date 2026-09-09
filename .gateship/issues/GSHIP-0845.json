@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-845",
   "title": "Corrigir a agenda diária do Renovate e validar sua configuração real",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-09T13:36:03.833Z",
-  "updatedAt": "2026-09-09T13:36:03.833Z",
+  "updatedAt": "2026-09-09T13:44:29.981Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
