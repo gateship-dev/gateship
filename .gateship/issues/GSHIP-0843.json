@@ -1,0 +1,47 @@
+{
+  "id": "GSHIP-843",
+  "title": "Atualizar automaticamente os CLIs de provider sem quebrar reprodutibilidade",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-09T11:51:03.117Z",
+  "updatedAt": "2026-09-09T11:51:03.117Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Manter Claude Code e Codex CLI próximos das versões estáveis atuais no container canônico do Gateship, usando atualização revisável e reproduzível em vez de mutação silenciosa do ambiente.",
+    "acceptance": [
+      "Existe uma única fonte versionada e legível por máquina para os pins exatos de Claude Code e Codex CLI, e o build da imagem consome esses valores sem usar latest mutável.",
+      "Uma automação determinística e recorrente consulta apenas os canais oficiais das duas CLIs e, quando encontra mudança, abre ou atualiza uma única PR de dependências; sem mudança, não escreve nada.",
+      "A automação não exige PAT ou segredo adicional, não escreve diretamente na main e não cria PRs duplicadas.",
+      "A PR informa versões anterior e candidata e passa pelos mesmos gates do repositório, incluindo build da imagem e smoke checks que executam claude --version e codex --version.",
+      "Falha de instalação, versão inesperada ou gate vermelho impede entrega. O container nunca atualiza uma CLI em runtime nem durante uma run.",
+      "Depois do merge, as novas versões chegam aos usuários somente por uma release e imagem imutável do Gateship, preservando rollback e reprodutibilidade.",
+      "A documentação diferencia o comportamento da instalação nativa e do container e explica como verificar as versões efetivas."
+    ],
+    "boundaries": [
+      "Não criar serviço próprio de atualização, banco novo, chamada de modelo ou dependência operacional externa.",
+      "Não alterar autenticação, credenciais, seleção de modelos ou diretórios persistentes dos providers.",
+      "Não gerar notificações comuns ao operador; atualização pendente deve permanecer um evento de manutenção revisável.",
+      "Preferir automação nativa do repositório e a menor mudança compatível com CI e branch protection existentes."
+    ],
+    "verify": [
+      "bun check:all",
+      "Os testes de configuração provam pins completos, no-op sem atualização, uma única PR lógica e smoke checks das duas CLIs."
+    ],
+    "evidence": [
+      {
+        "command": "claude --version; codex --version",
+        "output": "2.1.263 (Claude Code)\ncodex-cli 0.153.4"
+      },
+      {
+        "command": "rg -n 'claude.ai/install.sh|@openai/codex' Dockerfile",
+        "output": "68:RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.238\n69:RUN bun add -g @openai/codex@0.148.0"
+      }
+    ]
+  },
+  "approval": {
+    "fingerprint": "d996be215ce785f97cb2cc3121836e132ccc422fe7733e832f97e47f3061bade",
+    "approvedAt": "2026-09-09T11:51:03.117Z"
+  }
+}
