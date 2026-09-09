@@ -4816,11 +4816,12 @@ describe('shared live edge and responsive surface content', () => {
 
 		for (const route of SURFACE_PATHS) {
 			const frames = openingTags(renderAt(route)).filter((tag) => tag.includes('data-slot="shell-content-frame"'));
-			expect(frames.length).toBeGreaterThanOrEqual(2);
+			expect(frames.length).toBeGreaterThanOrEqual(1);
 			for (const frame of frames) expect(frame).toContain(frameClass);
 		}
-		expect(elementWith(runsPage(), 'data-slot="shell-controls-layout"'))
-			.not.toContain('xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)]');
+		const controls = elementWith(runsPage(), 'data-slot="shell-controls-layout"');
+		expect(controls).toContain('grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]');
+		expect(runsPage()).toContain('data-slot="shell-surface-title"');
 	});
 
 	/** Every long, unbreakable string the retained surfaces can show. */

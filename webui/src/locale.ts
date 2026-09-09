@@ -43,10 +43,12 @@ export interface ShellCatalog {
 	switcherPlaceholder: string;
 	skipLinkLabel: string;
 	languageLabel: string;
-	 routeLabels: {
+	routeLabels: {
 		overview: string;
 		overviewRuns: string;
+		overviewQueues: string;
 		overviewInsights: string;
+		projects: string;
 		runs: string;
 		work: string;
 		settings: string;
@@ -602,7 +604,9 @@ export const LOCALE_CATALOG = {
 			routeLabels: {
 				overview: 'Control center',
 				overviewRuns: 'Runs',
+				overviewQueues: 'Queues',
 				overviewInsights: 'Insights',
+				projects: 'Projects',
 				runs: 'Runs',
 				work: 'Work',
 				settings: 'Settings',
@@ -1064,7 +1068,9 @@ export const LOCALE_CATALOG = {
 			routeLabels: {
 				overview: 'Central de controle',
 				overviewRuns: 'Execuções',
+				overviewQueues: 'Filas',
 				overviewInsights: 'Insights',
+				projects: 'Projetos',
 				runs: 'Runs',
 				work: 'Trabalho',
 				settings: 'Ajustes',

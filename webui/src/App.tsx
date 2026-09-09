@@ -26,6 +26,7 @@ import {
 	type PanelKeyEvent,
 	ShellControls,
 	ShellSidebar,
+	shellSurfaceTitle,
 	useStoredOpen,
 } from './screens/shell.tsx';
 import { WorkSurface } from './screens/work-screen.tsx';
@@ -83,7 +84,7 @@ export function App(props: AppProps): React.ReactElement {
 	}, [props.projects, toggleSidebar]);
 	return (
 		<AppShell
-			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} />}
+			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}
 			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} selectedProjectId={props.selectedProjectId ?? null} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
 		>
