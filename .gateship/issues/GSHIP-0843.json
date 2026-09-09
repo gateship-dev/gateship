@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-09T11:51:03.117Z",
-  "updatedAt": "2026-09-09T11:51:03.117Z",
+  "updatedAt": "2026-09-09T12:07:38.942Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -27,7 +27,7 @@
     ],
     "verify": [
       "bun check:all",
-      "Os testes de configuração provam pins completos, no-op sem atualização, uma única PR lógica e smoke checks das duas CLIs."
+      "bun test test/provider-cli-updates.test.ts test/compose-config.test.ts"
     ],
     "evidence": [
       {
@@ -39,9 +39,5 @@
         "output": "68:RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.238\n69:RUN bun add -g @openai/codex@0.148.0"
       }
     ]
-  },
-  "approval": {
-    "fingerprint": "d996be215ce785f97cb2cc3121836e132ccc422fe7733e832f97e47f3061bade",
-    "approvedAt": "2026-09-09T11:51:03.117Z"
   }
 }
