@@ -1271,7 +1271,7 @@ export class RunRuntime {
 		} catch (error) {
 			if (signal.aborted) throw error;
 			this.#emit(run.id, 'run.research-failed', {
-				code: error instanceof ResearchFailure ? error.code : 'unknown', error: errorMessage(error),
+				code: error instanceof ResearchFailure ? error.code : 'unknown', cause: error instanceof ResearchFailure ? error.cause : 'other', error: errorMessage(error),
 				provider: this.#researcher.provider, model: this.#researcher.model, effort: this.#researcher.effort,
 				latencyMs: Math.max(0, Math.round(performance.now() - startedAt)),
 			});

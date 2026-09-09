@@ -56,6 +56,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
 	'projects.overview': { method: 'GET', path: overviewPath, input: '{cohortLimit?, cohortOffset?, projectId?, providerId?, model?, role?, effort?}' },
+	'projects.cohort_regression_proposal': { method: 'POST', path: projectPath('/cohort-regression-proposal'), input: '{projectId, baselineCohortId, candidateCohortId, metric, direction, threshold, hypothesis}' },
 	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?, period?, search?}' },
 	'queues.list': { method: 'GET', path: () => '/api/overview/queues', input: '{}' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
@@ -333,11 +334,18 @@ function projectsOverviewResult(value: unknown): Record<string, unknown> {
 	const result = record(value);
 	const projects = Array.isArray(result['projects']) ? result['projects'].map(projectOverviewItem) : [];
 	const historical = record(result['overview']);
+	const cohorts = Array.isArray(historical['cohorts']) ? historical['cohorts'].map((cohort) => {
+		const item = record(cohort);
+		const failures = record(item['failures']);
+		if (Object.keys(failures).length === 0) return cohort;
+		const { evidence: _evidence, ...compactFailures } = failures;
+		return { ...item, failures: compactFailures };
+	}) : [];
 	return {
 		window: result['window'] ?? null,
 		summary: result['summary'] ?? null,
 		overview: {
-			cohorts: Array.isArray(historical['cohorts']) ? historical['cohorts'] : [],
+			cohorts,
 			cohortsPage: historical['cohortsPage'] ?? null,
 		},
 		projects,

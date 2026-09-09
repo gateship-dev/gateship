@@ -6,6 +6,7 @@ import {
 	readProjectOperationalOverview,
 	readProjectHistoricalOverview,
 	readQueueOverview,
+	createCohortRegressionProposal,
 	COHORT_MINIMUM_SAMPLE,
 	COHORT_DEFAULT_LIMIT,
 	COHORT_MAX_LIMIT,
@@ -108,6 +109,133 @@ test('agrupa somente runs terminais pela combinação exata de revisão e versã
 	});
 	expect(overview?.cohorts.some((cohort) => cohort.workflowRevision === null && cohort.specVersion === 'unknown')).toBe(true);
 	expect(read('7d')?.cohorts.find((cohort) => cohort.workflowRevision === 'revision-a' && cohort.specVersion === 'v2')?.sampleSize).toBe(2);
+});
+
+test('mantém receipt coverage aplicável e não transforma histórico anterior em causa de falha', () => {
+	const receipt = { url: 'https://example.com/doc', sourceType: 'official-documentation', contentHash: 'sha256:' + 'a'.repeat(64), claim: 'claim', applicability: 'applicability' };
+	const research = { questions: ['claim'], sourceClasses: ['official-documentation'], freshness: { mode: 'current', resolvedAt: '2026-09-01T00:00:00.000Z' }, receipts: [receipt] };
+	const source = { ...receipt, excerpt: 'claim applicability' };
+	const required = (id: string, outcome: 'shipped' | 'failed', terminal: string, sourceOverride = source): PersistedRunHistory => {
+		const item = cohortHistory(id, { revision: 'revision-research', version: 'v2', outcome });
+		item.events = [
+			{ seq: 1, runId: id, kind: 'run.created', fromState: null, toState: 'queued', payload: { research }, createdAt: item.run.createdAt, eventClass: 'decision' },
+			{ seq: 2, runId: id, kind: 'run.research-receipts', fromState: 'research', toState: 'working', payload: { bundle: { sources: [sourceOverride] } }, createdAt: item.run.createdAt, eventClass: 'decision' },
+			{ seq: 3, runId: id, kind: terminal, fromState: 'working', toState: 'failed', payload: { error: 'terminal evidence' }, createdAt: item.run.updatedAt, eventClass: 'decision' },
+		];
+		return item;
+	};
+	const implementationAfterResearch = required('implementation-after-research', 'failed', 'run.failed');
+	const reviewAfterResearch = required('review-after-research', 'failed', 'run.failed');
+	reviewAfterResearch.events.splice(2, 0, { seq: 3, runId: reviewAfterResearch.run.id, kind: 'run.review-fix-requested', fromState: 'review', toState: 'working', payload: {}, createdAt: reviewAfterResearch.run.updatedAt, eventClass: 'decision' });
+	const unknown = required('unknown-failure', 'failed', 'run.unknown-failure');
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [implementationAfterResearch, reviewAfterResearch, unknown]).overview!;
+	const cohort = overview.cohorts[0]!;
+	expect(cohort.research.receiptCoverage).toEqual({ count: 3, denominator: 3 });
+	expect(cohort.failures.implementation).toEqual({ count: 2, denominator: 3 });
+	expect(cohort.failures.unknown).toEqual({ count: 1, denominator: 3 });
+	expect(cohort.failures.spec).toEqual({ count: 0, denominator: 3 });
+	expect(cohort.failures.evidence).toHaveLength(3);
+	expect(cohort.failures.evidence.find((entry) => entry.runId === 'implementation-after-research')).toMatchObject({ event: 'run.failed', detail: 'terminal evidence' });
+	expect(cohort.research.relatedCorrection).toEqual({ count: 0, denominator: 0 });
+	implementationAfterResearch.events.splice(2, 0, { seq: 4, runId: implementationAfterResearch.run.id, kind: 'run.research-failed', fromState: 'research', toState: 'working', payload: { code: 'incomplete', error: 'changed version', cause: 'other' }, createdAt: implementationAfterResearch.run.updatedAt, eventClass: 'decision' });
+	const generic = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [implementationAfterResearch]).overview!.cohorts[0]!;
+	expect(generic.failures.providerReference).toEqual({ count: 1, denominator: 1 });
+	expect(generic.failures.implementation).toEqual({ count: 0, denominator: 1 });
+	expect(generic.failures.evidence[0]).toMatchObject({ category: 'providerReference', detail: JSON.stringify({ code: 'incomplete', error: 'changed version' }) });
+	expect(generic.research.obsoleteSource).toEqual({ count: 0, denominator: 1 });
+	expect(generic.research.versionMismatch).toEqual({ count: 0, denominator: 1 });
+	const uppercaseHash = required('uppercase-hash', 'shipped', 'run.shipped', { ...source, contentHash: source.contentHash.toUpperCase() });
+	const uppercaseCohort = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [uppercaseHash]).overview!.cohorts[0]!;
+	expect(uppercaseCohort.research.receiptCoverage).toEqual({ count: 1, denominator: 1 });
+	const differentHash = required('different-hash', 'shipped', 'run.shipped', { ...source, contentHash: `sha256:${'b'.repeat(64)}` });
+	const differentCohort = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [differentHash]).overview!.cohorts[0]!;
+	expect(differentCohort.research.receiptCoverage).toEqual({ count: 0, denominator: 1 });
+	const obsolete = required('obsolete', 'failed', 'run.failed');
+	obsolete.events.splice(2, 0, { seq: 4, runId: obsolete.run.id, kind: 'run.research-failed', fromState: 'research', toState: 'working', payload: { cause: 'obsolete-source', error: 'unchanged wording' }, createdAt: obsolete.run.updatedAt, eventClass: 'decision' });
+	const obsoleteCohort = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [obsolete]).overview!.cohorts[0]!;
+	expect(obsoleteCohort.research.obsoleteSource).toEqual({ count: 1, denominator: 1 });
+	reviewAfterResearch.events[2]!.payload = { researchEventSeq: 2 };
+	const linked = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [reviewAfterResearch]).overview!.cohorts[0]!;
+	expect(linked.research.relatedCorrection).toEqual({ count: 1, denominator: 1 });
+});
+
+test('preserva arquivos alterados somente com evidência registrada e limita evidência de falhas', () => {
+	const runs = Array.from({ length: 21 }, (_, index) => {
+		const item = cohortHistory(`failure-${index}`, { revision: 'revision-files', version: 'v2', outcome: 'failed', createdAt: `2026-09-05T00:${String(index).padStart(2, '0')}:00.000Z` });
+		item.events = [{ kind: 'run.failed', createdAt: item.run.updatedAt, payload: { error: `failure-${index}` } }, ...(index === 0 ? [{ kind: 'ship.committed', createdAt: item.run.updatedAt, payload: { changedPathCount: 3 } }] : [])] as never;
+		return item;
+	});
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => runs).overview!;
+	const cohort = overview.cohorts[0]!;
+	expect(cohort.profile.filesAltered).toEqual({ count: 3, denominator: 1 });
+	expect(cohort.failures.implementation).toEqual({ count: 21, denominator: 21 });
+	expect(cohort.failures.evidence).toHaveLength(20);
+	expect(cohort.failures.evidenceTotal).toBe(21);
+	expect(cohort.failures.evidenceTruncated).toBe(true);
+});
+
+test('mantém denominadores de falhas independentes da ordem dos runs terminais', () => {
+	const makeRuns = (): PersistedRunHistory[] => [
+		cohortHistory('failure-first', { revision: 'revision-order', version: 'v2', outcome: 'failed', events: ['run.failed'] }),
+		cohortHistory('shipped-second', { revision: 'revision-order', version: 'v2', outcome: 'shipped' }),
+		cohortHistory('cancelled-third', { revision: 'revision-order', version: 'v2', outcome: 'cancelled' }),
+	];
+	const read = (runs: PersistedRunHistory[]) => readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => runs).overview!.cohorts[0]!;
+	for (const runs of [makeRuns(), makeRuns().reverse()]) {
+		const failures = read(runs).failures;
+		for (const key of ['spec', 'implementation', 'verification', 'providerReference', 'unknown'] as const) expect(failures[key].denominator).toBe(3);
+		expect(failures.implementation.count).toBe(1);
+		expect(failures.spec.count).toBe(0);
+		expect(failures.verification.count).toBe(0);
+		expect(failures.providerReference.count).toBe(0);
+		expect(failures.unknown.count).toBe(0);
+	}
+});
+
+test('usa cohortIds distintos para revisão ausente e revisão literal unknown', () => {
+	const runs = [...Array.from({ length: 5 }, (_, index) => cohortHistory(`null-${index}`, { revision: null, version: 'v2' })), ...Array.from({ length: 5 }, (_, index) => cohortHistory(`unknown-${index}`, { revision: 'unknown', version: 'v2' }))];
+	for (const item of runs.slice(0, 5)) item.evaluation.wallTimeMs = 10;
+	for (const item of runs.slice(5)) item.evaluation.wallTimeMs = 20;
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => runs).overview!;
+	const baseline = overview.cohorts.find((cohort) => cohort.workflowRevision === null)!;
+	const candidate = overview.cohorts.find((cohort) => cohort.workflowRevision === 'unknown')!;
+	expect(baseline.cohortId).not.toBe(candidate.cohortId);
+	const input = { baselineCohortId: baseline.cohortId, candidateCohortId: candidate.cohortId, metric: 'wallTimeMs.median' as const, direction: 'increase' as const, threshold: 5, hypothesis: 'timing' };
+	expect(createCohortRegressionProposal(overview.cohorts, input, '2026-09-07T00:00:00.000Z')).toMatchObject({ baselineCohortId: baseline.cohortId, candidateCohortId: candidate.cohortId, observedDelta: 10 });
+	expect(createCohortRegressionProposal(overview.cohorts, { ...input, threshold: 10 })).toMatchObject({ regression: true });
+	expect(createCohortRegressionProposal(overview.cohorts, { ...input, threshold: 10.000_001 })).toMatchObject({ regression: false });
+	const decrease = { ...input, baselineCohortId: candidate.cohortId, candidateCohortId: baseline.cohortId, direction: 'decrease' as const, threshold: 10 };
+	expect(createCohortRegressionProposal(overview.cohorts, decrease)).toMatchObject({ regression: true });
+	expect(createCohortRegressionProposal(overview.cohorts, { ...decrease, threshold: 10.000_001 })).toMatchObject({ regression: false });
+	expect(createCohortRegressionProposal(overview.cohorts, { ...input, threshold: 0 })).toBeNull();
+	const equal = overview.cohorts.map((cohort) => ({ ...cohort, timing: { ...cohort.timing, wallTimeMs: { ...cohort.timing.wallTimeMs, median: 10, p90: 10 } } }));
+	expect(createCohortRegressionProposal(equal, { ...input, threshold: 1 })).toMatchObject({ observedDelta: 0, regression: false });
+	const sparse = equal.map((cohort) => cohort.cohortId === baseline.cohortId ? { ...cohort, timing: { ...cohort.timing, wallTimeMs: { ...cohort.timing.wallTimeMs, known: 1 } } } : cohort);
+	expect(createCohortRegressionProposal(sparse, { ...input, threshold: 1 })).toBeNull();
+	const researchInput = { ...input, metric: 'research.receiptCoverage' as const };
+	const researchCohorts = overview.cohorts.map((cohort) => cohort.cohortId === baseline.cohortId
+		? { ...cohort, research: { ...cohort.research, receiptCoverage: { count: 1, denominator: 5 } } }
+		: { ...cohort, research: { ...cohort.research, receiptCoverage: { count: 3, denominator: 5 } } });
+	const researchProposal = createCohortRegressionProposal(researchCohorts, researchInput)!;
+	expect(researchProposal.observedDelta).toBeCloseTo(0.4);
+	expect(researchProposal.regression).toBe(false);
+	const sparseFailures = researchCohorts.map((cohort) => ({ ...cohort, failures: { ...cohort.failures, unknown: { count: 0, denominator: 4 } } }));
+	expect(createCohortRegressionProposal(sparseFailures, { ...researchInput, metric: 'failures.unknown' })).toBeNull();
+});
+
+test('exige cinco observações de pesquisa e ignora runs sem pesquisa', () => {
+	const runs = Array.from({ length: 10 }, (_, index) => cohortHistory(`no-research-${index}`, {
+		revision: index < 5 ? 'revision-research-a' : 'revision-research-b', version: 'v2',
+	}));
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => runs).overview!;
+	const baseline = overview.cohorts.find((cohort) => cohort.workflowRevision === 'revision-research-a')!;
+	const candidate = overview.cohorts.find((cohort) => cohort.workflowRevision === 'revision-research-b')!;
+	expect(baseline.research.obsoleteSource).toEqual({ count: 0, denominator: 0 });
+	expect(candidate.research.versionMismatch).toEqual({ count: 0, denominator: 0 });
+	expect(createCohortRegressionProposal(overview.cohorts, {
+		baselineCohortId: baseline.cohortId, candidateCohortId: candidate.cohortId,
+		metric: 'research.obsoleteSource', direction: 'increase', threshold: 0.1, hypothesis: 'research',
+	})).toBeNull();
 });
 
 test('ordena e pagina coortes estavelmente sem descartar versões factuais', () => {
@@ -353,6 +481,78 @@ test('expõe derivações históricas, denominadores e desconhecidos sem inventa
 	incomplete.evaluation.outcome = 'incomplete';
 	const partial = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [incomplete]);
 	expect(partial.overview).toMatchObject({ activeRuns: 1, terminalRuns: 0, terminalWallTimeMs: null, terminalWallTimeRuns: 0 });
+});
+
+test('mede correção pelo intervalo durável da solicitação, não pela fase inteira', () => {
+	const item = cohortHistory('correction-interval', { revision: 'revision-correction', version: 'v2' });
+	item.evaluation.corrections.review = 1;
+	item.evaluation.phaseDurations.review.durationMs = 100_000;
+	item.events = [
+		{ seq: 1, kind: 'run.review-fix-requested', createdAt: '2026-09-05T00:00:01.000Z', fromState: 'review', toState: 'working', payload: {} },
+		{ seq: 2, kind: 'run.work-completed', createdAt: '2026-09-05T00:00:03.000Z', fromState: 'working', toState: 'verify', payload: {} },
+		{ seq: 3, kind: 'run.review-started', createdAt: '2026-09-05T00:00:04.000Z', fromState: 'verify', toState: 'review', payload: {} },
+	] as never;
+	const cohort = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [item]).overview!.cohorts[0]!;
+	expect(cohort.timing.corrections.review).toMatchObject({ median: 3_000, known: 1, denominator: 1 });
+});
+
+test('mede cada solicitação de correção como observação independente', () => {
+	const item = cohortHistory('correction-multiple', { revision: 'revision-correction-multiple', version: 'v2' });
+	item.events = [
+		{ seq: 1, kind: 'run.review-fix-requested', createdAt: '2026-09-05T00:00:01.000Z', fromState: 'review', toState: 'working', payload: {} },
+		{ seq: 2, kind: 'run.review-started', createdAt: '2026-09-05T00:00:03.000Z', fromState: 'working', toState: 'review', payload: {} },
+		{ seq: 3, kind: 'run.review-fix-requested', createdAt: '2026-09-05T00:00:04.000Z', fromState: 'review', toState: 'working', payload: {} },
+		{ seq: 4, kind: 'run.review-started', createdAt: '2026-09-05T00:00:08.000Z', fromState: 'working', toState: 'review', payload: {} },
+	] as never;
+	const cohort = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [item]).overview!.cohorts[0]!;
+	expect(cohort.timing.corrections.review).toMatchObject({ known: 2, denominator: 2, median: 3_000 });
+
+	const incomplete = cohortHistory('correction-incomplete', { revision: 'revision-correction-incomplete', version: 'v2' });
+	incomplete.events = [{ seq: 1, kind: 'run.review-fix-requested', createdAt: '2026-09-05T00:00:01.000Z', fromState: 'review', toState: 'working', payload: {} }] as never;
+	const incompleteCohort = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [incomplete]).overview!.cohorts[0]!;
+	expect(incompleteCohort.timing.corrections.review).toMatchObject({ known: 0, denominator: 1, median: null });
+});
+
+test('conta somente causas estruturadas de pesquisa sem receipts', () => {
+	const makeFailure = (id: string, cause?: string): PersistedRunHistory => {
+		const item = cohortHistory(id, { revision: 'revision-research-causes', version: 'v2', outcome: 'failed' });
+		item.events = [{ kind: 'run.research-failed', createdAt: item.run.updatedAt, payload: cause === undefined ? {} : { cause } }] as never;
+		return item;
+	};
+	const runs = [makeFailure('other', 'other'), makeFailure('obsolete', 'obsolete-source'), makeFailure('mismatch', 'version-mismatch'), makeFailure('legacy')];
+	const cohort = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => runs).overview!.cohorts[0]!;
+	expect(cohort.research.obsoleteSource).toEqual({ count: 1, denominator: 3 });
+	expect(cohort.research.versionMismatch).toEqual({ count: 1, denominator: 2 });
+});
+
+test('trata version-mismatch como observação negativa de fonte obsoleta', () => {
+	const makeMismatch = (id: string, revision: string): PersistedRunHistory => {
+		const item = cohortHistory(id, { revision, version: 'v2', outcome: 'failed' });
+		item.events = [{ kind: 'run.research-failed', createdAt: item.run.updatedAt, payload: { cause: 'version-mismatch' } }] as never;
+		return item;
+	};
+	const runs = Array.from({ length: 10 }, (_, index) => makeMismatch(`version-mismatch-${index}`, index < 5 ? 'revision-mismatch-a' : 'revision-mismatch-b'));
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => runs).overview!;
+	const baseline = overview.cohorts.find((cohort) => cohort.workflowRevision === 'revision-mismatch-a')!;
+	const candidate = overview.cohorts.find((cohort) => cohort.workflowRevision === 'revision-mismatch-b')!;
+	expect(baseline.research.obsoleteSource).toEqual({ count: 0, denominator: 5 });
+	expect(baseline.research.versionMismatch).toEqual({ count: 5, denominator: 5 });
+	expect(createCohortRegressionProposal(overview.cohorts, { baselineCohortId: baseline.cohortId, candidateCohortId: candidate.cohortId, metric: 'research.obsoleteSource', direction: 'increase', threshold: 0.1, hypothesis: 'research' })).not.toBeNull();
+});
+
+test('mantém version-mismatch desconhecido para causas obsolete-source', () => {
+	const makeObsolete = (id: string, revision: string): PersistedRunHistory => {
+		const item = cohortHistory(id, { revision, version: 'v2', outcome: 'failed' });
+		item.events = [{ kind: 'run.research-failed', createdAt: item.run.updatedAt, payload: { cause: 'obsolete-source' } }] as never;
+		return item;
+	};
+	const runs = Array.from({ length: 10 }, (_, index) => makeObsolete(`obsolete-${index}`, index < 5 ? 'revision-obsolete-a' : 'revision-obsolete-b'));
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => runs).overview!;
+	const baseline = overview.cohorts.find((cohort) => cohort.workflowRevision === 'revision-obsolete-a')!;
+	const candidate = overview.cohorts.find((cohort) => cohort.workflowRevision === 'revision-obsolete-b')!;
+	expect(baseline.research.obsoleteSource).toEqual({ count: 5, denominator: 5 });
+	expect(baseline.research.versionMismatch).toEqual({ count: 0, denominator: 0 });
+	expect(createCohortRegressionProposal(overview.cohorts, { baselineCohortId: baseline.cohortId, candidateCohortId: candidate.cohortId, metric: 'research.versionMismatch', direction: 'increase', threshold: 0.1, hypothesis: 'research' })).toBeNull();
 });
 
 test('filtra a proveniência por provider, papel, modelo e esforço', () => {

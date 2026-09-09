@@ -17,6 +17,7 @@ import {
 import { isTerminalRunState } from './run-state.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 import { selectRunRoundOrigins } from './round-origin.ts';
+import { RUN_DURATION_PHASES, type RunDurationPhase } from './run-evaluation.ts';
 
 export const PROJECT_STATUS_RUN_LIMIT = 20;
 
@@ -178,7 +179,33 @@ export interface HistoricalOverview {
 }
 
 export interface CohortMetric { count: number; denominator: number }
+export interface CohortDistribution { median: number | null; p90: number | null; known: number; denominator: number }
+export interface CohortTiming {
+	wallTimeMs: CohortDistribution;
+	phases: Record<RunDurationPhase, CohortDistribution>;
+	waits: { provider: CohortDistribution; user: CohortDistribution };
+	corrections: Record<'verification' | 'review' | 'fullVerify' | 'ci', CohortDistribution>;
+}
+export interface CohortResearchFacts {
+	requiredRuns: CohortMetric;
+	receiptCoverage: CohortMetric;
+	obsoleteSource: CohortMetric;
+	versionMismatch: CohortMetric;
+	relatedCorrection: CohortMetric;
+}
+export interface CohortFailureFacts {
+	spec: CohortMetric;
+	implementation: CohortMetric;
+	verification: CohortMetric;
+	providerReference: CohortMetric;
+	unknown: CohortMetric;
+	evidence: Array<{ runId: string; category: FailureCategory; event: string; detail: string | null; createdAt: string }>;
+	evidenceTotal: number;
+	evidenceTruncated: boolean;
+}
+type FailureCategory = 'spec' | 'implementation' | 'verification' | 'providerReference' | 'unknown';
 export interface HistoricalCohort {
+	cohortId: string;
 	workflowRevision: string | null;
 	specVersion: 'legacy' | 'v2' | 'unknown';
 	latestTerminalRunAt: string | null;
@@ -191,6 +218,43 @@ export interface HistoricalCohort {
 	attentionRequests: CohortMetric;
 	operatorInterventions: CohortMetric;
 	providerHolds: CohortMetric;
+	timing: CohortTiming;
+	research: CohortResearchFacts;
+	failures: CohortFailureFacts;
+	profile: { commands: CohortMetric; corrections: CohortMetric; filesAltered: CohortMetric; researchRequired: CohortMetric };
+}
+
+export type CohortRegressionMetric =
+	| 'wallTimeMs.median'
+	| 'wallTimeMs.p90'
+	| 'research.receiptCoverage'
+	| 'research.obsoleteSource'
+	| 'research.versionMismatch'
+	| 'research.relatedCorrection'
+	| 'failures.spec'
+	| 'failures.implementation'
+	| 'failures.verification'
+	| 'failures.providerReference'
+	| 'failures.unknown';
+export interface CohortRegressionProposal {
+	schemaVersion: 1;
+	baselineCohortId: string;
+	candidateCohortId: string;
+	metric: CohortRegressionMetric;
+	direction: 'increase' | 'decrease';
+	threshold: number;
+	observedDelta: number;
+	hypothesis: string;
+	createdAt: string;
+	regression: boolean;
+}
+export interface CohortRegressionProposalInput {
+	baselineCohortId: string;
+	candidateCohortId: string;
+	metric: CohortRegressionMetric;
+	direction: 'increase' | 'decrease';
+	threshold: number;
+	hypothesis: string;
 }
 
 export interface HistoricalOverviewRead {
@@ -250,14 +314,234 @@ function cohortMetric(count: number, denominator: number): CohortMetric {
 
 function emptyCohort(workflowRevision: string | null, specVersion: HistoricalCohort['specVersion']): HistoricalCohort {
 	const metric = (): CohortMetric => cohortMetric(0, 0);
+	const distribution = (): CohortDistribution => ({ median: null, p90: null, known: 0, denominator: 0 });
 	return {
+		cohortId: `workflow:${JSON.stringify(workflowRevision)}:spec:${JSON.stringify(specVersion)}`,
 		workflowRevision, specVersion, latestTerminalRunAt: null, sampleSize: 0, evidenceSufficient: false,
 		outcomes: { shipped: metric(), failed: metric(), cancelled: metric() },
 		corrections: { verification: metric(), review: metric(), fullVerify: metric(), ci: metric() },
 		cycleQuestions: { executor: metric(), review: metric(), fullVerify: metric() },
 		reconciliations: { unchanged: metric(), adapted: metric(), 'contract-change-required': metric() },
 		attentionRequests: metric(), operatorInterventions: metric(), providerHolds: metric(),
+		timing: {
+			wallTimeMs: distribution(),
+			phases: Object.fromEntries(RUN_DURATION_PHASES.map((phase) => [phase, distribution()])) as Record<RunDurationPhase, CohortDistribution>,
+			waits: { provider: distribution(), user: distribution() },
+			corrections: { verification: distribution(), review: distribution(), fullVerify: distribution(), ci: distribution() },
+		},
+		research: { requiredRuns: metric(), receiptCoverage: metric(), obsoleteSource: metric(), versionMismatch: metric(), relatedCorrection: metric() },
+		failures: { spec: metric(), implementation: metric(), verification: metric(), providerReference: metric(), unknown: metric(), evidence: [], evidenceTotal: 0, evidenceTruncated: false },
+		profile: { commands: metric(), corrections: metric(), filesAltered: metric(), researchRequired: metric() },
 	};
+}
+
+/** Builds reviewable evidence only when the operator names both compatible cohorts. */
+export function createCohortRegressionProposal(
+	cohorts: readonly HistoricalCohort[],
+	input: CohortRegressionProposalInput,
+	createdAt = new Date().toISOString(),
+): CohortRegressionProposal | null {
+	if (input.baselineCohortId.trim().length === 0 || input.candidateCohortId.trim().length === 0
+		|| input.baselineCohortId === input.candidateCohortId || !Number.isFinite(input.threshold) || input.threshold <= 0
+		|| input.hypothesis.trim().length === 0 || !isCohortRegressionMetric(input.metric)
+		|| (input.direction !== 'increase' && input.direction !== 'decrease')) return null;
+	const baseline = cohorts.find((cohort) => cohort.cohortId === input.baselineCohortId);
+	const candidate = cohorts.find((cohort) => cohort.cohortId === input.candidateCohortId);
+	if (baseline === undefined || candidate === undefined || !baseline.evidenceSufficient || !candidate.evidenceSufficient
+		|| baseline.specVersion !== candidate.specVersion) return null;
+	const baselineMetric = cohortRegressionMetricValue(baseline, input.metric);
+	const candidateMetric = cohortRegressionMetricValue(candidate, input.metric);
+	const baselineValue = baselineMetric.value;
+	const candidateValue = candidateMetric.value;
+	const baselineKnown = baselineMetric.known;
+	const candidateKnown = candidateMetric.known;
+	if (baselineValue === null || candidateValue === null || baselineKnown < COHORT_MINIMUM_SAMPLE || candidateKnown < COHORT_MINIMUM_SAMPLE) return null;
+	const observedDelta = candidateValue - baselineValue;
+	const regression = input.direction === 'increase' ? observedDelta >= input.threshold : observedDelta <= -input.threshold;
+	return {
+		schemaVersion: 1,
+		baselineCohortId: baseline.cohortId,
+		candidateCohortId: candidate.cohortId,
+		metric: input.metric,
+		direction: input.direction,
+		threshold: input.threshold,
+		observedDelta,
+		hypothesis: input.hypothesis.trim(),
+		createdAt,
+		regression,
+	};
+}
+
+function isCohortRegressionMetric(metric: string): metric is CohortRegressionMetric {
+	return [
+		'wallTimeMs.median', 'wallTimeMs.p90', 'research.receiptCoverage', 'research.obsoleteSource',
+		'research.versionMismatch', 'research.relatedCorrection', 'failures.spec', 'failures.implementation',
+		'failures.verification', 'failures.providerReference', 'failures.unknown',
+	].includes(metric);
+}
+
+function cohortRegressionMetricValue(cohort: HistoricalCohort, metric: CohortRegressionMetric): { value: number | null; known: number } {
+	if (metric === 'wallTimeMs.median' || metric === 'wallTimeMs.p90') {
+		const distribution = cohort.timing.wallTimeMs;
+		return { value: distribution[metric === 'wallTimeMs.median' ? 'median' : 'p90'], known: distribution.known };
+	}
+	const [section, key] = metric.split('.') as ['research' | 'failures', string];
+	const factual = cohort[section][key as keyof typeof cohort[typeof section]] as CohortMetric;
+	return { value: factual.denominator > 0 ? factual.count / factual.denominator : null, known: factual.denominator };
+}
+
+export function readCohortRegressionProposal(
+	project: RegisteredProject,
+	input: CohortRegressionProposalInput,
+	createdAt = new Date().toISOString(),
+): CohortRegressionProposal | null {
+	const overview = readProjectHistoricalOverview(project, 'all', new Date(createdAt), readPersistedRunHistory, undefined, null).overview;
+	return overview === null ? null : createCohortRegressionProposal(overview.cohorts, input, createdAt);
+}
+
+function percentile(values: readonly number[], fraction: number): number | null {
+	if (values.length === 0) return null;
+	const ordered = [...values].sort((a, b) => a - b);
+	return ordered[Math.min(ordered.length - 1, Math.ceil(ordered.length * fraction) - 1)] ?? null;
+}
+
+function distribution(values: readonly number[], denominator: number): CohortDistribution {
+	return { median: median(values), p90: percentile(values, 0.9), known: values.length, denominator };
+}
+
+function researchFacts(item: PersistedRunHistory): { required: boolean; covered: boolean; obsolete: boolean; obsoleteObserved: boolean; mismatch: boolean; mismatchObserved: boolean; relatedCorrection: boolean; relatedCorrectionObserved: boolean } {
+	const created = item.events.find((event) => event.kind === 'run.created');
+	const contract = created?.payload['research'];
+	const required = contract !== null && typeof contract === 'object' && !Array.isArray(contract);
+	const receiptEvent = item.events.findLast((event) => event.kind === 'run.research-receipts');
+	const failed = item.events.findLast((event) => event.kind === 'run.research-failed');
+	const bundle = receiptEvent?.payload['bundle'];
+	const sources = bundle !== null && typeof bundle === 'object' && !Array.isArray(bundle) && Array.isArray((bundle as Record<string, unknown>)['sources'])
+		? (bundle as Record<string, unknown>)['sources'] as unknown[] : [];
+	const receipts = required && Array.isArray((contract as Record<string, unknown>)['receipts']) ? (contract as Record<string, unknown>)['receipts'] as unknown[] : [];
+	const sourceMatchesReceipt = (source: unknown, receipt: unknown): boolean => {
+		if (source === null || typeof source !== 'object' || receipt === null || typeof receipt !== 'object') return false;
+		const left = source as Record<string, unknown>;
+		const right = receipt as Record<string, unknown>;
+		const leftRef = left['resolvedRef'];
+		const rightRef = right['resolvedRef'];
+		const leftHash = left['contentHash'];
+		const rightHash = right['contentHash'];
+		const sameHash = typeof leftHash === 'string' && typeof rightHash === 'string' && leftHash.toLowerCase() === rightHash.toLowerCase();
+		return left['url'] === right['url'] && left['sourceType'] === right['sourceType']
+			&& sameHash && left['claim'] === right['claim']
+			&& left['applicability'] === right['applicability'] && left['installedVersion'] === right['installedVersion']
+			&& left['targetVersion'] === right['targetVersion']
+			&& (leftRef === rightRef || (leftRef !== null && typeof leftRef === 'object' && rightRef !== null && typeof rightRef === 'object'
+				&& (leftRef as Record<string, unknown>)['kind'] === (rightRef as Record<string, unknown>)['kind']
+				&& (leftRef as Record<string, unknown>)['value'] === (rightRef as Record<string, unknown>)['value']));
+	};
+	const covered = required && receiptEvent !== undefined && receipts.length > 0 && receipts.every((receipt) => sources.some((source) => sourceMatchesReceipt(source, receipt)));
+	const structuredResearchObserved = required && receiptEvent !== undefined && Array.isArray(sources) && Array.isArray(receipts);
+	const obsolete = failed?.payload['cause'] === 'obsolete-source';
+	const mismatch = failed?.payload['cause'] === 'version-mismatch';
+	const structuredFailureObserved = failed?.payload['cause'] === 'obsolete-source' || failed?.payload['cause'] === 'version-mismatch' || failed?.payload['cause'] === 'other';
+	const obsoleteObserved = structuredResearchObserved || obsolete || mismatch || (structuredFailureObserved && failed?.payload['cause'] === 'other');
+	const receiptSeq = receiptEvent?.seq;
+	const receiptUrls = new Set(receipts.flatMap((receipt) => receipt !== null && typeof receipt === 'object' && typeof (receipt as Record<string, unknown>)['url'] === 'string' ? [(receipt as Record<string, unknown>)['url'] as string] : []));
+	const correctionKinds = new Set(['run.verification-fix-requested', 'run.review-fix-requested', 'run.full-verify-fix-requested', 'run.ci-fix-requested']);
+	const linkedCorrection = item.events.some((event) => {
+		if (!correctionKinds.has(event.kind)) return false;
+		const payload = event.payload;
+		if (payload === null || typeof payload !== 'object') return false;
+		return (receiptSeq !== undefined && payload['researchEventSeq'] === receiptSeq)
+			|| (typeof payload['researchReceiptUrl'] === 'string' && receiptUrls.has(payload['researchReceiptUrl']));
+	});
+	const relatedCorrectionObserved = required && item.events.some((event) => {
+		if (!correctionKinds.has(event.kind) || event.payload === null || typeof event.payload !== 'object') return false;
+		return 'researchEventSeq' in event.payload || 'researchReceiptUrl' in event.payload;
+	});
+	return { required, covered, obsolete, obsoleteObserved, mismatch, mismatchObserved: structuredResearchObserved || mismatch || (structuredFailureObserved && failed?.payload['cause'] === 'other'), relatedCorrection: linkedCorrection, relatedCorrectionObserved };
+}
+
+type FailureClassification = { category: FailureCategory; terminalKind: string };
+function failureClass(item: PersistedRunHistory): FailureClassification | null {
+	if (item.evaluation.outcome !== 'failed') return null;
+	const researchFailure = item.events.findLast((event) => event.kind === 'run.research-failed');
+	if (researchFailure !== undefined) return { category: 'providerReference', terminalKind: researchFailure.kind };
+	const terminal = item.events.findLast((event) => event.toState === 'failed' || event.kind === 'run.failed');
+	if (terminal?.kind === 'run.evidence-diverged') return { category: 'spec', terminalKind: terminal.kind };
+	if (terminal?.kind === 'run.verification-failed' || terminal?.kind === 'run.full-verify-failed') return { category: 'verification', terminalKind: terminal.kind };
+	if (terminal?.kind === 'run.provider-failed' || terminal?.kind === 'run.provider-retry-unavailable') return { category: 'providerReference', terminalKind: terminal.kind };
+	if (terminal?.kind === 'run.failed' || terminal?.kind === 'run.ship-failed') return { category: 'implementation', terminalKind: terminal.kind };
+	return { category: 'unknown', terminalKind: terminal?.kind ?? 'unknown' };
+}
+
+function updateCohortTiming(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	const runs = (cohort as HistoricalCohort & { _timingValues?: Record<string, number[]> })._timingValues ?? {};
+	const add = (key: string, value: number | null): void => { if (value !== null) (runs[key] ??= []).push(value); };
+	add('wallTimeMs', item.evaluation.wallTimeMs);
+	for (const phase of RUN_DURATION_PHASES) add(`phase:${phase}`, item.evaluation.phaseDurations[phase].durationMs);
+	add('wait:provider', item.evaluation.phaseDurations['waiting-provider'].durationMs);
+	add('wait:user', item.evaluation.phaseDurations['waiting-user'].durationMs);
+	const correctionEndState: Record<keyof typeof cohort.timing.corrections, string> = { verification: 'verify', review: 'review', fullVerify: 'full-verify', ci: 'ready-to-ship' };
+	for (const source of Object.keys(cohort.timing.corrections) as Array<keyof typeof cohort.timing.corrections>) {
+		const requestKind = `run.${source === 'fullVerify' ? 'full-verify' : source}-fix-requested`;
+		const requestCount = item.events.filter((event) => event.kind === requestKind).length;
+		const durations = item.events.flatMap((event) => {
+			if (event.kind !== requestKind) return [];
+			const start = Date.parse(event.createdAt);
+			const end = item.events.find((candidate) => candidate.seq > event.seq && candidate.toState === correctionEndState[source]);
+			const finish = end === undefined ? Number.NaN : Date.parse(end.createdAt);
+			return Number.isFinite(start) && Number.isFinite(finish) && finish >= start ? [finish - start] : [];
+		});
+		for (const duration of durations) add(`correction:${source}`, duration);
+		const correctionDenominator = cohort.timing.corrections[source].denominator + requestCount;
+		cohort.timing.corrections[source] = distribution(runs[`correction:${source}`] ?? [], correctionDenominator);
+	}
+	(cohort as HistoricalCohort & { _timingValues: Record<string, number[]> })._timingValues = runs;
+	cohort.timing.wallTimeMs = distribution(runs.wallTimeMs ?? [], denominator);
+	for (const phase of RUN_DURATION_PHASES) cohort.timing.phases[phase] = distribution(runs[`phase:${phase}`] ?? [], denominator);
+	cohort.timing.waits.provider = distribution(runs['wait:provider'] ?? [], denominator);
+	cohort.timing.waits.user = distribution(runs['wait:user'] ?? [], denominator);
+}
+
+function updateCohortResearch(cohort: HistoricalCohort, research: ReturnType<typeof researchFacts>): void {
+	cohort.research.receiptCoverage = cohortMetric(cohort.research.receiptCoverage.count + Number(research.covered), cohort.research.requiredRuns.count);
+	if (research.obsoleteObserved) cohort.research.obsoleteSource = cohortMetric(cohort.research.obsoleteSource.count + Number(research.obsolete), cohort.research.obsoleteSource.denominator + 1);
+	if (research.mismatchObserved) cohort.research.versionMismatch = cohortMetric(cohort.research.versionMismatch.count + Number(research.mismatch), cohort.research.versionMismatch.denominator + 1);
+	if (research.relatedCorrectionObserved) cohort.research.relatedCorrection = cohortMetric(cohort.research.relatedCorrection.count + Number(research.relatedCorrection), cohort.research.relatedCorrection.denominator + 1);
+}
+
+function updateCohortFiles(cohort: HistoricalCohort, item: PersistedRunHistory): void {
+	const committed = item.events.findLast((event) => event.kind === 'ship.committed');
+	const changedPathCount = committed?.payload['changedPathCount'];
+	if (typeof changedPathCount === 'number' && Number.isSafeInteger(changedPathCount) && changedPathCount >= 0) {
+		cohort.profile.filesAltered = cohortMetric(cohort.profile.filesAltered.count + changedPathCount, cohort.profile.filesAltered.denominator + 1);
+	}
+}
+
+function updateCohortFailures(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	const failure = failureClass(item);
+	for (const key of ['spec', 'implementation', 'verification', 'providerReference', 'unknown'] as const) {
+		cohort.failures[key] = cohortMetric(cohort.failures[key].count + Number(failure?.category === key), denominator);
+	}
+	if (failure === null) return;
+	const terminal = item.events.findLast((event) => event.kind === failure.terminalKind);
+	const detail = terminal?.kind === 'run.research-failed' && terminal.payload !== null && typeof terminal.payload === 'object'
+		? JSON.stringify({ code: terminal.payload['code'] ?? null, error: terminal.payload['error'] ?? null })
+		: typeof terminal?.payload['error'] === 'string' ? terminal.payload['error'] : null;
+	cohort.failures.evidenceTotal += 1;
+	cohort.failures.evidence.push({ runId: item.run.id, category: failure.category, event: terminal?.kind ?? failure.terminalKind, detail, createdAt: terminal?.createdAt ?? item.run.updatedAt });
+	cohort.failures.evidence.sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.runId.localeCompare(left.runId));
+	cohort.failures.evidence = cohort.failures.evidence.slice(0, 20);
+	cohort.failures.evidenceTruncated = cohort.failures.evidenceTotal > cohort.failures.evidence.length;
+}
+
+function updateCohortFacts(cohort: HistoricalCohort, item: PersistedRunHistory, denominator: number): void {
+	const research = researchFacts(item);
+	cohort.profile.commands = cohortMetric(cohort.profile.commands.count + (item.evaluation.specProfile.counts.verify ?? 0), denominator);
+	cohort.profile.corrections = cohortMetric(cohort.profile.corrections.count + item.evaluation.corrections.total, denominator);
+	cohort.profile.researchRequired = cohortMetric(cohort.profile.researchRequired.count + Number(research.required), denominator);
+	cohort.research.requiredRuns = cohortMetric(cohort.research.requiredRuns.count + Number(research.required), denominator);
+	updateCohortResearch(cohort, research);
+	updateCohortFiles(cohort, item);
+	updateCohortFailures(cohort, item, denominator);
 }
 
 function cohortMetricFromEvents(item: PersistedRunHistory, kind: string, origin?: string): number {
@@ -319,8 +603,10 @@ function historicalCohorts(items: readonly PersistedRunHistory[]): HistoricalCoh
 		updateCohortQuestions(cohort, item, denominator);
 		updateCohortReconciliations(cohort, item, denominator);
 		updateCohortScalars(cohort, item, denominator);
+		updateCohortTiming(cohort, item, denominator);
+		updateCohortFacts(cohort, item, denominator);
 	}
-	return [...groups.values()].map(finalizeCohortEvidence).sort((a, b) =>
+	return [...groups.values()].map((cohort) => { delete (cohort as HistoricalCohort & { _timingValues?: unknown })._timingValues; return finalizeCohortEvidence(cohort); }).sort((a, b) =>
 		(b.latestTerminalRunAt ?? '').localeCompare(a.latestTerminalRunAt ?? '')
 		|| `${a.workflowRevision ?? ''}\0${a.specVersion}`.localeCompare(`${b.workflowRevision ?? ''}\0${b.specVersion}`));
 }
