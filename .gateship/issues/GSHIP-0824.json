@@ -5,13 +5,29 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:43:57.104Z",
-  "updatedAt": "2026-09-08T14:45:39.587Z",
-  "description": "Depois da matriz tipográfica, transformar ShellControls em um header estrutural comum: divisória inferior separando-o do main content, toggle da sidebar alinhado à esquerda, título humano da superfície realmente centralizado e controles de preferência alinhados à direita. O título deve variar por rota, permanecer em Saans proporcional e não deslocar quando os grupos laterais têm larguras diferentes. Preservar o frame de conteúdo, o skip linklink, foco visível, pt-BR/en-US, 390 px e a regra de que somente o content panel rola. Não incluir notificações nesta issue.",
+  "updatedAt": "2026-09-09T23:00:35.502Z",
   "specSource": "operator",
   "spec": {
-    "scope": "Depois da matriz tipográfica, transformar ShellControls em um header estrutural comum: divisória inferior separando-o do main content, toggle da sidebar alinhado à esquerda, título humano da superfície realmente centralizado e controles de preferência alinhados à direita. O título deve variar por rota, permanecer em Saans proporcional e não deslocar quando os grupos laterais têm larguras diferentes. Preservar o frame de conteúdo, o skip link, foco visível, pt-BR/en-US, 390 px e a regra de que somente o content panel rola. Não incluir notificações nesta issue.",
+    "version": 2,
+    "objective": "Transformar ShellControls em um header estrutural comum, com título humano por rota realmente centralizado entre o toggle da sidebar e as preferências, sem deslocamento causado pelas larguras laterais.",
+    "acceptance": [
+      "O header ocupa uma faixa comum acima do painel de conteúdo e usa uma divisória inferior neutra para separar navegação persistente e superfície ativa.",
+      "O toggle da sidebar fica alinhado à esquerda, o título da superfície usa o papel editorial sans no centro geométrico e idioma, tema e largura ficam alinhados à direita.",
+      "O centro permanece estável quando os grupos laterais têm larguras diferentes, quando o inspector não existe e ao alternar sidebar, idioma, tema ou largura.",
+      "O título deriva da rota real para Control center, Execuções, Filas, Insights, Projetos, Runs, Trabalho, Ajustes e estados auxiliares, com catálogos completos em pt-BR e en-US.",
+      "Em 390 px, todos os controles continuam alcançáveis, o título essencial permanece legível e nenhum grupo sobrepõe ou aumenta horizontalmente o viewport.",
+      "O skip link, foco visível, frame de conteúdo e a regra de que somente o painel de conteúdo rola no desktop permanecem funcionais."
+    ],
+    "boundaries": [
+      "Não criar a central de notificações nem mover avisos operacionais nesta issue.",
+      "Não mudar rotas, dados, APIs ou comportamento do runtime.",
+      "Não adicionar dependências nem animações.",
+      "Não reintroduzir a conversa interna."
+    ],
     "verify": [
-      "bun run check:all"
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
     ]
   }
 }
