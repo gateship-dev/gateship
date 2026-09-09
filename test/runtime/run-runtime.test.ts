@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { fingerprintSpec } from '../../src/issues/spec.ts';
+import { fingerprintSpec, type ResearchContract } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
@@ -59,6 +59,73 @@ describe('durable run runtime', () => {
 			version: 'unknown', fingerprint: null,
 			counts: { acceptance: null, boundaries: null, verify: null, evidence: null },
 		});
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('rejects invalid research before workspace preparation', async () => {
+		let prepareCalls = 0;
+		const issue: IssueEntry = {
+			id: 'GSHIP-840-invalid', title: 'invalid', stage: 'specified', status: 'open', blockedBy: [],
+			createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z',
+			spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research: null as never },
+		};
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => [issue],
+		});
+		await expect(runtime.startRun(issue.id)).rejects.toThrow('has invalid spec');
+		expect(prepareCalls).toBe(0);
+		expect(runtime.listRuns()).toEqual([]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('rejects future current research before workspace preparation', async () => {
+		let prepareCalls = 0;
+		const research: ResearchContract = {
+			questions: ['Q'], sourceClasses: ['official-documentation'],
+			freshness: { mode: 'current', resolvedAt: '2999-01-01T00:00:00Z' },
+			receipts: [{ url: 'https://docs.example.com', sourceType: 'official-documentation', fetchedAt: '2026-09-08T00:00:00Z', contentHash: `sha256:${'a'.repeat(64)}`, claim: 'C', applicability: 'A' }],
+		};
+		const issue: IssueEntry = {
+			id: 'GSHIP-840-future', title: 'future', stage: 'specified', status: 'open', blockedBy: [],
+			createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z',
+			spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research },
+		};
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => [issue],
+		});
+		await expect(runtime.startRun(issue.id)).rejects.toThrow('research is not current');
+		expect(prepareCalls).toBe(0);
+		expect(runtime.listRuns()).toEqual([]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('rejects future current-research receipts before workspace preparation', async () => {
+		let prepareCalls = 0;
+		const research: ResearchContract = {
+			questions: ['Q'], sourceClasses: ['official-documentation'],
+			freshness: { mode: 'current', resolvedAt: '2026-09-08T00:00:00Z' },
+			receipts: [{ url: 'https://docs.example.com', sourceType: 'official-documentation', fetchedAt: '2999-01-01T00:00:00Z', contentHash: `sha256:${'a'.repeat(64)}`, claim: 'C', applicability: 'A' }],
+		};
+		const issue: IssueEntry = {
+			id: 'GSHIP-840-future-receipt', title: 'future receipt', stage: 'specified', status: 'open', blockedBy: [],
+			createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z',
+			spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research },
+		};
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => [issue],
+		});
+		await expect(runtime.startRun(issue.id)).rejects.toThrow('receipts[0].fetchedAt');
+		expect(prepareCalls).toBe(0);
+		expect(runtime.listRuns()).toEqual([]);
 		await runtime.stop();
 		runtime.close();
 	});
@@ -3358,6 +3425,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 	// down the whole /api/chain-runs response the browser's single Promise.all
 	// depends on.
 	test('a pause whose issue lookup fails degrades to the pause without the issue, never propagating', async () => {
+		let backlogReads = 0;
 		const runtime = new RunRuntime({
 			cwd: '/project',
 			store: new RunStore(':memory:'),
@@ -3365,6 +3433,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
 			listBacklog: () => {
+				if (backlogReads++ === 0) return [];
 				throw new Error('git cat-file --batch failed');
 			},
 		});
