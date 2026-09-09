@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-09T11:51:03.117Z",
-  "updatedAt": "2026-09-09T12:07:38.942Z",
+  "updatedAt": "2026-09-09T12:07:56.844Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -39,5 +39,9 @@
         "output": "68:RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.238\n69:RUN bun add -g @openai/codex@0.148.0"
       }
     ]
+  },
+  "approval": {
+    "fingerprint": "d878bd468456e77a7ed94f531a4e2abda6dd7f01fe5310f109169ca07a47a0aa",
+    "approvedAt": "2026-09-09T12:07:56.844Z"
   }
 }
