@@ -1,0 +1,35 @@
+import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const root = resolve(import.meta.dir, '..');
+const versions = JSON.parse(readFileSync(resolve(root, 'provider-cli-versions.json'), 'utf8')) as Record<string, string>;
+const dockerfile = readFileSync(resolve(root, 'Dockerfile'), 'utf8');
+const renovate = JSON.parse(readFileSync(resolve(root, '.github', 'renovate.json'), 'utf8')) as Record<string, unknown>;
+const readme = readFileSync(resolve(root, 'README.md'), 'utf8');
+
+describe('provider CLI updates (GSHIP-843)', () => {
+	test('keeps exact CLI pins in one machine-readable source', () => {
+		expect(versions).toEqual({ claudeCode: '2.1.263', codexCli: '0.153.4' });
+		expect(dockerfile).toContain('COPY provider-cli-versions.json /tmp/provider-cli-versions.json');
+		expect(dockerfile).not.toMatch(/install\.sh \| bash -s \d/);
+		expect(dockerfile).not.toMatch(/@openai\/codex@\d/);
+	});
+
+	test('uses official recurring Renovate sources and one non-automatic PR', () => {
+		expect(renovate).toMatchObject({ schedule: ['before 5am on monday'], prConcurrentLimit: 1, automerge: false });
+		const managers = renovate.customManagers as Array<Record<string, unknown>>;
+		expect(managers).toEqual(expect.arrayContaining([
+			expect.objectContaining({ depNameTemplate: 'anthropics/claude-code', datasourceTemplate: 'github-releases' }),
+			expect.objectContaining({ depNameTemplate: '@openai/codex', datasourceTemplate: 'npm' }),
+		]));
+		expect((renovate.packageRules as Array<Record<string, unknown>>)[0]).toMatchObject({ groupName: 'provider CLI versions', groupSlug: 'provider-cli-versions' });
+	});
+
+	test('documents native versus container installation and effective version checks', () => {
+		expect(readme).toContain('A instalação nativa mantém as CLIs fora da imagem');
+		expect(readme).toContain('docker compose exec gateship claude --version');
+		expect(readme).toContain('docker compose exec gateship codex --version');
+		expect(readme).toContain('provider-cli-versions.json');
+	});
+});

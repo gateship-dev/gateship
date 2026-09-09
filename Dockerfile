@@ -65,8 +65,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 
 ENV PATH="/root/.local/bin:${PATH}"
-RUN curl -fsSL https://claude.ai/install.sh | bash -s 2.1.238
-RUN bun add -g @openai/codex@0.148.0
+COPY provider-cli-versions.json /tmp/provider-cli-versions.json
+RUN set -eu; \
+	claude_version="$(bun -e 'const v = await Bun.file("/tmp/provider-cli-versions.json").json(); console.log(v.claudeCode)')"; \
+	codex_version="$(bun -e 'const v = await Bun.file("/tmp/provider-cli-versions.json").json(); console.log(v.codexCli)')"; \
+	curl -fsSL https://claude.ai/install.sh | bash -s "${claude_version}"; \
+	bun add -g "@openai/codex@${codex_version}"
 
 COPY --from=builder /out/gateship /usr/local/bin/gateship
 
