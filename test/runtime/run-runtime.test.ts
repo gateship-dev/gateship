@@ -17,6 +17,7 @@ import {
 	type RuntimeTimer,
 } from '../../src/runtime/run-runtime.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
+import { ResearchFailure, type ResearchBundle, validateResearchBundle } from '../../src/runtime/research.ts';
 import { type RunEvent, type RunRecord, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -126,6 +127,118 @@ describe('durable run runtime', () => {
 		await expect(runtime.startRun(issue.id)).rejects.toThrow('receipts[0].fetchedAt');
 		expect(prepareCalls).toBe(0);
 		expect(runtime.listRuns()).toEqual([]);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('re-enters research after a runtime restart before reaching working', async () => {
+		const dbPath = join(createTestTmpdir('gship-research-restart-'), 'runtime.sqlite');
+		const research: ResearchContract = {
+			questions: ['Q'], sourceClasses: ['primary-code'],
+			freshness: { mode: 'installed-version', installedVersion: '1.0.0' },
+			receipts: [{ url: 'https://github.com/acme/project/tree/v1.0.0', sourceType: 'primary-code', fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', resolvedRef: { kind: 'tag', value: 'v1.0.0' }, contentHash: `sha256:${'a'.repeat(64)}`, claim: 'Q', applicability: 'Q' }],
+		};
+		const store = new RunStore(dbPath);
+		store.createRun({ id: 'run-research-restart', issueId: 'GSHIP-841', sessionId: 'session', workspacePath: '/workspace', createdAt: '2026-09-08T00:00:00Z', research });
+		store.transition({ runId: 'run-research-restart', toState: 'research', kind: 'run.research-started', createdAt: '2026-09-08T00:00:01Z' });
+		store.close();
+
+		const bundle: ResearchBundle = {
+			questions: ['Q'], sources: [{ url: research.receipts![0]!.url, sourceType: 'primary-code', contentHash: research.receipts![0]!.contentHash, claim: 'Q', applicability: 'Q', excerpt: 'validated', installedVersion: '1.0.0', resolvedRef: { kind: 'tag', value: 'v1.0.0' } }],
+			provider: 'test', model: 'test', effort: 'test', latencyMs: 1,
+		};
+		const reopened = new RunStore(dbPath);
+		const runtime = new RunRuntime({
+			cwd: '/project', store: reopened,
+			executor: { execute: async (input) => { expect(input.research).toEqual(bundle); return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+			researcher: { provider: 'test', model: 'test', effort: 'test', research: async () => bundle },
+		});
+		expect(reopened.getRun('run-research-restart')?.state).toBe('interrupted');
+		runtime.resumeRun('run-research-restart');
+		await waitFor(() => runtime.getRun('run-research-restart')?.state === 'ready-to-ship');
+		expect(runtime.listRunEvents('run-research-restart').map((event) => event.kind)).toEqual(expect.arrayContaining([
+			'run.recovered-interrupted', 'run.research-started', 'run.research-receipts', 'run.research-completed',
+		]));
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('persists research failure telemetry without releasing working', async () => {
+		const research: ResearchContract = {
+			questions: ['Q'], sourceClasses: ['official-documentation'],
+			freshness: { mode: 'installed-version', installedVersion: '1.0.0' },
+			receipts: [{ url: 'https://docs.example.com/v1', sourceType: 'official-documentation', fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}`, claim: 'Q', applicability: 'Q' }],
+		};
+		for (const failure of [new ResearchFailure('unavailable', 'offline'), new Error('unexpected')]) {
+			const store = new RunStore(':memory:');
+			const issue: IssueEntry = { id: `GSHIP-841-${failure.message}`, title: 'research failure', stage: 'specified', status: 'open', blockedBy: [], createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z', spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research } };
+			const runtime = new RunRuntime({
+				cwd: '/project', store, listBacklog: () => [issue],
+				executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
+				researcher: { provider: 'test-provider', model: 'test-model', effort: 'test-effort', research: async () => { throw failure; } },
+			});
+			const run = await runtime.startRun(issue.id);
+			await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+			const events = runtime.listRunEvents(run.id);
+			const failureEvent = events.find((event) => event.kind === 'run.research-failed');
+			expect(failureEvent?.payload).toMatchObject({
+				code: failure instanceof ResearchFailure ? failure.code : 'unknown', error: failure.message,
+				provider: 'test-provider', model: 'test-model', effort: 'test-effort',
+			});
+			expect(failureEvent?.payload['latencyMs']).toBeGreaterThanOrEqual(0);
+			expect(events.some((event) => event.kind === 'run.research-receipts')).toBe(false);
+			expect(events.some((event) => event.toState === 'working')).toBe(false);
+			await runtime.stop();
+			runtime.close();
+		}
+	});
+
+	test('keeps distinct research URLs in the validated bundle identity', () => {
+		const receipt = (url: string) => ({ url, sourceType: 'official-documentation' as const, fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', contentHash: `sha256:${'a'.repeat(64)}`, claim: 'Q', applicability: 'Q' });
+		const contract: ResearchContract = { questions: ['Q'], sourceClasses: ['official-documentation'], freshness: { mode: 'installed-version', installedVersion: '1.0.0' }, receipts: [receipt('https://docs.example.com/a'), receipt('https://docs.example.com/b')] };
+		const source = (url: string) => ({ ...receipt(url), excerpt: 'validated', provider: undefined });
+		const bundle = { questions: ['Q'], sources: [source('https://docs.example.com/a'), source('https://docs.example.com/b')], provider: 'test', model: 'test', effort: 'test', latencyMs: 1 } as ResearchBundle;
+		expect(validateResearchBundle(contract, bundle)).toBeNull();
+		expect(validateResearchBundle(contract, { ...bundle, sources: [source('https://docs.example.com/a'), source('https://docs.example.com/a')] })).not.toBeNull();
+	});
+
+	test('keeps distinct claims from the same research URL during validation', () => {
+		const receipt = (claim: string) => ({ url: 'https://docs.example.com/shared', sourceType: 'official-documentation' as const, fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', contentHash: `sha256:${'b'.repeat(64)}`, claim, applicability: claim });
+		const contract: ResearchContract = { questions: ['Q1', 'Q2'], sourceClasses: ['official-documentation'], freshness: { mode: 'installed-version', installedVersion: '1.0.0' }, receipts: [receipt('Q1'), receipt('Q2')] };
+		const source = (claim: string) => ({ ...receipt(claim), excerpt: claim });
+		const bundle = { questions: ['Q1', 'Q2'], sources: [source('Q1'), source('Q2')], provider: 'test', model: 'test', effort: 'test', latencyMs: 1 } as ResearchBundle;
+		expect(validateResearchBundle(contract, bundle)).toBeNull();
+	});
+
+	test('classifies same-URL research sources by complete identity in telemetry', async () => {
+		const store = new RunStore(':memory:');
+		const url = 'https://docs.example.com/shared';
+		const oldSource = { url, sourceType: 'official-documentation' as const, contentHash: `sha256:${'c'.repeat(64)}`, claim: 'Q1', applicability: 'Q1', installedVersion: '1.0.0', excerpt: 'old' };
+		store.createRun({ id: 'run-history', issueId: 'GSHIP-841-history', sessionId: 'history', workspacePath: '/history', createdAt: '2026-09-08T00:00:00Z' });
+		store.transition({ runId: 'run-history', toState: 'working', kind: 'run.started', createdAt: '2026-09-08T00:00:00Z' });
+		store.transition({ runId: 'run-history', toState: 'failed', kind: 'run.failed', createdAt: '2026-09-08T00:00:00Z' });
+		store.appendEvent({ runId: 'run-history', kind: 'run.research-receipts', createdAt: '2026-09-08T00:00:01Z', payload: { bundle: { questions: ['Q1'], sources: [oldSource], provider: 'test', model: 'test', effort: 'test', latencyMs: 1 } } });
+		const research: ResearchContract = {
+			questions: ['Q1', 'Q2'], sourceClasses: ['official-documentation'],
+			freshness: { mode: 'installed-version', installedVersion: '1.0.0' },
+			receipts: [
+				{ url, sourceType: 'official-documentation', fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', contentHash: oldSource.contentHash, claim: 'Q1', applicability: 'Q1' },
+				{ url, sourceType: 'official-documentation', fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', contentHash: oldSource.contentHash, claim: 'Q2', applicability: 'Q2' },
+			],
+		};
+		const freshSource = { ...oldSource, claim: 'Q2', applicability: 'Q2', excerpt: 'fresh' };
+		const runtime = new RunRuntime({
+			cwd: '/project', store, listBacklog: () => [{ id: 'GSHIP-841-history', title: 'history', stage: 'specified', status: 'open', blockedBy: [], createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z', spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research } }],
+			executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
+			researcher: { provider: 'test', model: 'test', effort: 'test', research: async () => ({ questions: research.questions, sources: [freshSource], provider: 'test', model: 'test', effort: 'test', latencyMs: 1 }) },
+		});
+		const run = await runtime.startRun('GSHIP-841-history');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		const event = runtime.listRunEvents(run.id).find((candidate) => candidate.kind === 'run.research-receipts');
+		expect(event?.payload['reused']).toEqual([{ url, sourceType: 'official-documentation', contentHash: oldSource.contentHash, claim: 'Q1', applicability: 'Q1', installedVersion: '1.0.0' }]);
+		expect(event?.payload['revalidated']).toEqual([{ url, sourceType: 'official-documentation', contentHash: oldSource.contentHash, claim: 'Q2', applicability: 'Q2', installedVersion: '1.0.0' }]);
+		expect(JSON.stringify(event?.payload['reused'])).not.toContain('excerpt');
 		await runtime.stop();
 		runtime.close();
 	});

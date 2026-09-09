@@ -1,5 +1,6 @@
 export const RUN_STATES = [
 	'queued',
+	'research',
 	'working',
 	'verify',
 	'review',
@@ -25,7 +26,8 @@ export interface RunStateSnapshot {
 }
 
 const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
-	queued: ['working', 'interrupted'],
+	queued: ['research', 'working', 'interrupted'],
+	research: ['working', 'failed', 'interrupted'],
 	working: ['verify', 'waiting-user', 'waiting-provider', 'failed', 'interrupted'],
 	// `ready-to-ship` is reached directly, skipping `full-verify` entirely, when
 	// no full verifier is configured for this runtime (GSHIP-649) -- the same
@@ -53,7 +55,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	// resume: abandoning it is the explicit way out of the provider session.
 	// A crash recovered out of `review` resumes in the reviewer, so the diff
 	// already verified is reviewed again instead of re-executed.
-	interrupted: ['working', 'review', 'cancelled'],
+	interrupted: ['research', 'working', 'review', 'cancelled'],
 	cancelled: [],
 };
 
