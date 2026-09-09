@@ -1,0 +1,45 @@
+{
+  "id": "GSHIP-844",
+  "title": "Unificar a configuração do Renovate para ativar a atualização dos CLIs",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-09T12:42:20.488Z",
+  "updatedAt": "2026-09-09T12:42:20.488Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Tornar efetiva a atualização automática entregue na GSHIP-843, removendo a configuração ignorada e incorporando suas regras ao arquivo canônico do Renovate sem alterar a manutenção das demais dependências.",
+    "acceptance": [
+      "O repositório mantém exatamente um arquivo de configuração do Renovate entre os locais padrão reconhecidos, usando o renovate.json já existente na raiz.",
+      "As regras existentes para Bun, asdf e GitHub Actions permanecem funcionalmente inalteradas.",
+      "Os custom managers de Claude Code por GitHub Releases e Codex CLI por npm leem provider-cli-versions.json e agrupam os dois pins em uma única PR sem automerge.",
+      "A checagem dos providers ocorre diariamente, mas essa frequência e as restrições de PR não são aplicadas globalmente às demais dependências.",
+      "Testes determinísticos falham se surgir uma segunda configuração reconhecida, se as regras dos providers deixarem de estar no arquivo canônico ou se os pins voltarem a usar latest."
+    ],
+    "boundaries": [
+      "Não modificar Dockerfile, versões atuais, autenticação, runtime, banco ou interface.",
+      "Não adicionar serviço, segredo, PAT, workflow ou dependência.",
+      "Não reduzir nem desabilitar as regras de atualização já existentes.",
+      "A correção deve ser limitada à configuração do Renovate, testes associados e registro da issue."
+    ],
+    "verify": [
+      "bun test test/provider-cli-updates.test.ts test/compose-config.test.ts",
+      "bun check:all"
+    ],
+    "evidence": [
+      {
+        "command": "git ls-tree -r --name-only origin/main | rg '(^|/)renovate\\.json$'",
+        "output": ".github/renovate.json\nrenovate.json"
+      },
+      {
+        "command": "git show origin/main:provider-cli-versions.json",
+        "output": "{\n  \"claudeCode\": \"2.1.263\",\n  \"codexCli\": \"0.153.4\"\n}"
+      }
+    ]
+  },
+  "approval": {
+    "fingerprint": "723c57d2bcbd9abc042bdbc49e78f36913a5090befad5b272a29e61977268c1a",
+    "approvedAt": "2026-09-09T12:42:20.488Z"
+  }
+}
