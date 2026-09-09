@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:43:53.703Z",
-  "updatedAt": "2026-09-09T22:43:00.316Z",
+  "updatedAt": "2026-09-09T22:43:17.345Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -29,5 +29,9 @@
       "bun run typecheck",
       "bun run build:ui"
     ]
+  },
+  "approval": {
+    "fingerprint": "5e92f242544eb226a24eb6b8f3b113bbf09504ac4ff382cb8d6343fa9d446ec0",
+    "approvedAt": "2026-09-09T22:43:17.345Z"
   }
 }
