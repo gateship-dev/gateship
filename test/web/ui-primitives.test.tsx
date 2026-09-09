@@ -75,10 +75,8 @@ describe('ui primitives', () => {
 		const context = renderToStaticMarkup(
 			<ContextPanel description="Supporting context" title="Context"><form><CardFooter><button type="submit">Save</button></CardFooter></form></ContextPanel>,
 		);
-		expect(title).toContain('font-sans');
-		expect(title).toContain('font-normal');
-		expect(stat).toContain('uppercase');
-		expect(stat).toContain('tracking-[0.12em]');
+		expect(title).toContain('type-editorial-title');
+		expect(stat).toContain('type-eyebrow');
 		expect(footer).toContain('data-slot="card-footer"');
 		expect(footer).toContain('border-t');
 		expect(footer).toContain('bg-muted');

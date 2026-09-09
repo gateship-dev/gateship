@@ -6,9 +6,14 @@ the web UI.
 
 ## Foundations
 
-- Use the system sans stack. Use the system monospace stack only for identifiers,
-  commands, timestamps, durations, costs and counters. The existing vector
-  wordmark is the only branded lettering.
+- Use the shared proportional sans voice for page titles, editorial card and
+  disclosure titles, navigation, form labels and prose. Use the shared
+  monospace voice only for operational eyebrows, identifiers, commands,
+  timestamps, durations, costs and counters. The existing vector wordmark is
+  the only branded lettering.
+- Saans is not bundled in this repository. Do not imply that it is embedded or
+  licensed: use the system sans fallback until a repository asset and its
+  license are explicitly added.
 - Keep neutral canvases and surfaces in both themes. `#c8ff00` is reserved for
   operator attention. Focus rings use the neutral ring tokens. Success, warning, failure and merged
   use their semantic green, amber, red and purple families. Cancelled stays gray.
@@ -38,7 +43,9 @@ styling. Hugeicons supplies the icon set.
 
 - A panel has one constructive primary action. Secondary and destructive actions
   remain visually distinct.
-- Card titles and metric labels use the system monospace stack. Explanatory
+- Card titles and metric labels use their shared typography roles: editorial
+  titles use proportional sans, while metric labels use the monospace eyebrow
+  voice. Explanatory
   subtitles do not appear in card headers; factual availability and repository
   details remain in card content. `CardFooter` is rendered only by cards with
   actions.

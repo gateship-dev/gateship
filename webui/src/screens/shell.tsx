@@ -234,7 +234,7 @@ function ProjectSwitcherMenu({
 		<Menu.Portal>
 			<Menu.Positioner align="start" className="z-50" sideOffset={6}>
 				<Menu.Popup className="relative min-w-(--anchor-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 duration-100 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
-					<div className="px-2 pt-1.5 pb-1 font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+					<div className="type-eyebrow px-2 pt-1.5 pb-1 text-muted-foreground">
 						{catalog.projectNavigationLabel}
 					</div>
 					{projects.map((project, index) => (

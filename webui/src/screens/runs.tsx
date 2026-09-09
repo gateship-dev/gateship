@@ -418,7 +418,7 @@ export function RunCard({
 			 */}
 			<CardHeader>
 				<div className="flex min-w-0 flex-col gap-1">
-					<span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">
+					<span className="type-eyebrow text-muted-foreground">
 						{title}
 					</span>
 					<CardTitle className={cn('break-all text-sm', run !== null && 'font-mono')}>

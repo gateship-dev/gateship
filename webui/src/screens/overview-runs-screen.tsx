@@ -121,7 +121,7 @@ export function OverviewRunsSurface({ props }: { props: AppProps }): React.React
 	const to = (page?.page.offset ?? 0) + rows.length;
 	return <SurfaceColumn label={catalog.title} status={props.status}>
 		<ControlCenterNavigation current="runs" locale={props.locale} />
-		<div className="flex flex-col gap-2"><h1 className="font-semibold text-xl">{catalog.title}</h1><p className="text-muted-foreground text-sm">{catalog.description}</p></div>
+		<div className="flex flex-col gap-2"><h1 className="type-page-title">{catalog.title}</h1><p className="text-muted-foreground text-sm">{catalog.description}</p></div>
 		<OverviewRunsFilters props={props} query={query} update={update} />
 		{error ? <p role="alert" className="text-destructive-foreground text-sm">{catalog.error}: {error}</p> : null}
 		{page !== null && page.errors.length > 0 ? <p role="status" className="text-warning-foreground text-sm">{catalog.partial}</p> : null}
