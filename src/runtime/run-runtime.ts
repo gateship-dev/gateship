@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isPlannable } from '../issues/plannable.ts';
-import { profileSpec } from '../issues/spec.ts';
+import { profileSpec, validateCurrentResearchAtRunStart, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { type ExecutorHandoffRecord, selectExecutorHandoff } from './agent-executor-router.ts';
 import {
@@ -647,6 +647,33 @@ export class RunRuntime {
 		this.#agentDefaults = agentDefaults;
 	}
 
+	#admitIssue(issueId: string, runStartedAt: string): IssueEntry | undefined {
+		let admittedIssue: IssueEntry | undefined;
+		if (this.#listBacklog !== undefined) {
+			try {
+				admittedIssue = this.#listBacklog().find((entry) => entry.id === issueId);
+			} catch {
+				// A backlog read failure remains observational for legacy runs. A
+				// readable issue carrying research is validated below.
+			}
+		}
+		if (admittedIssue?.spec === undefined) return admittedIssue;
+		const validation = validateSpec(admittedIssue.spec);
+		if (!validation.ok) throw new RuntimeConflictError(`${issueId} has invalid spec: ${validation.errors.join(' ')}`);
+		const temporal = validateCurrentResearchAtRunStart(admittedIssue.spec, runStartedAt, this.#now());
+		if (!temporal.ok) throw new RuntimeConflictError(`${issueId} research is not current at run admission: ${temporal.errors.join(' ')}`);
+		return admittedIssue;
+	}
+
+	async #prepareRunWorkspace(runId: string, issueId: string): Promise<string> {
+		this.#preparingWorkspace = true;
+		try {
+			return await this.#workspace?.prepare({ runId, issueId }) ?? this.#cwd;
+		} finally {
+			this.#preparingWorkspace = false;
+		}
+	}
+
 	async startRun(issueId: string, source?: string, reconciliationGuidance?: string): Promise<RunRecord> {
 		if (this.#executor === undefined || this.#verifier === undefined) {
 			throw new RuntimeUnavailableError();
@@ -666,25 +693,14 @@ export class RunRuntime {
 		if (this.#preparingWorkspace) {
 			throw new RuntimeConflictError('a workspace is still being prepared; wait for it to finish');
 		}
+		const runStartedAt = this.#now();
 		this.#preflight?.(normalizedIssueId);
+		const admittedIssue = this.#admitIssue(normalizedIssueId, runStartedAt);
 		const id = this.#newId();
-		this.#preparingWorkspace = true;
-		let workspacePath: string;
-		try {
-			workspacePath = await this.#workspace?.prepare({
-				runId: id,
-				issueId: normalizedIssueId,
-			}) ?? this.#cwd;
-		} finally {
-			this.#preparingWorkspace = false;
-		}
+		const workspacePath = await this.#prepareRunWorkspace(id, normalizedIssueId);
 		let specProfile = profileSpec(undefined);
 		if (this.#listBacklog !== undefined) {
-			try {
-				specProfile = profileSpec(this.#listBacklog().find((entry) => entry.id === normalizedIssueId)?.spec);
-			} catch {
-				// A profile is observational. A backlog read failure must not change run admission.
-			}
+			specProfile = profileSpec(admittedIssue?.spec);
 		}
 		const created = this.#store.createRun({
 			id,

@@ -10,6 +10,7 @@ import {
 	fingerprintSpec,
 	type Spec,
 	SPEC_V2_LIMITS,
+	type ResearchContract,
 	validateSpec,
 } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
@@ -42,6 +43,7 @@ export interface OperatorSpecInput {
 	verify: string[];
 	/** Executable premise captured against the fresh remote snapshot at intake. */
 	evidence?: EvidenceItem[];
+	research?: ResearchContract;
 }
 
 export interface OperatorIssueInput extends OperatorSpecInput {
@@ -132,6 +134,7 @@ export function parseOperatorSpecInput(value: unknown): OperatorSpecInput {
 	}
 	const input = value as Record<string, unknown>;
 	const evidence = optionalEvidence(input['evidence']);
+	const research = input['research'] as ResearchContract | undefined;
 	const objective = requiredString(input['objective'], 'Objective');
 	if (objective.length > SPEC_V2_LIMITS.objective) throw new IssueIntakeError('invalid-request', `Objective accepts at most ${SPEC_V2_LIMITS.objective} characters.`, 400);
 	const acceptance = requiredStringList(input['acceptance'], 'Acceptance', SPEC_V2_LIMITS.maxAcceptance, SPEC_V2_LIMITS.acceptance);
@@ -146,6 +149,7 @@ export function parseOperatorSpecInput(value: unknown): OperatorSpecInput {
 		...(boundaries === undefined ? {} : { boundaries }),
 		verify: requiredStringList(input['verify'], 'Verify', undefined),
 		...(evidence === undefined ? {} : { evidence }),
+		...(research === undefined ? {} : { research }),
 	};
 }
 
@@ -205,6 +209,7 @@ function buildSpec(input: OperatorSpecInput): Spec {
 		...(input.boundaries === undefined ? {} : { boundaries: input.boundaries }),
 		verify: input.verify!,
 		...(input.evidence === undefined ? {} : { evidence: input.evidence }),
+		...(input.research === undefined ? {} : { research: input.research }),
 	};
 	const validated = validateSpec(spec);
 	if (!validated.ok) {

@@ -11,7 +11,7 @@ import {
 	specifyOperatorIssue,
 } from '../../src/runtime/issue-intake.ts';
 import type { GitIdentityResult } from '../../src/runtime/git-identity.ts';
-import { fingerprintSpec } from '../../src/issues/spec.ts';
+import { fingerprintSpec, type ResearchContract } from '../../src/issues/spec.ts';
 import { VERIFICATION_COMMAND_TIMEOUT_MS } from '../../src/runtime/git-runtime.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -95,6 +95,17 @@ describe('remote-main operator issue intake', () => {
 		const command = 'x'.repeat(1001);
 		expect(parseOperatorSpecInput({ objective: 'Objetivo.', acceptance: ['Critério.'], verify: [command] })).toEqual({
 			objective: 'Objetivo.', acceptance: ['Critério.'], verify: [command],
+		});
+	});
+
+	test('preserves the optional conditional research contract without creating a research phase', () => {
+		const research = {
+			questions: ['Qual versão está instalada?'],
+			sourceClasses: ['official-documentation'],
+			freshness: { mode: 'installed-version' },
+		} as unknown as ResearchContract;
+		expect(parseOperatorSpecInput({ objective: 'Objetivo.', acceptance: ['Critério.'], verify: ['true'], research })).toEqual({
+			objective: 'Objetivo.', acceptance: ['Critério.'], verify: ['true'], research,
 		});
 	});
 
