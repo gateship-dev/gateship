@@ -5,17 +5,17 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:43:57.104Z",
-  "updatedAt": "2026-09-09T23:00:54.201Z",
+  "updatedAt": "2026-09-09T23:05:57.290Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
     "objective": "Transformar ShellControls em um header estrutural comum, com título humano por rota realmente centralizado entre o toggle da sidebar e as preferências, sem deslocamento causado pelas larguras laterais.",
     "acceptance": [
       "O header ocupa uma faixa comum acima do painel de conteúdo e usa uma divisória inferior neutra para separar navegação persistente e superfície ativa.",
-      "O toggle da sidebar fica alinhado à esquerda, o título da superfície usa o papel editorial sans no centro geométrico e idioma, tema e largura ficam alinhados à direita.",
+      "O toggle da sidebar fica alinhado à esquerda, o título da superfície usa o papel editorial sans no centro geométrico e idioma e tema ficam alinhados à direita.",
       "O centro permanece estável quando os grupos laterais têm larguras diferentes, quando o inspector não existe e ao alternar sidebar, idioma, tema ou largura.",
       "O título deriva da rota real para Control center, Execuções, Filas, Insights, Projetos, Runs, Trabalho, Ajustes e estados auxiliares, com catálogos completos em pt-BR e en-US.",
-      "Em 390 px, todos os controles continuam alcançáveis, o título essencial permanece legível e nenhum grupo sobrepõe ou aumenta horizontalmente o viewport.",
+      "Em 390 px, sidebar, idioma e tema continuam alcançáveis, o título essencial permanece legível e nenhum grupo sobrepõe o viewport; o controle de largura permanece oculto abaixo do breakpoint 2xl.",
       "O skip link, foco visível, frame de conteúdo e a regra de que somente o painel de conteúdo rola no desktop permanecem funcionais."
     ],
     "boundaries": [
@@ -29,9 +29,5 @@
       "bun run typecheck",
       "bun run build:ui"
     ]
-  },
-  "approval": {
-    "fingerprint": "c4dc07e66e9740b007e63a721f62625819550faf07d3dde81c2b4325dfa9a665",
-    "approvedAt": "2026-09-09T23:00:54.201Z"
   }
 }
