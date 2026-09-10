@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:41:10.329Z",
-  "updatedAt": "2026-09-10T18:41:10.329Z",
+  "updatedAt": "2026-09-10T19:42:51.988Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -15,15 +15,16 @@
       "Configurar components.json no escopo correto do webui; shadcn info deve reconhecer caminhos, Tailwind v4, Base UI e Hugeicons, sem regenerar arquivos existentes nem alterar a aparência.",
       "Preservar tokens e variantes Gateship: temas neutros, cores semânticas e acid reservado à atenção; títulos proporcionais, mono para dados técnicos; não simular fonte Saans ausente.",
       "Documentar descoberta e composição: consultar skill/docs oficiais compatíveis com versões instaladas, reutilizar primitivas locais e adaptar apenas as lacunas, com fonte e motivo registrados.",
-      "Separar invariantes verificáveis, receitas recomendadas e liberdade de composição; permitir nova variante justificada e testada sem exigir uma exceção global ou aprovação humana extra por run.",
+      "Separar invariantes, receitas e liberdade de composição; documentar: colapso preserva centros dos ícones, alturas e recuos; kbds vão em tooltip único; viewport sem gutter externo. Nova variante justificada e testada não exige aprovação humana extra.",
       "Registrar plano desta rodada e nomenclatura PT: Central de controle > Visão geral, Execuções, Filas, Análises; EN: Control center > Overview, Runs, Queues, Insights; URLs existentes preservadas.",
       "Registrar registry privado como adiado por ausência de distribuição multiprojeto; verificar que a configuração não cria outro sistema de tokens, ícones ou componentes."
     ],
     "boundaries": [
-      "Reconciliar com GSHIP-850 já entregue; não reintroduzir atalhos removidos.",
+      "Preservar avanços de GSHIP-850/860; regressão visual de #713 é corrigida por GSHIP-861, sem revert integral. GSHIP-862 corrige gutter externo.",
       "Não aplicar preset shadcn, dashboard inteiro, Radix ou Lucide.",
       "Não instalar fontes sem assets/licença nem migrar telas nesta issue.",
-      "Não criar registry, daemon ou regras globais impostas a projetos executados pelo Gateship."
+      "Não criar registry, daemon ou regras globais impostas a projetos executados pelo Gateship.",
+      "Sequência: GSHIP-851 → GSHIP-861/GSHIP-862 → GSHIP-852; depois demais pré-requisitos da rodada. Ordem documental, sem bloqueio automático."
     ],
     "verify": [
       "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx",
