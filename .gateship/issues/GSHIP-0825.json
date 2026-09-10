@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-825",
   "title": "Mover avisos operacionais para uma central de notificações no header",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:44:00.805Z",
-  "updatedAt": "2026-09-09T23:21:01.025Z",
+  "updatedAt": "2026-09-10T00:29:13.457Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

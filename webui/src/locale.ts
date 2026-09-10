@@ -37,6 +37,26 @@ export interface ShellCatalog {
 	widthToggle: { wide: string; compact: string };
 	sidebarToggle: { collapse: string; expand: string };
 	inspectorToggle: { collapse: string; expand: string };
+		notifications: {
+		label: string;
+		empty: string;
+		count: (count: number) => string;
+		severity: { action: string; advisory: string };
+			run: Readonly<Record<'waiting-user' | 'ready-to-ship' | 'failed' | 'interrupted', string>>;
+			shipBlocked: string;
+			shipBlockedDetail: string;
+			queueStartFailed: string;
+			queueStopped: string;
+		staleService: string;
+		gitIdentity: string;
+			workspace: string;
+			providerWait: string;
+			queueComplete: string;
+			queueStartFailedDetail: string;
+			queueCompleteDetail: string;
+			queuePreviousDetail: string;
+			queueActiveDetail: string;
+	};
 	operatorNavigationLabel: string;
 	projectNavigationLabel: string;
 	manageProjectsLabel: string;
@@ -599,6 +619,7 @@ export const LOCALE_CATALOG = {
 			themeToggle: { label: 'Theme', light: 'Light theme', dark: 'Dark theme' },
 			widthToggle: { wide: 'Wide layout', compact: 'Centered layout' },
 			sidebarToggle: { collapse: 'Collapse the sidebar', expand: 'Expand the sidebar' },
+			notifications: { label: 'Notifications', empty: 'No action is needed right now.', count: (count) => `${count} action${count === 1 ? '' : 's'} needed`, severity: { action: 'Needs action', advisory: 'Advisory' }, run: { 'waiting-user': 'Run waiting for your input', 'ready-to-ship': 'Run ready to ship', failed: 'Run failed', interrupted: 'Run interrupted' }, shipBlocked: 'Ship blocked', shipBlockedDetail: 'The ship attempt failed and needs your attention.', queueStartFailed: 'Queue failed to start the next run', queueStopped: 'Queue stopped', staleService: 'Restart the service', gitIdentity: 'Git identity is missing', workspace: 'Workspace preserved', providerWait: 'Provider waiting to retry', queueComplete: 'Queue complete', queueStartFailedDetail: 'The attempt to start the next run failed.', queueCompleteDetail: 'There is no eligible work left in the backlog.', queuePreviousDetail: 'The previous run did not finish in done.', queueActiveDetail: 'A run is still active.' },
 			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
 			languageLabel: 'Language',
 			routeLabels: {
@@ -1063,6 +1084,7 @@ export const LOCALE_CATALOG = {
 			themeToggle: { label: 'Tema', light: 'Tema claro', dark: 'Tema escuro' },
 			widthToggle: { wide: 'Layout largo', compact: 'Layout centralizado' },
 			sidebarToggle: { collapse: 'Recolher a barra lateral', expand: 'Expandir a barra lateral' },
+			notifications: { label: 'Notificações', empty: 'Nenhuma ação é necessária agora.', count: (count) => `${count} ${count === 1 ? 'ação necessária' : 'ações necessárias'}`, severity: { action: 'Exige ação', advisory: 'Informativo' }, run: { 'waiting-user': 'Execução aguardando sua decisão', 'ready-to-ship': 'Execução pronta para envio', failed: 'Execução com falha', interrupted: 'Execução interrompida' }, shipBlocked: 'Envio bloqueado', shipBlockedDetail: 'A tentativa de envio falhou e requer sua atenção.', queueStartFailed: 'A fila falhou ao iniciar a próxima execução', queueStopped: 'Fila interrompida', staleService: 'Reinicie o serviço', gitIdentity: 'Identidade Git ausente', workspace: 'Workspace preservado', providerWait: 'Provedor aguardando nova tentativa', queueComplete: 'Fila concluída', queueStartFailedDetail: 'A tentativa de iniciar a próxima execução falhou.', queueCompleteDetail: 'Não há trabalho elegível restante no backlog.', queuePreviousDetail: 'A execução anterior não terminou como concluída.', queueActiveDetail: 'Ainda há uma execução ativa.' },
 			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
 			languageLabel: 'Idioma',
 			routeLabels: {
