@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-848",
   "title": "Normalizar o peso óptico dos ícones de botões",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T12:45:36.481Z",
-  "updatedAt": "2026-09-10T12:45:36.481Z",
+  "updatedAt": "2026-09-10T12:58:47.869Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

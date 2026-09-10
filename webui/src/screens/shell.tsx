@@ -20,6 +20,20 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useState } from 'react';
 import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 
+const SHELL_ICON_SIZE = 16;
+const SHELL_ICON_CLASS = 'size-4';
+const SHELL_ICON_STROKE_WIDTH = 2.25;
+
+function ShellIcon({
+	className,
+	icon,
+}: {
+	className?: string;
+	icon: Parameters<typeof HugeiconsIcon>[0]['icon'];
+}): React.ReactElement {
+	return <HugeiconsIcon className={cn(SHELL_ICON_CLASS, 'shrink-0', className)} icon={icon} size={SHELL_ICON_SIZE} strokeWidth={SHELL_ICON_STROKE_WIDTH} />;
+}
+
 export const NAV_LINK_CLASS =
 	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:min-h-0 ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
@@ -102,7 +116,7 @@ export function NotificationsPopover({ items, catalog }: { items: readonly Notif
 	return <Popover.Root>
 		<span aria-atomic="true" aria-live="polite" className="sr-only" data-slot="notifications-live">{announcement}</span>
 		<Popover.Trigger aria-label={catalog.label} className="relative inline-flex size-9 items-center justify-center rounded-xl border border-input bg-white text-foreground shadow-xs/5 outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:bg-input/32" data-slot="notifications-trigger">
-			<HugeiconsIcon className="size-4" icon={Notification02Icon} size={16} strokeWidth={2.25} />
+			<ShellIcon icon={Notification02Icon} />
 			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-attention px-1 font-mono text-[10px] leading-4 text-attention-foreground">{actionableCount}</span>}
 		</Popover.Trigger>
 		<Popover.Portal><Popover.Positioner align="end" className="z-50" sideOffset={8}><Popover.Popup aria-label={catalog.label} className="w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg/5 outline-none">
@@ -216,7 +230,7 @@ function CompactProjectSwitcherTrigger({
 	return (
 		<>
 			{selected === null
-				? <span data-slot="project-switcher-placeholder"><HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={FolderManagementIcon} size={16} strokeWidth={2.25} /></span>
+				? <span data-slot="project-switcher-placeholder"><ShellIcon className="opacity-70" icon={FolderManagementIcon} /></span>
 				: <ProjectShortcut index={selectedShortcut} />}
 			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
 			{status === null ? null : <span className="sr-only">{status.label}</span>}
@@ -249,7 +263,7 @@ function ExpandedProjectSwitcherTrigger({
 					</span>
 				)}
 			</span>
-			<HugeiconsIcon className="size-3.5 shrink-0 opacity-70" icon={UnfoldMoreIcon} size={14} strokeWidth={2.25} />
+			<ShellIcon className="opacity-70" icon={UnfoldMoreIcon} />
 		</>
 	);
 }
@@ -575,12 +589,7 @@ export function ShellControls({
 							type="button"
 							variant="outline"
 						>
-							<HugeiconsIcon
-								className="size-3.5"
-								icon={dark ? Sun02Icon : Moon02Icon}
-								size={14}
-								strokeWidth={2.25}
-							/>
+							<ShellIcon icon={dark ? Sun02Icon : Moon02Icon} />
 						</Button>
 						<Button
 							aria-label={wide ? catalog.widthToggle.compact : catalog.widthToggle.wide}
@@ -590,12 +599,7 @@ export function ShellControls({
 							type="button"
 							variant="outline"
 						>
-							<HugeiconsIcon
-								className="size-3.5"
-								icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon}
-								size={14}
-								strokeWidth={2.25}
-							/>
+							<ShellIcon icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon} />
 						</Button>
 					{inspectorToggle()}
 				</div>
@@ -620,9 +624,9 @@ export function shellSurfaceTitle(
 /** A panel silhouette with its visible side fully filled in currentColor. */
 export function PanelToggleGlyph({ side }: { side: 'left' | 'right' }): React.ReactElement {
 	return (
-		<svg aria-hidden="true" className="size-3.5" data-side={side} data-slot="panel-toggle-glyph" fill="none" viewBox="0 0 16 16">
-			<rect height="12" rx="1.5" stroke="currentColor" strokeWidth="2.25" width="12" x="2" y="2" />
-			<rect fill="currentColor" height="12" rx="1" width="3.5" x={side === 'left' ? '2' : '10.5'} y="2" />
+		<svg aria-hidden="true" className={SHELL_ICON_CLASS} data-side={side} data-slot="panel-toggle-glyph" fill="none" viewBox="0 0 24 24">
+			<rect height="18" rx="2.25" stroke="currentColor" strokeWidth={SHELL_ICON_STROKE_WIDTH} width="18" x="3" y="3" />
+			<rect fill="currentColor" height="18" rx="1.5" width="5.25" x={side === 'left' ? '3' : '15.75'} y="3" />
 		</svg>
 	);
 }
