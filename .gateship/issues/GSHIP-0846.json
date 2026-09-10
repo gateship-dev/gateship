@@ -1,0 +1,36 @@
+{
+  "id": "GSHIP-846",
+  "title": "Conectar a paginação de eventos à entrada de produção",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T04:36:38.046Z",
+  "updatedAt": "2026-09-10T04:36:38.046Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Corrigir a integração da paginação de eventos na entrada real da web UI, encaminhando ao App o estado e a ação já mantidos por useOperationalState para que runs com histórico anterior exibam e executem Carregar anteriores.",
+    "acceptance": [
+      "main.tsx encaminha runEventsHasPrevious, runEventsLoading e onLoadPreviousRunEvents ao App sem duplicar estado nem lógica de paginação.",
+      "Uma run cuja resposta inicial tenha hasPrevious true exibe a ação localizada Carregar anteriores ou Load previous na interface de produção.",
+      "Ao acionar a ação, o cliente usa o cursor da sequência mais antiga, incorpora a página anterior sem lacunas ou duplicatas e preserva o comportamento de rolagem entregue em GSHIP-829.",
+      "A cobertura atravessa a fronteira da entrada real e falha se qualquer uma das três propriedades deixar de ser encaminhada, em vez de testar somente RunActivity isoladamente.",
+      "Navegação direta e recarga de uma rota de projeto mantêm o comportamento em pt-BR e en-US."
+    ],
+    "boundaries": [
+      "Não alterar API, persistência, cursor, SSE ou máquina de estados.",
+      "Não redesenhar a timeline nem adicionar dependências.",
+      "Não reabrir outras superfícies além do menor seam necessário para testar a integração de produção.",
+      "Não executar check:all durante a implementação; ele permanece na fronteira automática de ship."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/run-event-pagination.test.ts test/web/project-scoped-browser-runs.test.ts",
+      "bun run typecheck",
+      "bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "48a676ccc88347ddaac996eef8501ccd7f8fb8b380f8e1eb6cc06852be4d7fc7",
+    "approvedAt": "2026-09-10T04:36:38.046Z"
+  }
+}
