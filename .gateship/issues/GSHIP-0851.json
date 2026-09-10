@@ -1,0 +1,70 @@
+{
+  "id": "GSHIP-851",
+  "title": "Central: base shadcn com identidade Gateship e contrato visual extensível",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:41:10.329Z",
+  "updatedAt": "2026-09-10T18:41:10.329Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Preparar a Central para reutilizar padrões shadcn/Base UI com identidade Gateship, inventário completo dos componentes e regras que orientem novas composições sem impor um tema ou layout universal.",
+    "acceptance": [
+      "Inventariar cada componente das quatro telas da Central, vinculando origem shadcn, equivalente local, lacuna e decisão: reutilizar, adaptar ou criar; incluir shell, filtros, tabelas, gráficos e estados.",
+      "Configurar components.json no escopo correto do webui; shadcn info deve reconhecer caminhos, Tailwind v4, Base UI e Hugeicons, sem regenerar arquivos existentes nem alterar a aparência.",
+      "Preservar tokens e variantes Gateship: temas neutros, cores semânticas e acid reservado à atenção; títulos proporcionais, mono para dados técnicos; não simular fonte Saans ausente.",
+      "Documentar descoberta e composição: consultar skill/docs oficiais compatíveis com versões instaladas, reutilizar primitivas locais e adaptar apenas as lacunas, com fonte e motivo registrados.",
+      "Separar invariantes verificáveis, receitas recomendadas e liberdade de composição; permitir nova variante justificada e testada sem exigir uma exceção global ou aprovação humana extra por run.",
+      "Registrar plano desta rodada e nomenclatura PT: Central de controle > Visão geral, Execuções, Filas, Análises; EN: Control center > Overview, Runs, Queues, Insights; URLs existentes preservadas.",
+      "Registrar registry privado como adiado por ausência de distribuição multiprojeto; verificar que a configuração não cria outro sistema de tokens, ícones ou componentes."
+    ],
+    "boundaries": [
+      "Reconciliar com GSHIP-850 já entregue; não reintroduzir atalhos removidos.",
+      "Não aplicar preset shadcn, dashboard inteiro, Radix ou Lucide.",
+      "Não instalar fontes sem assets/licença nem migrar telas nesta issue.",
+      "Não criar registry, daemon ou regras globais impostas a projetos executados pelo Gateship."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como integrar descoberta shadcn à base existente sem substituir identidade, componentes ou biblioteca de interação?",
+        "Quais regras são invariantes testáveis e quais devem permanecer decisões de design?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/skills/shadcn/SKILL.md",
+          "contentHash": "sha256:deba6c5152d9835892fa7dffeb1fedbb689ddac7e59e14e57ec5eaf9463309e4",
+          "fetchedAt": "2026-09-10T18:41:10.128Z",
+          "sourceType": "primary-code",
+          "claim": "A skill oficial identifica contexto do projeto e orienta descoberta, composição e customização; bibliotecas base exigem APIs diferentes.",
+          "applicability": "Pesquisar padrões oficiais mantendo Base UI, Hugeicons e identidade Gateship.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
+        },
+        {
+          "url": "https://ui.shadcn.com/docs/registry/registry-json",
+          "contentHash": "sha256:dfb2407eb4970d70119b65786ba414183afbadad3771a4376da5ff577a0eb4af",
+          "fetchedAt": "2026-09-10T18:37:34.974Z",
+          "sourceType": "official-documentation",
+          "claim": "registry.json descreve itens distribuíveis de um registry; não é um teste de conformidade visual.",
+          "applicability": "Adiar registry privado; usar contexto, componentes próprios e verificação de browser."
+        }
+      ]
+    }
+  }
+}
