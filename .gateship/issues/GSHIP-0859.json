@@ -5,15 +5,15 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:26.479Z",
-  "updatedAt": "2026-09-10T18:42:26.479Z",
+  "updatedAt": "2026-09-10T19:43:02.859Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
     "objective": "Adicionar testes de browser e comparação visual ao harness existente, fazendo o fluxo Gateship verificar regressões objetivas e entregar evidências ao revisor sem proibir composições novas ou exigir aprovação humana por screenshot.",
     "acceptance": [
       "Adicionar Playwright como ferramenta de desenvolvimento e scripts bun run test:ui:smoke e bun run test:ui:visual; fixtures não usam backend vivo, relógio/fontes/locale são controlados e versões de browser/ambiente são fixadas.",
-      "Smoke verifica navegação, foco, menus, ordenação/paginação e ausência de overflow da página, sobreposição e corte de controles essenciais; overflow intencional fica permitido no container de tabelas.",
-      "Suite visual cobre quatro telas em 390 e 1440px, claro/escuro e PT/EN; 768px entra no smoke responsivo. Acrescentar cenários críticos de overlay, atenção, longos textos e tabela densa sem multiplicar toda combinação.",
+      "Smoke verifica navegação, foco, menus, sorting/paginação e corte/sobreposição/overflow. Ao colapsar, centros dos ícones variam no máximo 1px; canvas ocupa viewport sem gutter externo. Tabelas podem rolar internamente; testar tooltip único e supressão ao abrir seletor.",
+      "Visual cobre quatro telas em 390/1440px, claro/escuro e PT/EN; 768px no smoke. Cobrir sidebar expandida/recolhida, texto longo, overlays, atenção e tabela densa; verificar gutter com scrollbars clássicas/sobrepostas sem multiplicar toda combinação.",
       "Integrar CI e contrato local de verificação do projeto: smoke obrigatório e visual nos caminhos afetados, dependências compartilhadas ampliam cobertura; falhas produzem expected/actual/diff e relatório acessíveis ao revisor.",
       "Integrar comandos e referências de artefatos ao fluxo de verificação/revisão já existente, sem nova fase runtime; fallback para suite completa quando escopo afetado não puder ser determinado com segurança.",
       "Estabelecer referências só após revisão das telas corrigidas; mudança intencional pode atualizar baseline com motivo e diff no PR. Proibir atualização cega automática, tolerância ampla ou máscaras que escondam defeitos.",
