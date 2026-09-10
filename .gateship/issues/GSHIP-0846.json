@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-846",
   "title": "Conectar a paginação de eventos à entrada de produção",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T04:36:38.046Z",
-  "updatedAt": "2026-09-10T04:36:38.046Z",
+  "updatedAt": "2026-09-10T04:41:15.582Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
