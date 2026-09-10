@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-826",
   "title": "Mapear atalhos e kbd por sistema operacional",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:44:04.308Z",
-  "updatedAt": "2026-09-10T00:37:25.680Z",
+  "updatedAt": "2026-09-10T00:53:36.623Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

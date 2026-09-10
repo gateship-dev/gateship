@@ -13,9 +13,11 @@ import {
 	App,
 	type AppProps,
 	handleProjectShortcut,
+	handleSidebarShortcut,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
+import { presentationPlatform, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
 import {
 	AGENT_DEFAULTS_PATH,
 	abandonIssue,
@@ -4363,12 +4365,11 @@ describe('operator shell', () => {
 		const selectedHtml = renderAt('/projects/project-1', { projects });
 		const triggerStart = selectedHtml.indexOf('data-slot="project-switcher"');
 		const trigger = selectedHtml.slice(triggerStart, selectedHtml.indexOf('</button>', triggerStart));
-		const shortcuts = [...html.matchAll(/<kbd[^>]*>(Alt\+[1-9])<\/kbd>/g)].map((match) => match[1]);
+		const shortcuts = [...html.matchAll(/<kbd[^>]*data-slot="shortcut-project"[^>]*>([^<]+)<\/kbd>/g)].map((match) => match[1]);
 
-		expect(shortcuts).toEqual(['Alt+1', 'Alt+2', 'Alt+3', 'Alt+4', 'Alt+5', 'Alt+6', 'Alt+7', 'Alt+8', 'Alt+9']);
-		expect(trigger).toContain('Alt+1');
+		expect(shortcuts).toEqual(Array.from({ length: 9 }, (_, index) => shortcutLabel('project', index, presentationPlatform())));
+		expect(trigger).toContain(shortcutLabel('project', 0, presentationPlatform()));
 		expect(selectedHtml).toContain('aria-current="page"');
-		expect(html).not.toContain('⌘');
 		expect(html).toContain('href="/projects/project-9"');
 		expect(html).toContain('href="/projects/project-10"');
 		expect(html).not.toContain('Alt+10');
@@ -4387,7 +4388,7 @@ describe('operator shell', () => {
 		expect(emptyTrigger).not.toContain('w-10');
 		expect(emptyTrigger).not.toContain('<kbd');
 		expect(selectedTrigger).toContain('w-10');
-		expect(selectedTrigger).toContain('Alt+1');
+		expect(selectedTrigger).toContain(shortcutLabel('project', 0, presentationPlatform()));
 	});
 
 	test('project shortcuts navigate with Alt+Digit1 through Alt+Digit9 and reject other combinations', () => {
@@ -4425,6 +4426,29 @@ describe('operator shell', () => {
 		)).toBe(false);
 		expect(missingPrevented).toBe(false);
 		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-1', '/projects/project-2']);
+	});
+
+		test('shortcut presentation follows platform signals while commands stay canonical', () => {
+		expect(presentationPlatform({ platform: 'MacIntel' })).toBe('macOS');
+		expect(presentationPlatform({ userAgentData: { platform: 'Windows' }, platform: 'Linux x86_64' })).toBe('Windows');
+		expect(presentationPlatform({ platform: 'Linux x86_64' })).toBe('Linux');
+		expect(presentationPlatform({ platform: 'Android' })).toBe('unknown');
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const html = renderAt('/overview', { locale });
+			const sidebarToggle = elementWith(html, 'aria-keyshortcuts="Control+B Meta+B"');
+			expect(sidebarToggle).toContain(`aria-label="${LOCALE_CATALOG[locale].shell.sidebarToggle.collapse}"`);
+			expect(html).toContain(`data-slot="sidebar-shortcut">${shortcutLabel('sidebar', undefined, presentationPlatform())}</kbd>`);
+			expect(shortcutLabel('sidebar', undefined, 'macOS')).toBe('⌘B');
+			expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥1');
+			expect(shortcutLabel('sidebar', undefined, 'Windows')).toBe('Ctrl+B');
+			expect(shortcutLabel('project', 8, 'Linux')).toBe('Alt+9');
+			expect(shortcutLabel('sidebar', undefined, 'unknown')).toBe('Mod+B');
+		}
+		let toggles = 0;
+		let prevented = false;
+		expect(handleSidebarShortcut({ key: 'b', code: 'KeyB', altKey: false, metaKey: true, ctrlKey: false, preventDefault: () => { prevented = true; } }, () => { toggles += 1; })).toBe(true);
+		expect({ toggles, prevented }).toEqual({ toggles: 1, prevented: true });
+		expect(handleSidebarShortcut({ key: 'b', code: 'KeyB', altKey: true, metaKey: true, ctrlKey: false, preventDefault: () => { prevented = true; } }, () => { toggles += 1; })).toBe(false);
 	});
 
 	test('panel toggle glyph thickens only its outer stroke', () => {
