@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-847",
   "title": "Corrigir botão da sidebar e uniformizar ícones de controles",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T12:17:02.247Z",
-  "updatedAt": "2026-09-10T12:17:02.247Z",
+  "updatedAt": "2026-09-10T12:22:41.214Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
