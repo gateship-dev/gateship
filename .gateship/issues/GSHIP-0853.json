@@ -1,0 +1,57 @@
+{
+  "id": "GSHIP-853",
+  "title": "Central: contrato de ordenação global e paginação para tabelas complexas",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:42:04.514Z",
+  "updatedAt": "2026-09-10T18:42:04.514Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Preparar os dados de Execuções e comparações de Análises para ordenação e paginação corretas no conjunto inteiro filtrado, sem ordenar apenas a página carregada nem alterar o significado das métricas.",
+    "acceptance": [
+      "Definir e documentar campos ordenáveis reais de execuções e coortes, direção, desempate estável, tratamento de nulos e ordem padrão; parâmetros inválidos têm comportamento explícito e testado.",
+      "Aplicar filtros e ordenação antes de paginar no servidor; totais pertencem ao conjunto filtrado, sem buscar todo o histórico no browser e sem divergência entre endpoints e consumidores existentes.",
+      "Preservar escopo de projeto, período e filtros atuais; IDs de linhas são estáveis; testar mais de uma página com valores repetidos e nulos, garantindo ordem global e ausência de duplicação em dados estáticos.",
+      "Expor contrato tipado para estado de filtros, ordenação e paginação no cliente; query parameters têm parsing e serialização canônicos, preservam URLs antigas e descartam valores inválidos.",
+      "Alterar filtros, ordenação ou tamanho de página reinicia a paginação; voltar/avançar e reload restauram a consulta; resposta atrasada não substitui dados de uma consulta mais recente.",
+      "Documentar limites de consistência sob polling e dados mutáveis, preservando comportamento atual e sem prometer snapshots estáveis entre requests independentes.",
+      "Adicionar testes de contrato aos testes de overview/API, cobrindo ordenação global, total filtrado, isolamento por projeto, compatibilidade de URLs e parâmetros inválidos."
+    ],
+    "boundaries": [
+      "Não implementar recursos de tabela visual nesta issue.",
+      "Não mudar fórmulas, coortes, cobertura ou conclusões das métricas.",
+      "Não implementar paginação cliente sobre uma página de servidor.",
+      "Não criar API genérica de consultas SQL, novos serviços ou mutações de dados.",
+      "Pré-requisitos: GSHIP-851. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+    ],
+    "verify": [
+      "bun test test/runtime/run-overview.test.ts test/web/project-status-api.test.ts test/web/ui-client.test.tsx",
+      "bun run typecheck"
+    ],
+    "research": {
+      "questions": [
+        "Como preservar coerência entre sorting, filtros e paginação controlados quando a fonte é paginada no servidor?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://ui.shadcn.com/docs/components/base/data-table.md",
+          "contentHash": "sha256:31d46187a08d79ce41dd8991599ce86ff2d6fba0b99ae4ebff84cfbccce6cff4",
+          "fetchedAt": "2026-09-10T18:37:34.778Z",
+          "sourceType": "official-documentation",
+          "claim": "A receita Data Table usa TanStack v9 e recomenda composições específicas por caso em vez de um componente universal rígido.",
+          "applicability": "Adotar lógica headless e partes compartilhadas sem copiar o tema padrão ou misturar APIs v8/v9."
+        }
+      ]
+    }
+  }
+}
