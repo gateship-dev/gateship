@@ -1,0 +1,68 @@
+{
+  "id": "GSHIP-859",
+  "title": "Central: verificação visual com evidências e liberdade para redesenhar",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:42:26.479Z",
+  "updatedAt": "2026-09-10T18:42:26.479Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Adicionar testes de browser e comparação visual ao harness existente, fazendo o fluxo Gateship verificar regressões objetivas e entregar evidências ao revisor sem proibir composições novas ou exigir aprovação humana por screenshot.",
+    "acceptance": [
+      "Adicionar Playwright como ferramenta de desenvolvimento e scripts bun run test:ui:smoke e bun run test:ui:visual; fixtures não usam backend vivo, relógio/fontes/locale são controlados e versões de browser/ambiente são fixadas.",
+      "Smoke verifica navegação, foco, menus, ordenação/paginação e ausência de overflow da página, sobreposição e corte de controles essenciais; overflow intencional fica permitido no container de tabelas.",
+      "Suite visual cobre quatro telas em 390 e 1440px, claro/escuro e PT/EN; 768px entra no smoke responsivo. Acrescentar cenários críticos de overlay, atenção, longos textos e tabela densa sem multiplicar toda combinação.",
+      "Integrar CI e contrato local de verificação do projeto: smoke obrigatório e visual nos caminhos afetados, dependências compartilhadas ampliam cobertura; falhas produzem expected/actual/diff e relatório acessíveis ao revisor.",
+      "Integrar comandos e referências de artefatos ao fluxo de verificação/revisão já existente, sem nova fase runtime; fallback para suite completa quando escopo afetado não puder ser determinado com segurança.",
+      "Estabelecer referências só após revisão das telas corrigidas; mudança intencional pode atualizar baseline com motivo e diff no PR. Proibir atualização cega automática, tolerância ampla ou máscaras que escondam defeitos.",
+      "Documentar que snapshots não medem beleza: invariantes bloqueiam defeitos, revisão avalia hierarquia e clareza. Novas composições são permitidas com cenário e evidência; sem nota estética por IA ou aprovação humana extra por run."
+    ],
+    "boundaries": [
+      "Executar após migrações desta rodada; fortalecer harness existente, não criar outro.",
+      "Não incluir browser/testes na imagem distribuída do produto.",
+      "Não impor layout único, medidas absolutas universais ou registry como validador.",
+      "Não aplicar regras visuais Gateship globalmente a repositórios de usuários.",
+      "Pré-requisitos: GSHIP-855, GSHIP-856, GSHIP-857, GSHIP-858. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+    ],
+    "verify": [
+      "bun run test:ui:smoke",
+      "bun run test:ui:visual",
+      "bun test test/web/ui-harness.test.tsx test/web/embedded-ui.test.ts",
+      "bun run typecheck"
+    ],
+    "research": {
+      "questions": [
+        "Como obter screenshots reproduzíveis e evidências revisáveis sem congelar erros existentes ou restringir novos designs?",
+        "Como integrar verificações ao fluxo atual do projeto sem novo estado de orquestração?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://playwright.dev/docs/test-snapshots",
+          "contentHash": "sha256:a940baeb842be894fb8864731377ed28f5086c27bc68fce66fa54faffd9ef358",
+          "fetchedAt": "2026-09-10T18:37:35.571Z",
+          "sourceType": "official-documentation",
+          "claim": "Screenshots podem ser comparados com referências; diferenças de sistema e ambiente afetam o resultado.",
+          "applicability": "Fixar ambiente e dados; revisar diferenças intencionais, sem confundir estabilidade com beleza."
+        },
+        {
+          "url": "https://ui.shadcn.com/docs/registry/registry-json",
+          "contentHash": "sha256:dfb2407eb4970d70119b65786ba414183afbadad3771a4376da5ff577a0eb4af",
+          "fetchedAt": "2026-09-10T18:37:34.974Z",
+          "sourceType": "official-documentation",
+          "claim": "registry.json descreve itens distribuíveis de um registry; não é um teste de conformidade visual.",
+          "applicability": "Adiar registry privado; usar contexto, componentes próprios e verificação de browser."
+        }
+      ]
+    }
+  }
+}
