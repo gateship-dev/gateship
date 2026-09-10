@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-850",
+  "title": "Reorganizar atalhos da shell e normalizar notificações",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:20:22.336Z",
+  "updatedAt": "2026-09-10T18:20:22.336Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Reservar o atalho visual e funcional para a Central de controle, remover o atalho de teclado da ação de recolher a sidebar e alinhar o acionador de notificações ao tamanho dos demais controles da shell.",
+    "acceptance": [
+      "Central de controle navega com Alt+0 e exibe a legenda equivalente à plataforma no mesmo padrão visual dos atalhos de projeto.",
+      "Os atalhos Alt+1 a Alt+9 dos projetos permanecem inalterados.",
+      "O botão de recolher ou expandir a sidebar permanece clicável e iconográfico, sem legenda kbd, aria-keyshortcuts nem handler global de teclado.",
+      "A Central de controle preserva link, estado ativo, nome acessível e representação coerente na sidebar expandida e recolhida.",
+      "O acionador de notificações usa as mesmas dimensões responsivas, raio, borda e estados dos botões iconográficos de idioma e tema.",
+      "O inventário documentado de atalhos, o harness e os testes refletem apenas Alt+0 para a Central e Alt+1 a Alt+9 para projetos."
+    ],
+    "boundaries": [
+      "Não alterar os atalhos dos projetos nem adicionar atalhos a notificações, inspetor, idioma, tema ou largura.",
+      "Não alterar o conteúdo, a regra de atenção ou o comportamento do popover de notificações.",
+      "Não adicionar dependência, animação ou nova preferência persistida."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-harness.test.tsx",
+      "bun run typecheck",
+      "bun run lint",
+      "bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "521d57d6d27ad6ae93767e192d475ab9847083ec0c24b4b1fc6546a426e542e0",
+    "approvedAt": "2026-09-10T18:20:22.336Z"
+  }
+}
