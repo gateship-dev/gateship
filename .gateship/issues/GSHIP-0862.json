@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T19:42:11.666Z",
-  "updatedAt": "2026-09-10T19:42:11.666Z",
+  "updatedAt": "2026-09-10T20:39:02.336Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -33,20 +33,24 @@
         "Como retirar a reserva bilateral no viewport preservando os scroll containers internos e a cobertura com scrollbars clássicas/sobrepostas?"
       ],
       "sourceClasses": [
-        "standard"
+        "primary-code"
       ],
       "freshness": {
         "mode": "current",
-        "resolvedAt": "2026-09-10T19:41:01.992Z"
+        "resolvedAt": "2026-09-10T20:38:58.000Z"
       },
       "receipts": [
         {
-          "url": "https://drafts.csswg.org/css-overflow-3/#scrollbar-gutter-property",
-          "fetchedAt": "2026-09-10T19:41:01.992Z",
-          "contentHash": "sha256:60cd72cf422e9d72686d0e3535c99ed0f52edf7757dfce76cbaa7f52f17053ff",
-          "sourceType": "standard",
-          "claim": "scrollbar-gutter stable reserva espaço com scrollbars clássicas; both-edges reserva também a borda oposta. A reserva não é necessária para scrollbars sobrepostas.",
-          "applicability": "Retirar reserva do viewport externo e conservar estabilidade deliberada nos painéis internos."
+          "url": "https://raw.githubusercontent.com/mdn/content/153369fa094f0b58ce1aee3f3cc1a3d7ab540b91/files/en-us/web/css/reference/properties/scrollbar-gutter/index.md",
+          "contentHash": "sha256:81a2bcea7e52929735041048bf211740e1c90d98e445704c4f07edc5285c282b",
+          "fetchedAt": "2026-09-10T20:38:58.000Z",
+          "sourceType": "primary-code",
+          "claim": "Como retirar a reserva bilateral no viewport preservando os scroll containers internos e a cobertura com scrollbars clássicas/sobrepostas?",
+          "applicability": "Retirar a reserva do viewport externo e manter estabilidade deliberada nos painéis internos.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "153369fa094f0b58ce1aee3f3cc1a3d7ab540b91"
+          }
         }
       ]
     }
