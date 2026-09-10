@@ -542,9 +542,10 @@ export function ShellControls({
 					<Button
 						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
 						aria-keyshortcuts={KEYBOARD_SHORTCUTS.toggleSidebar.aria}
-						className="h-9 w-auto gap-1.5 px-2"
+						className="gap-1.5 px-2"
+						data-slot="sidebar-toggle"
 						onClick={onToggleSidebar}
-						size="icon"
+						size="default"
 						type="button"
 						variant="outline"
 					>
@@ -578,7 +579,7 @@ export function ShellControls({
 								className="size-3.5"
 								icon={dark ? Sun02Icon : Moon02Icon}
 								size={14}
-								strokeWidth={3}
+								strokeWidth={2.25}
 							/>
 						</Button>
 						<Button
@@ -593,7 +594,7 @@ export function ShellControls({
 								className="size-3.5"
 								icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon}
 								size={14}
-								strokeWidth={3}
+								strokeWidth={2.25}
 							/>
 						</Button>
 					{inspectorToggle()}
@@ -620,7 +621,7 @@ export function shellSurfaceTitle(
 export function PanelToggleGlyph({ side }: { side: 'left' | 'right' }): React.ReactElement {
 	return (
 		<svg aria-hidden="true" className="size-3.5" data-side={side} data-slot="panel-toggle-glyph" fill="none" viewBox="0 0 16 16">
-			<rect height="12" rx="1.5" stroke="currentColor" strokeWidth="2.5" width="12" x="2" y="2" />
+			<rect height="12" rx="1.5" stroke="currentColor" strokeWidth="2.25" width="12" x="2" y="2" />
 			<rect fill="currentColor" height="12" rx="1" width="3.5" x={side === 'left' ? '2' : '10.5'} y="2" />
 		</svg>
 	);
