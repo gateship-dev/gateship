@@ -1,0 +1,58 @@
+{
+  "id": "GSHIP-857",
+  "title": "Central: migrar Execuções para tabela TanStack operacional",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:42:19.481Z",
+  "updatedAt": "2026-09-10T18:42:19.481Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Tornar Execuções uma tabela complexa de consulta com filtros, ordenação global, paginação e personalização de colunas, mantendo leitura clara e identidade Gateship em telas grandes e pequenas.",
+    "acceptance": [
+      "Usar TanStack e partes Gateship desta rodada para colunas atuais de execução, projeto, issue, estado, duração, PR, CI e modelos; renderizadores localizados mostram nulos e estados com significado correto.",
+      "Conectar filtros e sorting controlados ao contrato servidor; URL preserva projeto, estado, provedor, período, busca, ordem e página, com reload/voltar/avançar e reset de página coerentes.",
+      "Oferecer sorting por campos suportados, tamanho de página, mostrar/ocultar, fixar e redimensionar colunas, além de restaurar padrão; preferências locais por tabela são versionadas e toleram colunas removidas.",
+      "Manter identificação da execução legível ao rolar horizontalmente e links separados para execução/PR, sem stretched-link bloqueando seleção de texto, controles ou outros links.",
+      "Não oferecer checkbox ou ações em massa sem operação real; rótulos, descrição do total filtrado e estados de consulta são acessíveis e não confundem erro, zero resultados e carregamento.",
+      "Polling preserva preferências, consulta, scroll e foco; resultado atrasado não sobrescreve filtro recente e linha não muda identidade por posição na página.",
+      "Cobrir filtros combinados e mais de duas páginas, sorting global, URL, links, menu de colunas, resize/pin e mobile com overflow interno nos testes e harness."
+    ],
+    "boundaries": [
+      "Depende do contrato de dados, TanStack e harness desta rodada.",
+      "Não carregar histórico completo, mudar estados runtime ou acrescentar bulk actions.",
+      "Não substituir tokens ou ícones por defaults shadcn.",
+      "Não adicionar virtualização antes de medir necessidade com paginação existente.",
+      "Pré-requisitos: GSHIP-853, GSHIP-854, GSHIP-855. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/web/ui-harness.test.tsx test/runtime/run-overview.test.ts",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como adaptar a receita Data Table à consulta de execuções paginadas, preservando URL, links de célula e personalização de colunas?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://ui.shadcn.com/docs/components/base/data-table.md",
+          "contentHash": "sha256:31d46187a08d79ce41dd8991599ce86ff2d6fba0b99ae4ebff84cfbccce6cff4",
+          "fetchedAt": "2026-09-10T18:37:34.778Z",
+          "sourceType": "official-documentation",
+          "claim": "A receita Data Table usa TanStack v9 e recomenda composições específicas por caso em vez de um componente universal rígido.",
+          "applicability": "Adotar lógica headless e partes compartilhadas sem copiar o tema padrão ou misturar APIs v8/v9."
+        }
+      ]
+    }
+  }
+}
