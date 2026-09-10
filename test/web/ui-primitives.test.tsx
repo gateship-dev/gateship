@@ -69,6 +69,7 @@ describe('ui primitives', () => {
 		const html = renderToStaticMarkup(<TableFixture data={[{ id: 'a', name: 'Um texto suficientemente longo para testar overflow', state: 'Pronto' }, { id: 'b', name: 'Segundo', state: 'Em fila' }]} />);
 		const other = renderToStaticMarkup(<TableFixture columns={[{ accessorKey: 'state', header: 'Estado' }]} data={[{ id: 'a', name: 'Ignorado', state: 'Pronto' }]} />);
 		expect(html).toContain('data-slot="data-table"');
+		expect(html).toContain('data-slot="table-container"');
 		expect(html).toContain('aria-sort="none"');
 		expect(html).toContain('Página 1 / 2');
 		expect(html).toContain('Próxima página');
