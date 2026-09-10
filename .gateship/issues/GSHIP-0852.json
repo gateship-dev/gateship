@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:41:47.332Z",
-  "updatedAt": "2026-09-10T18:41:47.332Z",
+  "updatedAt": "2026-09-10T19:42:55.735Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -13,17 +13,17 @@
     "acceptance": [
       "Após a base visual desta rodada, remover ControlCenterNavigation das quatro telas; manter /overview, /overview/runs, /overview/queues e /overview/insights, sem tab bar duplicada no conteúdo.",
       "Sidebar expandida apresenta Central de controle como grupo e os quatro subitens; apenas o destino atual tem aria-current=page, e o grupo evidencia que uma de suas páginas está ativa.",
-      "Rail compacto oferece acesso aos quatro destinos por controle com nome acessível e menu; no móvel, grupo expansível mantém os destinos alcançáveis, fecha após navegar e devolve foco corretamente.",
+      "Desktop recolhido mantém os mesmos itens/subitens em forma de ícones identificáveis, nas mesmas coordenadas x/y; só textos desaparecem. Não substituir por flyout nem achatar grupos. No móvel, grupo expansível mantém acesso e foco corretos.",
       "Rótulos PT são Visão geral, Execuções, Filas e Análises; EN são Overview, Runs, Queues e Insights; título central do header acompanha a rota, sem recriar cabeçalho introdutório removido.",
       "Preservar Alt+0 para entrada da Central, Alt+1–9 para projetos e representação por plataforma; não devolver atalho ao toggle da sidebar nem adicionar quatro atalhos novos.",
       "Links diretos, atualizar página, voltar/avançar e troca de idioma preservam destino e estado ativo; links são links, sem ARIA tablist para navegação entre páginas.",
-      "Cobrir desktop, rail e mobile com testes de rota, foco, labels e teclado, preservando posição e estilo dos controles de notificações, tema e idioma."
+      "Testar rotas, foco, teclado e tooltips únicos; colapsar preserva centros de todos os ícones, alturas, gaps, recuos e rodapé. Ícone da Central e estado do projeto seguem GSHIP-861; preservar controles do header e canvas sem faixas externas."
     ],
     "boundaries": [
-      "Executar depois da base visual e reconciliar shell de GSHIP-850.",
+      "Herdar a estrutura única desktop e tooltips de GSHIP-861; não reintroduzir ShellRail separado, kbd no lugar de ícone ou title nativo concorrente.",
       "Não alterar URLs públicas, permissões, notificações ou ações de execução.",
       "Não substituir todo AppShell por um dashboard shadcn.",
-      "Pré-requisitos: GSHIP-851. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+      "Pré-requisitos: GSHIP-851, GSHIP-861 e GSHIP-862. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
     ],
     "verify": [
       "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx",
