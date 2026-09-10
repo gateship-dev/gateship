@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:11.866Z",
-  "updatedAt": "2026-09-10T18:42:11.866Z",
+  "updatedAt": "2026-09-10T19:42:59.380Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -15,7 +15,7 @@
       "Controlar cenário, rota, idioma, tema e relógio de forma reproduzível; nenhuma fixture chama backend real, usa credenciais do operador, inicia run ou grava preferências reais.",
       "Cobrir dados usuais, ausência, carregamento, erro, atualização, atenção, textos longos e tabelas densas; simular mudanças de resposta sem remontar toda página para observar foco e estado.",
       "Remover mobile baseado somente em div estreita; preview usa viewport isolado e testes usam viewport real de browser em 390, 768 e 1440px, com PT/EN e ambos os temas.",
-      "Sidebar, notificações, filtros, paginação e menus funcionam nas fixtures; manter posições de scroll/foco sob polling e reduzir movimento quando solicitado pelo sistema.",
+      "Sidebar real alterna sem remontagem: preservar centros dos ícones, alturas, recuos, rodapé e foco; fixtures cobrem tooltip único e seletor aberto. Canvas sem gutter externo; notificações/filtros/paginação funcionam, polling mantém contexto e reduced-motion é respeitado.",
       "Catálogo identifica componentes e cenários cobertos e oferece receitas como exemplos, não lista fechada de layouts permitidos; nova composição exige cenário representativo, não exceção administrativa.",
       "Manter harness e dados fictícios fora do bundle/rotas de produção; adicionar teste que verifica artefato construído, não apenas a presença de um comentário na configuração Vite."
     ],
@@ -24,7 +24,7 @@
       "Não criar Storybook paralelo, serviço próprio ou dependência de backend vivo.",
       "Não congelar screenshots da aparência ainda não revisada.",
       "Não produzir chamadas reais de cancelamento, aprovação ou início de trabalho.",
-      "Pré-requisitos: GSHIP-852, GSHIP-854. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+      "Pré-requisitos: GSHIP-852, GSHIP-854, GSHIP-861 e GSHIP-862. Ordem documentada, não bloqueio automático; incluir casos de regressão das duas correções."
     ],
     "verify": [
       "bun test test/web/ui-harness.test.tsx test/web/embedded-ui.test.ts test/web/ui-client.test.tsx",
