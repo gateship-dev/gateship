@@ -31,6 +31,7 @@ import {
 	useStoredOpen,
 } from './screens/shell.tsx';
 import { WorkSurface } from './screens/work-screen.tsx';
+import { KEYBOARD_SHORTCUTS, matchesShortcut } from './keyboard-shortcuts.ts';
 
 export { projectIdOf, routeOf, runIdOf } from './routes.ts';
 export type { AppProps } from './app-props.ts';
@@ -42,17 +43,21 @@ export function handleProjectShortcut(
 	runtime = panelRuntime(),
 	navigate?: (destination: string) => void,
 ): boolean {
-	if (!event.altKey || event.metaKey || event.ctrlKey) return false;
-	const shortcut = /^Digit([1-9])$/.exec(event.code ?? '')?.[1]
-		?? (event.code === undefined || event.code === '' ? /^[1-9]$/.exec(event.key)?.[0] : undefined);
-	if (shortcut === undefined) return false;
-	const index = Number(shortcut) - 1;
+	const index = KEYBOARD_SHORTCUTS.projects.findIndex((shortcut) => matchesShortcut(event, shortcut));
+	if (index < 0) return false;
 	const project = projects[index];
 	if (project === undefined) return false;
 	event.preventDefault();
 	const destination = `/projects/${encodeURIComponent(project.id)}`;
 	if (navigate === undefined) runtime.location?.assign(destination);
 	else navigate(destination);
+	return true;
+}
+
+export function handleSidebarShortcut(event: PanelKeyEvent, toggle: () => void): boolean {
+	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.toggleSidebar)) return false;
+	event.preventDefault();
+	toggle();
 	return true;
 }
 
@@ -83,9 +88,7 @@ export function App(props: AppProps): React.ReactElement {
 	useEffect(() => {
 		const runtime = panelRuntime();
 		const onKeyDown = (event: PanelKeyEvent): void => {
-			if (event.key === 'b' && (event.metaKey || event.ctrlKey)) {
-				event.preventDefault();
-				toggleSidebar();
+			if (handleSidebarShortcut(event, toggleSidebar)) {
 				return;
 			}
 			handleProjectShortcut(event, props.projects, runtime, props.onNavigate);

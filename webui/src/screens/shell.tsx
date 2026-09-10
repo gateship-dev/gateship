@@ -18,6 +18,7 @@ import { Popover } from '@base-ui/react/popover';
 import { Activity01Icon, Alert02Icon, ArrowExpand01Icon, ArrowShrink01Icon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useState } from 'react';
+import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 
 export const NAV_LINK_CLASS =
 	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:min-h-0 ' +
@@ -189,9 +190,10 @@ export const SWITCHER_ITEM_CLASS =
 	'aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground';
 
 function ProjectShortcut({ index }: { index: number | undefined }): React.ReactElement {
+	const platform = presentationPlatform();
 	return (
 		<span className="flex w-10 shrink-0 justify-center">
-			{index === undefined ? null : <kbd aria-hidden="true" className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground">Alt+{index + 1}</kbd>}
+			{index === undefined ? null : <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>}
 		</span>
 	);
 }
@@ -266,6 +268,7 @@ function ProjectSwitcherMenu({
 					</div>
 					{projects.map((project, index) => (
 						<Menu.Item
+							aria-keyshortcuts={index < 9 ? projectShortcutAria(index) : undefined}
 							aria-current={project.id === selection.projectId ? 'page' : undefined}
 							className={SWITCHER_ITEM_CLASS}
 							key={project.id}
@@ -300,7 +303,7 @@ function ProjectSwitcherRegistry({
 			<ul>
 				{projects.map((project, index) => (
 					<li key={project.id}>
-						<a aria-current={project.id === selection.projectId ? 'page' : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < 9 ? index : undefined} />{project.name}</a>
+						<a aria-current={project.id === selection.projectId ? 'page' : undefined} aria-keyshortcuts={index < 9 ? projectShortcutAria(index) : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < 9 ? index : undefined} />{project.name}</a>
 					</li>
 				))}
 				<li><a href="/projects">{catalog.manageProjectsLabel}</a></li>
@@ -327,6 +330,7 @@ export function ProjectSwitcher({
 			<Menu.Root>
 				<Menu.Trigger
 					aria-label={compact ? selectedName : undefined}
+					aria-keyshortcuts={selectedShortcut === undefined ? undefined : projectShortcutAria(selectedShortcut)}
 					className={compact
 						? cn(RAIL_NAV_ITEM_CLASS, 'relative data-[popup-open]:bg-sidebar-accent')
 						: cn(NAV_LINK_CLASS, 'w-full text-left data-[popup-open]:bg-sidebar-accent')}
@@ -494,6 +498,7 @@ export function ShellControls({
 	showInspectorToggle: boolean;
 	notifications: readonly NotificationItem[];
 }): React.ReactElement {
+	const shortcutPlatform = presentationPlatform();
 	const [dark, setDark] = useState(() => {
 		const runtime = panelRuntime();
 		const stored = runtime.localStorage?.getItem('gship-theme') ?? null;
@@ -536,12 +541,15 @@ export function ShellControls({
 					{/* The sidebar toggle lives in the content area, not the sidebar. */}
 					<Button
 						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
+						aria-keyshortcuts={KEYBOARD_SHORTCUTS.toggleSidebar.aria}
+						className="h-9 w-auto gap-1.5 px-2"
 						onClick={onToggleSidebar}
 						size="icon"
 						type="button"
 						variant="outline"
 					>
 						<PanelToggleGlyph side="left" />
+						<kbd aria-hidden="true" className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="sidebar-shortcut">{shortcutLabel('sidebar', undefined, shortcutPlatform)}</kbd>
 					</Button>
 				</div>
 				<div className="min-w-0 px-2 text-center type-editorial-title text-sm sm:text-base" data-slot="shell-surface-title" title={title}>
