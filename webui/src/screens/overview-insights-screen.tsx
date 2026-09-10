@@ -39,22 +39,30 @@ function labeledMetrics(items: Array<[string, { count: number; denominator: numb
 
 interface BrowserRuntime { location?: { search: string }; history?: { pushState: (data: null, unused: string, url: string) => void; replaceState: (data: null, unused: string, url: string) => void }; addEventListener?: (type: 'popstate', listener: () => void) => void; removeEventListener?: (type: 'popstate', listener: () => void) => void }
 function browserRuntime(): BrowserRuntime { return globalThis as unknown as BrowserRuntime; }
-function queryFromUrl(): { window: OverviewWindow; projectId?: string; cohortOffset: number } {
-	const params = new URLSearchParams(browserRuntime().location?.search ?? '');
+type InsightsQuery = { window: OverviewWindow; projectId?: string; cohortLimit: number; cohortOffset: number; cohortSortBy?: 'latestTerminalRunAt' | 'sampleSize' | 'workflowRevision' | 'specVersion'; cohortSortDirection?: 'asc' | 'desc' };
+export function queryFromUrl(runtime = browserRuntime()): InsightsQuery {
+	const params = new URLSearchParams(runtime.location?.search ?? '');
 	const rawWindow = params.get('window');
 	const rawOffset = Number(params.get('cohortOffset') ?? 0);
-	return { window: rawWindow === '30d' || rawWindow === 'all' ? rawWindow : '7d', projectId: params.get('projectId') ?? undefined, cohortOffset: Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0 };
+	const sortBy = params.get('cohortSortBy');
+	const sortDirection = params.get('cohortSortDirection');
+	const rawLimit = Number(params.get('cohortLimit') ?? 10);
+	return { window: rawWindow === '30d' || rawWindow === 'all' ? rawWindow : '7d', projectId: params.get('projectId') ?? undefined, cohortLimit: Number.isSafeInteger(rawLimit) && rawLimit > 0 ? rawLimit : 10, cohortOffset: Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0, cohortSortBy: ['latestTerminalRunAt', 'sampleSize', 'workflowRevision', 'specVersion'].includes(sortBy ?? '') ? sortBy as InsightsQuery['cohortSortBy'] : undefined, cohortSortDirection: sortDirection === 'asc' || sortDirection === 'desc' ? sortDirection : undefined };
 }
-export function insightUrl(window: OverviewWindow, projectId?: string, cohortOffset = 0): string {
+export function insightUrl(window: OverviewWindow, projectId?: string, cohortOffset = 0, cohortSortBy?: InsightsQuery['cohortSortBy'], cohortSortDirection?: InsightsQuery['cohortSortDirection'], cohortLimit = 10): string {
 	const params = new URLSearchParams({ window });
 	if (projectId !== undefined) params.set('projectId', projectId);
 	if (cohortOffset > 0) params.set('cohortOffset', String(cohortOffset));
+	if (cohortLimit !== 10) params.set('cohortLimit', String(cohortLimit));
+	if (cohortSortBy !== undefined) params.set('cohortSortBy', cohortSortBy);
+	if (cohortSortDirection !== undefined) params.set('cohortSortDirection', cohortSortDirection);
 	return `/overview/insights?${params}`;
 }
-type InsightsQuery = { window: OverviewWindow; projectId?: string; cohortOffset: number };
 export function updatedInsightsQuery(query: InsightsQuery, changes: Partial<InsightsQuery>): InsightsQuery {
 	const projectChanged = Object.prototype.hasOwnProperty.call(changes, 'projectId');
-	return { ...query, ...changes, cohortOffset: projectChanged || changes.window !== undefined ? 0 : (changes.cohortOffset ?? query.cohortOffset) };
+	const cohortLimitChanged = Object.prototype.hasOwnProperty.call(changes, 'cohortLimit');
+	const cohortSortChanged = Object.prototype.hasOwnProperty.call(changes, 'cohortSortBy') || Object.prototype.hasOwnProperty.call(changes, 'cohortSortDirection');
+	return { ...query, ...changes, cohortOffset: projectChanged || changes.window !== undefined || cohortLimitChanged || cohortSortChanged ? 0 : (changes.cohortOffset ?? query.cohortOffset) };
 }
 export function normalizedCohortOffset(page: NonNullable<HistoricalOverviewView['cohortsPage']>): number | null {
 	if (page.total === 0 || page.offset < page.total) return null;
@@ -112,10 +120,10 @@ function useInsightsState(initialOverview: ProjectOperationalOverviewView | null
 	const [query, setQuery] = useState(queryFromUrl);
 	const [data, setData] = useState<ProjectOperationalOverviewView | null>(initialOverview);
 	const [error, setError] = useState<string | null>(null);
-	useEffect(() => { const onPop = (): void => setQuery(queryFromUrl()); const onPage = (event: Event): void => { const offset = (event as CustomEvent<number>).detail; const next = { ...queryFromUrl(), cohortOffset: offset }; browserRuntime().history?.pushState(null, '', insightUrl(next.window, next.projectId, offset)); setQuery(next); }; const runtime = browserRuntime(); runtime.addEventListener?.('popstate', onPop); globalThis.addEventListener('gateship-cohort-page', onPage); return () => { runtime.removeEventListener?.('popstate', onPop); globalThis.removeEventListener('gateship-cohort-page', onPage); }; }, []);
-	useEffect(() => { if (!invalidCohortOffset(data)) return; const page = data?.overview.cohortsPage; if (page === undefined) return; const offset = normalizedCohortOffset(page); if (offset === null) return; const next = { ...query, cohortOffset: offset }; browserRuntime().history?.replaceState(null, '', insightUrl(next.window, next.projectId, offset)); setData(null); setQuery(next); }, [data, query]);
-	useEffect(() => { const controller = new AbortController(); let disposed = false; let timer: ReturnType<typeof setTimeout> | undefined; const read = (): void => { void fetchOverview(query.window, { ...(query.projectId === undefined ? {} : { projectId: query.projectId }), cohortOffset: query.cohortOffset }, controller.signal).then((value) => { if (!disposed) { setData(value); setError(null); } }).catch((reason: unknown) => { if (!disposed && !(reason instanceof DOMException && reason.name === 'AbortError')) setError(String(reason)); }).finally(() => { if (!disposed) timer = setTimeout(read, 15_000); }); }; read(); return () => { disposed = true; controller.abort(); if (timer !== undefined) clearTimeout(timer); }; }, [query]);
-	const update = (changes: Partial<InsightsQuery>): void => { const next = updatedInsightsQuery(query, changes); browserRuntime().history?.pushState(null, '', insightUrl(next.window, next.projectId, next.cohortOffset)); setQuery(next); };
+	useEffect(() => { const onPop = (): void => setQuery(queryFromUrl()); const onPage = (event: Event): void => { const offset = (event as CustomEvent<number>).detail; const next = { ...queryFromUrl(), cohortOffset: offset }; browserRuntime().history?.pushState(null, '', insightUrl(next.window, next.projectId, offset, next.cohortSortBy, next.cohortSortDirection, next.cohortLimit)); setQuery(next); }; const runtime = browserRuntime(); runtime.addEventListener?.('popstate', onPop); globalThis.addEventListener('gateship-cohort-page', onPage); return () => { runtime.removeEventListener?.('popstate', onPop); globalThis.removeEventListener('gateship-cohort-page', onPage); }; }, []);
+	useEffect(() => { if (!invalidCohortOffset(data)) return; const page = data?.overview.cohortsPage; if (page === undefined) return; const offset = normalizedCohortOffset(page); if (offset === null) return; const next = { ...query, cohortOffset: offset }; browserRuntime().history?.replaceState(null, '', insightUrl(next.window, next.projectId, offset, next.cohortSortBy, next.cohortSortDirection, next.cohortLimit)); setData(null); setQuery(next); }, [data, query]);
+	useEffect(() => { const controller = new AbortController(); let disposed = false; let timer: ReturnType<typeof setTimeout> | undefined; const read = (): void => { void fetchOverview(query.window, { ...(query.projectId === undefined ? {} : { projectId: query.projectId }), cohortLimit: query.cohortLimit, cohortOffset: query.cohortOffset, ...(query.cohortSortBy === undefined ? {} : { cohortSortBy: query.cohortSortBy }), ...(query.cohortSortDirection === undefined ? {} : { cohortSortDirection: query.cohortSortDirection }) }, controller.signal).then((value) => { if (!disposed) { setData(value); setError(null); } }).catch((reason: unknown) => { if (!disposed && !(reason instanceof DOMException && reason.name === 'AbortError')) setError(String(reason)); }).finally(() => { if (!disposed) timer = setTimeout(read, 15_000); }); }; read(); return () => { disposed = true; controller.abort(); if (timer !== undefined) clearTimeout(timer); }; }, [query]);
+	const update = (changes: Partial<InsightsQuery>): void => { const next = updatedInsightsQuery(query, changes); browserRuntime().history?.pushState(null, '', insightUrl(next.window, next.projectId, next.cohortOffset, next.cohortSortBy, next.cohortSortDirection, next.cohortLimit)); setQuery(next); };
 	return { query, data, error, update };
 }
 

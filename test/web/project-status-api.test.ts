@@ -30,6 +30,13 @@ function readyProject(root: string): void {
 	execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: root });
 }
 
+function seedDoneRun(root: string, id: string, issueId: string, createdAt: string, workflowRevision?: string): void {
+	const store = new RunStore(join(root, '.gship', 'runtime.sqlite'));
+	store.createRun({ id, issueId, sessionId: id, workspacePath: `/workspace/${id}`, createdAt, ...(workflowRevision === undefined ? {} : { workflowRevision }) });
+	for (const [index, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) store.transition({ runId: id, toState: state, kind: `run.${state}`, createdAt: new Date(Date.parse(createdAt) + (index + 1) * 60_000).toISOString() });
+	store.close();
+}
+
 describe('GET /api/project', () => {
 	test('reports an otherwise empty service directory as an onboarding target', async () => {
 		const cwd = createTestTmpdir('gship-project-api-');
@@ -89,6 +96,41 @@ describe('GET /api/overview/queues', () => {
 	});
 });
 
+describe('GET /api/overview/runs', () => {
+	test('aplica filtros, ordenação e desempate global antes da paginação entre projetos', async () => {
+		const cwd = createTestTmpdir('gship-runs-contract-api-');
+		const target = createTestTmpdir('gship-runs-contract-target-');
+		const gateshipHome = createTestTmpdir('gship-runs-contract-home-');
+		readyCheckout(cwd);
+		readyCheckout(target);
+		seedDoneRun(cwd, 'run-z', 'GSHIP-900', '2026-09-07T10:00:00.000Z');
+		seedDoneRun(target, 'run-a', 'GSHIP-900', '2026-09-07T10:00:00.000Z');
+		const handle = startWebServer({ port: 0, cwd, gateshipHome });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const registered = await fetch(`${origin}/api/projects`, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: JSON.stringify({ root: target }) }).then((response) => response.json()) as { project: { id: string } };
+			const query = (suffix: string) => fetch(`${origin}/api/overview/runs?sortBy=issueId&sortDirection=asc&limit=1${suffix}`).then((response) => response.json()) as Promise<{ runs: Array<{ runId: string; projectId: string }>; page: { total: number } }>;
+			const first = await query('&offset=0');
+			const second = await query('&offset=1');
+			expect(first.page.total).toBe(2);
+			const pagedRunIds = first.runs.map((run) => run.runId).concat(second.runs.map((run) => run.runId));
+			expect(pagedRunIds).toHaveLength(2);
+			expect(new Set(pagedRunIds).size).toBe(2);
+			expect(pagedRunIds.sort()).toEqual(['run-a', 'run-z']);
+			const filtered = await query(`&projectId=${encodeURIComponent(registered.project.id)}`);
+			expect(filtered.page.total).toBe(1);
+			expect(filtered.runs[0]?.projectId).toBe(registered.project.id);
+			for (const parameter of ['limit=0', 'limit=nope', 'offset=-1', 'offset=nope', 'sortBy=nope', 'sortDirection=nope']) {
+				const response = await fetch(`${origin}/api/overview/runs?${parameter}`);
+				expect(response.status).toBe(400);
+				expect(await response.json()).toMatchObject({ code: 'invalid-query' });
+			}
+		} finally {
+			await handle.stop();
+		}
+	}, { timeout: 15_000 });
+});
+
 describe('GET /api/overview', () => {
 	test(
 		'projects typed factual cohorts with intact denominators and project filters',
@@ -112,16 +154,25 @@ describe('GET /api/overview', () => {
 			for (const [index, state] of (['working', 'verify', 'ready-to-ship', 'shipping', 'done'] as const).entries()) targetStore.transition({ runId: 'run-cohort-target', toState: state, kind: `run.${state}`, createdAt: `2026-09-07T11:1${index}:00.000Z` });
 			targetStore.appendEvent({ runId: 'run-cohort-target', kind: 'provider.model', payload: { provider: 'claude', model: 'model-api', effort: 'high' }, createdAt: '2026-09-07T11:16:00.000Z' });
 			targetStore.close();
+			seedDoneRun(target, 'run-cohort-target-other', 'GSHIP-836', '2026-09-07T12:00:00.000Z', 'revision-other');
 			const all = await fetch(`${origin}/api/overview?window=all`).then((response) => response.json()) as { projects: Array<{ project: { id: string }; root: { state: string }; database: { state: string; runs: unknown[] }; overview: { overview: { cohorts: unknown[] } } }>; overview: { cohorts: Array<Record<string, unknown>> } };
 			const filtered = await fetch(`${origin}/api/overview?window=all&projectId=${encodeURIComponent(registered.project.id)}`).then((response) => response.json()) as typeof all;
 			expect(Buffer.byteLength(JSON.stringify(all))).toBeLessThanOrEqual(64 * 1024);
 			expect(all.overview.cohorts).toContainEqual(expect.objectContaining({ workflowRevision: 'revision-api', specVersion: 'v2', sampleSize: 2, outcomes: expect.objectContaining({ shipped: { count: 2, denominator: 2 } }) }));
 			expect(all.projects.find((entry) => entry.project.id === registered.project.id)).toMatchObject({ project: { id: registered.project.id }, root: { state: 'available' }, database: { state: 'available', runs: expect.any(Array) }, overview: { overview: expect.objectContaining({ cohorts: expect.any(Array) }) } });
 			expect(filtered.overview.cohorts).toContainEqual(expect.objectContaining({ workflowRevision: 'revision-api', specVersion: 'v2', sampleSize: 1, outcomes: expect.objectContaining({ shipped: { count: 1, denominator: 1 } }) }));
-			const paged = await fetch(`${origin}/api/overview?window=all&projectId=${encodeURIComponent(registered.project.id)}&providerId=claude&model=model-api&role=executor&effort=high&cohortLimit=1&cohortOffset=0`).then((response) => response.json()) as { overview: { cohorts: Array<Record<string, unknown>>; cohortsPage: Record<string, number> } };
+			const paged = await fetch(`${origin}/api/overview?window=all&projectId=${encodeURIComponent(registered.project.id)}&cohortSortBy=sampleSize&cohortSortDirection=asc&cohortLimit=1&cohortOffset=0`).then((response) => response.json()) as { overview: { cohorts: Array<Record<string, unknown>>; cohortsPage: Record<string, number> } };
 			expect(paged.overview.cohorts).toHaveLength(1);
 			expect(paged.overview.cohorts[0]).toMatchObject({ workflowRevision: 'revision-api', specVersion: 'v2' });
-			expect(paged.overview.cohortsPage).toEqual({ limit: 1, offset: 0, returned: 1, total: 1 });
+			expect(paged.overview.cohortsPage).toEqual({ limit: 1, offset: 0, returned: 1, total: 2 });
+			const sorted = await fetch(`${origin}/api/overview?window=all&projectId=${encodeURIComponent(registered.project.id)}&cohortSortBy=sampleSize&cohortSortDirection=asc&cohortLimit=1&cohortOffset=1`).then((response) => response.json()) as { overview: { cohorts: Array<Record<string, unknown>>; cohortsPage: Record<string, number> } };
+			expect(sorted.overview.cohortsPage).toEqual({ limit: 1, offset: 1, returned: 1, total: 2 });
+			expect(sorted.overview.cohorts[0]).toMatchObject({ workflowRevision: 'revision-other' });
+			for (const parameter of ['cohortLimit=0', 'cohortLimit=nope', 'cohortOffset=-1', 'cohortOffset=nope', 'cohortSortBy=nope', 'cohortSortDirection=nope']) {
+				const response = await fetch(`${origin}/api/overview?window=all&${parameter}`);
+				expect(response.status).toBe(400);
+				expect(await response.json()).toMatchObject({ code: 'invalid-query' });
+			}
 		} finally {
 			await handle.stop();
 		}

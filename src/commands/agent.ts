@@ -55,9 +55,9 @@ const runPath = (suffix: string) => (input: Record<string, unknown>) =>
 export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
-	'projects.overview': { method: 'GET', path: overviewPath, input: '{cohortLimit?, cohortOffset?, projectId?, providerId?, model?, role?, effort?}' },
+	'projects.overview': { method: 'GET', path: overviewPath, input: '{cohortLimit?, cohortOffset?, cohortSortBy?, cohortSortDirection?, projectId?, providerId?, model?, role?, effort?}' },
 	'projects.cohort_regression_proposal': { method: 'POST', path: projectPath('/cohort-regression-proposal'), input: '{projectId, baselineCohortId, candidateCohortId, metric, direction, threshold, hypothesis}' },
-	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?, period?, search?}' },
+	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?, period?, search?, sortBy?, sortDirection?}' },
 	'queues.list': { method: 'GET', path: () => '/api/overview/queues', input: '{}' },
 	'projects.status': { method: 'GET', path: projectPath('/status'), input: '{projectId}' },
 	'projects.register': { method: 'POST', path: () => '/api/projects', input: '{root}' },

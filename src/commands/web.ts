@@ -2912,15 +2912,19 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					...(role === null ? {} : { role }),
 					...(params.get('effort') === null ? {} : { effort: params.get('effort')! }),
 				};
-				const parsePageNumber = (name: string): number | undefined => {
+				const cohortSortBy = params.get('cohortSortBy');
+				const cohortSortDirection = params.get('cohortSortDirection');
+				const cohortSortFields = ['latestTerminalRunAt', 'sampleSize', 'workflowRevision', 'specVersion'] as const;
+				if (cohortSortBy !== null && !cohortSortFields.includes(cohortSortBy as typeof cohortSortFields[number])) return Response.json({ ok: false, code: 'invalid-query', message: 'cohortSortBy must be a valid cohort field.' }, { status: 400 });
+				if (cohortSortDirection !== null && cohortSortDirection !== 'asc' && cohortSortDirection !== 'desc') return Response.json({ ok: false, code: 'invalid-query', message: 'cohortSortDirection must be asc or desc.' }, { status: 400 });
+				for (const [name, minimum] of [['cohortLimit', 1], ['cohortOffset', 0]] as const) {
 					const value = params.get(name);
-					if (value === null) return undefined;
-					const parsed = Number(value);
-					return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
-				};
+					if (value !== null && (!Number.isSafeInteger(Number(value)) || Number(value) < minimum)) return Response.json({ ok: false, code: 'invalid-query', message: `${name} must be a safe integer ${minimum === 0 ? 'greater than or equal to 0' : 'greater than 0'}.` }, { status: 400 });
+				}
+				const parsePageNumber = (name: string): number | undefined => params.get(name) === null ? undefined : Number(params.get(name));
 				return Response.json(readProjectOperationalOverview(
 					projectRegistry.list(projectRoot).filter((project) => filters.projectId === undefined || project.id === filters.projectId), undefined, undefined, rawWindow as OverviewWindow, new Date(), filters,
-					{ cohortLimit: parsePageNumber('cohortLimit'), cohortOffset: parsePageNumber('cohortOffset') },
+					{ cohortLimit: parsePageNumber('cohortLimit'), cohortOffset: parsePageNumber('cohortOffset'), cohortSortBy: cohortSortBy as HistoricalOverviewFilters['cohortSortBy'], cohortSortDirection: cohortSortDirection as HistoricalOverviewFilters['cohortSortDirection'] },
 				));
 			},
 			'/api/overview/queues': () => {

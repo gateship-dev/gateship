@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { RegisteredProject } from '../../src/runtime/project-registry.ts';
-import { readRunOverview } from '../../src/runtime/run-overview.ts';
+import { parseRunOverviewFilters, readRunOverview } from '../../src/runtime/run-overview.ts';
 import type { PersistedRunHistory } from '../../src/runtime/run-store.ts';
 
 function project(id: string, name = id): RegisteredProject {
@@ -78,5 +78,22 @@ describe('readRunOverview', () => {
 		};
 		expect(readRunOverview([project('one')], { period: '7d' }, options).runs.map((run) => run.runId)).toEqual(['recent-run']);
 		expect(readRunOverview([project('one')], { search: 'GSHIP-old' }, options).runs.map((run) => run.runId)).toEqual(['old-run']);
+	});
+
+	test('ordena globalmente por campos reais, mantém nulos no fim e pagina sem duplicar', () => {
+		const first = history('first', '2026-09-01T00:00:00.000Z');
+		first.cost.totalCostUsd = null;
+		const second = history('second', '2026-09-03T00:00:00.000Z');
+		second.cost.totalCostUsd = 2;
+		const third = history('third', '2026-09-02T00:00:00.000Z');
+		third.cost.totalCostUsd = 1;
+		const options = { readHistory: () => [first, second, third] };
+		expect(readRunOverview([project('one')], { sortBy: 'cost', sortDirection: 'asc', limit: 2 }, options).runs.map((run) => run.runId)).toEqual(['third', 'second']);
+		expect(readRunOverview([project('one')], { sortBy: 'cost', sortDirection: 'asc', offset: 2, limit: 2 }, options).runs.map((run) => run.runId)).toEqual(['first']);
+	});
+
+	test('rejeita parâmetros de ordenação desconhecidos com contrato explícito', () => {
+		expect(() => parseRunOverviewFilters(new URLSearchParams('sortBy=unknown'))).toThrow('sortBy must be a valid run field.');
+		expect(() => parseRunOverviewFilters(new URLSearchParams('sortDirection=sideways'))).toThrow('sortDirection must be asc or desc.');
 	});
 });

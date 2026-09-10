@@ -337,6 +337,8 @@ export interface HistoricalOverviewFilters {
 	effort?: string;
 	cohortLimit?: number;
 	cohortOffset?: number;
+	cohortSortBy?: 'latestTerminalRunAt' | 'sampleSize' | 'workflowRevision' | 'specVersion';
+	cohortSortDirection?: 'asc' | 'desc';
 }
 
 export interface ProjectOperationalOverviewView {
@@ -658,6 +660,8 @@ export interface OverviewRunsQuery {
 	providerId?: 'claude' | 'codex';
 	period?: '7d' | '30d' | 'all';
 	search?: string;
+	sortBy?: 'updatedAt' | 'createdAt' | 'projectName' | 'issueId' | 'state' | 'providerId' | 'duration' | 'cost';
+	sortDirection?: 'asc' | 'desc';
 }
 
 export async function fetchOverviewRuns(

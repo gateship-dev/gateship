@@ -32,6 +32,28 @@ Ela persiste quando o operador visita a Central e é atualizada ao abrir uma
 rota válida do projeto. Uma seleção removida ou inválida é descartada sem
 inventar um projeto padrão.
 
+### Contrato de ordenação e paginação
+
+`GET /api/overview/runs` ordena execuções por `updatedAt`, `createdAt`,
+`projectName`, `issueId`, `state`, `providerId`, `duration` ou `cost`. A direção
+é `asc` ou `desc`; o padrão é `updatedAt desc`. Valores nulos ficam sempre no
+fim. O desempate estável usa `projectId` e depois `runId`. Para coortes em
+`GET /api/overview`, os campos são `latestTerminalRunAt`, `sampleSize`,
+`workflowRevision` e `specVersion`, com padrão `latestTerminalRunAt desc`,
+nulos no fim e desempate por `cohortId`. Parâmetros inválidos são rejeitados
+explicitamente pelo endpoint, enquanto o cliente descarta valores inválidos
+ao restaurar a URL.
+
+Filtros e ordenação são aplicados no servidor antes da paginação; os totais
+pertencem ao conjunto filtrado. A paginação é controlada pelos parâmetros
+canônicos de limite e offset, preservando URLs antigas e reiniciando o offset
+quando filtros, ordenação ou tamanho de página mudam.
+
+Cada polling refaz a consulta sobre o estado atual. Requests independentes não
+formam um snapshot: com dados mutáveis, uma linha pode mudar de página entre
+leituras. A ausência de duplicação entre páginas é garantida somente quando o
+conjunto permanece estático.
+
 ## Métricas e evidências
 
 As métricas devem responder perguntas operacionais concretas, como atenção

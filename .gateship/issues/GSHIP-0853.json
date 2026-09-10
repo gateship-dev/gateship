@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-853",
   "title": "Central: contrato de ordenação global e paginação para tabelas complexas",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:04.514Z",
-  "updatedAt": "2026-09-10T22:11:17.682Z",
+  "updatedAt": "2026-09-10T22:40:03.952Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
