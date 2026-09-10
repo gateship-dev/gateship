@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:41:10.329Z",
-  "updatedAt": "2026-09-10T20:21:30.676Z",
+  "updatedAt": "2026-09-10T20:22:49.855Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -33,30 +33,29 @@
     ],
     "research": {
       "questions": [
-        "Como integrar descoberta shadcn à base existente sem substituir identidade, componentes ou biblioteca de interação?",
-        "Quais regras são invariantes testáveis e quais devem permanecer decisões de design?"
+        "Como components.json descreve configuração, aliases, Tailwind v4 e biblioteca de ícones?"
       ],
       "sourceClasses": [
-        "official-documentation"
+        "primary-code"
       ],
       "freshness": {
         "mode": "current",
-        "resolvedAt": "2026-09-10T18:37:34.696Z"
+        "resolvedAt": "2026-09-10T20:22:49.000Z"
       },
       "receipts": [
         {
-          "url": "https://ui.shadcn.com/docs/registry/registry-json",
-          "contentHash": "sha256:dfb2407eb4970d70119b65786ba414183afbadad3771a4376da5ff577a0eb4af",
-          "fetchedAt": "2026-09-10T18:37:34.974Z",
-          "sourceType": "official-documentation",
-          "claim": "registry.json descreve itens distribuíveis de um registry; não é um teste de conformidade visual.",
-          "applicability": "Adiar registry privado; usar contexto, componentes próprios e verificação de browser."
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/apps/v4/content/docs/%28root%29/components-json.mdx",
+          "contentHash": "sha256:8dd04ec57364664c35a69679de426ae6e74ee24420a15fcee914cd09c77f4106",
+          "fetchedAt": "2026-09-10T20:22:49.000Z",
+          "sourceType": "primary-code",
+          "claim": "Como components.json descreve configuração, aliases, Tailwind v4 e biblioteca de ícones?",
+          "applicability": "Configurar o webui sem regenerar componentes nem substituir a identidade Gateship.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
         }
       ]
     }
-  },
-  "approval": {
-    "fingerprint": "f957e69f271d5564c533d3cc26474c75e77364a22445a95a1550db3785f7ffd3",
-    "approvedAt": "2026-09-10T20:21:30.676Z"
   }
 }
