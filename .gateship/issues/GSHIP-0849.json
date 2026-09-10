@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-849",
+  "title": "Remover cabeçalhos introdutórios das páginas",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T13:27:40.792Z",
+  "updatedAt": "2026-09-10T13:27:40.792Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Eliminar os blocos visuais repetitivos de título e subtítulo no topo das páginas, deixando a navegação e o conteúdo funcional iniciarem a superfície sem texto explicativo redundante.",
+    "acceptance": [
+      "Projetos não exibe visualmente o título da página nem a descrição sobre projetos registrados.",
+      "Execuções, Filas e Insights da Central de controle não exibem visualmente seus títulos e descrições introdutórios.",
+      "SurfaceColumn preserva um único título semântico de nível 1, invisível visualmente, derivado de label para manter a estrutura acessível das rotas.",
+      "A navegação da Central de controle e o primeiro controle ou conteúdo funcional passam a ser adjacentes sem espaço vazio residual.",
+      "Títulos e descrições funcionais de cards, painéis, formulários, onboarding, estados vazios e erros permanecem inalterados.",
+      "As duas localidades continuam completas e os nomes das superfícies permanecem disponíveis para navegação e acessibilidade."
+    ],
+    "boundaries": [
+      "Não remover títulos internos de cards, tabs, seções, formulários, onboarding, estados vazios ou erros.",
+      "Não alterar rotas, navegação, dados, comportamento, responsividade nem catálogo de traduções além do necessário.",
+      "Não introduzir componente, dependência ou animação nova."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx",
+      "bun run typecheck",
+      "bun run lint",
+      "bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "bc8d8a0e29b1448cd736f2ee171a485163b43ca2e185b0f3b9d5b964c8a4f240",
+    "approvedAt": "2026-09-10T13:27:40.792Z"
+  }
+}
