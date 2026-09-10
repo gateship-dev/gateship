@@ -5,13 +5,31 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:44:53.597Z",
-  "updatedAt": "2026-09-08T14:44:53.597Z",
-  "description": "Na superfície de Runs, remover a barra percentual derivada da posição linear e apresentar o progresso como state machine editorial fiel ao runtime. Manter os estados reais da espinha queued, working, verify, review, full-verify, ready-to-ship, shipping e done com labels humanos concisos; estados waiting-user, waiting-provider, failed, interrupted e cancelled aparecem como modificadores do estágio correspondente. Mostrar no máximo um retorno visual de correção com contador e origem agregada, deixando detalhes na timeline. O estágio atual é o foco principal e verde ácido aparece somente em ready-to-ship ou outra ação real do operador. Usar HTML semântico e SVG/CSS decorativo mínimo, versão vertical no mobile, navegação para a seção correspondente da atividade e movimento curto opcional, sem pulso contínuo e com fallback completo para prefers-reduced-motion. Não adicionar biblioteca de diagramas ou animação.",
+  "updatedAt": "2026-09-10T01:18:06.613Z",
   "specSource": "operator",
   "spec": {
-    "scope": "Na superfície de Runs, remover a barra percentual derivada da posição linear e apresentar o progresso como state machine editorial fiel ao runtime. Manter os estados reais da espinha queued, working, verify, review, full-verify, ready-to-ship, shipping e done com labels humanos concisos; estados waiting-user, waiting-provider, failed, interrupted e cancelled aparecem como modificadores do estágio correspondente. Mostrar no máximo um retorno visual de correção com contador e origem agregada, deixando detalhes na timeline. O estágio atual é o foco principal e verde ácido aparece somente em ready-to-ship ou outra ação real do operador. Usar HTML semântico e SVG/CSS decorativo mínimo, versão vertical no mobile, navegação para a seção correspondente da atividade e movimento curto opcional, sem pulso contínuo e com fallback completo para prefers-reduced-motion. Não adicionar biblioteca de diagramas ou animação.",
+    "version": 2,
+    "objective": "Substituir o percentual linear das runs por um mapa editorial e determinístico da máquina de estados real. O estágio atual deve ser legível de imediato, com desvios e correções compactos, sem sugerir precisão inexistente.",
+    "acceptance": [
+      "A superfície de Runs não exibe mais barra nem percentual derivado da posição; usa uma lista semântica ordenada com queued, working, verify, review, full-verify, ready-to-ship, shipping e done.",
+      "Cada estágio tem label humano conciso em pt-BR e en-US; o atual usa aria-current e foco visual principal, os concluídos e futuros permanecem distinguíveis sem depender somente de cor.",
+      "waiting-user, waiting-provider, failed, interrupted e cancelled aparecem como modificadores do último estágio conhecido, derivados dos dados duráveis disponíveis; ausência de histórico usa um fallback explícito e não inventa progresso.",
+      "No máximo um retorno de correção é mostrado, com contador total e origem agregada a partir da avaliação da run; os detalhes continuam na atividade.",
+      "Verde ácido aparece apenas quando há ação real do operador, incluindo ready-to-ship ou waiting-user acionável; andamento normal, espera de provider e término usam a paleta neutra e os estados semânticos existentes.",
+      "Cada estágio navega para um anchor estável da atividade correspondente; o componente é horizontal no desktop, vertical em 390 px, usa HTML semântico com CSS ou SVG apenas decorativo e respeita prefers-reduced-motion sem pulso contínuo.",
+      "O harness interno contém fixtures determinísticas para fluxo normal, correção, espera do provider, ação do operador, falha, cancelamento e conclusão nos dois idiomas, temas e moldura mobile; testes cobrem a derivação de todos os estados."
+    ],
+    "boundaries": [
+      "Não alterar a máquina de estados, transições, persistência, decisões de autonomia ou payloads do runtime.",
+      "Não adicionar biblioteca de diagramas, animação, progresso ou qualquer dependência.",
+      "Não criar score, estimativa de tempo, percentual alternativo ou representação de múltiplos loops.",
+      "Não transformar o harness em rota ou bundle de produção e não antecipar a timeline completa da GSHIP-830.",
+      "Não executar check:all durante a implementação; a verificação integral continua pertencendo à fronteira automática de ship."
+    ],
     "verify": [
-      "bun run check:all"
+      "bun test test/web/ui-client.test.tsx test/web/ui-harness.test.tsx test/web/ui-primitives.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
     ]
   }
 }
