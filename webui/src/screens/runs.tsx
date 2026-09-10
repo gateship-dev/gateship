@@ -7,13 +7,12 @@ import { Badge } from '../components/ui/badge.tsx';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
 import { Callout } from '../components/ui/callout.tsx';
 import { Card, CardAction, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
-import { Progress } from '../components/ui/progress.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
 import { cn } from '../lib/cn.ts';
 import { useLiveEdge } from '../live-edge.ts';
 import { DEFAULT_LOCALE, LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, RunInspectorCatalog, RunsOperationalCatalog, RunsWorkflowCatalog, SettingsCatalog } from '../locale.ts';
-import { actionsFor, phaseOf, progressOf, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
+import { actionsFor, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
 import type { ProviderUsageWindowView, RunCostRole, RunCostRoleUsage, RunEventView, RunExecutorHandoffView, RunProviderWaitView, RunView, WorkflowCohort } from '../run-view.ts';
 import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
@@ -166,6 +165,14 @@ export function RunActivity({
 		: events
 			.filter((event) => event.runId === run.id && isOperational(event))
 			.slice(-30);
+	const anchoredPhases = new Set<(typeof RUN_PHASES)[number]>();
+	const eventAnchors = new Map<number, (typeof RUN_PHASES)[number]>();
+	for (const event of visible) {
+		if (event.fromState === event.toState || !RUN_PHASES.includes(event.toState)) continue;
+		if (anchoredPhases.has(event.toState)) continue;
+		anchoredPhases.add(event.toState);
+		eventAnchors.set(event.seq, event.toState);
+	}
 	const {
 		canReturnToLiveEdge: _canReturnToLiveEdge,
 		returnToLiveEdge: _returnToLiveEdge,
@@ -188,10 +195,11 @@ export function RunActivity({
 					ref={liveEdgeRef}
 					onScroll={handleLiveEdgeScroll}
 				>
+					{RUN_PHASES.filter((phase) => !anchoredPhases.has(phase)).map((phase) => <li aria-hidden="true" className="sr-only" key={phase}><span id={`run-activity-${phase}`} /></li>)}
 					{visible.map((event) => {
 						const detail = eventDetail(event, catalog.activity.toolsLabel);
 						return (
-							<li className="min-w-0 border-border border-l-2 pl-3 text-sm" key={event.seq}>
+							<li className="min-w-0 border-border border-l-2 pl-3 text-sm" id={eventAnchors.has(event.seq) ? `run-activity-${eventAnchors.get(event.seq)}` : undefined} key={event.seq}>
 								<div className="flex items-baseline justify-between gap-3">
 									<code className="min-w-0 break-all">{event.kind}</code>
 									{event.kind === 'run.cycle-response' ? <Badge>{catalog.activity.cycleResponseLabel}</Badge> : null}
@@ -215,14 +223,41 @@ export function RunActivity({
 
 export function RunProgress({
 	catalog,
+	events,
 	run,
-}: { catalog: RunInspectorCatalog; run: RunView }): React.ReactElement {
-	const phase = phaseOf(run.state);
+}: { catalog: RunInspectorCatalog; events: readonly RunEventView[]; run: RunView }): React.ReactElement {
+	const runEvents = events.filter((event) => event.runId === run.id);
+	const current = lastKnownRunPhase(run.state, runEvents);
+	const statuses = runStageStatuses(run.state, runEvents);
+	const hasHistory = current !== null;
+	const actionable = run.state === 'ready-to-ship' || run.state === 'waiting-user';
 	return (
-		<Progress
-			label={catalog.phaseLabel(catalog.stateLabels[phase])}
-			value={Math.round(progressOf(run.state) * 100)}
-		/>
+		<nav aria-label={catalog.stageMap.title} className="flex flex-col gap-3 sm:flex-row sm:gap-0" data-slot="run-stage-map">
+			<ol className="flex flex-col gap-3 sm:flex-row sm:items-start sm:w-full sm:gap-0">
+				{RUN_PHASES.map((phase) => {
+					const status = statuses[phase];
+					const attention = status === 'current' && actionable;
+					return (
+						<li className="flex min-w-0 flex-1 items-start gap-2 sm:flex-col sm:items-center sm:gap-1" data-stage={phase} data-status={status} key={phase}>
+							<a
+								aria-current={status === 'current' ? 'step' : undefined}
+								className={cn('group flex min-h-11 min-w-0 items-center gap-2 rounded-sm px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-col sm:justify-center sm:text-center', attention && 'text-attention-text')}
+								href={`#run-activity-${phase}`}
+							>
+								<span aria-hidden="true" className={cn('flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border font-mono text-xs', status === 'complete' && 'bg-muted', status === 'current' && 'border-foreground font-semibold', attention && 'border-attention-ui bg-attention')}>{status === 'complete' ? '✓' : status === 'current' ? '•' : '○'}</span>
+								<span className="text-sm leading-tight">{catalog.stageLabels[phase as keyof typeof catalog.stageLabels]}</span>
+								<span className="sr-only">{catalog.stageStatusLabels[status]}</span>
+							</a>
+							{phase !== 'done' ? <span aria-hidden="true" className="ml-3 mt-3 h-px flex-1 bg-border sm:ml-0 sm:mt-1 sm:h-px sm:w-full" /> : null}
+						</li>
+					);
+				})}
+			</ol>
+			{hasHistory ? null : <p className="text-muted-foreground text-xs">{catalog.stageMap.noHistory}</p>}
+			{run.state === 'waiting-user' || run.state === 'waiting-provider' || run.state === 'failed' || run.state === 'interrupted' || run.state === 'cancelled' ? <p className={cn('text-xs', actionable ? 'text-attention-text' : 'text-muted-foreground')}><span className="font-medium">{catalog.stageMap.modifierLabel}:</span> {catalog.stateLabels[run.state]}</p> : null}
+			{hasHistory ? <span className="sr-only">{catalog.phaseLabel(catalog.stateLabels[current])}</span> : null}
+			{hasNoRounds(run.roundOrigins) ? null : <p className="text-muted-foreground text-xs">{catalog.correctionRounds(run.roundOrigins.executor, run.roundOrigins.ci ?? 0, run.roundOrigins.decision, run.roundOrigins.orchestrator ?? 0, run.roundOrigins.indeterminate)}</p>}
+		</nav>
 	);
 }
 
@@ -391,6 +426,7 @@ export function RunCommands({
  */
 export function RunCard({
 	catalog,
+	events = [],
 	locale,
 	run,
 	title,
@@ -403,6 +439,7 @@ export function RunCard({
 	showCost = true,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	catalog: RunInspectorCatalog;
+	events?: readonly RunEventView[];
 	locale: Locale;
 	run: RunView | null;
 	title: string;
@@ -436,6 +473,7 @@ export function RunCard({
 					{run === null ? null : (
 						<RunCardContent
 							catalog={catalog}
+							events={events}
 							locale={locale}
 							onAbandon={onAbandon}
 							onCancel={onCancel}
@@ -455,6 +493,7 @@ export function RunCard({
 
 export function RunCardContent({
 	catalog,
+	events,
 	locale,
 	run,
 	pending,
@@ -465,13 +504,14 @@ export function RunCardContent({
 	showCost = true,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	catalog: RunInspectorCatalog;
+	events?: readonly RunEventView[];
 	locale: Locale;
 	run: RunView;
 	showCost?: boolean;
 }): React.ReactElement {
 	return (
 		<>
-			<RunProgress catalog={catalog} run={run} />
+			<RunProgress catalog={catalog} events={events ?? []} run={run} />
 			<SpecFactsPanel catalog={catalog} evaluation={run.evaluation} />
 			<PullRequestDelivery catalog={catalog} run={run} />
 			<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
@@ -484,17 +524,6 @@ export function RunCardContent({
 					{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
 				</p>
 			) : null}
-			{hasNoRounds(run.roundOrigins) ? null : (
-				<p className="text-muted-foreground text-sm">
-					{catalog.correctionRounds(
-						run.roundOrigins.executor,
-						run.roundOrigins.ci ?? 0,
-						run.roundOrigins.decision,
-						run.roundOrigins.orchestrator ?? 0,
-						run.roundOrigins.indeterminate,
-					)}
-				</p>
-			)}
 			<RunCommands
 				catalog={catalog}
 				onAbandon={onAbandon}

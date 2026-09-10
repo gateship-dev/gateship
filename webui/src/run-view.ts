@@ -468,11 +468,32 @@ export function phaseOf(state: RunState): RunState {
 	return OFF_SPINE_PHASE[state] ?? state;
 }
 
-/** Completed fraction of the run spine, 0..1, for a determinate progress bar. */
-export function progressOf(state: RunState): number {
-	const index = RUN_PHASES.indexOf(phaseOf(state));
-	if (index < 0) return 0;
-	return index / (RUN_PHASES.length - 1);
+export type RunStageStatus = 'complete' | 'current' | 'future';
+
+/**
+ * The last spine stage actually recorded before an off-spine state. The
+ * current state is authoritative when it is on the spine; events are only
+ * used to place a modifier such as failed or waiting-provider.
+ */
+export function lastKnownRunPhase(state: RunState, events: readonly RunEventView[]): RunState | null {
+	if (RUN_PHASES.includes(state)) return state;
+	for (const event of [...events].reverse()) {
+		if (RUN_PHASES.includes(event.toState)) return event.toState;
+		if (event.fromState !== null && RUN_PHASES.includes(event.fromState)) return event.fromState;
+	}
+	return null;
+}
+
+export function runStageStatuses(
+	state: RunState,
+	events: readonly RunEventView[],
+): Readonly<Record<RunState, RunStageStatus>> {
+	const current = lastKnownRunPhase(state, events);
+	const currentIndex = current === null ? -1 : RUN_PHASES.indexOf(current);
+	return Object.fromEntries(RUN_PHASES.map((phase, index) => [
+		phase,
+		current === phase ? 'current' : currentIndex >= 0 && index < currentIndex ? 'complete' : 'future',
+	])) as Readonly<Record<RunState, RunStageStatus>>;
 }
 
 export type StateTone = 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'error';

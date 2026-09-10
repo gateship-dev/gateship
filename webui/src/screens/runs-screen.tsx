@@ -32,6 +32,7 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 			<OperationalReadPanel detail={runsFailure} loaded={runsLoaded} locale={props.locale} pending={runsPending} resource="Runs">
 			<RunCard
 				catalog={catalog}
+				events={props.events}
 				locale={props.locale}
 				onAbandon={props.onAbandon}
 				onCancel={props.onCancel}
