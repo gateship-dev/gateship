@@ -13,7 +13,7 @@ import {
 	App,
 	type AppProps,
 	handleProjectShortcut,
-	handleSidebarShortcut,
+	handleOverviewShortcut,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
@@ -4468,20 +4468,24 @@ describe('operator shell', () => {
 		expect(presentationPlatform({ platform: 'Android' })).toBe('unknown');
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview', { locale });
-			const sidebarToggle = elementWith(html, 'aria-keyshortcuts="Control+B Meta+B"');
+			const overviewLink = elementWith(html, 'aria-keyshortcuts="Alt+0"');
+			const sidebarToggle = elementWith(html, 'data-slot="sidebar-toggle"');
+			expect(overviewLink).toContain('href="/overview"');
 			expect(sidebarToggle).toContain(`aria-label="${LOCALE_CATALOG[locale].shell.sidebarToggle.collapse}"`);
-			expect(html).toContain(`data-slot="sidebar-shortcut">${shortcutLabel('sidebar', undefined, presentationPlatform())}</kbd>`);
-			expect(shortcutLabel('sidebar', undefined, 'macOS')).toBe('⌘B');
+			expect(html).toContain(`data-slot="shortcut-overview">${shortcutLabel('overview', undefined, presentationPlatform())}</kbd>`);
+			expect(sidebarToggle).not.toContain('aria-keyshortcuts');
+			expect(sidebarToggle).not.toContain('<kbd');
+			expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥0');
 			expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥1');
-			expect(shortcutLabel('sidebar', undefined, 'Windows')).toBe('Ctrl+B');
+			expect(shortcutLabel('overview', undefined, 'Windows')).toBe('Alt+0');
 			expect(shortcutLabel('project', 8, 'Linux')).toBe('Alt+9');
-			expect(shortcutLabel('sidebar', undefined, 'unknown')).toBe('Mod+B');
+			expect(shortcutLabel('overview', undefined, 'unknown')).toBe('Alt+0');
 		}
 		let toggles = 0;
 		let prevented = false;
-		expect(handleSidebarShortcut({ key: 'b', code: 'KeyB', altKey: false, metaKey: true, ctrlKey: false, preventDefault: () => { prevented = true; } }, () => { toggles += 1; })).toBe(true);
+		expect(handleOverviewShortcut({ key: '0', code: 'Digit0', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { prevented = true; } }, { location: { assign: () => { toggles += 1; } } })).toBe(true);
 		expect({ toggles, prevented }).toEqual({ toggles: 1, prevented: true });
-		expect(handleSidebarShortcut({ key: 'b', code: 'KeyB', altKey: true, metaKey: true, ctrlKey: false, preventDefault: () => { prevented = true; } }, () => { toggles += 1; })).toBe(false);
+		expect(handleOverviewShortcut({ key: '0', code: 'Digit0', altKey: false, metaKey: false, ctrlKey: false, preventDefault: () => { prevented = true; } }, { location: { assign: () => { toggles += 1; } } })).toBe(false);
 	});
 
 	test('keeps the composite sidebar control intrinsically sized and shell icons optically uniform', () => {
@@ -4496,7 +4500,9 @@ describe('operator shell', () => {
 		expect(sidebarToggle).toContain('h-9');
 		expect(sidebarToggle).not.toContain('size-9');
 		expect(sidebarToggle).not.toContain('sm:size-8');
-		expect(html).toContain('aria-keyshortcuts="Control+B Meta+B"');
+		expect(html).toContain('aria-keyshortcuts="Alt+0"');
+		expect(sidebarToggle).not.toContain('aria-keyshortcuts');
+		expect(sidebarToggle).not.toContain('<kbd');
 		expect(interactiveIcons.length).toBeGreaterThan(0);
 		for (const icon of interactiveIcons) {
 			expect(icon).toContain('class="size-4');

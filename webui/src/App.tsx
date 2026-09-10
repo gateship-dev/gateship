@@ -54,10 +54,11 @@ export function handleProjectShortcut(
 	return true;
 }
 
-export function handleSidebarShortcut(event: PanelKeyEvent, toggle: () => void): boolean {
-	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.toggleSidebar)) return false;
+export function handleOverviewShortcut(event: PanelKeyEvent, runtime = panelRuntime(), navigate?: (destination: string) => void): boolean {
+	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.overview)) return false;
 	event.preventDefault();
-	toggle();
+	if (navigate === undefined) runtime.location?.assign('/overview');
+	else navigate('/overview');
 	return true;
 }
 
@@ -88,7 +89,7 @@ export function App(props: AppProps): React.ReactElement {
 	useEffect(() => {
 		const runtime = panelRuntime();
 		const onKeyDown = (event: PanelKeyEvent): void => {
-			if (handleSidebarShortcut(event, toggleSidebar)) {
+			if (handleOverviewShortcut(event, runtime, props.onNavigate)) {
 				return;
 			}
 			handleProjectShortcut(event, props.projects, runtime, props.onNavigate);

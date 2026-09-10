@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-850",
   "title": "Reorganizar atalhos da shell e normalizar notificações",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:20:22.336Z",
-  "updatedAt": "2026-09-10T18:20:22.336Z",
+  "updatedAt": "2026-09-10T18:28:43.396Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
