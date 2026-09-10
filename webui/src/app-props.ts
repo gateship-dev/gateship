@@ -52,6 +52,9 @@ export interface AppProps {
 	resolvedProposals: readonly ResolvedProposalView[];
 	resolvedProposalsOmittedCount: number;
 	events: readonly RunEventView[];
+	runEventsHasPrevious?: boolean;
+	runEventsLoading?: boolean;
+	onLoadPreviousRunEvents?: () => Promise<void>;
 	workspaceNotices: readonly WorkspaceNoticeView[];
 	providers: readonly ProviderStatusView[];
 	brief: ProjectBriefView;

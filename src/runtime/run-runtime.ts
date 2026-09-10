@@ -37,6 +37,7 @@ import {
 	type ProjectBrief,
 	type RunCostSummary,
 	type RunEvent,
+	type RunEventPage,
 	type RunEventClass,
 	type RunRecord,
 	RunStore,
@@ -879,12 +880,16 @@ export class RunRuntime {
 			?? null;
 	}
 
-	listEvents(afterSeq?: number): RunEvent[] {
-		return this.#store.listEvents(afterSeq);
+	listEvents(afterSeq?: number, limit?: number): RunEvent[] {
+		return this.#store.listEvents(afterSeq, limit);
 	}
 
 	listRunEvents(runId: string): RunEvent[] {
 		return this.#store.listRunEvents(runId);
+	}
+
+	listRunEventsPage(runId: string, limit?: number, beforeSeq?: number): RunEventPage {
+		return this.#store.listRunEventsPage(runId, limit, beforeSeq);
 	}
 
 	/**

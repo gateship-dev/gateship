@@ -1812,6 +1812,21 @@ function encodeServerEvent(event: RunEvent): Uint8Array {
 	return new TextEncoder().encode(body);
 }
 
+function replayPersistedEvents(runtime: RunRuntime, controller: ReadableStreamDefaultController<Uint8Array>, afterSeq: number): number {
+	let lastSeq = afterSeq;
+	let batch = runtime.listEvents(lastSeq);
+	while (batch.length > 0) {
+		for (const event of batch) {
+			if (event.seq <= lastSeq) continue;
+			controller.enqueue(encodeServerEvent(event));
+			lastSeq = event.seq;
+		}
+		if (batch.length < 500) break;
+		batch = runtime.listEvents(lastSeq);
+	}
+	return lastSeq;
+}
+
 /** Stream persisted transitions first, then live events without a polling loop. */
 export function createRunEventStream(
 	runtime: RunRuntime,
@@ -1821,20 +1836,26 @@ export function createRunEventStream(
 	// Bun closes quiet responses after ten seconds by default. SSE connections
 	// are intentionally long-lived and may be quiet between run transitions.
 	server.timeout(request, 0);
-	const initial = runtime.listEvents(parseEventCursor(request));
 	let unsubscribe = (): void => {};
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
 			let lastSeq = parseEventCursor(request);
-			for (const event of initial) {
-				controller.enqueue(encodeServerEvent(event));
-				lastSeq = event.seq;
-			}
+			let initialComplete = false;
+			const pending: RunEvent[] = [];
 			unsubscribe = runtime.subscribe((event) => {
-				if (event.seq <= lastSeq) return;
+				if (!initialComplete) pending.push(event);
+				else if (event.seq > lastSeq) {
+					lastSeq = event.seq;
+					controller.enqueue(encodeServerEvent(event));
+				}
+			});
+			lastSeq = replayPersistedEvents(runtime, controller, lastSeq);
+			initialComplete = true;
+			for (const event of pending.sort((a, b) => a.seq - b.seq)) {
+				if (event.seq <= lastSeq) continue;
 				lastSeq = event.seq;
 				controller.enqueue(encodeServerEvent(event));
-			});
+			}
 		},
 		cancel() {
 			unsubscribe();
@@ -2044,14 +2065,25 @@ function readRun(runtime: RunRuntime, runId: string): Response {
 	return Response.json({ run: runWithInsights(runtime, run) });
 }
 
-function readRunEvents(runtime: RunRuntime, runId: string): Response {
+const RUN_EVENTS_DEFAULT_LIMIT = 50;
+const RUN_EVENTS_MAX_LIMIT = 200;
+
+function readRunEvents(runtime: RunRuntime, runId: string, request: Request): Response {
 	if (runtime.getRun(runId) === null) {
 		return Response.json(
 			{ ok: false, code: 'run-not-found', message: 'Run not found.' },
 			{ status: 404 },
 		);
 	}
-	return Response.json({ events: runtime.listRunEvents(runId) });
+	const params = new URL(request.url).searchParams;
+	const rawLimit = params.get('limit');
+	const limit = rawLimit === null ? RUN_EVENTS_DEFAULT_LIMIT : Number(rawLimit);
+	const cursor = params.get('cursor');
+	const beforeSeq = cursor === null ? undefined : Number(cursor.trim());
+	if (!Number.isSafeInteger(limit) || limit < 1 || limit > RUN_EVENTS_MAX_LIMIT || (beforeSeq !== undefined && (!Number.isSafeInteger(beforeSeq) || beforeSeq < 1))) {
+		return Response.json({ ok: false, code: 'invalid-request', message: `limit must be an integer from 1 to ${RUN_EVENTS_MAX_LIMIT}, and cursor must be a positive seq.` }, { status: 400 });
+	}
+	return Response.json(runtime.listRunEventsPage(runId, limit, beforeSeq));
 }
 
 /**
@@ -3174,7 +3206,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/projects/:projectId/runs/:runId/events': {
 				GET: (request) => projectOperation(
 					request.params.projectId,
-					(context) => readRunEvents(context.runtime, request.params.runId),
+					(context) => readRunEvents(context.runtime, request.params.runId, request),
 				),
 			},
 			'/api/projects/:projectId/runs/:runId/resume': {
@@ -3445,7 +3477,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				POST: (request) => abandonDurableRun(request, runRuntime, request.params.runId),
 			},
 			'/api/runs/:runId/events': {
-				GET: (request) => readRunEvents(runRuntime, request.params.runId),
+				GET: (request) => readRunEvents(runRuntime, request.params.runId, request),
 			},
 			'/api/runs/:runId/resume': {
 				POST: (request) => resumeDurableRun(

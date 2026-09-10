@@ -151,20 +151,27 @@ export function formatRoleUsage(
 }
 
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: activity rendering coordinates history, live edge, and scroll preservation.
 export function RunActivity({
 	catalog,
 	locale,
 	run,
 	events,
+	hasPrevious = false,
+	loading = false,
+	onLoadPrevious,
 }: Pick<AppProps, 'events' | 'locale'> & {
 	catalog: RunsOperationalCatalog;
 	run: RunView | null;
+	hasPrevious?: boolean;
+	loading?: boolean;
+	onLoadPrevious?: () => Promise<void>;
 }): React.ReactElement | null {
 	const visible = run === null
 		? []
 		: events
 			.filter((event) => event.runId === run.id && isOperational(event))
-			.slice(-30);
+			;
 	const anchoredPhases = new Set<(typeof RUN_PHASES)[number]>();
 	const eventAnchors = new Map<number, (typeof RUN_PHASES)[number]>();
 	for (const event of visible) {
@@ -174,19 +181,37 @@ export function RunActivity({
 		eventAnchors.set(event.seq, event.toState);
 	}
 	const {
-		canReturnToLiveEdge: _canReturnToLiveEdge,
-		returnToLiveEdge: _returnToLiveEdge,
+		canReturnToLiveEdge,
+		returnToLiveEdge,
 		ref: liveEdgeRef,
 		onScroll: handleLiveEdgeScroll,
 		...liveEdge
 	} = useLiveEdge<HTMLOListElement>(visible.at(-1)?.seq ?? null, run?.id ?? null);
+	const pendingScroll = React.useRef<{ top: number; height: number } | null>(null);
+	React.useLayoutEffect(() => {
+		if (loading || pendingScroll.current === null) return;
+		const node = liveEdgeRef.current as unknown as { scrollHeight: number; scrollTop: number } | null;
+		if (node !== null) {
+			node.scrollTop = pendingScroll.current.top + node.scrollHeight - pendingScroll.current.height;
+		}
+		pendingScroll.current = null;
+	}, [liveEdgeRef, loading, visible.length, visible[0]?.seq]);
 	if (run === null) return null;
+	const loadPrevious = async (): Promise<void> => {
+		const node = liveEdgeRef.current as unknown as { scrollHeight: number; scrollTop: number } | null;
+		pendingScroll.current = { height: node?.scrollHeight ?? 0, top: node?.scrollTop ?? 0 };
+		await onLoadPrevious?.();
+	};
 	return (
 		<ContextPanel
 			description={catalog.activity.description(visible.length)}
 			open
 			title={catalog.activity.title}
 		>
+			{hasPrevious || canReturnToLiveEdge ? <div className="flex flex-wrap gap-2">
+				{hasPrevious ? <ActionButton enabled={!loading} label={loading ? catalog.activity.loadingPrevious : catalog.activity.loadPrevious} onClick={loadPrevious} /> : null}
+				{canReturnToLiveEdge ? <ActionButton enabled label={catalog.activity.returnToLive} onClick={returnToLiveEdge} /> : null}
+			</div> : null}
 			<div className="max-h-80 rounded-sm has-focus-visible:ring-2 has-focus-visible:ring-ring">
 				<ol
 					{...liveEdge}

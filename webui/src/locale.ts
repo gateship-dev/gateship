@@ -270,6 +270,9 @@ export interface RunsOperationalCatalog {
 		description: (count: number) => string;
 		toolsLabel: string;
 		cycleResponseLabel: string;
+		loadPrevious: string;
+		loadingPrevious: string;
+		returnToLive: string;
 	};
 	workspaces: {
 		title: string;
@@ -824,6 +827,7 @@ export const LOCALE_CATALOG = {
 					`${count} ${count === 1 ? 'recent event' : 'recent events'} from this run.`,
 				toolsLabel: 'Tools',
 				cycleResponseLabel: 'Orchestrator answer to the review cycle',
+				loadPrevious: 'Load previous', loadingPrevious: 'Loading previous…', returnToLive: 'Return to live',
 			},
 			workspaces: {
 				title: 'Preserved workspaces',
@@ -1292,6 +1296,7 @@ export const LOCALE_CATALOG = {
 					`${count} ${count === 1 ? 'evento recente' : 'eventos recentes'} desta execução.`,
 				toolsLabel: 'Ferramentas',
 				cycleResponseLabel: 'Resposta do orquestrador ao ciclo de revisão',
+				loadPrevious: 'Carregar anteriores', loadingPrevious: 'Carregando anteriores…', returnToLive: 'Voltar para a cauda',
 			},
 			workspaces: {
 				title: 'Workspaces preservados',

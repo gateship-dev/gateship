@@ -695,6 +695,14 @@ interface RunsPayload {
 
 interface RunEventsPayload {
 	events: RunEventView[];
+	hasPrevious?: boolean;
+	previousCursor?: number | null;
+}
+
+export interface RunEventPage {
+	events: RunEventView[];
+	hasPrevious: boolean;
+	previousCursor: number | null;
 }
 
 interface CommandPayload {
@@ -1589,11 +1597,18 @@ export async function disconnectClaudeCredential(): Promise<string> {
 }
 
 export async function fetchRunEvents(scope: ProjectScope, runId: string): Promise<RunEventView[]> {
+	return (await fetchRunEventsPage(scope, runId)).events;
+}
+
+export async function fetchRunEventsPage(scope: ProjectScope, runId: string, cursor?: number, limit = 50): Promise<RunEventPage> {
+	const query = new URLSearchParams();
+	if (limit !== 50) query.set('limit', String(limit));
+	if (cursor !== undefined) query.set('cursor', String(cursor));
 	const payload = await readScopedJson<RunEventsPayload>(
-		await fetch(`${runsPathOf(scope)}/${runId}/events`),
+		await fetch(`${runsPathOf(scope)}/${runId}/events${query.size === 0 ? '' : `?${query}`}`),
 		'Activity',
 	);
-	return payload?.events ?? [];
+	return { events: payload?.events ?? [], hasPrevious: payload?.hasPrevious === true, previousCursor: payload?.previousCursor ?? null };
 }
 
 /** Resolves to the operator-facing outcome message for either verdict. */

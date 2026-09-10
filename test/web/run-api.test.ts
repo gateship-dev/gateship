@@ -33,6 +33,54 @@ describe('durable web run API', () => {
 		}
 	});
 
+	test('replays every event after a reconnect cursor beyond one SSE batch', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-reconnect', issueId: 'GSHIP-829', sessionId: 'session-reconnect', workspacePath: '/project', createdAt: '2026-09-09T00:00:00.000Z' });
+		for (let index = 0; index < 700; index += 1) {
+			store.appendEvent({ runId: 'run-reconnect', kind: 'provider.activity', createdAt: '2026-09-09T00:00:00.000Z', payload: { index } });
+		}
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		const response = createRunEventStream(runtime, new Request('http://127.0.0.1/api/events', { headers: { 'last-event-id': '0' } }), { timeout() {} });
+		const reader = response.body!.getReader();
+		const sequences: number[] = [];
+		for (let index = 0; index < 701; index += 1) {
+			const chunk = await reader.read();
+			sequences.push(Number(new TextDecoder().decode(chunk.value).match(/^id: (\d+)/m)?.[1]));
+		}
+		expect(sequences).toEqual(Array.from({ length: 701 }, (_, index) => index + 1));
+		await reader.cancel();
+		runtime.close();
+	});
+
+	test('replays an uncursored history beyond one batch and an append during replay once', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-initial-replay', issueId: 'GSHIP-829', sessionId: 'session-initial-replay', workspacePath: '/project', createdAt: '2026-09-09T00:00:00.000Z' });
+		for (let index = 0; index < 501; index += 1) {
+			store.appendEvent({ runId: 'run-initial-replay', kind: 'provider.activity', createdAt: '2026-09-09T00:00:00.000Z', payload: { index } });
+		}
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		const listEvents = runtime.listEvents.bind(runtime);
+		let appended = false;
+		runtime.listEvents = ((afterSeq?: number, limit?: number) => {
+			const page = listEvents(afterSeq, limit);
+			if (!appended) {
+				appended = true;
+				store.appendEvent({ runId: 'run-initial-replay', kind: 'provider.activity', createdAt: '2026-09-09T00:00:00.000Z', payload: { index: 501 } });
+			}
+			return page;
+		}) as typeof runtime.listEvents;
+		const response = createRunEventStream(runtime, new Request('http://127.0.0.1/api/events'), { timeout() {} });
+		const reader = response.body!.getReader();
+		const sequences: number[] = [];
+		for (let index = 0; index < 503; index += 1) {
+			const chunk = await reader.read();
+			sequences.push(Number(new TextDecoder().decode(chunk.value).match(/^id: (\d+)/m)?.[1]));
+		}
+		expect(sequences).toEqual(Array.from({ length: 503 }, (_, index) => index + 1));
+		await reader.cancel();
+		runtime.close();
+	});
+
 	test('starts a run, lists it and streams persisted state events over SSE', async () => {
 		const cwd = createTestTmpdir('gship-run-api-');
 		const store = new RunStore(':memory:');
@@ -128,6 +176,27 @@ describe('durable web run API', () => {
 				`http://${handle.hostname}:${handle.port}/api/runs/missing/events`,
 			);
 			expect(response.status).toBe(404);
+		} finally {
+			await handle.stop();
+			runtime.close();
+		}
+	});
+
+	test('rejects empty event cursors while preserving the uncursored latest page', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-cursor-validation', issueId: 'GSHIP-829', sessionId: 'session-cursor-validation', workspacePath: '/project', createdAt: '2026-09-09T00:00:00.000Z' });
+		store.appendEvent({ runId: 'run-cursor-validation', kind: 'provider.activity', createdAt: '2026-09-09T00:00:00.000Z', payload: {} });
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-run-cursor-validation-'), runRuntime: runtime });
+		try {
+			for (const cursor of ['', '%20%20']) {
+				const response = await fetch(`http://${handle.hostname}:${handle.port}/api/runs/run-cursor-validation/events?cursor=${cursor}`);
+				expect(response.status).toBe(400);
+				expect(await response.json()).toMatchObject({ code: 'invalid-request' });
+			}
+			const latest = await fetch(`http://${handle.hostname}:${handle.port}/api/runs/run-cursor-validation/events`);
+			expect(latest.status).toBe(200);
+			expect(await latest.json()).toMatchObject({ hasPrevious: false, previousCursor: null });
 		} finally {
 			await handle.stop();
 			runtime.close();
