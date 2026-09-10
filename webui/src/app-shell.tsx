@@ -31,7 +31,7 @@ export function AppShell({
 	children: React.ReactNode;
 }): React.ReactElement {
 	return (
-		<div className={cn('flex h-svh w-full flex-col overflow-hidden bg-sidebar [--sidebar:var(--color-neutral-100)] lg:flex-row dark:[--sidebar:var(--color-neutral-950)]', INSPECTOR_COLUMN_WIDTH_CLASS)}>
+		<div className={cn('flex h-svh w-full flex-col overflow-hidden bg-sidebar lg:flex-row', INSPECTOR_COLUMN_WIDTH_CLASS)}>
 			<a
 				className="fixed top-0 left-4 z-50 -translate-y-full rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground text-sm outline-none focus:translate-y-4 focus-visible:ring-2 focus-visible:ring-ring"
 				href={`#${MAIN_CONTENT_ID}`}

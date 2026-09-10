@@ -721,13 +721,10 @@ export function ShellSidebar({
 	const selection = routeSelection(route, currentId, selectedProjectId);
 	const humanVersion = humanVersionOf(version);
 	const status = shellStatus(projects.find((project) => project.id === selection.projectId) ?? null, run, runInspectorCatalog);
-	/* The shell chrome deepens its own --sidebar one step (operator decision,
-	 * 2026-08-25): the body canvas keeps the global token, so the sidebar
-	 * separates from the content by fill, not only by its hairline border.
-	 * @theme inline makes bg-sidebar read the var in cascade, so the
-	 * element-level override is all it takes. */
+	/* The outer shell shares the global --sidebar canvas with html and body;
+	 * the content panel provides the deliberate surface contrast. */
 	return (
-		<header className={cn('scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-18 lg:gap-4')}>
+		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-18 lg:gap-4')}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />

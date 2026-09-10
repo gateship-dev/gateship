@@ -13,7 +13,7 @@ export function Table({
 	...props
 }: React.ComponentProps<'table'>): React.ReactElement {
 	return (
-		<div className="scroll-container relative w-full overflow-x-auto" data-slot="table-container" data-variant="default">
+		<div className="scroll-container scroll-container-stable relative w-full overflow-x-auto" data-slot="table-container" data-variant="default">
 			<table
 				className={cn(
 					'w-full caption-bottom in-data-[variant=card]:border-separate in-data-[variant=card]:border-spacing-0 text-sm',
