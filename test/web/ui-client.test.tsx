@@ -3386,7 +3386,7 @@ describe('operator shell', () => {
 			const html = renderAt('/overview/insights', { locale, projects: [CURRENT_PROJECT], overview: null });
 			const catalog = LOCALE_CATALOG[locale].overviewInsights;
 			expect(html).toContain(catalog.title);
-			expect(html).toContain(catalog.description);
+			expect(html).not.toContain(catalog.description);
 			expect(html).toContain(catalog.loading);
 			expect(html).not.toContain(catalog.cohortEvidenceInsufficient);
 		}
@@ -4308,7 +4308,7 @@ describe('operator shell', () => {
 	test('project management is a global route with the existing three registry actions', () => {
 		const html = renderAt('/projects');
 		expect(openingTags(html).find((tag) => tag.startsWith('<main'))).toContain('aria-label="Projects"');
-		expect(html).toContain('>Projects</h2>');
+		expect(html).toContain('<h1 class="sr-only">Projects</h1>');
 		for (const field of ['project-create-repository', 'project-import-repository', 'project-root']) {
 			expect(html).toContain(`name="${field}"`);
 		}
