@@ -1676,6 +1676,33 @@ describe('runs surface', () => {
 		expect(html).toContain('03:04:05');
 	});
 
+	test('activity disclosures preserve localized controls, whitespace and unknown public payloads', () => {
+		const event: AppProps['events'][number] = {
+			seq: 1,
+			runId: 'run-1',
+			kind: 'run.future-kind',
+			fromState: 'working',
+			toState: 'working',
+			payload: { output: 'linha 1\n\nlinha 3', reasoning: 'privado raiz', nested: { values: ['a', 'b'], private: 'privado aninhado' }, items: [{ raw: 'privado array', public: 'mantido' }], extreme: 'x'.repeat(240) },
+			createdAt: '2026-08-16T03:04:05.000Z',
+		};
+		for (const [locale, labels] of [['en-US', ['Show details', 'Hide details', 'Unknown event']] as const, ['pt-BR', ['Mostrar detalhes', 'Ocultar detalhes', 'Evento desconhecido']] as const]) {
+			const html = runsPage({ locale, runs: [runIn('working')], events: [event] });
+			expect(html).toContain(`<summary class="cursor-pointer`);
+			expect(html).toContain(labels[0]);
+			expect(html).toContain(labels[1]);
+			expect(html).toContain(labels[2]);
+			expect(html).toContain('linha 1');
+			expect(html).toContain('linha 3');
+			expect(html).toContain('&quot;values&quot;');
+			expect(html).toContain('mantido');
+			expect(html).not.toContain('privado raiz');
+			expect(html).not.toContain('privado aninhado');
+			expect(html).not.toContain('privado array');
+			expect(html).toContain('x'.repeat(240));
+		}
+	});
+
 	test('cycle responses keep authored guidance and carry localized orchestrator labels', () => {
 		const event: AppProps['events'][number] = {
 			seq: 1,
@@ -1703,6 +1730,10 @@ describe('runs surface', () => {
 			expect(html).toContain('raw-model-v9');
 			expect(html).toContain('xhigh');
 		}
+		const question = runsPage({ runs: [runIn('waiting-user')], events: [{ ...event, kind: 'run.cycle-question', toState: 'waiting-user' }] });
+		expect(question).toContain('Needs attention');
+		expect(question).not.toContain('>Decision<');
+		expect(question).not.toContain('>Decisão<');
 	});
 
 	test('provider noise never pushes a cycle event out of the activity window', () => {
@@ -4930,8 +4961,9 @@ describe('shared live edge and responsive surface content', () => {
 
 		expect(activity).toContain('aria-label="Activity"');
 		expect(activity).toContain('tabindex="0"');
-		expect(activity).toContain('overflow-y-auto');
-		expect(activity).toContain('scroll-fade');
+		expect(activity).not.toContain('overflow-y-auto');
+		expect(activity).not.toContain('max-h-80');
+		expect(activity).not.toContain('scroll-fade');
 		expect(activity).toContain('outline-none');
 		expect(html).toContain('has-focus-visible:ring-2');
 	});
