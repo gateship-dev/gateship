@@ -1,0 +1,70 @@
+{
+  "id": "GSHIP-855",
+  "title": "Central: transformar o harness existente em cenários das telas reais",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:42:11.866Z",
+  "updatedAt": "2026-09-10T18:42:11.866Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Evoluir o harness dev-only existente para exercitar o AppShell e as quatro páginas reais da Central com dados determinísticos, preservando liberdade de composição e eliminando a falsa simulação de viewport móvel.",
+    "acceptance": [
+      "Reutilizar AppShell e as quatro rotas/telas reais no harness, com fixtures tipadas e transporte isolado; não reconstruir um shell parecido nem copiar JSX de produção ou recorrer a as never.",
+      "Controlar cenário, rota, idioma, tema e relógio de forma reproduzível; nenhuma fixture chama backend real, usa credenciais do operador, inicia run ou grava preferências reais.",
+      "Cobrir dados usuais, ausência, carregamento, erro, atualização, atenção, textos longos e tabelas densas; simular mudanças de resposta sem remontar toda página para observar foco e estado.",
+      "Remover mobile baseado somente em div estreita; preview usa viewport isolado e testes usam viewport real de browser em 390, 768 e 1440px, com PT/EN e ambos os temas.",
+      "Sidebar, notificações, filtros, paginação e menus funcionam nas fixtures; manter posições de scroll/foco sob polling e reduzir movimento quando solicitado pelo sistema.",
+      "Catálogo identifica componentes e cenários cobertos e oferece receitas como exemplos, não lista fechada de layouts permitidos; nova composição exige cenário representativo, não exceção administrativa.",
+      "Manter harness e dados fictícios fora do bundle/rotas de produção; adicionar teste que verifica artefato construído, não apenas a presença de um comentário na configuração Vite."
+    ],
+    "boundaries": [
+      "Evoluir harness existente após navegação e fundação TanStack.",
+      "Não criar Storybook paralelo, serviço próprio ou dependência de backend vivo.",
+      "Não congelar screenshots da aparência ainda não revisada.",
+      "Não produzir chamadas reais de cancelamento, aprovação ou início de trabalho.",
+      "Pré-requisitos: GSHIP-852, GSHIP-854. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+    ],
+    "verify": [
+      "bun test test/web/ui-harness.test.tsx test/web/embedded-ui.test.ts test/web/ui-client.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como garantir que o harness exercita o produto real e viewport real com isolamento de dados, tema, idioma e efeitos?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://playwright.dev/docs/test-snapshots",
+          "contentHash": "sha256:a940baeb842be894fb8864731377ed28f5086c27bc68fce66fa54faffd9ef358",
+          "fetchedAt": "2026-09-10T18:37:35.571Z",
+          "sourceType": "official-documentation",
+          "claim": "Screenshots podem ser comparados com referências; diferenças de sistema e ambiente afetam o resultado.",
+          "applicability": "Fixar ambiente e dados; revisar diferenças intencionais, sem confundir estabilidade com beleza."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/skills/shadcn/SKILL.md",
+          "contentHash": "sha256:deba6c5152d9835892fa7dffeb1fedbb689ddac7e59e14e57ec5eaf9463309e4",
+          "fetchedAt": "2026-09-10T18:41:10.128Z",
+          "sourceType": "primary-code",
+          "claim": "A skill oficial identifica contexto do projeto e orienta descoberta, composição e customização; bibliotecas base exigem APIs diferentes.",
+          "applicability": "Pesquisar padrões oficiais mantendo Base UI, Hugeicons e identidade Gateship.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
+        }
+      ]
+    }
+  }
+}
