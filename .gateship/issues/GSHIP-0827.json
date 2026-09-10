@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-827",
   "title": "Criar um harness interno para os componentes compartilhados",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:44:49.968Z",
-  "updatedAt": "2026-09-10T01:03:53.404Z",
+  "updatedAt": "2026-09-10T01:10:44.656Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

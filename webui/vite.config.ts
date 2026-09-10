@@ -11,6 +11,10 @@ export default defineConfig({
 	plugins: [tailwindcss()],
 	build: {
 		rollupOptions: {
+			// The internal harness is a development-only HTML entry. Keeping the
+			// production input explicit prevents Vite's multi-page discovery from
+			// shipping it or its chunk.
+			input: 'index.html',
 			output: {
 				entryFileNames: 'app.js',
 				chunkFileNames: 'app.js',
