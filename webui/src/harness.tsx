@@ -14,19 +14,36 @@ import { Stat } from './components/ui/stat.tsx';
 
 type Theme = 'light' | 'dark';
 type Width = 'centered' | 'wide';
-type Viewport = 'desktop' | '390';
+type Viewport = '390' | '768' | '1440';
 
 const PROJECT = { id: 'harness-project', name: 'Gateship', root: '/workspace/gateship', stateDir: '/state', readiness: 'ready' as const, repository: 'gateship-dev/gateship', current: true };
 const RUN = { id: 'harness-run', issueId: 'GSHIP-827', state: 'waiting-user', createdAt: '2026-09-09T12:00:00.000Z', updatedAt: '2026-09-09T12:05:00.000Z', providerId: 'codex' };
 const PLATFORMS: readonly PresentationPlatform[] = ['macOS', 'Windows', 'Linux', 'unknown'];
+const VIEWPORT_WIDTH_CLASS: Record<Viewport, string> = { '390': 'w-[390px]', '768': 'w-[768px]', '1440': 'w-[1440px]' };
+
+function ViewportHarness(): React.ReactElement {
+	const [viewport, setViewport] = useState<Viewport>('1440');
+	return <div className="min-h-screen bg-background p-3 text-foreground" data-harness="gateship-ui-viewport-picker">
+		<div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 pb-3 text-sm" data-fixture="viewport-controls" data-fixture-id="viewport-controls-v1">
+			<strong className="mr-auto type-eyebrow">Gateship UI harness</strong>
+			<span className="type-eyebrow text-muted-foreground">Viewport</span>
+			{(['390', '768', '1440'] as const).map((value) => <Button key={value} size="sm" variant={viewport === value ? 'default' : 'outline'} aria-pressed={viewport === value} onClick={() => setViewport(value)}>{value} px</Button>)}
+		</div>
+		<iframe className={`mx-auto block h-[1200px] max-w-full border border-border ${VIEWPORT_WIDTH_CLASS[viewport]}`} src={`/harness.html?frame=${viewport}`} title={`Gateship UI harness at ${viewport}px`} />
+	</div>;
+}
 
 export function Harness(): React.ReactElement {
+	const runtimeWindow = globalThis as unknown as { window?: { location: { search: string } } };
+	const frame = runtimeWindow.window === undefined ? null : new URLSearchParams(runtimeWindow.window.location.search).get('frame');
 	const [locale, setLocale] = useState<Locale>('en-US');
 	const [theme, setTheme] = useState<Theme>('light');
 	const [width, setWidth] = useState<Width>('centered');
-	const [viewport, setViewport] = useState<Viewport>('desktop');
+	const [viewport, setViewport] = useState<Viewport>(frame === '390' || frame === '768' || frame === '1440' ? frame : '1440');
+	const [sidebarOpen, setSidebarOpen] = useState(true);
 	const catalog = LOCALE_CATALOG[locale];
 	const notifications = notificationItems(PROJECT, { enabled: false, pause: null }, RUN as never, [], null, null, [], catalog.shell.notifications);
+	if (runtimeWindow.window !== undefined && frame === null) return <ViewportHarness />;
 
 	useEffect(() => {
 		const root = document as unknown as { documentElement: { classList: { toggle: (name: string, force: boolean) => void }; lang: string } };
@@ -46,14 +63,16 @@ export function Harness(): React.ReactElement {
 				<span className="type-eyebrow text-muted-foreground">Width</span>
 				{(['centered', 'wide'] as const).map((value) => <Button key={value} size="sm" variant={width === value ? 'default' : 'outline'} aria-pressed={width === value} onClick={() => setWidth(value)}>{value}</Button>)}
 				<span className="type-eyebrow text-muted-foreground">Frame</span>
-				{(['desktop', '390'] as const).map((value) => <Button key={value} size="sm" variant={viewport === value ? 'default' : 'outline'} aria-pressed={viewport === value} onClick={() => setViewport(value)}>{value === '390' ? '390 px' : 'desktop'}</Button>)}
+				{(['390', '768', '1440'] as const).map((value) => <Button key={value} size="sm" variant={viewport === value ? 'default' : 'outline'} aria-pressed={viewport === value} onClick={() => setViewport(value)}>{value} px</Button>)}
+				<span className="type-eyebrow text-muted-foreground">Sidebar</span>
+				{([true, false] as const).map((value) => <Button key={String(value)} size="sm" variant={sidebarOpen === value ? 'default' : 'outline'} aria-pressed={sidebarOpen === value} onClick={() => setSidebarOpen(value)}>{value ? 'expanded' : 'collapsed'}</Button>)}
 			</div>
 		</div>
-		<div className={viewport === '390' ? 'mx-auto w-[390px] max-w-full' : 'w-full'}>
-			<div className="flex min-h-[calc(100vh-5rem)] flex-col bg-sidebar lg:flex-row" data-fixture="shell" data-fixture-id="shell-v1">
-				<ShellSidebar chainRuns={{ enabled: false, pause: null }} gitIdentity={null} locale={locale} open projects={[PROJECT]} route="/projects/harness-project/runs" run={null} runInspectorCatalog={catalog.runInspector} selectedProjectId={PROJECT.id} staleService={null} version="0.0.0-harness" workspaceNotices={[]} />
+		<div className={`mx-auto max-w-full ${VIEWPORT_WIDTH_CLASS[viewport]}`}>
+			<div className="flex min-h-[calc(100vh-5rem)] flex-col bg-sidebar lg:flex-row" data-fixture="shell" data-fixture-id="shell-v1" data-scroll-contract="external-canvas-no-gutter internal-scroll-stable">
+				<ShellSidebar chainRuns={{ enabled: false, pause: null }} gitIdentity={null} locale={locale} open={sidebarOpen} projects={[PROJECT]} route="/projects/harness-project/runs" run={null} runInspectorCatalog={catalog.runInspector} selectedProjectId={PROJECT.id} staleService={null} version="0.0.0-harness" workspaceNotices={[]} />
 				<main className="min-w-0 flex-1 bg-background p-3 lg:p-6">
-					<ShellControls catalog={catalog.shell} inspectorOpen={false} locale={locale} notifications={notifications} onSelectLocale={setLocale} onToggleInspector={() => {}} onToggleSidebar={() => {}} showInspectorToggle={false} sidebarOpen title={catalog.shell.routeLabels.runs} />
+					<ShellControls catalog={catalog.shell} inspectorOpen={false} locale={locale} notifications={notifications} onSelectLocale={setLocale} onToggleInspector={() => {}} onToggleSidebar={() => setSidebarOpen((open) => !open)} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={catalog.shell.routeLabels.runs} />
 					<div className="mx-auto mt-6 w-full max-w-(--content-measure) gship-harness-content">
 						<header className="mb-6" data-fixture="header" data-fixture-id="header-v1"><p className="type-eyebrow text-muted-foreground">Shared component inventory</p><h1 className="type-page-title mt-2">{locale === 'pt-BR' ? 'Componentes reais da shell' : 'Real shell components'}</h1><p className="mt-2 max-w-prose text-muted-foreground">{locale === 'pt-BR' ? 'Estados estáveis para inspeção manual.' : 'Stable states for manual inspection.'}</p></header>
 					<CardStack>

@@ -377,10 +377,10 @@
 	}
 }
 
-/* Shared native scroll chrome. The gutter is reserved even before overflow
- * appears, so operational columns do not move when content becomes taller. */
+/* Shared native scroll chrome. Styling is separate from gutter reservation:
+ * the viewport keeps its full width while internal operational columns can
+ * opt into stable geometry where content becoming taller would move them. */
 @utility scroll-container {
-	scrollbar-gutter: stable both-edges;
 	scrollbar-width: thin;
 	scrollbar-color: var(--scrollbar-thumb) transparent;
 
@@ -404,6 +404,10 @@
 		background: var(--scrollbar-thumb-hover);
 		background-clip: padding-box;
 	}
+}
+
+@utility scroll-container-stable {
+	scrollbar-gutter: stable both-edges;
 }
 
 /* CSS-only position-aware fade. Without a scroll timeline the initial

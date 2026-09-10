@@ -22,7 +22,7 @@ export const PROJECT_RECOVERY_COMMAND: Readonly<Record<
 
 export function CommandLine({ children }: { children: string }): React.ReactElement {
 	return (
-		<code className="scroll-container block overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs">
+		<code className="scroll-container scroll-container-stable block overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs">
 			{children}
 		</code>
 	);

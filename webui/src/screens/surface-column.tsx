@@ -15,7 +15,7 @@ export function SurfaceColumn({
 	return (
 		<main
 			aria-label={label}
-			className="scroll-container scroll-fade flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 lg:p-6"
+			className="scroll-container scroll-container-stable scroll-fade flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 lg:p-6"
 			id={MAIN_CONTENT_ID}
 			tabIndex={-1}
 		>

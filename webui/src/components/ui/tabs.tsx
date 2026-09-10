@@ -41,7 +41,7 @@ export function TabsList({
 			className="relative max-w-full"
 			data-slot="tabs-scroll-frame"
 		>
-			<div className="scroll-container max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
+			<div className="scroll-container scroll-container-stable max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
 				<TabsPrimitive.List
 					className={cn(
 						'relative z-0 flex w-max min-w-full items-center justify-start gap-x-0.5 rounded-lg bg-muted py-0.5 pr-8 pl-0.5 text-muted-foreground/72 sm:pr-0.5',
