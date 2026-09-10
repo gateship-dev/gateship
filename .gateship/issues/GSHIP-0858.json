@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:22.976Z",
-  "updatedAt": "2026-09-10T18:42:22.976Z",
+  "updatedAt": "2026-09-10T20:39:28.409Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -37,29 +37,36 @@
         "Como compor comparação tabular complexa sem alterar as métricas existentes?"
       ],
       "sourceClasses": [
-        "official-documentation",
         "primary-code"
       ],
       "freshness": {
         "mode": "current",
-        "resolvedAt": "2026-09-10T18:37:34.696Z"
+        "resolvedAt": "2026-09-10T20:38:58.000Z"
       },
       "receipts": [
         {
-          "url": "https://ui.shadcn.com/docs/components/base/chart.md",
-          "contentHash": "sha256:c6c51d44c211580548bbce4647965f16458e02c054cb5592aa89405d3b36885d",
-          "fetchedAt": "2026-09-10T18:37:34.916Z",
-          "sourceType": "official-documentation",
-          "claim": "Chart usa Recharts e fornece padrões de container, configuração, tooltip e legenda.",
-          "applicability": "Renderizar séries reais com tokens Gateship e alternativa tabular acessível."
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/apps/v4/content/docs/components/base/chart.mdx",
+          "contentHash": "sha256:2d2a256a5fa2f2dd71faabde8f78108910d65a864fc708d015880bd7d45b2043",
+          "fetchedAt": "2026-09-10T20:38:58.000Z",
+          "sourceType": "primary-code",
+          "claim": "Como usar Chart/Recharts com tokens próprios, acessibilidade e dados incompletos sem sugerir certeza inexistente?",
+          "applicability": "Renderizar séries reais com tokens Gateship e alternativa tabular acessível.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
         },
         {
-          "url": "https://ui.shadcn.com/docs/components/base/data-table.md",
-          "contentHash": "sha256:31d46187a08d79ce41dd8991599ce86ff2d6fba0b99ae4ebff84cfbccce6cff4",
-          "fetchedAt": "2026-09-10T18:37:34.778Z",
-          "sourceType": "official-documentation",
-          "claim": "A receita Data Table usa TanStack v9 e recomenda composições específicas por caso em vez de um componente universal rígido.",
-          "applicability": "Adotar lógica headless e partes compartilhadas sem copiar o tema padrão ou misturar APIs v8/v9."
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/apps/v4/content/docs/components/base/data-table.mdx",
+          "contentHash": "sha256:a502d72b8242cb77f724a723a83c684a7738ba9b784b64db6df79111724bc41e",
+          "fetchedAt": "2026-09-10T20:38:58.000Z",
+          "sourceType": "primary-code",
+          "claim": "Como compor comparação tabular complexa sem alterar as métricas existentes?",
+          "applicability": "Preservar métricas e proveniência na comparação tabular.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
         }
       ]
     }
