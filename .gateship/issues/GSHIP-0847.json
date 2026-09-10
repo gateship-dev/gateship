@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-847",
+  "title": "Corrigir botão da sidebar e uniformizar ícones de controles",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T12:17:02.247Z",
+  "updatedAt": "2026-09-10T12:17:02.247Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Eliminar a compressão e a sobreposição do botão composto que recolhe a sidebar e estabelecer uma espessura óptica coerente para todos os ícones exibidos dentro dos botões do shell.",
+    "acceptance": [
+      "O botão de recolher ou expandir a sidebar mantém o glifo e o atalho visíveis dentro da própria borda, sem overflow em breakpoints desktop e mobile.",
+      "O botão composto usa largura intrínseca e conserva a mesma altura visual dos demais controles do cabeçalho.",
+      "Os ícones dentro dos botões do shell, incluindo seletor de projeto, notificações, tema, largura e toggles de painéis, usam uma espessura óptica comum; ícones meramente navegacionais ou informativos ficam fora deste escopo.",
+      "Os toggles dos painéis esquerdo e direito compartilham a mesma geometria e peso visual.",
+      "O atalho continua apresentado de forma específica ao sistema operacional e mantém aria-keyshortcuts e rótulos localizados.",
+      "Há cobertura de regressão para a anatomia do botão composto e para o contrato de espessura dos ícones interativos."
+    ],
+    "boundaries": [
+      "Não alterar rotas, comportamento dos atalhos, regras responsivas de exibição ou a fonte de ícones Hugeicons.",
+      "Não redesenhar botões, navegação, logotipo ou ícones fora de controles interativos.",
+      "Não introduzir dependência nova nem animação."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx",
+      "bun run typecheck",
+      "bun run lint",
+      "bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "8c77623ced33f2252f6d8159fe45b1297ac90adb25e42820aeb6934b2b1e6f1a",
+    "approvedAt": "2026-09-10T12:17:02.247Z"
+  }
+}
