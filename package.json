@@ -51,6 +51,7 @@
     "@base-ui/react": "^1.7.0",
     "@hugeicons/core-free-icons": "^4.3.0",
     "@hugeicons/react": "^1.1.10",
+    "@tanstack/react-table": "9.2.4",
     "chalk": "^5.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

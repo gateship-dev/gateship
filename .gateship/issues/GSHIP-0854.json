@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-854",
   "title": "Central: fundação composável de tabelas TanStack com estilo Gateship",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:08.285Z",
-  "updatedAt": "2026-09-10T22:46:57.481Z",
+  "updatedAt": "2026-09-10T22:58:38.730Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
