@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-860",
+  "title": "Alinhar visualmente o atalho da Central e o toggle da sidebar",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:52:28.734Z",
+  "updatedAt": "2026-09-10T18:52:28.734Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Concluir o refinamento de GSHIP-850 fazendo o atalho da Central ocupar a mesma posição visual dos atalhos de projeto e normalizando o toggle iconográfico da sidebar ao tamanho dos demais controles da shell.",
+    "acceptance": [
+      "Na sidebar expandida, o kbd Alt+0 da Central ocupa a coluna visual inicial usada pelo kbd do projeto, substituindo o glifo de grade e sem uma segunda legenda à direita.",
+      "Na sidebar recolhida, a Central exibe o kbd Alt+0 como representação visível, no mesmo princípio do seletor compacto de projetos, com nome acessível e estado ativo preservados.",
+      "Alt+0 continua navegando para /overview e Alt+1 a Alt+9 continuam selecionando projetos sem mudança.",
+      "O botão de recolher ou expandir a sidebar usa o tamanho icon padrão compartilhado e mede o mesmo que notificações, idioma e tema no breakpoint desktop.",
+      "O botão de notificações permanece no componente visual compartilhado e com as mesmas dimensões dos demais botões iconográficos.",
+      "Testes cobrem posição única do kbd, modos expandido e recolhido, ausência do glifo redundante e igualdade do contrato de tamanho."
+    ],
+    "boundaries": [
+      "Não alterar rotas, textos, atalhos dos projetos ou conteúdo da Central.",
+      "Não reintroduzir atalho para recolher a sidebar.",
+      "Não adicionar dependência, animação, preferência ou componente novo."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-harness.test.tsx",
+      "bun run typecheck",
+      "bun run lint",
+      "bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "0418a6462f824531be0bf91dcc00cd080ef96ae1d94a4e422a9a26a52e3921f3",
+    "approvedAt": "2026-09-10T18:52:28.734Z"
+  }
+}
