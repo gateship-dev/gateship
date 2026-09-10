@@ -21,6 +21,7 @@ export function SurfaceColumn({
 		>
 			<ShellContentFrame className="flex flex-1 flex-col">
 				<CardStack className="flex-1">
+					<h1 className="sr-only">{label}</h1>
 					{status === null ? null : (
 						<output aria-live="polite" className="break-words text-muted-foreground text-sm">
 							{status}

@@ -116,7 +116,6 @@ export function OverviewQueuesSurface({ props }: { props: AppProps }): React.Rea
 	const errors = queueErrorsForFilter(data?.errors ?? [], filter);
 	return <SurfaceColumn label={queueCatalog.title} status={props.status}>
 		<ControlCenterNavigation current="queues" locale={props.locale} />
-		<div className="flex flex-col gap-2"><h1 className="type-page-title">{queueCatalog.title}</h1><p className="text-muted-foreground text-sm">{queueCatalog.description}</p></div>
 		<select aria-label={queueCatalog.filterProject} className="min-h-10 w-full rounded-lg border bg-background px-3 text-sm sm:max-w-xs" value={filter ?? ''} onChange={(event) => updateFilter((event.currentTarget as unknown as { value: string }).value)}><option value="">{queueCatalog.allProjects}</option>{props.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
 		{data === null && error === null ? <p role="status">{queueCatalog.loading}</p> : null}
 		{error !== null ? <p role="alert">{queueCatalog.error}: {error}</p> : null}

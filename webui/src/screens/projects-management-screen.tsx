@@ -102,10 +102,6 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 	};
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
-			<div>
-				<h2 className="type-page-title">{catalog.title}</h2>
-				<p className="mt-1 text-muted-foreground text-sm">{catalog.description}</p>
-			</div>
 			<Card>
 				<CardHeader><CardTitle>{onboarding.choice.title}</CardTitle></CardHeader>
 				<CardPanel>
