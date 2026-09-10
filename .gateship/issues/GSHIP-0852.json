@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-852",
   "title": "Central: mover navegação para subitens da sidebar e tornar os nomes claros",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:41:47.332Z",
-  "updatedAt": "2026-09-10T21:42:57.295Z",
+  "updatedAt": "2026-09-10T22:04:29.931Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

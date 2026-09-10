@@ -24,17 +24,6 @@ export const OUTCOME_TONE: Readonly<Record<string, BadgeVariant>> = {
 	shipped: 'success', failed: 'error', cancelled: 'secondary', incomplete: 'warning',
 };
 
-export function ControlCenterNavigation({ locale, current }: { locale: Locale; current: 'now' | 'runs' | 'queues' | 'insights' }): React.ReactElement {
-	const catalog = LOCALE_CATALOG[locale].overview.navigation;
-	return <nav aria-label={catalog.label} className="border-b">
-		<ul className="flex gap-5">
-			{([{ href: '/overview', key: 'now', label: catalog.now }, { href: '/overview/runs', key: 'runs', label: catalog.runs }, { href: '/overview/queues', key: 'queues', label: catalog.queues }, { href: '/overview/insights', key: 'insights', label: catalog.insights }] as const).map((item) => <li key={item.key}>
-				<a aria-current={current === item.key ? 'page' : undefined} className={cn('inline-flex min-h-10 items-center border-b-2 px-1 text-sm', current === item.key ? 'border-foreground font-medium' : 'border-transparent text-muted-foreground hover:text-foreground')} href={item.href}>{item.label}</a>
-			</li>)}
-		</ul>
-	</nav>;
-}
-
 function stateLabel(state: string, locale: Locale): string {
 	return LOCALE_CATALOG[locale].runInspector.stateLabels[state as RunState] ?? state;
 }
@@ -113,8 +102,7 @@ export function OverviewSurface(props: AppProps): React.ReactElement {
 	const overview = props.overview ?? null;
 	const attention = overview?.projects.filter((project) => project.project.readiness === 'needs-attention'
 		|| project.activeRun?.state === 'waiting-user' || project.activeRun?.state === 'interrupted').length ?? 0;
-	return <SurfaceColumn label={catalog.title} status={props.status}>
-		<ControlCenterNavigation current="now" locale={props.locale} />
+	return <SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.routeLabels.overview} status={props.status}>
 		{props.overviewLoading && overview === null ? <p role="status">{catalog.loading}</p> : null}
 		{overview === null && props.overviewError !== null && props.overviewError !== undefined ? <Card><CardPanel><p role="alert">{catalog.error}</p><p className="text-muted-foreground text-xs">{props.overviewError}</p></CardPanel></Card> : null}
 		{(overview === null || overview.projects.length === 0) && !props.overviewLoading && !props.overviewError && props.projects.length === 0 ? <EmptyState>{catalog.empty}</EmptyState> : null}

@@ -16,9 +16,9 @@ import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import { Tooltip } from '@base-ui/react/tooltip';
-import { Activity01Icon, Alert02Icon, ArrowExpand01Icon, ArrowShrink01Icon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 
 const SHELL_ICON_SIZE = 16;
@@ -181,6 +181,8 @@ export const NAV_GLYPHS = {
 	work: ListViewIcon,
 	settings: Settings01Icon,
 	globalSettings: Globe02Icon,
+	overviewQueues: ListViewIcon,
+	overviewInsights: ChartAnalysisIcon,
 } as const;
 
 export function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.ReactElement {
@@ -239,10 +241,6 @@ function ProjectStatusIcon({ status }: { status: ShellStatus | null }): React.Re
 export function projectSwitcherTooltipText(catalog: ShellCatalog, name: string, shortcut: string | null, status: ShellStatus | null): string {
 	const action = catalog.projectNavigationLabel === 'Projetos' ? 'acessar projeto' : 'open project';
 	return [name, shortcut === null ? null : `${shortcut}: ${action}`, status?.label ?? null].filter((part): part is string => part !== null).join(' · ');
-}
-
-function OverviewShortcut(): React.ReactElement {
-	return <NavGlyph name="overview" />;
 }
 
 interface ShellStatus { attention: OperatorAttention; label: string; acid: boolean }
@@ -387,6 +385,25 @@ export function ProjectSwitcher({
 	);
 }
 
+const CONTROL_CENTER_ITEMS = [
+	{ href: '/overview', label: 'overview', glyph: 'overview', surface: 'overview' },
+	{ href: '/overview/runs', label: 'overviewRuns', glyph: 'runs', surface: 'overview-runs' },
+	{ href: '/overview/queues', label: 'overviewQueues', glyph: 'overviewQueues', surface: 'overview-queues' },
+	{ href: '/overview/insights', label: 'overviewInsights', glyph: 'overviewInsights', surface: 'overview-insights' },
+] as const;
+
+function ControlCenterSubnavigation({ catalog, open, selection }: { catalog: ShellCatalog; open: boolean; selection: ReturnType<typeof routeSelection> }): React.ReactElement {
+	return <ul className="flex flex-col gap-0.5 lg:pl-4" data-slot="control-center-subnavigation">
+		{CONTROL_CENTER_ITEMS.map((item) => <li className="shrink-0" key={item.href}>
+			<SidebarTooltip content={catalog.routeLabels[item.label]} disabled={open}>
+				<a aria-label={open ? undefined : catalog.routeLabels[item.label]} aria-current={selection.surface === item.surface ? 'page' : undefined} aria-keyshortcuts={item.surface === 'overview' ? KEYBOARD_SHORTCUTS.overview.aria : undefined} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, selection.surface === item.surface && 'bg-sidebar-accent text-sidebar-accent-foreground')} href={item.href}>
+					<NavGlyph name={item.glyph} />{open ? <span>{catalog.routeLabels[item.label]}</span> : null}
+				</a>
+			</SidebarTooltip>
+		</li>)}
+	</ul>;
+}
+
 export function ShellNavigation({
 	catalog,
 	projects,
@@ -400,26 +417,37 @@ export function ShellNavigation({
 	status: ShellStatus | null;
 	open: boolean;
 }): React.ReactElement {
-	/* Overview is global. The project switcher begins its own contextual group;
-	 * project surfaces are a semantic child list, visually nested on desktop. */
+	const [desktopViewport, setDesktopViewport] = useState(() => panelRuntime().matchMedia?.('(min-width: 1024px)').matches ?? false);
+	const [mobileExpanded, setMobileExpanded] = useState(true);
+	useEffect(() => {
+		const query = panelRuntime().matchMedia?.('(min-width: 1024px)');
+		if (query === undefined) return;
+		const update = (): void => setDesktopViewport(query.matches);
+		update();
+		query.addEventListener?.('change', update);
+		return () => query.removeEventListener?.('change', update);
+	}, []);
+	const controlCenterOpen = desktopViewport || mobileExpanded;
+	const toggleControlCenter = (event: React.MouseEvent<HTMLElement>): void => {
+		event.preventDefault();
+		if (!desktopViewport) setMobileExpanded((expanded) => nextControlCenterDisclosureState(expanded, false));
+	};
+	/* The control center is a semantic group. Its disclosure stays open by
+	 * default so desktop and the compact rail keep identical destinations; on
+	 * mobile the native details/summary pair also gives the group a keyboard-
+	 * accessible collapse affordance. */
 	return (
 		<nav aria-label={catalog.operatorNavigationLabel} className="lg:flex lg:flex-1 lg:flex-col">
 			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
-				<li className="shrink-0">
-					<SidebarTooltip content={<>{catalog.routeLabels.overview} · <span className="font-mono">{shortcutLabel('overview', undefined, presentationPlatform())}</span></>}>
-					<a
-						aria-label={open ? undefined : catalog.routeLabels.overview}
-						aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights' ? 'page' : undefined}
-						aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria}
-						className={cn(
-							open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
-							(selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights') && 'bg-sidebar-accent text-sidebar-accent-foreground',
-						)}
-						href="/overview"
-					>
-						<OverviewShortcut />{open ? <span>{catalog.routeLabels.overview}</span> : null}
-					</a>
-					</SidebarTooltip>
+				<li className="w-full min-w-0" data-slot="control-center-navigation">
+					<details aria-label={catalog.controlCenter} open={controlCenterOpen}>
+						<SidebarTooltip content={catalog.controlCenter} disabled={open}>
+							<summary aria-expanded={controlCenterOpen} aria-label={open ? undefined : catalog.controlCenter} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, 'list-none marker:hidden', (selection.surface.startsWith('overview') && 'bg-sidebar-accent text-sidebar-accent-foreground'))} onClick={toggleControlCenter}>
+								<NavGlyph name="overview" />{open ? <span>{catalog.controlCenter}</span> : null}
+							</summary>
+						</SidebarTooltip>
+						<ControlCenterSubnavigation catalog={catalog} open={open} selection={selection} />
+					</details>
 				</li>
 			</ul>
 			<div className="mt-3 lg:mt-5 lg:flex lg:flex-1 lg:flex-col" data-slot="project-navigation">
@@ -475,6 +503,10 @@ export function ShellNavigation({
 	);
 }
 
+export function nextControlCenterDisclosureState(expanded: boolean, desktopViewport: boolean): boolean {
+	return desktopViewport ? true : !expanded;
+}
+
 /*
  * The root tsconfig checks this file without the DOM lib (browser types are
  * scoped to webui's own config), so the browser surface this screen touches
@@ -485,7 +517,7 @@ export interface PanelRuntime {
 	addEventListener?: (type: 'keydown', listener: (event: PanelKeyEvent) => void) => void;
 	removeEventListener?: (type: 'keydown', listener: (event: PanelKeyEvent) => void) => void;
 	location?: { assign: (url: string) => void };
-	matchMedia?: (query: string) => { matches: boolean };
+	matchMedia?: (query: string) => { matches: boolean; addEventListener?: (type: 'change', listener: () => void) => void; removeEventListener?: (type: 'change', listener: () => void) => void };
 	document?: { documentElement: { classList: { toggle: (name: string, force: boolean) => void } } };
 }
 
