@@ -4487,14 +4487,22 @@ describe('operator shell', () => {
 	test('keeps the composite sidebar control intrinsically sized and shell icons optically uniform', () => {
 		const html = renderAt('/overview');
 		const sidebarToggle = elementWith(html, 'data-slot="sidebar-toggle"');
+		const interactiveIcons = [...shellHeader(html).matchAll(/<button[\s\S]*?<\/button>/g)]
+			.flatMap((button) => [...button[0].matchAll(/<svg[^>]*>[\s\S]*?<\/svg>/g)].map((match) => match[0]));
+		const projectSwitcherStart = html.indexOf('data-slot="project-switcher"');
+		const projectSwitcher = html.slice(html.lastIndexOf('<button', projectSwitcherStart), html.indexOf('</button>', projectSwitcherStart) + '</button>'.length);
+		interactiveIcons.push(...[...projectSwitcher.matchAll(/<svg[^>]*>[\s\S]*?<\/svg>/g)].map((match) => match[0]));
 
 		expect(sidebarToggle).toContain('h-9');
 		expect(sidebarToggle).not.toContain('size-9');
 		expect(sidebarToggle).not.toContain('sm:size-8');
 		expect(html).toContain('aria-keyshortcuts="Control+B Meta+B"');
-		expect(html).not.toContain('stroke-width="3"');
-		expect(html).not.toContain('stroke-width="2.5"');
-		expect(html).toContain('stroke-width="2.25"');
+		expect(interactiveIcons.length).toBeGreaterThan(0);
+		for (const icon of interactiveIcons) {
+			expect(icon).toContain('class="size-4');
+			expect(icon).toContain('viewBox="0 0 24 24"');
+			expect(icon).toContain('stroke-width="2.25"');
+		}
 	});
 
 	test('panel toggle glyph thickens only its outer stroke', () => {
@@ -4503,8 +4511,11 @@ describe('operator shell', () => {
 
 		expect(glyphs).toHaveLength(2);
 		for (const glyph of glyphs) {
+			expect(glyph).toContain('class="size-4"');
+			expect(glyph).toContain('viewBox="0 0 24 24"');
 			expect(glyph).toContain('stroke-width="2.25"');
 			expect(glyph).toContain('fill="currentColor"');
+			expect(glyph).toMatch(/<rect[^>]*fill="currentColor"[^>]*width="5\.25"[^>]*x="(?:3|15\.75)"/);
 		}
 	});
 
