@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:11.866Z",
-  "updatedAt": "2026-09-10T19:42:59.380Z",
+  "updatedAt": "2026-09-10T20:39:17.608Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -36,32 +36,23 @@
         "Como garantir que o harness exercita o produto real e viewport real com isolamento de dados, tema, idioma e efeitos?"
       ],
       "sourceClasses": [
-        "official-documentation",
         "primary-code"
       ],
       "freshness": {
         "mode": "current",
-        "resolvedAt": "2026-09-10T18:37:34.696Z"
+        "resolvedAt": "2026-09-10T20:38:58.000Z"
       },
       "receipts": [
         {
-          "url": "https://playwright.dev/docs/test-snapshots",
-          "contentHash": "sha256:a940baeb842be894fb8864731377ed28f5086c27bc68fce66fa54faffd9ef358",
-          "fetchedAt": "2026-09-10T18:37:35.571Z",
-          "sourceType": "official-documentation",
-          "claim": "Screenshots podem ser comparados com referências; diferenças de sistema e ambiente afetam o resultado.",
-          "applicability": "Fixar ambiente e dados; revisar diferenças intencionais, sem confundir estabilidade com beleza."
-        },
-        {
-          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/skills/shadcn/SKILL.md",
-          "contentHash": "sha256:deba6c5152d9835892fa7dffeb1fedbb689ddac7e59e14e57ec5eaf9463309e4",
-          "fetchedAt": "2026-09-10T18:41:10.128Z",
+          "url": "https://raw.githubusercontent.com/microsoft/playwright/efb0761d304adfda66ad91f6596ac33eb1036ec9/docs/src/test-snapshots-js.md",
+          "contentHash": "sha256:d4cef399c4e4941e0dbad92adf7bfd48b5e7af36a6d63b1856144edfd00de823",
+          "fetchedAt": "2026-09-10T20:38:58.000Z",
           "sourceType": "primary-code",
-          "claim": "A skill oficial identifica contexto do projeto e orienta descoberta, composição e customização; bibliotecas base exigem APIs diferentes.",
-          "applicability": "Pesquisar padrões oficiais mantendo Base UI, Hugeicons e identidade Gateship.",
+          "claim": "Como garantir que o harness exercita o produto real e viewport real com isolamento de dados, tema, idioma e efeitos?",
+          "applicability": "Fixar ambiente e dados para cenários reais sem confundir estabilidade com beleza.",
           "resolvedRef": {
             "kind": "commit",
-            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+            "value": "efb0761d304adfda66ad91f6596ac33eb1036ec9"
           }
         }
       ]
