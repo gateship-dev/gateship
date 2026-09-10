@@ -14,7 +14,7 @@ function options(platform: string, arch: string, containerBuild: boolean) {
 
 describe('gship doctor', () => {
 	test('does not include command output or credential-shaped fields', async () => {
-		const output = JSON.stringify(await collectDoctorChecks());
+		const output = JSON.stringify(await collectDoctorChecks(options('linux', 'x64', false)));
 		expect(output).not.toContain('token');
 		expect(output).not.toContain('password');
 		expect(output).not.toContain('secret');

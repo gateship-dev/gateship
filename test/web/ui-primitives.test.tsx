@@ -31,8 +31,61 @@ import {
 } from '../../webui/src/components/ui/tabs.tsx';
 import { cn } from '../../webui/src/lib/cn.ts';
 import { ContextPanel } from '../../webui/src/screens/operator-controls.tsx';
+import {
+	DataTable,
+	DataTablePagination,
+	gateshipTableFeatures,
+	useGateshipTable,
+	type GateshipColumnDef,
+} from '../../webui/src/components/ui/data-table.tsx';
+
+type TableFixtureRow = { id: string; name: string; state: string };
+const TABLE_FIXTURE_COLUMNS: GateshipColumnDef<TableFixtureRow>[] = [
+	{ accessorKey: 'name', header: 'Name', minSize: 160 },
+	{ accessorKey: 'state', header: 'State', minSize: 120 },
+];
+
+function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, server = false }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; pinned?: boolean; server?: boolean }): React.ReactElement {
+	const table = useGateshipTable({
+		columns,
+		data,
+		features: gateshipTableFeatures,
+		getRowId: (row) => row.id,
+		manualFiltering: server,
+		manualPagination: server,
+		manualSorting: server,
+		rowCount: server ? 4 : undefined,
+		state: {
+			pagination: { pageIndex: server ? 1 : 0, pageSize: 1 },
+			...(pinned ? { columnPinning: { start: ['name'], end: [] } } : {}),
+			...(server ? { globalFilter: 'not applied locally', sorting: [{ desc: true, id: 'name' }] } : {}),
+		},
+	});
+	return <><DataTable table={table} locale="pt-BR" /><DataTablePagination table={table} locale="pt-BR" /></>;
+}
 
 describe('ui primitives', () => {
+	test('data tables keep typed columns composable and expose accessible controls', () => {
+		const html = renderToStaticMarkup(<TableFixture data={[{ id: 'a', name: 'Um texto suficientemente longo para testar overflow', state: 'Pronto' }, { id: 'b', name: 'Segundo', state: 'Em fila' }]} />);
+		const other = renderToStaticMarkup(<TableFixture columns={[{ accessorKey: 'state', header: 'Estado' }]} data={[{ id: 'a', name: 'Ignorado', state: 'Pronto' }]} />);
+		expect(html).toContain('data-slot="data-table"');
+		expect(html).toContain('data-slot="table-container"');
+		expect(html).toContain('aria-sort="none"');
+		expect(html).toContain('Página 1 / 2');
+		expect(html).toContain('Próxima página');
+		expect(other).toContain('Estado');
+	});
+
+	test('data tables preserve pinned columns and server-owned row processing', () => {
+		const html = renderToStaticMarkup(<TableFixture pinned data={[{ id: 'a', name: 'Nome fixado', state: 'Pronto' }]} />);
+		const server = renderToStaticMarkup(<TableFixture server data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }, { id: 'b', name: 'Resposta do servidor B', state: 'Em fila' }]} />);
+		expect(html).toContain('position:sticky');
+		expect(html).toContain('inset-inline-start:0');
+		expect(server).toContain('Resposta do servidor A');
+		expect(server).toContain('Resposta do servidor B');
+		expect(server).toContain('Página 2 / 4');
+	});
+
 	test('card composition owns its standard, compact, split and form rhythm', () => {
 		const standard = renderToStaticMarkup(<CardStack><div>one</div><div>two</div></CardStack>);
 		const compact = renderToStaticMarkup(<CardGrid as="ul" compact equalHeight><li>one</li></CardGrid>);
