@@ -1,4 +1,5 @@
 import tailwindcss from '@tailwindcss/vite';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 
 /**
@@ -9,6 +10,9 @@ import { defineConfig } from 'vite';
  */
 export default defineConfig({
 	plugins: [tailwindcss()],
+	resolve: {
+		alias: { '@': path.resolve(import.meta.dirname, '.') },
+	},
 	build: {
 		rollupOptions: {
 			// The internal harness is a development-only HTML entry. Keeping the
