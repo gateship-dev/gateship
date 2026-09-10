@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:19.481Z",
-  "updatedAt": "2026-09-10T18:42:19.481Z",
+  "updatedAt": "2026-09-10T20:39:24.492Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -36,21 +36,24 @@
         "Como adaptar a receita Data Table à consulta de execuções paginadas, preservando URL, links de célula e personalização de colunas?"
       ],
       "sourceClasses": [
-        "official-documentation",
         "primary-code"
       ],
       "freshness": {
         "mode": "current",
-        "resolvedAt": "2026-09-10T18:37:34.696Z"
+        "resolvedAt": "2026-09-10T20:38:58.000Z"
       },
       "receipts": [
         {
-          "url": "https://ui.shadcn.com/docs/components/base/data-table.md",
-          "contentHash": "sha256:31d46187a08d79ce41dd8991599ce86ff2d6fba0b99ae4ebff84cfbccce6cff4",
-          "fetchedAt": "2026-09-10T18:37:34.778Z",
-          "sourceType": "official-documentation",
-          "claim": "A receita Data Table usa TanStack v9 e recomenda composições específicas por caso em vez de um componente universal rígido.",
-          "applicability": "Adotar lógica headless e partes compartilhadas sem copiar o tema padrão ou misturar APIs v8/v9."
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/apps/v4/content/docs/components/base/data-table.mdx",
+          "contentHash": "sha256:a502d72b8242cb77f724a723a83c684a7738ba9b784b64db6df79111724bc41e",
+          "fetchedAt": "2026-09-10T20:38:58.000Z",
+          "sourceType": "primary-code",
+          "claim": "Como adaptar a receita Data Table à consulta de execuções paginadas, preservando URL, links de célula e personalização de colunas?",
+          "applicability": "Migrar a listagem real sem mudar a semântica dos dados.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
         }
       ]
     }
