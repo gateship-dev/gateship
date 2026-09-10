@@ -9,7 +9,6 @@ import { Callout } from '../components/ui/callout.tsx';
 import { Card, CardAction, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
 import { cn } from '../lib/cn.ts';
-import { useLiveEdge } from '../live-edge.ts';
 import { DEFAULT_LOCALE, LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, RunInspectorCatalog, RunsOperationalCatalog, RunsWorkflowCatalog, SettingsCatalog } from '../locale.ts';
 import { actionsFor, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
@@ -150,8 +149,156 @@ export function formatRoleUsage(
 	return `${label}${suffix}${thinking}`;
 }
 
+type TimelineRole = 'executor' | 'reviewer' | 'orchestrator' | 'operator' | 'runtime';
+type TimelineEntry = { event: RunEventView; events: RunEventView[]; phase: (typeof RUN_PHASES)[number] | null; role: TimelineRole; detail: string | null };
+const browserEnvironment = globalThis as unknown as { window?: { scrollY: number; innerHeight: number; addEventListener: Function; removeEventListener: Function; scrollTo: Function }; document?: { documentElement: { scrollHeight: number } } };
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: activity rendering coordinates history, live edge, and scroll preservation.
+function roleOfEvent(event: RunEventView): TimelineRole {
+	if (event.kind.startsWith('executor.')) return 'executor';
+	if (event.kind.startsWith('reviewer.')) return 'reviewer';
+	if (event.kind.startsWith('provider.')) return 'executor';
+	if (event.kind.startsWith('review.')) return 'reviewer';
+	if (event.kind.startsWith('cycle-question.') || event.kind === 'run.cycle-question') return 'orchestrator';
+	if (event.kind.startsWith('orchestrator.') || event.kind === 'run.cycle-response') return 'orchestrator';
+	if (event.kind.startsWith('run.operator-')) return 'operator';
+	return 'runtime';
+}
+
+function phaseOfEvent(event: RunEventView): (typeof RUN_PHASES)[number] | null {
+	if (RUN_PHASES.includes(event.toState)) return event.toState;
+	if (event.fromState !== null && RUN_PHASES.includes(event.fromState)) return event.fromState;
+	return null;
+}
+
+function eventMetadata(events: RunEventView[]): string[] {
+	const values: string[] = [];
+	for (const event of events) {
+		for (const [key, value] of Object.entries(event.payload)) {
+			if (['text', 'tools', 'output', 'findings', 'error', 'command', 'exitCode', 'durationMs', 'raw', 'reasoning', 'private'].includes(key)) continue;
+			if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') values.push(`${key}: ${String(value)}`);
+		}
+	}
+	return values;
+}
+
+function technicalMetadata(events: RunEventView[], catalog: RunsOperationalCatalog['activity']): string[] {
+	return events.flatMap((event) => [
+		typeof event.payload['exitCode'] === 'number' ? `${catalog.exitCode}: ${event.payload['exitCode']}` : null,
+		typeof event.payload['durationMs'] === 'number' ? `${catalog.duration}: ${event.payload['durationMs']} ms` : null,
+	].filter((value): value is string => value !== null));
+}
+
+function isKnownTimelineKind(kind: string): boolean {
+	return new Set([
+		'provider.activity', 'provider.system', 'provider.rate-limit', 'provider.result', 'provider.usage', 'provider.model', 'provider.authored-kind',
+		'review.activity', 'review.system', 'review.rate-limit', 'review.result', 'review.usage', 'review.model',
+		'cycle-question.activity', 'cycle-question.system', 'cycle-question.result', 'cycle-question.usage',
+		'run.created', 'run.state', 'run.cycle-question', 'run.cycle-response', 'run.operator-guidance', 'run.waiting-user',
+		'run.verification-failed', 'run.verification-fix-requested', 'run.chain-reconciliation', 'run.chain-paused', 'run.shipped',
+		'verify.started', 'verify.command.started', 'verify.command.completed', 'verify.skipped', 'verify.skipped-equivalent',
+		'full-verify.command.started', 'full-verify.command.completed', 'full-verify.skipped',
+		'workspace.cleanup-warning', 'workspace.released', 'ship.pr-opened', 'ship.ci-status', 'ship.merged',
+	]).has(kind);
+}
+
+function publicPayloadText(event: RunEventView): string {
+	const sanitize = (value: unknown): unknown => {
+		if (Array.isArray(value)) return value.map(sanitize);
+		if (value !== null && typeof value === 'object') {
+			return Object.fromEntries(Object.entries(value).filter(([key]) => !['raw', 'reasoning', 'private'].includes(key)).map(([key, nested]) => [key, sanitize(nested)]));
+		}
+		return value;
+	};
+	return JSON.stringify(sanitize(event.payload), null, 2);
+}
+
+function timelineEntries(events: RunEventView[], catalog: RunsOperationalCatalog['activity']): TimelineEntry[] {
+	const entries: TimelineEntry[] = [];
+	let currentPhase: (typeof RUN_PHASES)[number] | null = null;
+	for (const event of events) {
+		const detail = isKnownTimelineKind(event.kind) ? eventDetail(event, catalog.toolsLabel) : `${catalog.unknownLabel}\n${publicPayloadText(event)}`;
+		const eventPhase = phaseOfEvent(event);
+		if (eventPhase !== null) currentPhase = eventPhase;
+		const phase = currentPhase;
+		const previous = entries.at(-1);
+		const tools = Array.isArray(event.payload['tools']) && event.payload['tools'].every((tool) => typeof tool === 'string');
+		const previousTools = previous !== undefined && previous.events.every((item) => Array.isArray(item.payload['tools']));
+		if (tools && previousTools && previous?.role === roleOfEvent(event) && previous.phase === phase) {
+			previous.events.push(event);
+			previous.detail = [previous.detail, detail].filter((value): value is string => value !== null).join('\n');
+			continue;
+		}
+		entries.push({ event, events: [event], phase, role: roleOfEvent(event), detail });
+	}
+	return entries;
+}
+
+function useMainLiveEdge(newest: number | null, identity: string | null): { canReturnToLiveEdge: boolean; returnToLiveEdge: () => void; ref: React.MutableRefObject<{ scrollIntoView?: Function; getBoundingClientRect?: Function } | null> } {
+	const [canReturn, setCanReturn] = React.useState(false);
+	const following = React.useRef(true);
+	const tailRef = React.useRef<{ scrollIntoView?: Function; getBoundingClientRect?: Function } | null>(null);
+	const update = React.useCallback(() => {
+		const rect = tailRef.current?.getBoundingClientRect?.() as { top: number; bottom: number } | undefined;
+		const viewportHeight = browserEnvironment.window?.innerHeight ?? 0;
+		const atTail = rect === undefined || (rect.top <= viewportHeight && rect.bottom >= 0);
+		if (!atTail) following.current = false;
+		else if (!following.current) following.current = true;
+		setCanReturn(!atTail);
+	}, []);
+	const scrollToTail = React.useCallback(() => {
+		tailRef.current?.scrollIntoView?.({ block: 'end', behavior: 'auto' });
+	}, []);
+	React.useEffect(() => {
+		browserEnvironment.window?.addEventListener('scroll', update, { passive: true });
+		browserEnvironment.window?.addEventListener('resize', update);
+		return () => { browserEnvironment.window?.removeEventListener('scroll', update); browserEnvironment.window?.removeEventListener('resize', update); };
+	}, [update, identity]);
+	React.useEffect(() => { following.current = true; setCanReturn(false); scrollToTail(); }, [identity, scrollToTail]);
+	React.useEffect(() => { if (newest !== null && following.current) scrollToTail(); }, [newest, scrollToTail]);
+	return { canReturnToLiveEdge: canReturn, returnToLiveEdge: () => { following.current = true; setCanReturn(false); scrollToTail(); }, ref: tailRef };
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: activity entry rendering coordinates semantic metadata and public detail disclosure.
+function RunActivityEntry({
+	entry,
+	catalog,
+	locale,
+	anchorEntries,
+}: {
+	entry: ReturnType<typeof timelineEntries>[number];
+	catalog: RunsOperationalCatalog['activity'];
+	locale: Pick<AppProps, 'locale'>['locale'];
+	anchorEntries: Set<string>;
+}): React.ReactElement {
+	const { event, events: grouped, detail, role, phase } = entry;
+	const anchor = phase !== null && !anchorEntries.has(phase) ? phase : null;
+	if (anchor !== null) anchorEntries.add(anchor);
+	const metadata = eventMetadata(grouped);
+	const technical = technicalMetadata(grouped, catalog);
+	const attention = grouped.some((item) => item.toState === 'waiting-user');
+	const label = event.kind.includes('finding') || event.payload['findings'] !== undefined
+		? catalog.findingLabel
+		: event.kind.includes('decision') || event.kind === 'run.cycle-response'
+			? catalog.decisionLabel
+			: event.kind.includes('output') ? catalog.outputLabel : null;
+	return (
+		<li className="min-w-0 border-border border-l-2 pl-4 text-sm" id={anchor === null ? undefined : `run-activity-${anchor}`} key={event.seq}>
+			<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+				<span className="font-medium">{catalog.roleLabels[role]}</span>
+				{phase === null ? null : <span className="text-muted-foreground">{catalog.phaseLabels[phase]}</span>}
+				{label === null ? null : <Badge>{label}</Badge>}
+				{event.kind === 'run.cycle-response' ? <Badge>{catalog.cycleResponseLabel}</Badge> : null}
+				<time className="shrink-0 font-mono text-muted-foreground text-xs">
+					{formatEventTime(event.createdAt, locale)}
+				</time>
+			</div>
+			<div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{grouped.length > 1 ? `${catalog.toolsLabel} ×${grouped.length}` : event.kind}</code><span className="break-all">{grouped.map((item) => item.kind).join(' · ')}</span>{metadata.map((item) => <span key={item}>{item}</span>)}{technical.map((item) => <code className="font-mono" key={item}>{item}</code>)}</div>
+			{attention ? <Badge variant="attention">{catalog.attentionLabel}</Badge> : null}
+			{detail === null ? null : <details className="mt-2 group"><summary className="cursor-pointer text-muted-foreground text-xs underline decoration-dotted underline-offset-2"> <span className="group-open:hidden">{catalog.expand}</span><span className="hidden group-open:inline">{catalog.collapse}</span></summary><pre className="mt-2 max-w-full whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">{detail}</pre></details>}
+		</li>
+	);
+}
+
 export function RunActivity({
 	catalog,
 	locale,
@@ -172,34 +319,20 @@ export function RunActivity({
 		: events
 			.filter((event) => event.runId === run.id && isOperational(event))
 			;
-	const anchoredPhases = new Set<(typeof RUN_PHASES)[number]>();
-	const eventAnchors = new Map<number, (typeof RUN_PHASES)[number]>();
-	for (const event of visible) {
-		if (event.fromState === event.toState || !RUN_PHASES.includes(event.toState)) continue;
-		if (anchoredPhases.has(event.toState)) continue;
-		anchoredPhases.add(event.toState);
-		eventAnchors.set(event.seq, event.toState);
-	}
-	const {
-		canReturnToLiveEdge,
-		returnToLiveEdge,
-		ref: liveEdgeRef,
-		onScroll: handleLiveEdgeScroll,
-		...liveEdge
-	} = useLiveEdge<HTMLOListElement>(visible.at(-1)?.seq ?? null, run?.id ?? null);
+	const entries = timelineEntries(visible, catalog.activity);
+	const anchoredPhases = new Set(entries.flatMap((entry) => entry.phase === null ? [] : [entry.phase]));
+	const anchorEntries = new Set<string>();
+	const { canReturnToLiveEdge, returnToLiveEdge, ref: tailRef } = useMainLiveEdge(visible.at(-1)?.seq ?? null, run?.id ?? null);
 	const pendingScroll = React.useRef<{ top: number; height: number } | null>(null);
 	React.useLayoutEffect(() => {
 		if (loading || pendingScroll.current === null) return;
-		const node = liveEdgeRef.current as unknown as { scrollHeight: number; scrollTop: number } | null;
-		if (node !== null) {
-			node.scrollTop = pendingScroll.current.top + node.scrollHeight - pendingScroll.current.height;
-		}
+		const previous = pendingScroll.current;
+		browserEnvironment.window?.scrollTo({ top: previous.top + (browserEnvironment.document?.documentElement.scrollHeight ?? 0) - previous.height, behavior: 'auto' });
 		pendingScroll.current = null;
-	}, [liveEdgeRef, loading, visible.length, visible[0]?.seq]);
+	}, [loading, visible.length, visible[0]?.seq]);
 	if (run === null) return null;
 	const loadPrevious = async (): Promise<void> => {
-		const node = liveEdgeRef.current as unknown as { scrollHeight: number; scrollTop: number } | null;
-		pendingScroll.current = { height: node?.scrollHeight ?? 0, top: node?.scrollTop ?? 0 };
+		pendingScroll.current = { height: browserEnvironment.document?.documentElement.scrollHeight ?? 0, top: browserEnvironment.window?.scrollY ?? 0 };
 		await onLoadPrevious?.();
 	};
 	return (
@@ -212,34 +345,17 @@ export function RunActivity({
 				{hasPrevious ? <ActionButton enabled={!loading} label={loading ? catalog.activity.loadingPrevious : catalog.activity.loadPrevious} onClick={loadPrevious} /> : null}
 				{canReturnToLiveEdge ? <ActionButton enabled label={catalog.activity.returnToLive} onClick={returnToLiveEdge} /> : null}
 			</div> : null}
-			<div className="max-h-80 rounded-sm has-focus-visible:ring-2 has-focus-visible:ring-ring">
+			<div className="rounded-sm has-focus-visible:ring-2 has-focus-visible:ring-ring">
 				<ol
-					{...liveEdge}
+					role="log"
+					tabIndex={0}
 					aria-label={catalog.activity.title}
-					className="scroll-container scroll-fade flex max-h-80 flex-col gap-3 overflow-x-hidden overflow-y-auto outline-none"
-					ref={liveEdgeRef}
-					onScroll={handleLiveEdgeScroll}
+					className="flex flex-col gap-5 outline-none"
 				>
 					{RUN_PHASES.filter((phase) => !anchoredPhases.has(phase)).map((phase) => <li aria-hidden="true" className="sr-only" key={phase}><span id={`run-activity-${phase}`} /></li>)}
-					{visible.map((event) => {
-						const detail = eventDetail(event, catalog.activity.toolsLabel);
-						return (
-							<li className="min-w-0 border-border border-l-2 pl-3 text-sm" id={eventAnchors.has(event.seq) ? `run-activity-${eventAnchors.get(event.seq)}` : undefined} key={event.seq}>
-								<div className="flex items-baseline justify-between gap-3">
-									<code className="min-w-0 break-all">{event.kind}</code>
-									{event.kind === 'run.cycle-response' ? <Badge>{catalog.activity.cycleResponseLabel}</Badge> : null}
-									<time className="shrink-0 font-mono text-muted-foreground text-xs">
-										{formatEventTime(event.createdAt, locale)}
-									</time>
-								</div>
-								{detail === null ? null : (
-									<p className="mt-1 whitespace-pre-wrap break-words text-muted-foreground">
-										{detail}
-									</p>
-								)}
-							</li>
-						);
-					})}
+					{entries.length === 0 ? <li className="text-muted-foreground text-sm">{catalog.activity.noEvents}</li> : null}
+					{entries.map((entry) => <RunActivityEntry anchorEntries={anchorEntries} catalog={catalog.activity} entry={entry} key={entry.event.seq} locale={locale} />)}
+					<li aria-hidden="true" className="h-px" ref={(node) => { tailRef.current = node as unknown as { scrollIntoView?: Function; getBoundingClientRect?: Function } | null; }} />
 				</ol>
 			</div>
 		</ContextPanel>

@@ -273,6 +273,19 @@ export interface RunsOperationalCatalog {
 		loadPrevious: string;
 		loadingPrevious: string;
 		returnToLive: string;
+		roleLabels: Readonly<Record<'executor' | 'reviewer' | 'orchestrator' | 'operator' | 'runtime', string>>;
+		phaseLabels: Readonly<Record<string, string>>;
+		unknownLabel: string;
+		metadataLabel: string;
+		expand: string;
+		collapse: string;
+		exitCode: string;
+		duration: string;
+		decisionLabel: string;
+		findingLabel: string;
+		attentionLabel: string;
+		outputLabel: string;
+		noEvents: string;
 	};
 	workspaces: {
 		title: string;
@@ -827,7 +840,8 @@ export const LOCALE_CATALOG = {
 					`${count} ${count === 1 ? 'recent event' : 'recent events'} from this run.`,
 				toolsLabel: 'Tools',
 				cycleResponseLabel: 'Orchestrator answer to the review cycle',
-				loadPrevious: 'Load previous', loadingPrevious: 'Loading previous…', returnToLive: 'Return to live',
+				noEvents: 'No public activity has been recorded for this run.',
+				loadPrevious: 'Load previous', loadingPrevious: 'Loading previous…', returnToLive: 'Return to live', roleLabels: { executor: 'Executor', reviewer: 'Reviewer', orchestrator: 'Orchestrator', operator: 'Operator', runtime: 'Runtime' }, phaseLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' }, unknownLabel: 'Unknown event', metadataLabel: 'Metadata', expand: 'Show details', collapse: 'Hide details', exitCode: 'exit code', duration: 'duration', decisionLabel: 'Decision', findingLabel: 'Finding', attentionLabel: 'Needs attention', outputLabel: 'Output',
 			},
 			workspaces: {
 				title: 'Preserved workspaces',
@@ -1296,7 +1310,8 @@ export const LOCALE_CATALOG = {
 					`${count} ${count === 1 ? 'evento recente' : 'eventos recentes'} desta execução.`,
 				toolsLabel: 'Ferramentas',
 				cycleResponseLabel: 'Resposta do orquestrador ao ciclo de revisão',
-				loadPrevious: 'Carregar anteriores', loadingPrevious: 'Carregando anteriores…', returnToLive: 'Voltar para a cauda',
+				noEvents: 'Nenhuma atividade pública foi registrada para esta execução.',
+				loadPrevious: 'Carregar anteriores', loadingPrevious: 'Carregando anteriores…', returnToLive: 'Voltar para a cauda', roleLabels: { executor: 'Executor', reviewer: 'Revisor', orchestrator: 'Orquestrador', operator: 'Operador', runtime: 'Runtime' }, phaseLabels: { queued: 'Na fila', working: 'Trabalho ativo', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', 'ready-to-ship': 'Pronta para envio', shipping: 'Enviando', done: 'Concluída' }, unknownLabel: 'Evento desconhecido', metadataLabel: 'Metadados', expand: 'Mostrar detalhes', collapse: 'Ocultar detalhes', exitCode: 'código de saída', duration: 'duração', decisionLabel: 'Decisão', findingLabel: 'Achado', attentionLabel: 'Requer atenção', outputLabel: 'Saída',
 			},
 			workspaces: {
 				title: 'Workspaces preservados',

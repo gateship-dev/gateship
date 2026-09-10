@@ -63,19 +63,11 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 					/>
 				</CardGrid>
 			)}
+			<OperationalReadPanel detail={activityFailure} loaded={activityLoaded} locale={props.locale} pending={activityPending} resource="Run activity">
+				<RunActivity catalog={localeCatalog.runsOperational} events={props.events} locale={props.locale} run={run} hasPrevious={props.runEventsHasPrevious} loading={props.runEventsLoading} onLoadPrevious={props.onLoadPreviousRunEvents} />
+			</OperationalReadPanel>
 			<CardSplit>
 				<CardStack className="min-w-0">
-					<OperationalReadPanel detail={activityFailure} loaded={activityLoaded} locale={props.locale} pending={activityPending} resource="Run activity">
-						<RunActivity
-							catalog={localeCatalog.runsOperational}
-							events={props.events}
-							locale={props.locale}
-							run={run}
-							hasPrevious={props.runEventsHasPrevious}
-							loading={props.runEventsLoading}
-							onLoadPrevious={props.onLoadPreviousRunEvents}
-						/>
-					</OperationalReadPanel>
 					{run === null ? null : <RunReport catalog={catalog} run={run} />}
 				</CardStack>
 				<CardStack className="min-w-0">

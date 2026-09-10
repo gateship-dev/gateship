@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-830",
   "title": "Exibir a atividade completa da run como timeline semântica",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:45:00.826Z",
-  "updatedAt": "2026-09-10T03:23:30.965Z",
+  "updatedAt": "2026-09-10T04:09:53.173Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
