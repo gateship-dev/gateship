@@ -5,13 +5,31 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:44:57.376Z",
-  "updatedAt": "2026-09-08T14:44:57.376Z",
-  "description": "Substituir as janelas silenciosas que hoje limitam a atividade visível a 30 eventos na tela e 200 no cliente/runtime por um contrato paginado por cursor ou sequence, escopado à run. A leitura inicial pode continuar limitada, mas deve permitir recuperar todo o histórico durável anterior sem duplicação ou lacunas enquanto SSE acrescenta novos eventos. Preservar ordenação, isolamento por projeto, reconexão, live edge apenas quando o operador já está no final e memória previsível em runs longas. Expor metadados suficientes para a UI saber se há eventos anteriores e testar limites, paginação concorrente com append e runs acima de 200 eventos. Não alterar a semântica de decisões duráveis nem inventar conteúdo não persistido.",
+  "updatedAt": "2026-09-10T01:43:35.401Z",
   "specSource": "operator",
   "spec": {
-    "scope": "Substituir as janelas silenciosas que hoje limitam a atividade visível a 30 eventos na tela e 200 no cliente/runtime por um contrato paginado por cursor ou sequence, escopado à run. A leitura inicial pode continuar limitada, mas deve permitir recuperar todo o histórico durável anterior sem duplicação ou lacunas enquanto SSE acrescenta novos eventos. Preservar ordenação, isolamento por projeto, reconexão, live edge apenas quando o operador já está no final e memória previsível em runs longas. Expor metadados suficientes para a UI saber se há eventos anteriores e testar limites, paginação concorrente com append e runs acima de 200 eventos. Não alterar a semântica de decisões duráveis nem inventar conteúdo não persistido.",
+    "version": 2,
+    "objective": "Tornar todo o histórico durável de uma run recuperável por páginas de sequência, eliminando os cortes silenciosos de 30 e 200 eventos e preservando a cauda ao vivo sem lacunas, duplicatas ou crescimento involuntário.",
+    "acceptance": [
+      "O endpoint escopado de eventos aceita limite validado e cursor exclusivo baseado em seq; sem cursor retorna a página mais recente, ordenada cronologicamente, com metadados hasPrevious e previousCursor.",
+      "Páginas anteriores usam a seq mais antiga já carregada como fronteira estável, retornam somente eventos da run e do projeto autorizados e permitem alcançar o primeiro evento sem duplicação ou lacuna.",
+      "O cliente mantém separadas a página histórica da run selecionada e a assinatura SSE do projeto, mescla por seq e preserva ordenação quando eventos chegam durante ou entre leituras de páginas.",
+      "A UI remove o slice silencioso de 30 eventos, oferece ação localizada Carregar anteriores somente quando hasPrevious e preserva posição de rolagem ao inserir eventos no início.",
+      "O live edge acompanha eventos novos apenas quando o operador já estava no final; ao navegar no histórico, novos eventos não deslocam a leitura e um controle permite retornar à cauda.",
+      "O carregamento inicial e cada página têm tamanho limitado e validado; crescimento de memória ocorre somente por ação explícita de carregar páginas, sem alterar notificações nem eventos persistidos.",
+      "Testes com mais de 200 eventos provam limites, cursor exclusivo, ordem, isolamento entre runs e projetos, paginação concorrente com append, reconexão SSE, deduplicação e estados de carregamento e fim do histórico."
+    ],
+    "boundaries": [
+      "Não alterar o conteúdo, sequência, retenção ou semântica dos eventos duráveis e das decisões do ciclo.",
+      "Não adicionar polling, banco, tabela, websocket, biblioteca de estado, virtualização ou qualquer dependência.",
+      "Não usar offset como identidade do cursor e não codificar estado volátil do processo no cursor.",
+      "Não implementar ainda o redesenho completo da timeline da GSHIP-830; esta issue entrega o contrato e a navegação histórica mínima.",
+      "Não executar check:all durante a implementação; a verificação integral continua pertencendo à fronteira automática de ship."
+    ],
     "verify": [
-      "bun run check:all"
+      "bun test test/runtime/run-store.test.ts test/web/run-api.test.ts test/web/project-scoped-run-api.test.ts test/web/project-scoped-browser-runs.test.ts test/web/ui-client.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
     ]
   }
 }
