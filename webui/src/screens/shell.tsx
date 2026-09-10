@@ -213,7 +213,7 @@ function ProjectShortcut({ index }: { index: number | undefined }): React.ReactE
 }
 
 function OverviewShortcut(): React.ReactElement {
-	return <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-overview">{shortcutLabel('overview', undefined, presentationPlatform())}</kbd>;
+	return <span className="flex w-10 shrink-0 justify-center"><kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-overview">{shortcutLabel('overview', undefined, presentationPlatform())}</kbd></span>;
 }
 
 interface ProjectSwitcherProps {
@@ -396,7 +396,7 @@ export function ShellNavigation({
 						)}
 						href="/overview"
 					>
-						<NavGlyph name="overview" /><span>{catalog.routeLabels.overview}</span><span className="ml-auto"><OverviewShortcut /></span>
+						<OverviewShortcut /><span>{catalog.routeLabels.overview}</span>
 					</a>
 				</li>
 			</ul>
@@ -559,10 +559,9 @@ export function ShellControls({
 					{/* The sidebar toggle lives in the content area, not the sidebar. */}
 					<Button
 						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
-						className="gap-1.5 px-2"
 						data-slot="sidebar-toggle"
 						onClick={onToggleSidebar}
-						size="default"
+						size="icon"
 						type="button"
 						variant="outline"
 					>
@@ -693,7 +692,7 @@ export function ShellRail({
 					href="/overview"
 					title={catalog.routeLabels.overview}
 				>
-					<NavGlyph name="overview" />
+					<OverviewShortcut />
 				</a>
 				<ProjectSwitcher catalog={catalog} compact projects={projects} selection={selection} status={status} />
 				{projectId === null ? null : SURFACES.map((surface) => (

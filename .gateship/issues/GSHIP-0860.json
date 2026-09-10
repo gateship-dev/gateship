@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-860",
   "title": "Alinhar visualmente o atalho da Central e o toggle da sidebar",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:52:28.734Z",
-  "updatedAt": "2026-09-10T18:52:28.734Z",
+  "updatedAt": "2026-09-10T18:59:12.342Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

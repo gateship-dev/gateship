@@ -4491,15 +4491,18 @@ describe('operator shell', () => {
 	test('keeps the composite sidebar control intrinsically sized and shell icons optically uniform', () => {
 		const html = renderAt('/overview');
 		const sidebarToggle = elementWith(html, 'data-slot="sidebar-toggle"');
+		const notifications = elementWith(html, 'data-slot="notifications-trigger"');
 		const interactiveIcons = [...shellHeader(html).matchAll(/<button[\s\S]*?<\/button>/g)]
 			.flatMap((button) => [...button[0].matchAll(/<svg[^>]*>[\s\S]*?<\/svg>/g)].map((match) => match[0]));
 		const projectSwitcherStart = html.indexOf('data-slot="project-switcher"');
 		const projectSwitcher = html.slice(html.lastIndexOf('<button', projectSwitcherStart), html.indexOf('</button>', projectSwitcherStart) + '</button>'.length);
 		interactiveIcons.push(...[...projectSwitcher.matchAll(/<svg[^>]*>[\s\S]*?<\/svg>/g)].map((match) => match[0]));
 
-		expect(sidebarToggle).toContain('h-9');
-		expect(sidebarToggle).not.toContain('size-9');
-		expect(sidebarToggle).not.toContain('sm:size-8');
+		expect(sidebarToggle).toContain('size-9');
+		expect(sidebarToggle).toContain('sm:size-8');
+		expect(sidebarToggle).not.toContain('h-9');
+		expect(notifications).toContain('size-9');
+		expect(notifications).toContain('sm:size-8');
 		expect(html).toContain('aria-keyshortcuts="Alt+0"');
 		expect(sidebarToggle).not.toContain('aria-keyshortcuts');
 		expect(sidebarToggle).not.toContain('<kbd');
@@ -4523,6 +4526,36 @@ describe('operator shell', () => {
 			expect(glyph).toContain('fill="currentColor"');
 			expect(glyph).toMatch(/<rect[^>]*fill="currentColor"[^>]*width="5\.25"[^>]*x="(?:3|15\.75)"/);
 		}
+	});
+
+	test('overview shortcut occupies the leading slot in both sidebar modes', () => {
+		const props = {
+			chainRuns: EMPTY_CHAIN_RUNS,
+			gitIdentity: null,
+			locale: 'en-US' as const,
+			projects: [CURRENT_PROJECT],
+			run: null,
+			runInspectorCatalog: LOCALE_CATALOG['en-US'].runInspector,
+			route: '/overview' as OperatorRoute,
+			selectedProjectId: null,
+			staleService: null,
+			version: '',
+			workspaceNotices: [],
+		};
+		const expanded = renderToStaticMarkup(<ShellSidebar {...props} open />);
+		const collapsed = renderToStaticMarkup(<ShellSidebar {...props} open={false} />);
+
+		for (const html of [expanded, collapsed]) {
+			const overviewTag = openingTags(html).find((tag) => tag.includes('href="/overview"'))!;
+			const overviewStart = html.indexOf('href="/overview"');
+			const overview = html.slice(overviewStart, html.indexOf('</a>', overviewStart));
+			expect(overviewTag).toContain('aria-current="page"');
+			expect(overview).toContain('data-slot="shortcut-overview"');
+			expect(overview).toContain(shortcutLabel('overview', undefined, presentationPlatform()));
+			expect(overview).not.toContain('<svg');
+			expect((html.match(/data-slot="shortcut-overview"/g) ?? [])).toHaveLength(1);
+		}
+		expect(openingTags(collapsed).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Control center"');
 	});
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
