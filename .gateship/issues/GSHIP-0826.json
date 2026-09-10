@@ -5,13 +5,31 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:44:04.308Z",
-  "updatedAt": "2026-09-08T14:44:04.308Z",
-  "description": "Inventariar todos os atalhos implementados e todos os elementos kbd exibidos pela web UI, separando o evento canônico da apresentação para macOS, Windows e Linux. Mostrar símbolos e nomes corretos por plataforma, com fallback neutro quando a detecção não for confiável; não inferir comportamento apenas por user agent. Revisar colisões com navegador e sistema, incluindo sidebar, seletor de projetos, inspector e eventual abertura da central de notificações. Preservar navegação sem mouse, não animar ações disparadas por teclado e adicionar testes da detecção, dos labels pt-BR/en-US e dos handlers.",
+  "updatedAt": "2026-09-10T00:36:58.065Z",
   "specSource": "operator",
   "spec": {
-    "scope": "Inventariar todos os atalhos implementados e todos os elementos kbd exibidos pela web UI, separando o evento canônico da apresentação para macOS, Windows e Linux. Mostrar símbolos e nomes corretos por plataforma, com fallback neutro quando a detecção não for confiável; não inferir comportamento apenas por user agent. Revisar colisões com navegador e sistema, incluindo sidebar, seletor de projetos, inspector e eventual abertura da central de notificações. Preservar navegação sem mouse, não animar ações disparadas por teclado e adicionar testes da detecção, dos labels pt-BR/en-US e dos handlers.",
+    "version": 2,
+    "objective": "Tornar os atalhos reais da interface explícitos, coerentes e acessíveis em macOS, Windows, Linux e plataformas desconhecidas, separando o comando canônico de sua apresentação sem mudar o fluxo operacional.",
+    "acceptance": [
+      "Existe um registro tipado e único para os comandos canônicos atualmente implementados: alternar a sidebar e selecionar os projetos de 1 a 9; handlers, kbd, aria-keyshortcuts e textos visíveis derivam desse contrato em vez de repetir strings.",
+      "A plataforma de apresentação é uma enumeração pura macOS, Windows, Linux ou unknown, detectada por sinais de plataforma disponíveis no navegador com fallback neutro; user agent textual não decide comportamento nem altera o comando canônico.",
+      "Os labels mostram convenções compreensíveis por plataforma: símbolos de modificadores no macOS, nomes de teclas em Windows e Linux e uma forma neutra quando a plataforma não é confiável; os mesmos labels funcionam em pt-BR e en-US.",
+      "O seletor de projetos mostra somente atalhos realmente ativos para os nove primeiros projetos, na mesma ordem usada pelo handler, tanto no trigger quanto na lista, sem check duplicado nem mudança na seleção atual.",
+      "Os handlers preservam navegação sem mouse, só chamam preventDefault quando reconhecem a combinação canônica e rejeitam modificadores, teclas e índices fora do contrato; ações por teclado continuam imediatas, sem animação criada por esta mudança.",
+      "O inventário de colisões e decisões fica documentado no design system: não se anuncia kbd sem handler, não se cria atalho novo para inspector ou central de notificações nesta issue e colisões conhecidas de navegador ou sistema têm fallback explícito.",
+      "Testes cobrem detecção, formatação macOS/Windows/Linux/unknown, pt-BR/en-US, renderização dos kbd e handlers da sidebar e dos nove projetos."
+    ],
+    "boundaries": [
+      "Não adicionar dependência, persistência de preferência, endpoint, daemon ou mudança no runtime de runs.",
+      "Não usar user agent textual como fonte de verdade e não fazer o comportamento do atalho variar por sistema operacional.",
+      "Não criar atalhos novos para componentes que ainda não possuam handler real.",
+      "Não alterar ordem de projetos, rotas, seleção persistida, layout responsivo ou navegação no-JS.",
+      "Não redesenhar o header, a sidebar, o inspector ou a central de notificações além do necessário para consumir o contrato compartilhado."
+    ],
     "verify": [
-      "bun run check:all"
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
     ]
   }
 }
