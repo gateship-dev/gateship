@@ -1,0 +1,57 @@
+{
+  "id": "GSHIP-852",
+  "title": "Central: mover navegação para subitens da sidebar e tornar os nomes claros",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:41:47.332Z",
+  "updatedAt": "2026-09-10T18:41:47.332Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Substituir a navegação horizontal da Central por subitens acessíveis na sidebar, com Visão geral, Execuções, Filas e Análises em português e navegação consistente nos modos expandido, compacto e móvel.",
+    "acceptance": [
+      "Após a base visual desta rodada, remover ControlCenterNavigation das quatro telas; manter /overview, /overview/runs, /overview/queues e /overview/insights, sem tab bar duplicada no conteúdo.",
+      "Sidebar expandida apresenta Central de controle como grupo e os quatro subitens; apenas o destino atual tem aria-current=page, e o grupo evidencia que uma de suas páginas está ativa.",
+      "Rail compacto oferece acesso aos quatro destinos por controle com nome acessível e menu; no móvel, grupo expansível mantém os destinos alcançáveis, fecha após navegar e devolve foco corretamente.",
+      "Rótulos PT são Visão geral, Execuções, Filas e Análises; EN são Overview, Runs, Queues e Insights; título central do header acompanha a rota, sem recriar cabeçalho introdutório removido.",
+      "Preservar Alt+0 para entrada da Central, Alt+1–9 para projetos e representação por plataforma; não devolver atalho ao toggle da sidebar nem adicionar quatro atalhos novos.",
+      "Links diretos, atualizar página, voltar/avançar e troca de idioma preservam destino e estado ativo; links são links, sem ARIA tablist para navegação entre páginas.",
+      "Cobrir desktop, rail e mobile com testes de rota, foco, labels e teclado, preservando posição e estilo dos controles de notificações, tema e idioma."
+    ],
+    "boundaries": [
+      "Executar depois da base visual e reconciliar shell de GSHIP-850.",
+      "Não alterar URLs públicas, permissões, notificações ou ações de execução.",
+      "Não substituir todo AppShell por um dashboard shadcn.",
+      "Pré-requisitos: GSHIP-851. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como adaptar SidebarMenuSub à navegação por rotas, mantendo modos compacto e móvel acessíveis?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://ui.shadcn.com/docs/components/base/sidebar.md",
+          "contentHash": "sha256:a48b885e4d6f0d8d1cb143ef436b80b90ebcf5e548347d455f6b201dcb637971",
+          "fetchedAt": "2026-09-10T18:37:34.885Z",
+          "sourceType": "official-documentation",
+          "claim": "Sidebar é composável e oferece submenus; o padrão pode ser adaptado à navegação existente.",
+          "applicability": "Substituir a navegação horizontal da Central por subitens preservando URLs e acessibilidade."
+        }
+      ]
+    }
+  }
+}
