@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-848",
+  "title": "Normalizar o peso óptico dos ícones de botões",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T12:45:36.481Z",
+  "updatedAt": "2026-09-10T12:45:36.481Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Completar a uniformização dos ícones interativos do shell usando uma geometria renderizada comum, pois o mesmo strokeWidth em SVGs com viewBoxes e tamanhos diferentes ainda produz linhas visivelmente diferentes.",
+    "acceptance": [
+      "Todos os SVGs exibidos dentro dos botões do shell usam uma caixa renderizada comum de 16 px e uma espessura óptica equivalente.",
+      "Os Hugeicons interativos compartilham um único contrato reutilizável de tamanho e strokeWidth, sem valores divergentes por chamada.",
+      "O PanelToggleGlyph usa viewBox compatível com o contrato dos Hugeicons e preserva a barra lateral preenchida escura para os lados esquerdo e direito.",
+      "O seletor de projeto, notificações, tema, largura e toggles de painéis ficam visualmente coerentes; ícones de navegação, menu ou conteúdo não interativo permanecem fora do escopo.",
+      "O botão composto corrigido pela GSHIP-847 continua sem overflow e com o atalho inteiramente dentro da borda.",
+      "A cobertura valida a geometria dos SVGs interativos e não apenas a ausência global de valores numéricos no HTML."
+    ],
+    "boundaries": [
+      "Não alterar comportamento, rotas, atalhos, labels, responsividade ou estados dos controles.",
+      "Não modificar ícones que não estejam dentro de botões nem os ícones internos dos componentes de formulário que já seguem 16 px e 2.5.",
+      "Não introduzir nova dependência nem animação."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx",
+      "bun run typecheck",
+      "bun run lint",
+      "bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "a97e392c8c5a1ef073ca20442b2a5cc5ee76ef3c25de8b7cd5f5f2298a855e1e",
+    "approvedAt": "2026-09-10T12:45:36.481Z"
+  }
+}
