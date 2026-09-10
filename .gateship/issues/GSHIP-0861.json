@@ -1,0 +1,57 @@
+{
+  "id": "GSHIP-861",
+  "title": "Sidebar: restaurar hierarquia, fixar ícones ao recolher e unificar tooltips",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T19:42:07.835Z",
+  "updatedAt": "2026-09-10T19:42:07.835Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Corrigir a regressão visual de GSHIP-860: restaurar hierarquia e respiro da sidebar, trocar kbds visíveis por ícones e recolher apenas a área textual sem alterar as coordenadas dos ícones ou duplicar tooltips.",
+    "acceptance": [
+      "Restaurar ícone da Central e hierarquia/recuo em relação ao projeto anteriores à PR #713; controlar recuo explicitamente, não pela largura do kbd. Garantir respiro à direita, slot do chevron e título sem corte em PT/EN.",
+      "Sidebar expandida e recolhida usam a mesma estrutura desktop: apenas largura e visibilidade dos textos/chevron mudam; padding superior, alturas das linhas, gaps, recuos, rodapé e regras de scroll preservam os centros x/y dos ícones.",
+      "Projeto usa ícone semântico de ocioso/trabalhando no lugar do kbd da sidebar; derivar de estado tipado real, nunca de texto traduzido. Estado escrito permanece no expandido; esconder texto não reduz a altura do item nem desloca os seguintes.",
+      "Um único tooltip por item reúne nome e atalho nos dois modos; projeto acrescenta estado. Preservar Alt+0 e Alt+1–9 com ⌥ no macOS e Alt no Windows/Linux; deixar claro que atalho acessa projeto, não abre o seletor.",
+      "Hover da linha ou foco abre tooltip; Escape fecha. Remover title nativo concorrente, não aninhar tooltips no ícone, suprimir tooltip do seletor enquanto menu estiver aberto e manter clique/foco do menu corretos.",
+      "Nome acessível e informação de estado não dependem do tooltip. Mobile mantém destinos/estado acessíveis sem hover. Nome longo, ausência de projeto e projeto sem atalho não deixam slots vazios desnecessários nem inventam estado.",
+      "Validar em browser expandir/recolher repetidamente: centros de todos os ícones, inclusive rodapé, variam no máximo 1px no mesmo viewport/estado de dados. Cobrir PT/EN, temas, estado em duas linhas, nomes longos, foco, tooltip e seletor."
+    ],
+    "boundaries": [
+      "Executar após GSHIP-851 e antes de GSHIP-852; pré-requisito documental, não bloqueio automático.",
+      "Não reverter toda PR #713: manter toggle da sidebar no tamanho de ícone e demais correções de GSHIP-850.",
+      "Não impor uma largura compacta que recentralize ícones; não alterar handlers dos atalhos, rotas ou ações de execução.",
+      "Não criar ícones de erro/atenção fictícios; respeitar estados reais, Hugeicons e tokens Gateship.",
+      "Não mover subitens da Central nesta issue; GSHIP-852 deve herdar a geometria e os tooltips corrigidos."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/web/ui-harness.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como compor Tooltip e Menu no mesmo gatilho sem tooltips duplicados, perda de foco ou dependência de hover?"
+      ],
+      "sourceClasses": [
+        "official-documentation"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T19:41:01.494Z"
+      },
+      "receipts": [
+        {
+          "url": "https://base-ui.com/react/components/tooltip",
+          "fetchedAt": "2026-09-10T19:41:01.494Z",
+          "contentHash": "sha256:4f4aa0d0d186e6d0e9974c8ad9ae9773734d1b75646721a55461eb7ecb04f50c",
+          "sourceType": "official-documentation",
+          "claim": "Tooltip é informação visual suplementar para hover/foco, não substitui nome acessível nem garante acesso por toque.",
+          "applicability": "Compor um tooltip único sobre os gatilhos existentes, preservando semântica e interação do seletor."
+        }
+      ]
+    }
+  }
+}
