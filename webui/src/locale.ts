@@ -33,6 +33,7 @@ export function applyLocalePreference(
 }
 
 export interface ShellCatalog {
+	controlCenter: string;
 	themeToggle: { label: string; light: string; dark: string };
 	widthToggle: { wide: string; compact: string };
 	sidebarToggle: { collapse: string; expand: string };
@@ -630,6 +631,7 @@ export interface LocaleCatalog {
 export const LOCALE_CATALOG = {
 	'en-US': {
 		shell: {
+			controlCenter: 'Control center',
 			operatorNavigationLabel: 'Navigation',
 			projectNavigationLabel: 'Projects',
 			manageProjectsLabel: 'Manage projects',
@@ -641,8 +643,8 @@ export const LOCALE_CATALOG = {
 			notifications: { label: 'Notifications', empty: 'No action is needed right now.', count: (count) => `${count} action${count === 1 ? '' : 's'} needed`, severity: { action: 'Needs action', advisory: 'Advisory' }, run: { 'waiting-user': 'Run waiting for your input', 'ready-to-ship': 'Run ready to ship', failed: 'Run failed', interrupted: 'Run interrupted' }, shipBlocked: 'Ship blocked', shipBlockedDetail: 'The ship attempt failed and needs your attention.', queueStartFailed: 'Queue failed to start the next run', queueStopped: 'Queue stopped', staleService: 'Restart the service', gitIdentity: 'Git identity is missing', workspace: 'Workspace preserved', providerWait: 'Provider waiting to retry', queueComplete: 'Queue complete', queueStartFailedDetail: 'The attempt to start the next run failed.', queueCompleteDetail: 'There is no eligible work left in the backlog.', queuePreviousDetail: 'The previous run did not finish in done.', queueActiveDetail: 'A run is still active.' },
 			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
 			languageLabel: 'Language',
-			routeLabels: {
-				overview: 'Control center',
+			 routeLabels: {
+				overview: 'Overview',
 				overviewRuns: 'Runs',
 				overviewQueues: 'Queues',
 				overviewInsights: 'Insights',
@@ -1100,6 +1102,7 @@ export const LOCALE_CATALOG = {
 	},
 	'pt-BR': {
 		shell: {
+			controlCenter: 'Central de controle',
 			operatorNavigationLabel: 'Navegação',
 			projectNavigationLabel: 'Projetos',
 			manageProjectsLabel: 'Gerenciar projetos',
@@ -1111,11 +1114,11 @@ export const LOCALE_CATALOG = {
 			notifications: { label: 'Notificações', empty: 'Nenhuma ação é necessária agora.', count: (count) => `${count} ${count === 1 ? 'ação necessária' : 'ações necessárias'}`, severity: { action: 'Exige ação', advisory: 'Informativo' }, run: { 'waiting-user': 'Execução aguardando sua decisão', 'ready-to-ship': 'Execução pronta para envio', failed: 'Execução com falha', interrupted: 'Execução interrompida' }, shipBlocked: 'Envio bloqueado', shipBlockedDetail: 'A tentativa de envio falhou e requer sua atenção.', queueStartFailed: 'A fila falhou ao iniciar a próxima execução', queueStopped: 'Fila interrompida', staleService: 'Reinicie o serviço', gitIdentity: 'Identidade Git ausente', workspace: 'Workspace preservado', providerWait: 'Provedor aguardando nova tentativa', queueComplete: 'Fila concluída', queueStartFailedDetail: 'A tentativa de iniciar a próxima execução falhou.', queueCompleteDetail: 'Não há trabalho elegível restante no backlog.', queuePreviousDetail: 'A execução anterior não terminou como concluída.', queueActiveDetail: 'Ainda há uma execução ativa.' },
 			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
 			languageLabel: 'Idioma',
-			routeLabels: {
-				overview: 'Central de controle',
+			 routeLabels: {
+				overview: 'Visão geral',
 				overviewRuns: 'Execuções',
 				overviewQueues: 'Filas',
-				overviewInsights: 'Insights',
+				overviewInsights: 'Análises',
 				projects: 'Projetos',
 				runs: 'Runs',
 				work: 'Trabalho',

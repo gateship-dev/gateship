@@ -8,7 +8,6 @@ import type { Locale, OverviewCatalog } from '../locale.ts';
 import type { RunState } from '../run-view.ts';
 import { cn } from '../lib/cn.ts';
 import { SurfaceColumn } from './surface-column.tsx';
-import { ControlCenterNavigation } from './overview-screen.tsx';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { formatRunTimestamp } from './runs.tsx';
 
@@ -115,7 +114,6 @@ export function OverviewQueuesSurface({ props }: { props: AppProps }): React.Rea
 	const queues = data?.queues.filter((queue) => filter === undefined || queue.project.id === filter) ?? [];
 	const errors = queueErrorsForFilter(data?.errors ?? [], filter);
 	return <SurfaceColumn label={queueCatalog.title} status={props.status}>
-		<ControlCenterNavigation current="queues" locale={props.locale} />
 		<select aria-label={queueCatalog.filterProject} className="min-h-10 w-full rounded-lg border bg-background px-3 text-sm sm:max-w-xs" value={filter ?? ''} onChange={(event) => updateFilter((event.currentTarget as unknown as { value: string }).value)}><option value="">{queueCatalog.allProjects}</option>{props.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
 		{data === null && error === null ? <p role="status">{queueCatalog.loading}</p> : null}
 		{error !== null ? <p role="alert">{queueCatalog.error}: {error}</p> : null}

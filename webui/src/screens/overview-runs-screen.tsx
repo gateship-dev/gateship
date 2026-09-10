@@ -8,7 +8,6 @@ import { LOCALE_CATALOG } from '../locale.ts';
 import { toneOf } from '../run-view.ts';
 import type { RunState } from '../run-view.ts';
 import { SurfaceColumn } from './surface-column.tsx';
-import { ControlCenterNavigation } from './overview-screen.tsx';
 import { ciBadgeVariant } from './runs.tsx';
 
 interface OverviewBrowserRuntime {
@@ -120,7 +119,6 @@ export function OverviewRunsSurface({ props }: { props: AppProps }): React.React
 	const from = page?.page.total === 0 ? 0 : (page?.page.offset ?? 0) + 1;
 	const to = (page?.page.offset ?? 0) + rows.length;
 	return <SurfaceColumn label={catalog.title} status={props.status}>
-		<ControlCenterNavigation current="runs" locale={props.locale} />
 		<OverviewRunsFilters props={props} query={query} update={update} />
 		{error ? <p role="alert" className="text-destructive-foreground text-sm">{catalog.error}: {error}</p> : null}
 		{page !== null && page.errors.length > 0 ? <p role="status" className="text-warning-foreground text-sm">{catalog.partial}</p> : null}

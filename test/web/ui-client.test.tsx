@@ -157,7 +157,7 @@ import {
 	summarizeWorkflow,
 	summarizeWorkflowCohorts,
 } from '../../webui/src/run-view.ts';
-import { type NotificationItem, type PanelKeyEvent, notificationItems, NotificationsPopover, PanelToggleGlyph, projectSwitcherTooltipText, ShellSidebar } from '../../webui/src/screens/shell.tsx';
+import { nextControlCenterDisclosureState, type NotificationItem, type PanelKeyEvent, notificationItems, NotificationsPopover, PanelToggleGlyph, projectSwitcherTooltipText, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
 const BACKLOG = [
 	{ id: 'CAM-900', title: 'primeira issue plannable' },
@@ -3334,7 +3334,7 @@ function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: Retu
 		{ ...smallCohort, cohortId: 'cohort-b', workflowRevision: 'revision-second', sampleSize: 5, evidenceSufficient: true, profile: { commands: { count: 7, denominator: 5 }, corrections: { count: 2, denominator: 5 }, filesAltered: { count: 0, denominator: 0 }, researchRequired: { count: 3, denominator: 5 } } },
 	]));
 	const incompatible = renderInsightsWithLoadedOverview(locale, factualCohortOverview([{ ...smallCohort, cohortId: 'cohort-c', sampleSize: 5, evidenceSufficient: true, specVersion: 'legacy' }, { ...smallCohort, cohortId: 'cohort-d', sampleSize: 5, evidenceSufficient: true }]));
-	expect(smallHtml).toContain(catalog.title);
+	expect(smallHtml).toContain(LOCALE_CATALOG[locale].shell.routeLabels.overviewInsights);
 	expect(smallHtml).toContain('revision…');
 	expect(smallHtml).not.toContain('revision-1234567890abcdef');
 	expect(smallHtml).toContain('v2');
@@ -3385,7 +3385,7 @@ describe('operator shell', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview/insights', { locale, projects: [CURRENT_PROJECT], overview: null });
 			const catalog = LOCALE_CATALOG[locale].overviewInsights;
-			expect(html).toContain(catalog.title);
+			expect(html).toContain(LOCALE_CATALOG[locale].shell.routeLabels.overviewInsights);
 			expect(html).not.toContain(catalog.description);
 			expect(html).toContain(catalog.loading);
 			expect(html).not.toContain(catalog.cohortEvidenceInsufficient);
@@ -3565,8 +3565,8 @@ describe('operator shell', () => {
 
 	test('overview renders four metrics and compact project collections without management forms', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, label: 'Control center', current: 'served by this instance', readiness: 'Readiness' },
-			{ locale: 'pt-BR' as const, label: 'Central de controle', current: 'servido por esta instância', readiness: 'Prontidão' },
+			{ locale: 'en-US' as const, label: 'Overview', current: 'served by this instance', readiness: 'Readiness' },
+			{ locale: 'pt-BR' as const, label: 'Visão geral', current: 'servido por esta instância', readiness: 'Prontidão' },
 		]) {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
 			expect(html).toContain(`aria-label="${expected.label}"`);
@@ -3583,17 +3583,27 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('control center keeps Now and Runs as localized local navigation', () => {
-		for (const [locale, now, runs] of [['en-US', 'Now', 'Runs'], ['pt-BR', 'Agora', 'Execuções']] as const) {
-			const overview = renderAt('/overview', { locale });
-			const history = renderAt('/overview/runs', { locale });
-			for (const html of [overview, history]) {
-				expect(html).toContain(`>${now}</a>`);
-				expect(html).toContain(`>${runs}</a>`);
-				expect(html).toContain('href="/overview/runs"');
+	test('control center keeps four localized destinations in the sidebar group', () => {
+		for (const [locale, labels] of [['en-US', ['Control center', 'Overview', 'Runs', 'Queues', 'Insights']], ['pt-BR', ['Central de controle', 'Visão geral', 'Execuções', 'Filas', 'Análises']]] as const) {
+			for (const route of ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const) {
+				const html = renderAt(route, { locale });
+				for (const label of labels) expect(html).toContain(`>${label}</span>`);
+				expect(html).not.toContain('border-b-2');
 			}
-			expect(openingTags(overview).find((tag) => tag.includes('href="/overview"') && tag.includes('aria-current="page"'))).toBeDefined();
-			expect(openingTags(history).find((tag) => tag.includes('href="/overview/runs"') && tag.includes('aria-current="page"'))).toBeDefined();
+		}
+	});
+
+	test('control center disclosure stays open for desktop click and keyboard activation, and toggles on mobile', () => {
+		for (const interaction of ['click', 'keyboard'] as const) {
+			expect(nextControlCenterDisclosureState(false, true), interaction).toBe(true);
+			expect(nextControlCenterDisclosureState(true, true), interaction).toBe(true);
+		}
+		expect(nextControlCenterDisclosureState(true, false)).toBe(false);
+		expect(nextControlCenterDisclosureState(false, false)).toBe(true);
+		for (const open of [true, false]) {
+			const html = renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />);
+			expect(html).toContain('aria-expanded="true"');
+			expect(html).toContain('data-slot="control-center-subnavigation"');
 		}
 	});
 
@@ -3601,14 +3611,14 @@ describe('operator shell', () => {
 		const html = renderAt('/overview/runs');
 		const sidebarStart = html.indexOf('<nav aria-label="Navigation"');
 		const sidebar = html.slice(sidebarStart, html.indexOf('</nav>', sidebarStart));
-		const sidebarOverview = openingTags(sidebar).find((tag) => tag.includes('href="/overview"'));
-		expect(sidebarOverview).toContain('aria-current="page"');
+		const sidebarRuns = openingTags(sidebar).find((tag) => tag.includes('href="/overview/runs"'));
+		expect(sidebarRuns).toContain('aria-current="page"');
 
 		const rail = renderToStaticMarkup(
 			<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={false} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />,
 		);
-		const railOverview = openingTags(rail).find((tag) => tag.includes('href="/overview"'));
-		expect(railOverview).toContain('aria-current="page"');
+		const railRuns = openingTags(rail).find((tag) => tag.includes('href="/overview/runs"'));
+		expect(railRuns).toContain('aria-current="page"');
 	});
 
 	test('overview localizes delivered runs and keeps non-delivery explicit', () => {
@@ -4554,7 +4564,7 @@ describe('operator shell', () => {
 			expect(overview).toContain('<svg');
 			expect(overview).not.toContain('<kbd');
 		}
-		expect(openingTags(collapsed).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Control center"');
+		expect(openingTags(collapsed).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Overview"');
 	});
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
@@ -4740,7 +4750,7 @@ describe('operator shell', () => {
 		expect(nav.indexOf('href="/projects/project-current/work"')).toBeLessThan(nav.indexOf('href="/projects/project-current/settings"'));
 		expect(nav.indexOf('href="/projects/project-current/settings"')).toBeLessThan(nav.indexOf('href="/settings"'));
 		for (const [href, label] of [
-			['/overview', 'Control center'],
+			['/overview', 'Overview'],
 			['/projects/project-current/runs', 'Runs'],
 			['/projects/project-current/work', 'Work'],
 			['/projects/project-current/settings', 'Settings'],
