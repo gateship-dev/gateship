@@ -1,0 +1,62 @@
+{
+  "id": "GSHIP-856",
+  "title": "Central: padronizar Visão geral e Filas com componentes Gateship",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:42:15.626Z",
+  "updatedAt": "2026-09-10T18:42:15.626Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Refatorar Visão geral e Filas com composições pesquisadas no shadcn e adaptadas ao Gateship, reduzindo repetição visual sem perder prioridade operacional, fatos ou a ordem verdadeira da fila.",
+    "acceptance": [
+      "Usar inventário desta rodada para migrar métricas e atenção para Card/Stat/AttentionCard, trabalho ativo para Item/ItemGroup e estados para Empty/Alert/Skeleton ou equivalentes Gateship, sem primitivas duplicadas.",
+      "Tabela de projetos usa Table local e preserva dados, links e responsividade; não esconder informação essencial sem outro acesso nem introduzir TanStack onde não há interação complexa.",
+      "Filas usa Collapsible e itens consistentes; expandir e navegar são controles separados, sem link dentro de botão/trigger; remover repetição entre resumo e conteúdo expandido.",
+      "Sequência da fila permanece lista ordenada com posição e estado reais; ordenação de projetos ou tabelas nunca reordena a execução nem sugere drag-and-drop disponível.",
+      "Filtros usam os controles compartilhados, labels PT/EN e estados de foco/erro; fonte, espaçamento, divisórias e cores obedecem tokens e semântica de atenção existentes.",
+      "Atualização em segundo plano preserva contexto, expansão e foco; estado vazio de resultados distingue ausência de dados, e erro oferece recuperação sem exibir métricas fictícias.",
+      "Adicionar cenários às telas reais do harness: muitas filas, fila vazia, bloqueio, atenção, título longo e mobile escuro; testar navegação separada de expansão e ordem exibida."
+    ],
+    "boundaries": [
+      "Executar após inventário, navegação, componentes e harness desta rodada.",
+      "Não mudar lógica de prioridade, aprovação, execução ou notificações.",
+      "Não transformar a lista de fila em editor, kanban arrastável ou scheduler.",
+      "Não reinstalar componentes existentes nem aplicar cores shadcn de exemplo.",
+      "Pré-requisitos: GSHIP-851, GSHIP-852, GSHIP-854, GSHIP-855. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/web/ui-harness.test.tsx",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como compor Card, Item, Collapsible, Field, Empty, Alert e Skeleton usando os equivalentes Gateship sem duplicar primitivas?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/skills/shadcn/SKILL.md",
+          "contentHash": "sha256:deba6c5152d9835892fa7dffeb1fedbb689ddac7e59e14e57ec5eaf9463309e4",
+          "fetchedAt": "2026-09-10T18:41:10.128Z",
+          "sourceType": "primary-code",
+          "claim": "A skill oficial identifica contexto do projeto e orienta descoberta, composição e customização; bibliotecas base exigem APIs diferentes.",
+          "applicability": "Pesquisar padrões oficiais mantendo Base UI, Hugeicons e identidade Gateship.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
+        }
+      ]
+    }
+  }
+}
