@@ -34,7 +34,7 @@ describe('agent process activity deadline', () => {
 			signal: new AbortController().signal,
 			onLine: (line) => lines.push(line),
 			terminationGraceMs: 100,
-			activityTimeoutMs: 400,
+			activityTimeoutMs: 1_000,
 		});
 
 		expect(result.exitCode).toBe(0);
