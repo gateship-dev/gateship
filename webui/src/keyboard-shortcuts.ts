@@ -20,7 +20,7 @@ export function presentationPlatform(signals?: PlatformSignals): PresentationPla
 type Modifier = 'alt' | 'control' | 'meta';
 
 export const KEYBOARD_SHORTCUTS = {
-	toggleSidebar: { code: 'KeyB', key: 'b', modifiers: [['control'], ['meta']] as const, aria: 'Control+B Meta+B' },
+	overview: { code: 'Digit0', key: '0', modifiers: ['alt'] as const, aria: 'Alt+0' },
 	projects: [
 		{ code: 'Digit1', key: '1', modifiers: ['alt'] as const }, { code: 'Digit2', key: '2', modifiers: ['alt'] as const },
 		{ code: 'Digit3', key: '3', modifiers: ['alt'] as const }, { code: 'Digit4', key: '4', modifiers: ['alt'] as const },
@@ -44,11 +44,9 @@ export function matchesShortcut(event: ShortcutEvent, shortcut: { code: string; 
 	return event.code === shortcut.code || ((event.code === undefined || event.code === '') && event.key === shortcut.key);
 }
 
-export function shortcutLabel(kind: 'sidebar' | 'project', index: number | undefined, platform: PresentationPlatform): string {
+export function shortcutLabel(kind: 'overview' | 'project', index: number | undefined, platform: PresentationPlatform): string {
 	if (kind === 'project' && index !== undefined) return platform === 'macOS' ? `⌥${index + 1}` : `Alt+${index + 1}`;
-	if (platform === 'macOS') return '⌘B';
-	if (platform === 'unknown') return 'Mod+B';
-	return 'Ctrl+B';
+	return platform === 'macOS' ? '⌥0' : 'Alt+0';
 }
 
 export function projectShortcutAria(index: number): string { return `Alt+${index + 1}`; }

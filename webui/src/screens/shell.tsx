@@ -5,7 +5,7 @@ import type { AppProps } from '../app-props.ts';
 import { ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
-import { Button } from '../components/ui/button.tsx';
+import { Button, buttonVariants } from '../components/ui/button.tsx';
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunInspectorCatalog, ShellCatalog } from '../locale.ts';
@@ -115,7 +115,7 @@ export function NotificationsPopover({ items, catalog }: { items: readonly Notif
 	const announcement = items.length === 0 ? catalog.empty : items.map((item) => `${item.title}: ${item.detail}`).join(' ');
 	return <Popover.Root>
 		<span aria-atomic="true" aria-live="polite" className="sr-only" data-slot="notifications-live">{announcement}</span>
-		<Popover.Trigger aria-label={catalog.label} className="relative inline-flex size-9 items-center justify-center rounded-xl border border-input bg-white text-foreground shadow-xs/5 outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:bg-input/32" data-slot="notifications-trigger">
+		<Popover.Trigger aria-label={catalog.label} className={cn(buttonVariants({ size: 'icon', variant: 'outline' }), 'relative')} data-slot="notifications-trigger">
 			<ShellIcon icon={Notification02Icon} />
 			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-attention px-1 font-mono text-[10px] leading-4 text-attention-foreground">{actionableCount}</span>}
 		</Popover.Trigger>
@@ -210,6 +210,10 @@ function ProjectShortcut({ index }: { index: number | undefined }): React.ReactE
 			{index === undefined ? null : <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>}
 		</span>
 	);
+}
+
+function OverviewShortcut(): React.ReactElement {
+	return <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-overview">{shortcutLabel('overview', undefined, presentationPlatform())}</kbd>;
 }
 
 interface ProjectSwitcherProps {
@@ -385,13 +389,14 @@ export function ShellNavigation({
 				<li className="shrink-0">
 					<a
 						aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights' ? 'page' : undefined}
+						aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria}
 						className={cn(
 							NAV_LINK_CLASS,
 							(selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights') && 'bg-sidebar-accent text-sidebar-accent-foreground',
 						)}
 						href="/overview"
 					>
-						<NavGlyph name="overview" /><span>{catalog.routeLabels.overview}</span>
+						<NavGlyph name="overview" /><span>{catalog.routeLabels.overview}</span><span className="ml-auto"><OverviewShortcut /></span>
 					</a>
 				</li>
 			</ul>
@@ -512,7 +517,6 @@ export function ShellControls({
 	showInspectorToggle: boolean;
 	notifications: readonly NotificationItem[];
 }): React.ReactElement {
-	const shortcutPlatform = presentationPlatform();
 	const [dark, setDark] = useState(() => {
 		const runtime = panelRuntime();
 		const stored = runtime.localStorage?.getItem('gship-theme') ?? null;
@@ -555,7 +559,6 @@ export function ShellControls({
 					{/* The sidebar toggle lives in the content area, not the sidebar. */}
 					<Button
 						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
-						aria-keyshortcuts={KEYBOARD_SHORTCUTS.toggleSidebar.aria}
 						className="gap-1.5 px-2"
 						data-slot="sidebar-toggle"
 						onClick={onToggleSidebar}
@@ -564,7 +567,6 @@ export function ShellControls({
 						variant="outline"
 					>
 						<PanelToggleGlyph side="left" />
-						<kbd aria-hidden="true" className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="sidebar-shortcut">{shortcutLabel('sidebar', undefined, shortcutPlatform)}</kbd>
 					</Button>
 				</div>
 				<div className="min-w-0 px-2 text-center type-editorial-title text-sm sm:text-base" data-slot="shell-surface-title" title={title}>
@@ -686,6 +688,7 @@ export function ShellRail({
 				<a
 					aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights' ? 'page' : undefined}
 					aria-label={catalog.routeLabels.overview}
+					aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria}
 					className={cn(RAIL_NAV_ITEM_CLASS, (selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights') && 'bg-sidebar-accent text-sidebar-accent-foreground')}
 					href="/overview"
 					title={catalog.routeLabels.overview}

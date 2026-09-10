@@ -99,18 +99,17 @@ styling. Hugeicons supplies the icon set.
 - Preserve semantic elements, keyboard navigation, the skip link and visible
   focus rings.
 - Keyboard shortcut inventory: the shared web UI contract contains only the
-  sidebar toggle (`Control+B` or `Meta+B`) and project selection (`Alt+1` to
-  `Alt+9`). `Control+B`/`Meta+B` can collide with browser favorites or
-  formatting actions; `Alt+1` to `Alt+9` can collide with tab selection, menus
-  or system shortcuts. For recognized canonical combinations, Gateship calls
+  Control center (`Alt+0`) and project selection (`Alt+1` to `Alt+9`). These
+  combinations can collide with browser tab selection, menus or system
+  shortcuts. For recognized canonical combinations, Gateship calls
   `preventDefault` and performs the action. The operational fallback is the
-  equivalent visible control: the sidebar button or `ProjectSwitcher`. For an
-  invalid combination or a project index that does not exist, the handler does
-  not call `preventDefault`, preserving browser or system behavior. Presentation
-  labels use `⌘` and `⌥` on macOS, named modifiers on Windows/Linux, and neutral
-  `Mod` wording when the platform signal is unknown. Inspector and notification
-  center have no advertised shortcut because they have no handler in this
-  contract.
+  equivalent visible link in the sidebar or `ProjectSwitcher`. For an invalid
+  combination or a project index that does not exist, the handler does not call
+  `preventDefault`, preserving browser or system behavior. Presentation labels
+  use `⌥` on macOS and `Alt` on other platforms. Sidebar collapse remains an
+  icon-only clickable control without an advertised shortcut. Inspector and
+  notification center have no advertised shortcut because they have no handler
+  in this contract.
 - Scroll containers use the shared `scroll-container` utility for stable gutters
   and neutral native chrome. Long vertical surfaces also use `scroll-fade`, a
   CSS mask driven by the scroll position; the mask is applied inside the
