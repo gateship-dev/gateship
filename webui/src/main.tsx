@@ -742,6 +742,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		resolvedProposalsOmittedCount,
 		runs,
 		events,
+		runEventsHasPrevious,
+		runEventsLoading,
+		onLoadPreviousRunEvents,
 		workspaceNotices,
 		staleService,
 		gitIdentity,
@@ -1020,6 +1023,9 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			projects={projects}
 			selectedProjectId={selectedProjectId}
 			operatorProfile={operatorProfile}
+			runEventsHasPrevious={runEventsHasPrevious}
+			runEventsLoading={runEventsLoading}
+			onLoadPreviousRunEvents={onLoadPreviousRunEvents}
 			providers={providers}
 			resolvedProposals={resolvedProposals}
 			resolvedProposalsOmittedCount={resolvedProposalsOmittedCount}
