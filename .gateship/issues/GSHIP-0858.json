@@ -1,0 +1,67 @@
+{
+  "id": "GSHIP-858",
+  "title": "Central: Análises com gráficos legíveis e comparações TanStack",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T18:42:22.976Z",
+  "updatedAt": "2026-09-10T18:42:22.976Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Evoluir Análises com gráficos baseados em padrões shadcn/Recharts e tabela TanStack de comparações, mantendo métricas factuais, cobertura explícita e identidade Gateship.",
+    "acceptance": [
+      "Adotar ChartContainer/config/tooltip/legend pesquisados no shadcn com Recharts compatível e tokens Gateship; trocar barras ad-hoc por gráfico responsivo com altura definida, eixos, unidade e legenda legíveis.",
+      "Representar tendências temporais de resultados com os dados existentes e manter alternativa tabular; zero, dado ausente, período vazio e cobertura parcial são visual e semanticamente distintos.",
+      "Coortes/comparações usam TanStack e contrato de ordenação global desta rodada, com filtros, paginação, visibilidade e fixação de identificação; tamanho da amostra e cobertura acompanham métricas.",
+      "Preservar fórmulas e avisos de evidência insuficiente; não apresentar associação como causa, criar ranking enganoso de modelos ou inventar custo/tempo quando ausentes.",
+      "Padronizar cards e seções com composição CardHeader/CardTitle/CardPanel ou equivalentes reais, filtros e estados compartilhados; leitura PT/EN e datas/unidades são consistentes.",
+      "Legenda e tooltip são acessíveis por teclado ou alternativa equivalente; gráfico não depende só de cor, respeita redução de movimento e não repete animação a cada polling.",
+      "Adicionar harness/testes para todos zeros, nulos, amostra pequena, série longa e coortes extensas em temas claro/escuro e móvel; tabela e gráfico correspondem ao mesmo conjunto filtrado."
+    ],
+    "boundaries": [
+      "Depende do contrato de dados, TanStack e harness desta rodada.",
+      "Não adicionar análise por LLM, novos indicadores ou mudanças na coleta.",
+      "Não usar paleta padrão Recharts/shadcn fora dos tokens semânticos.",
+      "Não substituir todas as métricas por gráficos nem ocultar os dados de suporte.",
+      "Pré-requisitos: GSHIP-853, GSHIP-854, GSHIP-855. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-harness.test.tsx test/runtime/run-overview.test.ts",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como usar Chart/Recharts com tokens próprios, acessibilidade e dados incompletos sem sugerir certeza inexistente?",
+        "Como compor comparação tabular complexa sem alterar as métricas existentes?"
+      ],
+      "sourceClasses": [
+        "official-documentation",
+        "primary-code"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T18:37:34.696Z"
+      },
+      "receipts": [
+        {
+          "url": "https://ui.shadcn.com/docs/components/base/chart.md",
+          "contentHash": "sha256:c6c51d44c211580548bbce4647965f16458e02c054cb5592aa89405d3b36885d",
+          "fetchedAt": "2026-09-10T18:37:34.916Z",
+          "sourceType": "official-documentation",
+          "claim": "Chart usa Recharts e fornece padrões de container, configuração, tooltip e legenda.",
+          "applicability": "Renderizar séries reais com tokens Gateship e alternativa tabular acessível."
+        },
+        {
+          "url": "https://ui.shadcn.com/docs/components/base/data-table.md",
+          "contentHash": "sha256:31d46187a08d79ce41dd8991599ce86ff2d6fba0b99ae4ebff84cfbccce6cff4",
+          "fetchedAt": "2026-09-10T18:37:34.778Z",
+          "sourceType": "official-documentation",
+          "claim": "A receita Data Table usa TanStack v9 e recomenda composições específicas por caso em vez de um componente universal rígido.",
+          "applicability": "Adotar lógica headless e partes compartilhadas sem copiar o tema padrão ou misturar APIs v8/v9."
+        }
+      ]
+    }
+  }
+}
