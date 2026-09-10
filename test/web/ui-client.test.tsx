@@ -148,7 +148,7 @@ import {
 	displayedRunId,
 	eventsForRun,
 	invalidatesSnapshot,
-	progressOf,
+	runStageStatuses,
 	type RunCostView,
 	type RunEventView,
 	type RunRoundOriginsView,
@@ -949,23 +949,24 @@ describe('project onboarding', () => {
 	});
 });
 describe('runs surface', () => {
-	test('the detail card shows the phase and the commands the state admits', () => {
+	test('the detail card shows the stage map and the commands the state admits', () => {
 		expect(runsPage()).toContain('No runs recorded yet.');
 
 		const working = runsPage({ runs: [runIn('working')] });
 		expect(working).toContain('CAM-900');
-		expect(working).toContain('Phase working');
+		expect(working).toContain('data-slot="run-stage-map"');
+		expect(working).toContain('aria-current="step"');
 		expect(buttonIsEnabled(working, 'Cancel')).toBe(true);
 		expect(hasButton(working, 'Ship')).toBe(false);
 
 		// The run is already shipping itself: the command is only the retry.
 		const shipping = runsPage({ runs: [runIn('shipping')] });
-		expect(shipping).toContain('Phase shipping');
+		expect(shipping).toContain('>Shipping<');
 		expect(hasButton(shipping, 'Ship')).toBe(false);
 		expect(buttonIsEnabled(shipping, 'Cancel')).toBe(true);
 
 		const done = runsPage({ runs: [runIn('done')] });
-		expect(done).toContain('100%');
+		expect(done).toContain('>Done<');
 		expect(hasButton(done, 'Cancel')).toBe(false);
 		expect(hasButton(done, 'Ship')).toBe(false);
 	});
@@ -1113,7 +1114,8 @@ describe('runs surface', () => {
 		expect(html).toContain('Execução mais recente');
 		expect(html).toContain('CAM-900');
 		expect(html).toContain('>aguardando provedor<');
-		expect(html).toContain('Fase em andamento');
+		expect(html).toContain('O histórico de etapas está indisponível; nenhum progresso foi inferido.');
+		expect(html).not.toContain('Fase em andamento');
 		expect(shellHeader(html)).not.toContain('Precisa de você');
 		expect(html).toContain('Claude Code em espera');
 		expect(html).toContain('Limite de uso da assinatura atingido');
@@ -5113,22 +5115,34 @@ describe('screen derivations', () => {
 		expect(displayedRunId(null, runs)).toBe('run-latest');
 		expect(eventsForRun([event(2, 'run-selected')], displayedRunId(null, runs)!)).toEqual([]);
 	});
-	test('progress advances monotonically along the run spine', () => {
-		const spine: RunState[] = [
-			'queued',
-			'working',
-			'verify',
-			'review',
-			'ready-to-ship',
-			'shipping',
-			'done',
-		];
-		const values = spine.map(progressOf);
+	test('the stage map derives complete, current and future states from durable history', () => {
+		const spine: RunState[] = ['queued', 'working', 'verify', 'review', 'full-verify', 'ready-to-ship', 'shipping', 'done'];
+		const event = (fromState: RunState | null, toState: RunState, seq: number): RunEventView => ({ seq, runId: 'run-1', kind: 'run.state', fromState, toState, payload: {}, createdAt: 'now' });
+		const historyTo = (phase: RunState): RunEventView[] => {
+			const index = spine.indexOf(phase);
+			return spine.slice(0, index + 1).map((toState, eventIndex) => event(eventIndex === 0 ? null : spine[eventIndex - 1] ?? null, toState, eventIndex + 1));
+		};
+		const expectStage = (state: RunState, phase: RunState, events: RunEventView[]) => {
+			const statuses = runStageStatuses(state, events);
+			const index = spine.indexOf(phase);
+			for (const [stageIndex, stage] of spine.entries()) {
+				expect(statuses[stage]).toBe(stageIndex < index ? 'complete' : stageIndex === index ? 'current' : 'future');
+			}
+		};
 
-		expect(values[0]).toBe(0);
-		expect(values.at(-1)).toBe(1);
-		for (let i = 1; i < values.length; i += 1) {
-			expect(values[i] ?? 0).toBeGreaterThan(values[i - 1] ?? 0);
+		for (const phase of spine) expectStage(phase, phase, historyTo(phase));
+		for (const [state, phase] of [
+			['waiting-user', 'working'],
+			['waiting-provider', 'verify'],
+			['failed', 'review'],
+			['interrupted', 'full-verify'],
+			['cancelled', 'shipping'],
+		] as const) expectStage(state, phase, [...historyTo(phase), event(phase, state, 99)]);
+
+		for (const state of ['waiting-user', 'waiting-provider', 'failed', 'interrupted', 'cancelled'] as RunState[]) {
+			const statuses = runStageStatuses(state, []);
+			expect(Object.values(statuses).every((status) => status === 'future')).toBe(true);
+			expect(Object.values(statuses).some((status) => status === 'current')).toBe(false);
 		}
 	});
 
