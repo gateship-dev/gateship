@@ -1,0 +1,54 @@
+{
+  "id": "GSHIP-862",
+  "title": "Shell: remover faixas claras externas causadas pelo gutter do viewport",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-10T19:42:11.666Z",
+  "updatedAt": "2026-09-10T19:42:11.666Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Eliminar as faixas claras laterais reservadas pelo html, fazendo o shell ocupar toda a largura do viewport e mantendo estabilidade de scroll apenas nos painéis internos que realmente precisam dela.",
+    "acceptance": [
+      "Remover scrollbar-gutter: stable both-edges do html/viewport externo; separar estilo de scrollbar de reserva de espaço, mantendo reserva deliberada somente nos containers internos necessários.",
+      "Unificar o fundo de html/body com o canvas externo do shell em ambos os temas; não alterar a identidade dos cards, painel principal ou superfícies internas nem apenas pintar as faixas para esconder o espaço reservado.",
+      "Validar no browser com scrollbars clássicas: shell começa em x=0 e termina na largura do viewport sem overflow horizontal. Na investigação em 1440px havia 11px de cada lado; remover só o gutter externo recuperou os 1440px.",
+      "Preservar rolagem interna, foco, conteúdo longo e gutter estável onde necessário; testar sidebar expandida/recolhida, claro/escuro, viewport 390/768/1440 e comportamento com scrollbars clássicas e sobrepostas.",
+      "Registrar a causa e verificação no contrato visual/harness existente; confirmar ausência de faixas externas sem remover bordas/raios intencionais do painel ou alterar preferência de scrollbar do sistema."
+    ],
+    "boundaries": [
+      "Executar após GSHIP-851; pode ser independente da correção de sidebar, mas deve preceder GSHIP-852 e GSHIP-855.",
+      "Não remover scroll-container globalmente de tabelas, menus, código ou outros painéis.",
+      "Não usar margens negativas, largura 100vw para compensar gutter, overflow oculto para cortar conteúdo ou CSS dependente do sistema.",
+      "Não alterar preferências reais do navegador/sistema, layout de cards ou distribuição do aplicativo."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-harness.test.tsx test/web/embedded-ui.test.ts",
+      "bun run typecheck",
+      "bun run build:ui"
+    ],
+    "research": {
+      "questions": [
+        "Como retirar a reserva bilateral no viewport preservando os scroll containers internos e a cobertura com scrollbars clássicas/sobrepostas?"
+      ],
+      "sourceClasses": [
+        "standard"
+      ],
+      "freshness": {
+        "mode": "current",
+        "resolvedAt": "2026-09-10T19:41:01.992Z"
+      },
+      "receipts": [
+        {
+          "url": "https://drafts.csswg.org/css-overflow-3/#scrollbar-gutter-property",
+          "fetchedAt": "2026-09-10T19:41:01.992Z",
+          "contentHash": "sha256:60cd72cf422e9d72686d0e3535c99ed0f52edf7757dfce76cbaa7f52f17053ff",
+          "sourceType": "standard",
+          "claim": "scrollbar-gutter stable reserva espaço com scrollbars clássicas; both-edges reserva também a borda oposta. A reserva não é necessária para scrollbars sobrepostas.",
+          "applicability": "Retirar reserva do viewport externo e conservar estabilidade deliberada nos painéis internos."
+        }
+      ]
+    }
+  }
+}
