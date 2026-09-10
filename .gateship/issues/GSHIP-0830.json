@@ -5,13 +5,31 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-08T14:45:00.826Z",
-  "updatedAt": "2026-09-08T14:45:00.826Z",
-  "description": "Depois do mapa de estados e da paginação, transformar RunActivity em uma única coluna full-width, no scroll principal do conteúdo, agrupada por fases com âncoras compartilhadas com a state machine. Renderizar mensagens de executor, reviewer, orquestrador, operador e runtime com labels humanos; agrupar tool calls; mostrar comandos, exit code e duração em Saans Mono; preservar whitespace de outputs; recolher conteúdo longo; destacar findings e decisões sem converter toda entrada em card. O raw event kind fica como metadado secundário. Carregar eventos anteriores pela paginação até tornar todo o histórico durável alcançável, manter SSE e live edge, e nunca apresentar raciocínio privado não persistido como conversa. Cobrir teclado, leitores de tela, pt-BR/en-US, estados sem atividade, outputs extremos, 390 px e performance de runs longas.",
+  "updatedAt": "2026-09-10T03:23:14.021Z",
   "specSource": "operator",
   "spec": {
-    "scope": "Depois do mapa de estados e da paginação, transformar RunActivity em uma única coluna full-width, no scroll principal do conteúdo, agrupada por fases com âncoras compartilhadas com a state machine. Renderizar mensagens de executor, reviewer, orquestrador, operador e runtime com labels humanos; agrupar tool calls; mostrar comandos, exit code e duração em Saans Mono; preservar whitespace de outputs; recolher conteúdo longo; destacar findings e decisões sem converter toda entrada em card. O raw event kind fica como metadado secundário. Carregar eventos anteriores pela paginação até tornar todo o histórico durável alcançável, manter SSE e live edge, e nunca apresentar raciocínio privado não persistido como conversa. Cobrir teclado, leitores de tela, pt-BR/en-US, estados sem atividade, outputs extremos, 390 px e performance de runs longas.",
+    "version": 2,
+    "objective": "Transformar a atividade da run em uma timeline semântica, integral e escaneável, apoiada no mapa de estados e na paginação por cursor já entregues, sem imitar chat nem expor raciocínio privado.",
+    "acceptance": [
+      "A atividade ocupa uma coluna full-width no scroll principal; relatório, custos, insights e histórico permanecem abaixo em composições responsivas, sem um scroll interno fixo para a timeline.",
+      "Eventos operacionais são agrupados nas fases canônicas de RUN_PHASES e usam exatamente as mesmas âncoras estáveis do mapa de estados; fases vazias não criam ruído visual e links do mapa continuam funcionais.",
+      "Cada item apresenta um rótulo humano localizado para executor, revisor, orquestrador, operador ou runtime, horário e tipo bruto como metadado secundário; findings, decisões, respostas ao ciclo e pedidos de atenção têm hierarquia visual clara sem transformar cada evento em card.",
+      "Atividades consecutivas de ferramentas são agrupadas; comandos exibem comando, exit code e duração quando persistidos em Saans Mono; texto e outputs preservam whitespace, quebram conteúdo extremo e podem ser expandidos ou recolhidos por controle acessível.",
+      "Todo o histórico durável permanece alcançável por Carregar anteriores, com preservação da posição, merge por seq, SSE sem lacunas ou duplicatas e Voltar para a cauda apenas quando o operador se afastou do live edge.",
+      "A projeção usa somente dados públicos persistidos no evento e nunca apresenta raciocínio privado; evento desconhecido recebe fallback localizado que preserva kind e payload público sem quebrar a timeline.",
+      "O harness inclui fixtures representativas de todas as funções, fases, findings, decisões, tool groups, comandos, outputs extremos, vazio e histórico longo; testes cobrem teclado, leitor de tela, pt-BR, en-US, 390 px, agrupamento, paginação e desempenho estrutural."
+    ],
+    "boundaries": [
+      "Não alterar a máquina de estados, a semântica nem a persistência dos eventos.",
+      "Não adicionar dependências nem criar uma experiência de chat.",
+      "Não inferir mensagens privadas, chain of thought ou conteúdo ausente do payload persistido.",
+      "Não reabrir a paginação entregue em GSHIP-829 salvo correção necessária para integrar a timeline.",
+      "Não executar check:all durante o trabalho; ele permanece na fronteira de ship."
+    ],
     "verify": [
-      "bun run check:all"
+      "bun test test/web/ui-client.test.tsx test/web/ui-harness.test.tsx test/web/ui-primitives.test.tsx test/web/project-scoped-browser-runs.test.ts test/web/run-event-pagination.test.ts",
+      "bun run typecheck",
+      "bun run build:ui"
     ]
   }
 }
