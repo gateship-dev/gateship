@@ -26,6 +26,7 @@ import {
 	type PanelKeyEvent,
 	ShellControls,
 	ShellSidebar,
+	notificationItems,
 	shellSurfaceTitle,
 	useStoredOpen,
 } from './screens/shell.tsx';
@@ -67,6 +68,16 @@ export function App(props: AppProps): React.ReactElement {
 		? props.runs[0] ?? null
 		: props.runs.find((candidate) => candidate.id === selection.runId) ?? null;
 	const localeCatalog = LOCALE_CATALOG[props.locale];
+	const notifications = notificationItems(
+		selectedProject ?? (selection.projectId === null ? currentProject : null),
+		props.chainRuns,
+		run,
+		props.workspaceNotices,
+		props.staleService,
+		props.gitIdentity,
+		props.events,
+		localeCatalog.shell.notifications,
+	);
 	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
 	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
 	useEffect(() => {
@@ -84,7 +95,7 @@ export function App(props: AppProps): React.ReactElement {
 	}, [props.projects, toggleSidebar]);
 	return (
 		<AppShell
-			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}
+			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} notifications={notifications} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}
 			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} selectedProjectId={props.selectedProjectId ?? null} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
 		>

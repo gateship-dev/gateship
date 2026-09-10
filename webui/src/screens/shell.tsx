@@ -6,7 +6,6 @@ import { ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Callout } from '../components/ui/callout.tsx';
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunInspectorCatalog, ShellCatalog } from '../locale.ts';
@@ -15,7 +14,8 @@ import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
-import { Activity01Icon, ArrowExpand01Icon, ArrowShrink01Icon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Popover } from '@base-ui/react/popover';
+import { Activity01Icon, Alert02Icon, ArrowExpand01Icon, ArrowShrink01Icon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useState } from 'react';
 
@@ -32,38 +32,83 @@ const RAIL_NAV_ITEM_CLASS =
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
 
-export function StaleServiceCallout({
-	staleService,
-}: Pick<AppProps, 'staleService'>): React.ReactElement | null {
-	if (staleService === null) return null;
-	return (
-		<Callout aria-label="Outdated service" title="Restart the service" tone="warning">
-			<p className="break-words text-xs">{staleService.detail}</p>
-			<code className="break-all text-xs">boot {staleService.bootSha}</code>
-			<code className="break-all text-xs">origin/main {staleService.currentSha}</code>
-		</Callout>
-	);
+export interface NotificationItem { id: string; title: string; detail: string; severity: string; actionable: boolean; href?: string }
+
+const ACTIONABLE_RUN_STATES = ['waiting-user', 'ready-to-ship', 'failed', 'interrupted'] as const;
+
+function globalNotificationItems(staleService: AppProps['staleService'], gitIdentity: AppProps['gitIdentity'], catalog: ShellCatalog['notifications']): NotificationItem[] {
+	return [
+		...(staleService === null ? [] : [{ id: 'stale-service', title: catalog.staleService, detail: `${staleService.detail} boot ${staleService.bootSha}; origin/main ${staleService.currentSha}`, severity: catalog.severity.action, actionable: true }]),
+		...(gitIdentity === null ? [] : [{ id: 'git-identity', title: catalog.gitIdentity, detail: gitIdentity.detail, severity: catalog.severity.action, actionable: true, href: '/settings' }]),
+	];
 }
 
-/**
- * No global git author identity is configured, so the first commit a run or a
- * ship attempts would fail with "Author identity unknown" (GSHIP-654). A
- * statement, not a decision: no button, no dismissal. Unlike
- * `StaleServiceCallout`, this never asks for a restart -- derivation happens
- * on the commit path itself the moment a run or a ship actually needs it, so
- * it needs no operator action here at all; this callout is a display of that
- * outcome and clears on the next snapshot a command or a run event triggers,
- * not on a poll, since there is none.
- */
-export function GitIdentityCallout({
-	gitIdentity,
-}: Pick<AppProps, 'gitIdentity'>): React.ReactElement | null {
-	if (gitIdentity === null) return null;
-	return (
-		<Callout aria-label="Missing Git identity" title="Missing Git identity" tone="warning">
-			<p className="break-words text-xs">{gitIdentity.detail}</p>
-		</Callout>
-	);
+function runNotification(run: RunView, events: AppProps['events'], projectHref: string, catalog: ShellCatalog['notifications']): NotificationItem | null {
+	const shipFailure = events.findLast((event) => event.runId === run.id && event.kind === 'run.ship-failed');
+	const shipBlocked = shipFailure !== undefined;
+	if ((run.state === 'ready-to-ship' && !shipBlocked) || !(ACTIONABLE_RUN_STATES as readonly string[]).includes(run.state)) return null;
+	return {
+		id: `run-${run.id}`,
+		title: shipBlocked ? catalog.shipBlocked : catalog.run[run.state as (typeof ACTIONABLE_RUN_STATES)[number]],
+		detail: shipBlocked && typeof shipFailure.payload.error === 'string' ? shipFailure.payload.error : shipBlocked ? catalog.shipBlockedDetail : run.error ?? run.summary ?? run.issueId,
+		severity: catalog.severity.action,
+		actionable: true,
+		href: `${projectHref}/runs/${encodeURIComponent(run.id)}`,
+	};
+}
+
+function queuePauseDetail(pause: NonNullable<ChainRunsView['pause']>, fallback: string): string {
+	return pause.issue === undefined ? fallback : `${pause.issue.id}: ${pause.issue.title}`;
+}
+
+function queueRunHref(pause: NonNullable<ChainRunsView['pause']>, projectHref: string): string | undefined {
+	return pause.run === undefined ? undefined : `${projectHref}/runs/${encodeURIComponent(pause.run.id)}`;
+}
+
+function queueNotificationItems(pause: ChainRunsView['pause'], projectHref: string, catalog: ShellCatalog['notifications']): NotificationItem[] {
+	if (pause?.reason === 'chain-start-failed') return [{ id: 'queue-start-failed', title: catalog.queueStartFailed, detail: queuePauseDetail(pause, catalog.queueStartFailedDetail), severity: catalog.severity.action, actionable: true, href: queueRunHref(pause, projectHref) }];
+	if (pause?.reason === 'no-admissible-issue') return [{ id: 'queue-complete', title: catalog.queueComplete, detail: catalog.queueCompleteDetail, severity: catalog.severity.advisory, actionable: false }];
+	if (pause?.reason === 'previous-run-not-done') return [{ id: 'queue-previous-not-done', title: catalog.queueStopped, detail: queuePauseDetail(pause, catalog.queuePreviousDetail), severity: catalog.severity.action, actionable: true, href: queueRunHref(pause, projectHref) }];
+	if (pause?.reason === 'run-active') return [{ id: 'queue-active', title: catalog.queueStopped, detail: queuePauseDetail(pause, catalog.queueActiveDetail), severity: catalog.severity.advisory, actionable: false, href: queueRunHref(pause, projectHref) }];
+	return [];
+}
+
+export function notificationItems(
+	selected: RegisteredProjectView | null,
+	chainRuns: ChainRunsView,
+	run: RunView | null,
+	workspaceNotices: AppProps['workspaceNotices'],
+	staleService: AppProps['staleService'],
+	gitIdentity: AppProps['gitIdentity'],
+	events: AppProps['events'],
+	catalog: ShellCatalog['notifications'],
+): NotificationItem[] {
+	const projectOperational = selected !== null && (selected.current || selected.readiness === 'ready');
+	const projectHref = selected === null ? null : `/projects/${encodeURIComponent(selected.id)}`;
+	const items = globalNotificationItems(staleService, gitIdentity, catalog);
+	if (!projectOperational || projectHref === null) return items;
+	const runItem = run === null ? null : runNotification(run, events, projectHref, catalog);
+	if (runItem !== null) items.push(runItem);
+	if (run?.providerWait !== null && run?.providerWait !== undefined) items.push({ id: `provider-${run.id}`, title: catalog.providerWait, detail: run.providerWait.message, severity: catalog.severity.advisory, actionable: false, href: `${projectHref}/runs/${encodeURIComponent(run.id)}` });
+	items.push(...queueNotificationItems(visibleQueuePause(chainRuns), projectHref, catalog));
+	for (const [index, notice] of workspaceNotices.entries()) items.push({ id: `workspace-${index}`, title: catalog.workspace, detail: notice.detail, severity: catalog.severity.action, actionable: true, href: notice.runId === null ? undefined : `${projectHref}/runs/${encodeURIComponent(notice.runId)}` });
+	return items;
+}
+
+export function NotificationsPopover({ items, catalog }: { items: readonly NotificationItem[]; catalog: ShellCatalog['notifications'] }): React.ReactElement {
+	const actionableCount = items.filter((item) => item.actionable).length;
+	const announcement = items.length === 0 ? catalog.empty : items.map((item) => `${item.title}: ${item.detail}`).join(' ');
+	return <Popover.Root>
+		<span aria-atomic="true" aria-live="polite" className="sr-only" data-slot="notifications-live">{announcement}</span>
+		<Popover.Trigger aria-label={catalog.label} className="relative inline-flex size-9 items-center justify-center rounded-xl border border-input bg-white text-foreground shadow-xs/5 outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:bg-input/32" data-slot="notifications-trigger">
+			<HugeiconsIcon className="size-4" icon={Notification02Icon} size={16} strokeWidth={2.25} />
+			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-attention px-1 font-mono text-[10px] leading-4 text-attention-foreground">{actionableCount}</span>}
+		</Popover.Trigger>
+		<Popover.Portal><Popover.Positioner align="end" className="z-50" sideOffset={8}><Popover.Popup aria-label={catalog.label} className="w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg/5 outline-none">
+			<div className="flex items-center gap-2 px-2 py-1.5"><HugeiconsIcon className="size-4" icon={Alert02Icon} size={16} strokeWidth={2.25} /><strong className="text-sm">{catalog.label}</strong><span className="ml-auto font-mono text-xs text-muted-foreground">{catalog.count(actionableCount)}</span></div>
+			{items.length === 0 ? <p className="px-2 py-5 text-center text-sm text-muted-foreground">{catalog.empty}</p> : <ul className="mt-1 flex max-h-[min(28rem,70vh)] flex-col gap-1 overflow-y-auto">{items.map((item) => <li key={item.id} className="rounded-lg border border-border/60 p-2.5 text-sm"><div className="flex items-start justify-between gap-2"><strong>{item.href === undefined ? item.title : <a className="underline decoration-border underline-offset-2 hover:decoration-foreground" href={item.href}>{item.title}</a>}</strong><span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.severity}</span></div><p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p></li>)}</ul>}
+		</Popover.Popup></Popover.Positioner></Popover.Portal>
+	</Popover.Root>;
 }
 
 /** One line per reason the queue is not advancing on its own (GSHIP-638). */
@@ -101,25 +146,6 @@ export function visibleQueuePause(chainRuns: ChainRunsView): ChainRunsView['paus
  * alone: never a fabricated link. `pause` is already filtered to reasons that
  * represent a visible outcome -- see `visibleQueuePause`.
  */
-export function ChainPauseCallout({
-	pause,
-}: { pause: ChainRunsView['pause'] }): React.ReactElement | null {
-	if (pause === null) return null;
-	const complete = pause.reason === 'no-admissible-issue';
-	const named = pause.issue === undefined
-		? CHAIN_PAUSE_LABELS[pause.reason]
-		: `${pause.issue.id}: ${pause.issue.title} — ${CHAIN_PAUSE_LABELS[pause.reason]}`;
-	return (
-		<Callout
-			aria-label={complete ? 'Completed run queue' : 'Stopped run queue'}
-			title={complete ? 'Queue complete' : 'Queue stopped'}
-			tone={complete ? 'success' : 'warning'}
-		>
-			<p className="break-words text-xs">{named}</p>
-		</Callout>
-	);
-}
-
 export function humanVersionOf(version: string): string {
 	const buildMetadata = version.indexOf('+');
 	return buildMetadata === -1 ? version : version.slice(0, buildMetadata);
@@ -191,6 +217,7 @@ function CompactProjectSwitcherTrigger({
 				? <span data-slot="project-switcher-placeholder"><HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={FolderManagementIcon} size={16} strokeWidth={2.25} /></span>
 				: <ProjectShortcut index={selectedShortcut} />}
 			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
+			{status === null ? null : <span className="sr-only">{status.label}</span>}
 		</>
 	);
 }
@@ -456,6 +483,7 @@ export function ShellControls({
 	inspectorOpen,
 	onToggleInspector,
 	showInspectorToggle,
+	notifications,
 }: Pick<AppProps, 'locale' | 'onSelectLocale'> & {
 	catalog: ShellCatalog;
 	title: string;
@@ -464,6 +492,7 @@ export function ShellControls({
 	inspectorOpen: boolean;
 	onToggleInspector: () => void;
 	showInspectorToggle: boolean;
+	notifications: readonly NotificationItem[];
 }): React.ReactElement {
 	const [dark, setDark] = useState(() => {
 		const runtime = panelRuntime();
@@ -518,7 +547,8 @@ export function ShellControls({
 				<div className="min-w-0 px-2 text-center type-editorial-title text-sm sm:text-base" data-slot="shell-surface-title" title={title}>
 					<span className="block overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
 				</div>
-				<div aria-label={catalog.languageLabel} className="flex min-w-0 items-center justify-end gap-2" role="group">
+				<div className="flex min-w-0 items-center justify-end gap-2">
+					<NotificationsPopover catalog={catalog.notifications} items={notifications} />
 						<Button
 							aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
 							id="gateship-locale"
@@ -610,6 +640,17 @@ export function shellAttention(
 	};
 }
 
+function shellStatus(
+	selected: RegisteredProjectView | null,
+	run: RunView | null,
+	catalog: RunInspectorCatalog,
+	): { label: string; acid: false } | null {
+	if (selected === null || (!selected.current && selected.readiness !== 'ready')) return null;
+	const attention = attentionOf(run, false);
+	const normalAttention = attention === 'Working' ? 'Working' : 'Idle';
+	return { label: catalog.attentionLabels[normalAttention], acid: false };
+}
+
 /**
  * The collapsed desktop shell turns the rail into compact operational
  * navigation. The mobile fallback retains its mark and attention signal.
@@ -670,17 +711,13 @@ export function ShellRail({
 }
 
 export function ShellSidebar({
-	chainRuns,
-	gitIdentity,
 	locale,
-	runInspectorCatalog,
 	route,
 	selectedProjectId,
 	projects,
 	run,
-	staleService,
+	runInspectorCatalog,
 	version,
-	workspaceNotices,
 	open,
 }: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'projects' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
@@ -698,21 +735,15 @@ export function ShellSidebar({
 	const catalog = LOCALE_CATALOG[locale].shell;
 	const currentId = projects.find((project) => project.current)?.id ?? null;
 	const selection = routeSelection(route, currentId, selectedProjectId);
-	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
-	const { operational, queuePause, attention } = shellAttention(
-		selected,
-		chainRuns,
-		run,
-		workspaceNotices,
-	);
 	const humanVersion = humanVersionOf(version);
+	const status = shellStatus(projects.find((project) => project.id === selection.projectId) ?? null, run, runInspectorCatalog);
 	if (!open) {
 		return (
 			<ShellRail
 				catalog={catalog}
 				projects={projects}
 				selection={selection}
-				status={operational ? { label: runInspectorCatalog.attentionLabels[attention], acid: attention === 'Needs you' } : null}
+				status={status}
 			/>
 		);
 	}
@@ -731,13 +762,9 @@ export function ShellSidebar({
 				catalog={catalog}
 				projects={projects}
 				selection={selection}
-				/* "Needs you" is the navigation's one acid point (design-system.md 1). */
-				status={operational ? { label: runInspectorCatalog.attentionLabels[attention], acid: attention === 'Needs you' } : null}
+				status={status}
 			/>
 			<div className="hidden lg:contents">
-				<ChainPauseCallout pause={queuePause} />
-				{operational ? <StaleServiceCallout staleService={staleService} /> : null}
-				{operational ? <GitIdentityCallout gitIdentity={gitIdentity} /> : null}
 			</div>
 			<nav aria-label={catalog.routeLabels.globalSettings} className="hidden lg:mt-auto lg:block">
 				<a
