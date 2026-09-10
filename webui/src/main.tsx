@@ -48,9 +48,10 @@ import {
 	fetchProposals,
 	fetchProviders,
 	fetchResolvedProposals,
-	fetchRunEvents,
+	fetchRunEventsPage,
 	fetchRuns,
 	fetchSelfUpdate,
+	type RunEventPage,
 	type GitIdentityView,
 	type IssueReviewDraft,
 	importProject,
@@ -131,6 +132,46 @@ import {
 	type RunView,
 } from './run-view.ts';
 import './index.css';
+import { advanceLiveGap, createLiveGap, type LiveGapDescriptor } from './run-event-pagination.ts';
+
+function mergeRunEvents(current: RunEventView[], runId: string, additions: RunEventView[]): RunEventView[] {
+	const merged = new Map(current.filter((event) => event.runId === runId).map((event) => [event.seq, event]));
+	for (const event of additions) if (event.runId === runId) merged.set(event.seq, event);
+	return [...merged.values()].sort((a, b) => a.seq - b.seq);
+}
+
+function acceptedEventsForPage(page: RunEventPage, runId: string, gap: LiveGapDescriptor | undefined): RunEventView[] {
+	const eligible = gap === undefined
+		? page.events
+		: page.events.filter((event) => event.runId === runId && (gap.afterSeq === null || event.seq > gap.afterSeq));
+	return eligible.slice(-50);
+}
+
+function advanceGapFromPage(gap: LiveGapDescriptor, page: RunEventPage, accepted: RunEventView[]): LiveGapDescriptor | undefined {
+	const eligibleCount = page.events.filter((event) => gap.afterSeq === null || event.seq > gap.afterSeq).length;
+	return advanceLiveGap(gap, page.events.map((event) => event.seq), accepted.map((event) => event.seq), page.hasPrevious, eligibleCount > 50);
+}
+
+function shouldLoadPreviousRunEvents(selectedRunId: string | null, loading: boolean, hasPrevious: boolean, gap: LiveGapDescriptor | undefined): boolean {
+	return selectedRunId !== null && !loading && (hasPrevious || gap !== undefined);
+}
+
+function removeInvalidGap(current: Record<string, LiveGapDescriptor>, runId: string, gap: LiveGapDescriptor): Record<string, LiveGapDescriptor> {
+	if (current[runId] !== gap) return current;
+	const next = { ...current };
+	delete next[runId];
+	return next;
+}
+
+function updateGapAfterPage(current: Record<string, LiveGapDescriptor>, runId: string, requested: LiveGapDescriptor | undefined, nextGap: LiveGapDescriptor | undefined): Record<string, LiveGapDescriptor> {
+	if (requested === undefined || current[runId] !== requested) return current;
+	if (nextGap === undefined) {
+		const next = { ...current };
+		delete next[runId];
+		return next;
+	}
+	return { ...current, [runId]: nextGap };
+}
 
 /** What both records read as before the first refresh answers. */
 const EMPTY_BRIEF: ProjectBriefView = {
@@ -177,6 +218,9 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	resolvedProposalsOmittedCount: number;
 	runs: RunView[];
 	events: RunEventView[];
+	runEventsHasPrevious: boolean;
+	runEventsLoading: boolean;
+	onLoadPreviousRunEvents: () => Promise<void>;
 	workspaceNotices: WorkspaceNoticeView[];
 	staleService: StaleServiceView | null;
 	gitIdentity: GitIdentityView | null;
@@ -224,7 +268,11 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const [resolvedProposals, setResolvedProposals] = useState<ResolvedProposalView[]>([]);
 	const [resolvedProposalsOmittedCount, setResolvedProposalsOmittedCount] = useState(0);
 	const [runs, setRuns] = useState<RunView[]>([]);
-	const [events, setEvents] = useState<RunEventView[]>([]);
+	const [historicalEvents, setHistoricalEvents] = useState<RunEventView[]>([]);
+	const [liveEvents, setLiveEvents] = useState<RunEventView[]>([]);
+	const [liveGapBefore, setLiveGapBefore] = useState<Record<string, LiveGapDescriptor>>({});
+	const [runEventsHasPrevious, setRunEventsHasPrevious] = useState(false);
+	const [runEventsLoading, setRunEventsLoading] = useState(false);
 	const [workspaceNotices, setWorkspaceNotices] = useState<WorkspaceNoticeView[]>([]);
 	const [staleService, setStaleService] = useState<StaleServiceView | null>(null);
 	const [gitIdentity, setGitIdentity] = useState<GitIdentityView | null>(null);
@@ -276,7 +324,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const clearScopedData = useCallback((): void => {
 		setBacklog([]); setIdeas([]); setDrafts([]);
 		setProposals([]); setResolvedProposals([]); setResolvedProposalsOmittedCount(0);
-		setRuns([]); setEvents([]);
+		setRuns([]); setHistoricalEvents([]); setLiveEvents([]); setLiveGapBefore({});
 		setWorkspaceNotices([]); setStaleService(null); setGitIdentity(null); setVersion('');
 		setProviders([]); setSelectedProvider('claude'); setProviderSource('provider-default');
 		setBrief(EMPTY_BRIEF);
@@ -325,7 +373,9 @@ function useOperationalRun(scope: string | null, pathname: string): {
 			available('Runs');
 			setRuns(result.value);
 			const latest = result.value[0] ?? null;
-			return secondary('Run activity', () => latest === null ? Promise.resolve([]) : fetchRunEvents(scope, latest.id), setEvents);
+			return secondary('Run activity', async () => latest === null ? { events: [], hasPrevious: false, previousCursor: null } : fetchRunEventsPage(scope, latest.id), (page) => {
+				setHistoricalEvents(page.events); setRunEventsHasPrevious(page.hasPrevious);
+			});
 		});
 		const secondaryReads = [
 		secondary('Snapshot', () => fetchBacklog(scope), (value) => {
@@ -438,17 +488,36 @@ function useOperationalRun(scope: string | null, pathname: string): {
 
 	const requestedRunId = runIdOf(pathname);
 	const selectedRunId = displayedRunId(requestedRunId, runs);
+	const selectedRunIdRef = useRef<string | null>(selectedRunId);
+	selectedRunIdRef.current = selectedRunId;
+	const historicalEventsRef = useRef(historicalEvents);
+	historicalEventsRef.current = historicalEvents;
+	const runEventsRequestIdRef = useRef(0);
+	const displayedEvents = selectedRunId === null ? [] : [...new Map([
+		...eventsForRun(historicalEvents, selectedRunId),
+		...eventsForRun(liveEvents, selectedRunId),
+	].map((event) => [event.seq, event])).values()].sort((a, b) => a.seq - b.seq);
 	useEffect(() => {
+		++runEventsRequestIdRef.current;
+		setRunEventsLoading(false);
+		setLiveEvents([]);
+		setLiveGapBefore({});
 		if (selectedRunId === null) {
-			setEvents([]);
+			setHistoricalEvents([]);
+			setRunEventsHasPrevious(false);
 			setOperationalReadState((current) => settleOperationalRead(current, 'Run activity', { state: 'available', value: undefined }));
 			return;
 		}
 		let disposed = false;
-		setEvents((current) => eventsForRun(current, selectedRunId));
-		void fetchRunEvents(scope, selectedRunId).then((value) => {
+		setHistoricalEvents((current) => eventsForRun(current, selectedRunId));
+		void fetchRunEventsPage(scope, selectedRunId).then((page) => {
 			if (!disposed) {
-				setEvents(value);
+				setHistoricalEvents((current) => {
+					const merged = new Map(current.filter((event) => event.runId === selectedRunId).map((event) => [event.seq, event]));
+					for (const event of page.events) merged.set(event.seq, event);
+					return [...merged.values()].sort((a, b) => a.seq - b.seq);
+				});
+				setRunEventsHasPrevious(page.hasPrevious);
 				setOperationalReadState((current) => settleOperationalRead(current, 'Run activity', { state: 'available', value: undefined }));
 			}
 		}).catch((error: unknown) => {
@@ -456,6 +525,32 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		});
 		return () => { disposed = true; };
 	}, [selectedRunId, scope]);
+
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: pagination coordinates request identity, concurrent SSE gaps, and loading state.
+	const loadPreviousRunEvents = useCallback(async (): Promise<void> => {
+		if (!shouldLoadPreviousRunEvents(selectedRunId, runEventsLoading, runEventsHasPrevious, selectedRunId === null ? undefined : liveGapBefore[selectedRunId])) return;
+		if (selectedRunId === null) return;
+		const runId = selectedRunId;
+		const requestId = ++runEventsRequestIdRef.current;
+		const gapAtRequest = liveGapBefore[runId];
+		if (gapAtRequest !== undefined && gapAtRequest.afterSeq !== null && gapAtRequest.afterSeq >= gapAtRequest.beforeSeq) {
+			setLiveGapBefore((current) => removeInvalidGap(current, runId, gapAtRequest));
+			return;
+		}
+		const cursor = gapAtRequest?.beforeSeq ?? historicalEvents.find((event) => event.runId === runId)?.seq;
+		if (cursor === undefined) return;
+		setRunEventsLoading(true);
+		try {
+			const page = await fetchRunEventsPage(scope, runId, cursor, gapAtRequest === undefined ? 50 : 51);
+			if (requestId !== runEventsRequestIdRef.current || selectedRunIdRef.current !== runId) return;
+			const acceptedEvents = acceptedEventsForPage(page, runId, gapAtRequest);
+			setHistoricalEvents((current) => mergeRunEvents(current, runId, acceptedEvents));
+			setRunEventsHasPrevious(page.hasPrevious);
+			setLiveGapBefore((current) => updateGapAfterPage(current, runId, gapAtRequest, gapAtRequest === undefined ? undefined : advanceGapFromPage(gapAtRequest, page, acceptedEvents)));
+		} finally {
+			if (requestId === runEventsRequestIdRef.current && selectedRunIdRef.current === runId) setRunEventsLoading(false);
+		}
+	}, [historicalEvents, liveGapBefore, runEventsHasPrevious, runEventsLoading, scope, selectedRunId]);
 
 	useEffect(() => {
 		if (routeOf(pathname) !== '/overview') {
@@ -520,10 +615,29 @@ function useOperationalRun(scope: string | null, pathname: string): {
 				const data = (message as unknown as { data: string }).data;
 				const event = JSON.parse(data) as RunEventView;
 				notifyRunEvent(event);
-				setEvents((current) => {
+				if (selectedRunIdRef.current !== null && event.runId === selectedRunIdRef.current) setLiveEvents((current) => {
 					const merged = new Map(current.map((item) => [item.seq, item]));
 					merged.set(event.seq, event);
-					return [...merged.values()].sort((a, b) => a.seq - b.seq).slice(-200);
+					const all = [...merged.values()].sort((a, b) => a.seq - b.seq);
+					const runEvents = all.filter((item) => item.runId === event.runId);
+					if (runEvents.length <= 50) return all;
+					const retained = new Set(runEvents.slice(-50).map((item) => item.seq));
+					setLiveGapBefore((gaps) => {
+						const existingGap = gaps[event.runId];
+						const beforeSeq = runEvents.at(-50)!.seq;
+						const nextGap = createLiveGap(existingGap, historicalEventsRef.current.filter((item) => item.runId === event.runId).at(-1)?.seq, beforeSeq);
+						if (nextGap === undefined) {
+							if (existingGap === undefined) return gaps;
+							const next = { ...gaps };
+							delete next[event.runId];
+							return next;
+						}
+						return {
+							...gaps,
+							[event.runId]: nextGap,
+						};
+					});
+					return all.filter((item) => item.runId !== event.runId || retained.has(item.seq));
 				});
 				if (invalidatesSnapshot(event)) refreshCoalescer.queue();
 			} catch {
@@ -564,7 +678,10 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		resolvedProposals,
 		resolvedProposalsOmittedCount,
 		runs,
-		events: selectedRunId === null ? [] : eventsForRun(events, selectedRunId),
+		events: displayedEvents,
+		runEventsHasPrevious: runEventsHasPrevious || (selectedRunId !== null && liveGapBefore[selectedRunId] !== undefined),
+		runEventsLoading,
+		onLoadPreviousRunEvents: loadPreviousRunEvents,
 		workspaceNotices,
 		staleService,
 		gitIdentity,

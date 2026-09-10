@@ -226,6 +226,12 @@ export interface RunEvent {
 	eventClass: RunEventClass;
 }
 
+export interface RunEventPage {
+	events: RunEvent[];
+	hasPrevious: boolean;
+	previousCursor: number | null;
+}
+
 export interface ProjectBrief {
 	objective: string;
 	decisions: string[];
@@ -1696,6 +1702,18 @@ export class RunStore {
 			) ORDER BY seq ASC
 		`).all({ runId, limit }) as EventRow[];
 		return rows.map(decodeEvent);
+	}
+
+	listRunEventsPage(runId: string, limit = 200, beforeSeq?: number): RunEventPage {
+		const rows = this.#db.query(`
+			SELECT * FROM run_events
+			WHERE run_id = $runId ${beforeSeq === undefined ? '' : 'AND seq < $beforeSeq'}
+			ORDER BY seq DESC
+			LIMIT $limitPlusOne
+		`).all({ runId, ...(beforeSeq === undefined ? {} : { beforeSeq }), limitPlusOne: limit + 1 }) as EventRow[];
+		const hasPrevious = rows.length > limit;
+		const events = rows.slice(0, limit).reverse().map(decodeEvent);
+		return { events, hasPrevious, previousCursor: hasPrevious ? (events[0]?.seq ?? null) : null };
 	}
 
 	/**

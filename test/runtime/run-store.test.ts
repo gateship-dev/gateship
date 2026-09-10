@@ -194,6 +194,28 @@ describe('run event class migration', () => {
 });
 
 describe('run event class', () => {
+	test('paginates a run by exclusive seq without crossing runs', () => {
+		const store = storeWithRun('run-page', 'GSHIP-829');
+		store.createRun({ id: 'run-other-page', issueId: 'GSHIP-830', sessionId: 'session-other-page', workspacePath: '/other', createdAt: '2026-08-16T22:00:01.000Z' });
+		for (let index = 0; index < 205; index += 1) {
+			store.appendEvent({ runId: index % 2 === 0 ? 'run-page' : 'run-other-page', kind: 'provider.activity', createdAt: '2026-08-16T22:00:00.000Z', payload: { index } });
+		}
+		const first = store.listRunEventsPage('run-page', 20);
+		expect(first.events).toHaveLength(20);
+		expect(first.events.every((event) => event.runId === 'run-page')).toBe(true);
+		expect(first.events.map((event) => event.seq)).toEqual([...first.events].map((event) => event.seq).sort((a, b) => a - b));
+		expect(first.hasPrevious).toBe(true);
+		const pages = [first];
+		while (pages.at(-1)!.hasPrevious) {
+			pages.push(store.listRunEventsPage('run-page', 20, pages.at(-1)!.previousCursor!));
+		}
+		const runSequences = [...pages].reverse().flatMap((page) => page.events.map((event) => event.seq));
+		expect(runSequences).toHaveLength(104);
+		expect(new Set(runSequences).size).toBe(runSequences.length);
+		expect(runSequences).toEqual([...runSequences].sort((a, b) => a - b));
+		store.close();
+	});
+
 	test('createRun and transition always record a decision, regardless of kind', () => {
 		const store = new RunStore(':memory:');
 		const { event: created } = store.createRun({

@@ -71,6 +71,9 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 							events={props.events}
 							locale={props.locale}
 							run={run}
+							hasPrevious={props.runEventsHasPrevious}
+							loading={props.runEventsLoading}
+							onLoadPrevious={props.onLoadPreviousRunEvents}
 						/>
 					</OperationalReadPanel>
 					{run === null ? null : <RunReport catalog={catalog} run={run} />}
