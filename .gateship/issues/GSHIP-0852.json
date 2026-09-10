@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:41:47.332Z",
-  "updatedAt": "2026-09-10T19:42:55.735Z",
+  "updatedAt": "2026-09-10T20:39:05.964Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -35,21 +35,24 @@
         "Como adaptar SidebarMenuSub à navegação por rotas, mantendo modos compacto e móvel acessíveis?"
       ],
       "sourceClasses": [
-        "official-documentation",
         "primary-code"
       ],
       "freshness": {
         "mode": "current",
-        "resolvedAt": "2026-09-10T18:37:34.696Z"
+        "resolvedAt": "2026-09-10T20:38:58.000Z"
       },
       "receipts": [
         {
-          "url": "https://ui.shadcn.com/docs/components/base/sidebar.md",
-          "contentHash": "sha256:a48b885e4d6f0d8d1cb143ef436b80b90ebcf5e548347d455f6b201dcb637971",
-          "fetchedAt": "2026-09-10T18:37:34.885Z",
-          "sourceType": "official-documentation",
-          "claim": "Sidebar é composável e oferece submenus; o padrão pode ser adaptado à navegação existente.",
-          "applicability": "Substituir a navegação horizontal da Central por subitens preservando URLs e acessibilidade."
+          "url": "https://raw.githubusercontent.com/shadcn-ui/ui/3ba91b1cc83e1bbe4ab35a422ff2a694849c5048/apps/v4/content/docs/components/base/sidebar.mdx",
+          "contentHash": "sha256:3acdf8f48bef3ddbe6a31920106e56ab391ecfce8e4fb2ba93e8858e2790fbc7",
+          "fetchedAt": "2026-09-10T20:38:58.000Z",
+          "sourceType": "primary-code",
+          "claim": "Como adaptar SidebarMenuSub à navegação por rotas, mantendo modos compacto e móvel acessíveis?",
+          "applicability": "Adaptar submenus à navegação existente sem substituir a shell Gateship.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "3ba91b1cc83e1bbe4ab35a422ff2a694849c5048"
+          }
         }
       ]
     }
