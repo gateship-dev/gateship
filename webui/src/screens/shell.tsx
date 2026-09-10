@@ -15,9 +15,10 @@ import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
+import { Tooltip } from '@base-ui/react/tooltip';
 import { Activity01Icon, Alert02Icon, ArrowExpand01Icon, ArrowShrink01Icon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { useCallback, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 
 const SHELL_ICON_SIZE = 16;
@@ -27,11 +28,13 @@ const SHELL_ICON_STROKE_WIDTH = 2.25;
 function ShellIcon({
 	className,
 	icon,
+	'aria-hidden': ariaHidden,
 }: {
 	className?: string;
 	icon: Parameters<typeof HugeiconsIcon>[0]['icon'];
+	'aria-hidden'?: 'true' | 'false';
 }): React.ReactElement {
-	return <HugeiconsIcon className={cn(SHELL_ICON_CLASS, 'shrink-0', className)} icon={icon} size={SHELL_ICON_SIZE} strokeWidth={SHELL_ICON_STROKE_WIDTH} />;
+	return <HugeiconsIcon aria-hidden={ariaHidden} className={cn(SHELL_ICON_CLASS, 'shrink-0', className)} icon={icon} size={SHELL_ICON_SIZE} strokeWidth={SHELL_ICON_STROKE_WIDTH} />;
 }
 
 export const NAV_LINK_CLASS =
@@ -191,6 +194,19 @@ export function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.Rea
 	);
 }
 
+function SidebarTooltip({ children, content, disabled = false }: { children: React.ReactElement; content: React.ReactNode; disabled?: boolean }): React.ReactElement {
+	return (
+		<Tooltip.Root disabled={disabled}>
+			<Tooltip.Trigger render={children} />
+			<Tooltip.Portal>
+				<Tooltip.Positioner className="z-50" side="right" sideOffset={8}>
+					<Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5">{content}</Tooltip.Popup>
+				</Tooltip.Positioner>
+			</Tooltip.Portal>
+		</Tooltip.Root>
+	);
+}
+
 /*
  * The project switcher (operator decision, 2026-08-31, two-line
  * team-switcher anatomy): the trigger scopes projects only -- the overview
@@ -212,51 +228,47 @@ function ProjectShortcut({ index }: { index: number | undefined }): React.ReactE
 	);
 }
 
-function OverviewShortcut(): React.ReactElement {
-	return <span className="flex w-10 shrink-0 justify-center"><kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-overview">{shortcutLabel('overview', undefined, presentationPlatform())}</kbd></span>;
+function ProjectStateIcon({ attention }: { attention: OperatorAttention }): React.ReactElement {
+	return <ShellIcon aria-hidden="true" className="opacity-70" icon={attention === 'Working' ? Activity01Icon : Moon02Icon} />;
 }
+
+function ProjectStatusIcon({ status }: { status: ShellStatus | null }): React.ReactElement {
+	return status === null ? <ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} /> : <ProjectStateIcon attention={status.attention} />;
+}
+
+export function projectSwitcherTooltipText(catalog: ShellCatalog, name: string, shortcut: string | null, status: ShellStatus | null): string {
+	const action = catalog.projectNavigationLabel === 'Projetos' ? 'acessar projeto' : 'open project';
+	return [name, shortcut === null ? null : `${shortcut}: ${action}`, status?.label ?? null].filter((part): part is string => part !== null).join(' · ');
+}
+
+function OverviewShortcut(): React.ReactElement {
+	return <NavGlyph name="overview" />;
+}
+
+interface ShellStatus { attention: OperatorAttention; label: string; acid: boolean }
 
 interface ProjectSwitcherProps {
 	projects: AppProps['projects'];
 	selection: ReturnType<typeof routeSelection>;
-	status: { label: string; acid: boolean } | null;
+	status: ShellStatus | null;
 	catalog: ShellCatalog;
 }
 
-function CompactProjectSwitcherTrigger({
+function ProjectSwitcherTrigger({
 	selected,
-	selectedShortcut,
 	status,
-}: Pick<ProjectSwitcherProps, 'status'> & {
+	catalog,
+	open,
+}: Pick<ProjectSwitcherProps, 'status' | 'catalog'> & {
 	selected: AppProps['projects'][number] | null;
-	selectedShortcut: number | undefined;
+	open: boolean;
 }): React.ReactElement {
 	return (
 		<>
 			{selected === null
 				? <span data-slot="project-switcher-placeholder"><ShellIcon className="opacity-70" icon={FolderManagementIcon} /></span>
-				: <ProjectShortcut index={selectedShortcut} />}
-			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
-			{status === null ? null : <span className="sr-only">{status.label}</span>}
-		</>
-	);
-}
-
-function ExpandedProjectSwitcherTrigger({
-	selected,
-	selectedShortcut,
-	status,
-	catalog,
-}: Pick<ProjectSwitcherProps, 'status' | 'catalog'> & {
-	selected: AppProps['projects'][number] | null;
-	selectedShortcut: number | undefined;
-}): React.ReactElement {
-	return (
-		<>
-			{selected === null
-				? <span aria-hidden="true" className="size-4 shrink-0" />
-				: <ProjectShortcut index={selectedShortcut} />}
-			<span className="grid min-w-0 flex-1 leading-tight">
+				: <ProjectStatusIcon status={status} />}
+			<span className={cn('grid min-w-0 flex-1 leading-tight', !open && 'opacity-0')}>
 				<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
 					{selected?.name ?? catalog.switcherPlaceholder}
 				</span>
@@ -267,7 +279,8 @@ function ExpandedProjectSwitcherTrigger({
 					</span>
 				)}
 			</span>
-			<ShellIcon className="opacity-70" icon={UnfoldMoreIcon} />
+			<span className={cn(!open && 'opacity-0')}><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
+			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
 		</>
 	);
 }
@@ -343,24 +356,28 @@ export function ProjectSwitcher({
 	const selectedIndex = selected === null ? undefined : projects.indexOf(selected);
 	const selectedShortcut = selectedIndex === undefined || selectedIndex > 8 ? undefined : selectedIndex;
 	const selectedName = selected?.name ?? catalog.switcherPlaceholder;
+	const [menuOpen, setMenuOpen] = useState(false);
+	const statusId = useId();
+	const shortcut = selectedShortcut === undefined ? null : shortcutLabel('project', selectedShortcut, presentationPlatform());
+	const tooltipContent = projectSwitcherTooltipText(catalog, selectedName, shortcut, status);
 	return (
 		<>
-			<Menu.Root>
-				<Menu.Trigger
+			<Tooltip.Root disabled={menuOpen}>
+				<Menu.Root onOpenChange={setMenuOpen}>
+					<Tooltip.Trigger render={<Menu.Trigger
 					aria-label={compact ? selectedName : undefined}
+					aria-describedby={status === null ? undefined : statusId}
 					aria-keyshortcuts={selectedShortcut === undefined ? undefined : projectShortcutAria(selectedShortcut)}
-					className={compact
-						? cn(RAIL_NAV_ITEM_CLASS, 'relative data-[popup-open]:bg-sidebar-accent')
-						: cn(NAV_LINK_CLASS, 'w-full text-left data-[popup-open]:bg-sidebar-accent')}
+					className={cn(NAV_LINK_CLASS, 'relative data-[popup-open]:bg-sidebar-accent')}
 					data-slot="project-switcher"
-					title={compact ? selectedName : undefined}
-				>
-					{compact
-						? <CompactProjectSwitcherTrigger selected={selected} selectedShortcut={selectedShortcut} status={status} />
-						: <ExpandedProjectSwitcherTrigger catalog={catalog} selected={selected} selectedShortcut={selectedShortcut} status={status} />}
-				</Menu.Trigger>
+					/>}>
+					<ProjectSwitcherTrigger catalog={catalog} open={!compact} selected={selected} status={status} />
+					</Tooltip.Trigger>
 				<ProjectSwitcherMenu catalog={catalog} projects={projects} selection={selection} />
-			</Menu.Root>
+				</Menu.Root>
+				{status === null ? null : <span className="sr-only" id={statusId}>{status.label}</span>}
+				<Tooltip.Portal><Tooltip.Positioner className="z-50" side="right" sideOffset={8}><Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5">{tooltipContent}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal>
+			</Tooltip.Root>
 		{/* The registry as plain links (sr-only): a portal never reaches the
 		 * static render, so without this nav the closed menu would drop
 		 * every registry link from the no-JS document and from keyboard
@@ -375,70 +392,82 @@ export function ShellNavigation({
 	projects,
 	selection,
 	status,
+	open,
 }: {
 	catalog: ShellCatalog;
 	projects: AppProps['projects'];
 	selection: ReturnType<typeof routeSelection>;
-	status: { label: string; acid: boolean } | null;
+	status: ShellStatus | null;
+	open: boolean;
 }): React.ReactElement {
 	/* Overview is global. The project switcher begins its own contextual group;
 	 * project surfaces are a semantic child list, visually nested on desktop. */
 	return (
-		<nav aria-label={catalog.operatorNavigationLabel}>
+		<nav aria-label={catalog.operatorNavigationLabel} className="lg:flex lg:flex-1 lg:flex-col">
 			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
 				<li className="shrink-0">
+					<SidebarTooltip content={<>{catalog.routeLabels.overview} · <span className="font-mono">{shortcutLabel('overview', undefined, presentationPlatform())}</span></>}>
 					<a
+						aria-label={open ? undefined : catalog.routeLabels.overview}
 						aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights' ? 'page' : undefined}
 						aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria}
 						className={cn(
-							NAV_LINK_CLASS,
+							open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
 							(selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights') && 'bg-sidebar-accent text-sidebar-accent-foreground',
 						)}
 						href="/overview"
 					>
-						<OverviewShortcut /><span>{catalog.routeLabels.overview}</span>
+						<OverviewShortcut />{open ? <span>{catalog.routeLabels.overview}</span> : null}
 					</a>
+					</SidebarTooltip>
 				</li>
 			</ul>
-			<div className="mt-3 lg:mt-5" data-slot="project-navigation">
-				<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
+			<div className="mt-3 lg:mt-5 lg:flex lg:flex-1 lg:flex-col" data-slot="project-navigation">
+				<ul className="flex flex-wrap gap-1 lg:flex lg:flex-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
 				<li className="w-full min-w-0" data-slot="project-switcher-item">
 					<ProjectSwitcher
 						catalog={catalog}
 						projects={projects}
 						selection={selection}
 						status={status}
+						compact={!open}
 					/>
 					{selection.projectId === null ? null : (
 						<ul className="flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5 lg:pl-2" data-slot="project-surface-navigation">
 							{SURFACES.map((surface) => (
 								<li className="shrink-0" key={surface.surface}>
+									<SidebarTooltip content={catalog.routeLabels[surface.label]}>
 									<a
+										aria-label={open ? undefined : catalog.routeLabels[surface.label]}
 										aria-current={surface.surface === selection.surface ? 'page' : undefined}
 										className={cn(
-											NAV_LINK_CLASS,
+											open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
 											surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
 										)}
 										href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
 									>
-										<NavGlyph name={surface.surface} /><span>{catalog.routeLabels[surface.label]}</span>
+										<NavGlyph name={surface.surface} />{open ? <span>{catalog.routeLabels[surface.label]}</span> : null}
 									</a>
+									</SidebarTooltip>
 								</li>
 							))}
 						</ul>
 					)}
 				</li>
-				<li className="shrink-0 lg:hidden">
+				<li className={cn('shrink-0', open ? 'lg:mt-auto' : 'lg:mt-auto')}>
+					<SidebarTooltip content={catalog.routeLabels.globalSettings}>
 					<a
+						aria-label={open ? undefined : catalog.routeLabels.globalSettings}
 						aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
 						className={cn(
-							NAV_LINK_CLASS,
+							open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
 							selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground',
 						)}
 						href="/settings"
 					>
-						<NavGlyph name="globalSettings" /><span>{catalog.routeLabels.globalSettings}</span>
+						<NavGlyph name="globalSettings" />{open ? <span>{catalog.routeLabels.globalSettings}</span> : null}
 					</a>
+					</SidebarTooltip>
 				</li>
 				</ul>
 			</div>
@@ -658,71 +687,11 @@ function shellStatus(
 	selected: RegisteredProjectView | null,
 	run: RunView | null,
 	catalog: RunInspectorCatalog,
-	): { label: string; acid: false } | null {
+	): ShellStatus | null {
 	if (selected === null || (!selected.current && selected.readiness !== 'ready')) return null;
 	const attention = attentionOf(run, false);
 	const normalAttention = attention === 'Working' ? 'Working' : 'Idle';
-	return { label: catalog.attentionLabels[normalAttention], acid: false };
-}
-
-/**
- * The collapsed desktop shell turns the rail into compact operational
- * navigation. The mobile fallback retains its mark and attention signal.
- */
-export function ShellRail({
-	catalog,
-	projects,
-	selection,
-	status,
-}: {
-	catalog: ShellCatalog;
-	projects: AppProps['projects'];
-	selection: ReturnType<typeof routeSelection>;
-	status: { label: string; acid: boolean } | null;
-}): React.ReactElement {
-	const projectId = selection.projectId;
-	return (
-		<header className="flex shrink-0 items-center gap-3 p-4 lg:h-full lg:w-18 lg:flex-col lg:items-center lg:gap-2">
-			<nav aria-label={catalog.operatorNavigationLabel} className="hidden lg:flex lg:w-full lg:flex-1 lg:flex-col lg:items-center lg:gap-1">
-				<a
-					aria-current={selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights' ? 'page' : undefined}
-					aria-label={catalog.routeLabels.overview}
-					aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria}
-					className={cn(RAIL_NAV_ITEM_CLASS, (selection.surface === 'overview' || selection.surface === 'overview-runs' || selection.surface === 'overview-queues' || selection.surface === 'overview-insights') && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-					href="/overview"
-					title={catalog.routeLabels.overview}
-				>
-					<OverviewShortcut />
-				</a>
-				<ProjectSwitcher catalog={catalog} compact projects={projects} selection={selection} status={status} />
-				{projectId === null ? null : SURFACES.map((surface) => (
-					<a
-						aria-current={surface.surface === selection.surface ? 'page' : undefined}
-						aria-label={catalog.routeLabels[surface.label]}
-						className={cn(RAIL_NAV_ITEM_CLASS, surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-						href={`/projects/${encodeURIComponent(projectId)}${surface.suffix}`}
-						key={surface.surface}
-						title={catalog.routeLabels[surface.label]}
-					>
-						<NavGlyph name={surface.surface} />
-					</a>
-				))}
-				<a
-					aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
-					aria-label={catalog.routeLabels.globalSettings}
-					className={cn(RAIL_NAV_ITEM_CLASS, 'mt-auto', selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-					href="/settings"
-					title={catalog.routeLabels.globalSettings}
-				>
-					<NavGlyph name="globalSettings" />
-				</a>
-			</nav>
-			<div className="flex size-6 items-center lg:mt-auto lg:size-8 lg:justify-center" data-slot="sidebar-signature">
-				<GateshipMark className="size-6 translate-x-px lg:size-5 lg:translate-x-0" portal />
-			</div>
-			{status?.acid ? <span aria-hidden="true" className="size-2 rounded-full bg-attention lg:hidden" /> : null}
-		</header>
-	);
+	return { attention: normalAttention, label: catalog.attentionLabels[normalAttention], acid: false };
 }
 
 export function ShellSidebar({
@@ -752,23 +721,13 @@ export function ShellSidebar({
 	const selection = routeSelection(route, currentId, selectedProjectId);
 	const humanVersion = humanVersionOf(version);
 	const status = shellStatus(projects.find((project) => project.id === selection.projectId) ?? null, run, runInspectorCatalog);
-	if (!open) {
-		return (
-			<ShellRail
-				catalog={catalog}
-				projects={projects}
-				selection={selection}
-				status={status}
-			/>
-		);
-	}
 	/* The shell chrome deepens its own --sidebar one step (operator decision,
 	 * 2026-08-25): the body canvas keeps the global token, so the sidebar
 	 * separates from the content by fill, not only by its hairline border.
 	 * @theme inline makes bg-sidebar read the var in cascade, so the
 	 * element-level override is all it takes. */
 	return (
-		<header className="scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:w-64 lg:gap-4 lg:overflow-y-auto lg:p-6 lg:pt-8">
+		<header className={cn('scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-18 lg:gap-4')}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
@@ -778,21 +737,14 @@ export function ShellSidebar({
 				projects={projects}
 				selection={selection}
 				status={status}
+				open={open}
 			/>
-			<div className="hidden lg:contents">
-			</div>
-			<nav aria-label={catalog.routeLabels.globalSettings} className="hidden lg:mt-auto lg:block">
-				<a
-					aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
-					className={cn(NAV_LINK_CLASS, selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground')}
-					href="/settings"
-				>
-					<NavGlyph name="globalSettings" /><span className="min-w-0 overflow-hidden text-ellipsis">{catalog.routeLabels.globalSettings}</span>
-				</a>
-			</nav>
-			<div className="hidden items-center gap-2 px-3 lg:flex" data-slot="sidebar-signature">
-				<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
-				{version === '' ? null : <span className="font-mono text-[10px] text-sidebar-foreground/50">v{humanVersion}</span>}
+			<div className="hidden items-center gap-2 px-3 lg:mt-auto lg:flex" data-slot="sidebar-signature">
+				<GateshipMark className="size-5" portal />
+				<span className={cn('flex items-center gap-2', !open && 'opacity-0')}>
+					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
+					{version === '' ? null : <span className="font-mono text-[10px] text-sidebar-foreground/50">v{humanVersion}</span>}
+				</span>
 			</div>
 		</header>
 	);
