@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:26.479Z",
-  "updatedAt": "2026-09-10T19:43:02.859Z",
+  "updatedAt": "2026-09-10T20:39:31.786Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -38,29 +38,24 @@
         "Como integrar verificações ao fluxo atual do projeto sem novo estado de orquestração?"
       ],
       "sourceClasses": [
-        "official-documentation",
         "primary-code"
       ],
       "freshness": {
         "mode": "current",
-        "resolvedAt": "2026-09-10T18:37:34.696Z"
+        "resolvedAt": "2026-09-10T20:38:58.000Z"
       },
       "receipts": [
         {
-          "url": "https://playwright.dev/docs/test-snapshots",
-          "contentHash": "sha256:a940baeb842be894fb8864731377ed28f5086c27bc68fce66fa54faffd9ef358",
-          "fetchedAt": "2026-09-10T18:37:35.571Z",
-          "sourceType": "official-documentation",
-          "claim": "Screenshots podem ser comparados com referências; diferenças de sistema e ambiente afetam o resultado.",
-          "applicability": "Fixar ambiente e dados; revisar diferenças intencionais, sem confundir estabilidade com beleza."
-        },
-        {
-          "url": "https://ui.shadcn.com/docs/registry/registry-json",
-          "contentHash": "sha256:dfb2407eb4970d70119b65786ba414183afbadad3771a4376da5ff577a0eb4af",
-          "fetchedAt": "2026-09-10T18:37:34.974Z",
-          "sourceType": "official-documentation",
-          "claim": "registry.json descreve itens distribuíveis de um registry; não é um teste de conformidade visual.",
-          "applicability": "Adiar registry privado; usar contexto, componentes próprios e verificação de browser."
+          "url": "https://raw.githubusercontent.com/microsoft/playwright/efb0761d304adfda66ad91f6596ac33eb1036ec9/docs/src/test-snapshots-js.md",
+          "contentHash": "sha256:d4cef399c4e4941e0dbad92adf7bfd48b5e7af36a6d63b1856144edfd00de823",
+          "fetchedAt": "2026-09-10T20:38:58.000Z",
+          "sourceType": "primary-code",
+          "claim": "Como obter screenshots reproduzíveis e evidências revisáveis sem congelar erros existentes ou restringir novos designs? Como integrar verificações ao fluxo atual do projeto sem novo estado de orquestração?",
+          "applicability": "Produzir evidência revisável dentro dos comandos de verificação já existentes.",
+          "resolvedRef": {
+            "kind": "commit",
+            "value": "efb0761d304adfda66ad91f6596ac33eb1036ec9"
+          }
         }
       ]
     }
