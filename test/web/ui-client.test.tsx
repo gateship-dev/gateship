@@ -123,7 +123,8 @@ import {
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
 import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
-import { insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
+import { insightUrl, normalizedCohortOffset, queryFromUrl as insightsQueryFromUrl, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
+import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
 import {
 	beginOperationalReads,
 	beginOperationalRefresh,
@@ -3374,11 +3375,27 @@ describe('operator shell', () => {
 		expect(normalizedCohortOffset({ limit: 10, offset: 10, returned: 0, total: 0 })).toBeNull();
 	});
 	test('resets Insights pagination when removing the project filter', () => {
-		const next = updatedInsightsQuery({ window: 'all', projectId: 'project-1', cohortOffset: 20 }, { projectId: undefined });
-		expect(next).toEqual({ window: 'all', projectId: undefined, cohortOffset: 0 });
+		const next = updatedInsightsQuery({ window: 'all', projectId: 'project-1', cohortLimit: 10, cohortOffset: 20 }, { projectId: undefined });
+		expect(next).toEqual({ window: 'all', projectId: undefined, cohortLimit: 10, cohortOffset: 0 });
 		expect(insightUrl(next.window, next.projectId, next.cohortOffset)).toBe('/overview/insights?window=all');
-		const nextPage = updatedInsightsQuery({ window: 'all', projectId: 'project-1', cohortOffset: 0 }, { cohortOffset: 10 });
+		const nextPage = updatedInsightsQuery({ window: 'all', projectId: 'project-1', cohortLimit: 10, cohortOffset: 0 }, { cohortOffset: 10 });
 		expect(insightUrl(nextPage.window, nextPage.projectId, nextPage.cohortOffset)).toBe('/overview/insights?window=all&projectId=project-1&cohortOffset=10');
+	});
+	test('restaura tamanhos de página válidos, omite padrões e descarta valores inválidos nas URLs', () => {
+		expect(overviewRunsQueryFromUrl({ location: { search: '?limit=25&offset=50' } }).limit).toBe(25);
+		expect(overviewRunsQueryFromUrl({ location: { search: '?limit=0' } }).limit).toBe(20);
+		expect(insightsQueryFromUrl({ location: { search: '?cohortLimit=7&cohortOffset=14' } })).toMatchObject({ cohortLimit: 7, cohortOffset: 14 });
+		expect(insightsQueryFromUrl({ location: { search: '?cohortLimit=-1' } }).cohortLimit).toBe(10);
+		expect(insightUrl('all', 'project-1', 0, undefined, undefined, 10)).toBe('/overview/insights?window=all&projectId=project-1');
+	expect(insightUrl('all', 'project-1', 14, undefined, undefined, 7)).toBe('/overview/insights?window=all&projectId=project-1&cohortOffset=14&cohortLimit=7');
+	});
+	test('reinicia a página de coortes quando o tamanho muda', () => {
+		const next = updatedInsightsQuery({ window: 'all', cohortLimit: 10, cohortOffset: 20 }, { cohortLimit: 25 });
+		expect(next).toMatchObject({ cohortLimit: 25, cohortOffset: 0 });
+	});
+	test('reinicia a página ao remover qualquer ordenação de coortes', () => {
+		expect(updatedInsightsQuery({ window: 'all', cohortLimit: 10, cohortOffset: 20, cohortSortBy: 'sampleSize' }, { cohortSortBy: undefined })).toMatchObject({ cohortOffset: 0, cohortSortBy: undefined });
+		expect(updatedInsightsQuery({ window: 'all', cohortLimit: 10, cohortOffset: 20, cohortSortDirection: 'asc' }, { cohortSortDirection: undefined })).toMatchObject({ cohortOffset: 0, cohortSortDirection: undefined });
 	});
 
 	test('Insights renders localized empty and loading states for both locales', () => {

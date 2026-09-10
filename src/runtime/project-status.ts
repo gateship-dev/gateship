@@ -268,11 +268,18 @@ export interface HistoricalOverviewFilters {
 	model?: string;
 	role?: 'orchestrator' | 'executor' | 'reviewer';
 	effort?: string;
+	cohortSortBy?: CohortSort;
+	cohortSortDirection?: SortDirection;
 }
+
+export type CohortSort = 'latestTerminalRunAt' | 'sampleSize' | 'workflowRevision' | 'specVersion';
+export type SortDirection = 'asc' | 'desc';
 
 export interface HistoricalOverviewPagination {
 	cohortLimit?: number;
 	cohortOffset?: number;
+	cohortSortBy?: CohortSort;
+	cohortSortDirection?: SortDirection;
 }
 
 export const COHORT_DEFAULT_LIMIT = 10;
@@ -619,11 +626,24 @@ function cohortPagination(pagination: HistoricalOverviewPagination = {}): { limi
 	return { limit, offset };
 }
 
-function paginateHistoricalOverview(overview: HistoricalOverview, pagination: HistoricalOverviewPagination | null = {}): HistoricalOverview {
-	if (pagination === null) return { ...overview, cohortsPage: { limit: overview.cohorts.length, offset: 0, returned: overview.cohorts.length, total: overview.cohorts.length } };
+function sortHistoricalCohorts(cohorts: HistoricalCohort[], sortBy: CohortSort = 'latestTerminalRunAt', direction: SortDirection = 'desc'): HistoricalCohort[] {
+	const value = (cohort: HistoricalCohort): string | number | null => sortBy === 'sampleSize' ? cohort.sampleSize : sortBy === 'workflowRevision' ? cohort.workflowRevision : sortBy === 'specVersion' ? cohort.specVersion : cohort.latestTerminalRunAt;
+	const compare = (left: string | number | null, right: string | number | null): number => {
+		if (left === null && right === null) return 0;
+		if (left === null) return 1;
+		if (right === null) return -1;
+		const result = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right));
+		return direction === 'asc' ? result : -result;
+	};
+	return cohorts.sort((left, right) => compare(value(left), value(right)) || left.cohortId.localeCompare(right.cohortId));
+}
+
+function paginateHistoricalOverview(overview: HistoricalOverview, pagination: HistoricalOverviewPagination | null = {}, sortBy?: CohortSort, sortDirection?: SortDirection): HistoricalOverview {
+	const sorted = sortHistoricalCohorts([...overview.cohorts], sortBy, sortDirection);
+	if (pagination === null) return { ...overview, cohorts: sorted, cohortsPage: { limit: sorted.length, offset: 0, returned: sorted.length, total: sorted.length } };
 	const { limit, offset } = cohortPagination(pagination);
-	const total = overview.cohorts.length;
-	return { ...overview, cohorts: overview.cohorts.slice(offset, offset + limit), cohortsPage: { limit, offset, returned: Math.min(limit, Math.max(0, total - offset)), total } };
+	const total = sorted.length;
+	return { ...overview, cohorts: sorted.slice(offset, offset + limit), cohortsPage: { limit, offset, returned: Math.min(limit, Math.max(0, total - offset)), total } };
 }
 
 function median(values: readonly number[]): number | null {
@@ -822,7 +842,7 @@ function historicalOverview(
 	result.configurations.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 	result.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
 	result.cohorts = historicalCohorts(selected);
-	return paginateHistoricalOverview(result, pagination);
+	return paginateHistoricalOverview(result, pagination, filters.cohortSortBy, filters.cohortSortDirection);
 }
 
 function runDate(value: string): string | null {
@@ -1001,7 +1021,7 @@ export function readProjectOperationalOverview(
 		.filter((overview): overview is HistoricalOverview => overview !== null);
 	// Re-aggregate from the same read-only histories to preserve project-level
 	// coverage while keeping the product view free of unavailable databases.
-	const productOverview = paginateHistoricalOverview(combineHistoricalOverviews(availableHistory, window), pagination);
+	const productOverview = paginateHistoricalOverview(combineHistoricalOverviews(availableHistory, window), pagination, pagination.cohortSortBy, pagination.cohortSortDirection);
 	const backlog = { idea: 0, specified: 0, planned: 0 };
 	let readyProjects = 0;
 	let nonTerminalRuns = 0;
@@ -1035,7 +1055,7 @@ export function readProjectOperationalOverview(
 			...project,
 			overview: project.overview.overview === null
 				? project.overview
-				: { ...project.overview, overview: paginateHistoricalOverview(project.overview.overview, pagination) },
+				: { ...project.overview, overview: paginateHistoricalOverview(project.overview.overview, pagination, pagination.cohortSortBy, pagination.cohortSortDirection) },
 		})),
 	};
 }

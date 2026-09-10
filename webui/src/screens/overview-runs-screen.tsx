@@ -21,10 +21,21 @@ function browserRuntime(): OverviewBrowserRuntime {
 	return globalThis as unknown as OverviewBrowserRuntime;
 }
 
-function queryFromUrl(runtime = browserRuntime()): OverviewRunsQuery {
+const RUN_STATES = new Set(['queued','working','verify','review','full-verify','ready-to-ship','shipping','done','waiting-user','waiting-provider','failed','interrupted','cancelled']);
+const RUN_SORT_FIELDS = new Set(['updatedAt','createdAt','projectName','issueId','state','providerId','duration','cost']);
+function optionalValue(value: string | undefined, allowed: ReadonlySet<string>): string | undefined { return value !== undefined && allowed.has(value) ? value : undefined; }
+function positiveOrDefault(value: string | undefined, fallback: number): number { const parsed = Number(value ?? fallback); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; }
+function nonNegativeOrDefault(value: string | undefined): number { const parsed = Number(value ?? 0); return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0; }
+
+export function queryFromUrl(runtime = browserRuntime()): OverviewRunsQuery {
 	const params = new URLSearchParams(runtime.location?.search ?? '');
 	const value = (key: string): string | undefined => params.get(key) ?? undefined;
-	return { projectId: value('projectId'), state: value('state') as OverviewRunsQuery['state'], providerId: value('providerId') as OverviewRunsQuery['providerId'], period: value('period') as OverviewRunsQuery['period'], search: value('search'), limit: 20, offset: Number(value('offset') ?? 0) || 0 };
+	const state = optionalValue(value('state'), RUN_STATES) as OverviewRunsQuery['state'];
+	const providerId = optionalValue(value('providerId'), new Set(['claude', 'codex'])) as OverviewRunsQuery['providerId'];
+	const period = optionalValue(value('period'), new Set(['7d', '30d', 'all'])) as OverviewRunsQuery['period'];
+	const sortBy = optionalValue(value('sortBy'), RUN_SORT_FIELDS) as OverviewRunsQuery['sortBy'];
+	const sortDirection = optionalValue(value('sortDirection'), new Set(['asc', 'desc'])) as OverviewRunsQuery['sortDirection'];
+	return { projectId: value('projectId'), state, providerId, period, search: value('search'), sortBy, sortDirection, limit: positiveOrDefault(value('limit'), 20), offset: nonNegativeOrDefault(value('offset')) };
 }
 
 function duration(ms: number | null): string {

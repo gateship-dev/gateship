@@ -13,6 +13,8 @@ export const RUN_OVERVIEW_MAX_LIMIT = 100;
 export const RUN_OVERVIEW_MAX_OFFSET = 10_000;
 
 export type RunOverviewPeriod = '7d' | '30d' | 'all';
+export type RunOverviewSort = 'updatedAt' | 'createdAt' | 'projectName' | 'issueId' | 'state' | 'providerId' | 'duration' | 'cost';
+export type SortDirection = 'asc' | 'desc';
 
 export interface RunOverviewFilters {
 	limit?: number;
@@ -22,6 +24,8 @@ export interface RunOverviewFilters {
 	providerId?: 'claude' | 'codex';
 	period?: RunOverviewPeriod;
 	search?: string;
+	sortBy?: RunOverviewSort;
+	sortDirection?: SortDirection;
 }
 
 export interface RunOverviewRow {
@@ -65,12 +69,59 @@ export interface RunOverviewReadOptions {
 	now?: () => number;
 }
 
+function parseRunOverviewPageNumber(params: URLSearchParams, name: 'limit' | 'offset'): number | undefined {
+	const value = params.get(name);
+	if (value === null) return undefined;
+	const parsed = Number(value);
+	const valid = Number.isSafeInteger(parsed) && (name === 'limit' ? parsed > 0 : parsed >= 0);
+	if (!valid) throw new Error(`${name} must be a safe integer ${name === 'limit' ? 'greater than 0' : 'greater than or equal to 0'}.`);
+	return parsed;
+}
+
+function validateRunOverviewParams(params: URLSearchParams): void {
+	const state = params.get('state');
+	const providerId = params.get('providerId');
+	const period = params.get('period');
+	const sortBy = params.get('sortBy');
+	const sortDirection = params.get('sortDirection');
+	if (state !== null && !isRunState(state)) throw new Error('state must be a valid run state.');
+	if (providerId !== null && providerId !== 'claude' && providerId !== 'codex') throw new Error('providerId must be claude or codex.');
+	if (period !== null && period !== '7d' && period !== '30d' && period !== 'all') throw new Error('period must be 7d, 30d or all.');
+	const sortFields: readonly RunOverviewSort[] = ['updatedAt', 'createdAt', 'projectName', 'issueId', 'state', 'providerId', 'duration', 'cost'];
+	if (sortBy !== null && !sortFields.includes(sortBy as RunOverviewSort)) throw new Error('sortBy must be a valid run field.');
+	if (sortDirection !== null && sortDirection !== 'asc' && sortDirection !== 'desc') throw new Error('sortDirection must be asc or desc.');
+}
+
 function boundedPage(filters: RunOverviewFilters): { limit: number; offset: number } {
 	const limit = Number.isSafeInteger(filters.limit) && (filters.limit ?? 0) > 0
 		? Math.min(filters.limit!, RUN_OVERVIEW_MAX_LIMIT) : RUN_OVERVIEW_DEFAULT_LIMIT;
 	const offset = Number.isSafeInteger(filters.offset) && (filters.offset ?? 0) >= 0
 		? Math.min(filters.offset!, RUN_OVERVIEW_MAX_OFFSET) : 0;
 	return { limit, offset };
+}
+
+function compareNullable(left: string | number | null, right: string | number | null, direction: SortDirection): number {
+	if (left === null && right === null) return 0;
+	if (left === null) return 1;
+	if (right === null) return -1;
+	const result = typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right));
+	return direction === 'asc' ? result : -result;
+}
+
+function compareRuns(left: RunOverviewRow, right: RunOverviewRow, sortBy: RunOverviewSort, direction: SortDirection): number {
+	const value = (row: RunOverviewRow): string | number | null => {
+		switch (sortBy) {
+			case 'updatedAt': return row.updatedAt;
+			case 'createdAt': return row.createdAt;
+			case 'projectName': return row.projectName;
+			case 'issueId': return row.issueId;
+			case 'state': return row.state;
+			case 'providerId': return row.providerId;
+			case 'duration': return row.evaluation.wallTimeMs;
+			case 'cost': return row.cost.totalCostUsd;
+		}
+	};
+	return compareNullable(value(left), value(right), direction) || left.projectId.localeCompare(right.projectId) || left.runId.localeCompare(right.runId);
 }
 
 function coverageOf(item: PersistedRunHistory): RunOverviewRow['coverage'] {
@@ -140,9 +191,7 @@ export function readRunOverview(
 			});
 		}
 	}
-	rows.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)
-		|| left.projectId.localeCompare(right.projectId)
-		|| left.runId.localeCompare(right.runId));
+	rows.sort((left, right) => compareRuns(left, right, filters.sortBy ?? 'updatedAt', filters.sortDirection ?? 'desc'));
 	const { limit, offset } = boundedPage(filters);
 	return {
 		runs: rows.slice(offset, offset + limit),
@@ -152,29 +201,20 @@ export function readRunOverview(
 }
 
 export function parseRunOverviewFilters(params: URLSearchParams): RunOverviewFilters {
+	validateRunOverviewParams(params);
 	const state = params.get('state');
 	const providerId = params.get('providerId');
-	if (state !== null && !isRunState(state)) throw new Error('state must be a valid run state.');
-	if (providerId !== null && providerId !== 'claude' && providerId !== 'codex') {
-		throw new Error('providerId must be claude or codex.');
-	}
 	const period = params.get('period');
-	if (period !== null && period !== '7d' && period !== '30d' && period !== 'all') {
-		throw new Error('period must be 7d, 30d or all.');
-	}
-	const number = (name: string): number | undefined => {
-		const value = params.get(name);
-		if (value === null) return undefined;
-		const parsed = Number(value);
-		if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be an integer.`);
-		return parsed;
-	};
+	const sortBy = params.get('sortBy');
+	const sortDirection = params.get('sortDirection');
 	return {
-		limit: number('limit'), offset: number('offset'),
+		limit: parseRunOverviewPageNumber(params, 'limit'), offset: parseRunOverviewPageNumber(params, 'offset'),
 		...(params.get('projectId') === null ? {} : { projectId: params.get('projectId')! }),
-		...(state === null ? {} : { state }),
-		...(providerId === null ? {} : { providerId }),
-		...(period === null ? {} : { period }),
+		...(state === null ? {} : { state: state as RunState }),
+		...(providerId === null ? {} : { providerId: providerId as RunOverviewFilters['providerId'] }),
+		...(period === null ? {} : { period: period as RunOverviewPeriod }),
 		...(params.get('search') === null ? {} : { search: params.get('search')! }),
+		...(sortBy === null ? {} : { sortBy: sortBy as RunOverviewSort }),
+		...(sortDirection === null ? {} : { sortDirection: sortDirection as SortDirection }),
 	};
 }
