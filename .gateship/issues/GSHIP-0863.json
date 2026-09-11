@@ -1,0 +1,32 @@
+{
+  "id": "GSHIP-863",
+  "title": "Notificações: isolar testes de configuração real e impedir envios externos",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T02:41:22.795Z",
+  "updatedAt": "2026-09-11T02:41:22.795Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Tornar os testes de e-mail e ntfy independentes do diretório de execução e das configurações locais, impedindo leitura de credenciais reais ou envio externo e eliminando os dois falsos erros encontrados na auditoria.",
+    "acceptance": [
+      "Todo teste de notificação injeta cwd/stateDir/legacyStateDir temporários, env explícito e transporte simulado; nenhum caso depende de process.cwd(), pastas .gship reais, HOME do operador ou credenciais do serviço.",
+      "Corrigir os casos sends exactly one request per qualifying transition e a network failure is swallowed: hoje o cwd real permite carregar configuração Resend e gera duas chamadas simuladas quando o teste espera uma ntfy.",
+      "Adicionar regressão com configuração Resend sintética no diretório ambiente e fixture ntfy separada, provando que cada teste consulta apenas seus locais explícitos e produz só os canais esperados.",
+      "Testes falham antes de qualquer acesso externo se transporte não for simulado; guardas não interferem nos demais testes. Credenciais e destinos são fictícios, sem conteúdo de arquivos reais em logs, snapshots ou asserts.",
+      "Executar a suite a partir da raiz do repositório e de diretório temporário vazio com os mesmos resultados; preservar casos de configuração por arquivo/env, ambos os canais, falhas de entrega e teste manual.",
+      "Manter o código/configuração de produção intactos salvo seam mínimo de injeção comprovadamente necessário; não corrigir os testes desabilitando Resend/ntfy reais ou removendo cobertura."
+    ],
+    "boundaries": [
+      "Não ler, copiar, apagar, renomear ou alterar credenciais do operador para fazer testes passarem.",
+      "Não enviar notificações reais nem acionar endpoint de teste do serviço.",
+      "Sem dependência de GSHIP-855 ativa; execução em worktree própria pelo fluxo normal.",
+      "Esta issue deve preceder a verificação final da correção de escalada, que usa os mesmos testes."
+    ],
+    "verify": [
+      "bun test test/runtime/remote-notifier.test.ts test/web/notifications.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
