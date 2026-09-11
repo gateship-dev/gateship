@@ -1,0 +1,39 @@
+{
+  "id": "GSHIP-875",
+  "title": "Fila: configurar dependências e garantir ordem de execução por CLI/API",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T13:39:53.759Z",
+  "updatedAt": "2026-09-11T13:39:53.759Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Expor blockedBy existente por operação tipada e atômica, permitindo travar uma sequência entre issues sem editar arquivos internos; aplicar as mesmas dependências na execução manual e automática.",
+    "acceptance": [
+      "Adicionar issues.set_dependencies {projectId,expectedRevision,changes:[{issueId,blockedBy}],authorization} e endpoint project-scoped correspondente. Cada lista substitui as dependências do alvo; [] remove. Leituras retornam revisão para concorrência e dependências atuais.",
+      "Validar grafo resultante inteiro antes de escrever: rejeitar ciclos diretos/indiretos, autorreferência, IDs desconhecidos/de outro projeto, duplicatas e payload vazio/inválido. Erro aponta IDs/motivo. Dependência inexistente nunca libera execução por fail-open.",
+      "Publicar lote em um único commit pelo intake existente, com suporte a main protegida; expectedRevision desatualizada retorna conflito sem gravação parcial. No-op é idempotente. Preservar campos não alterados; mudança real invalida aprovação somente dos alvos alterados.",
+      "Recusar alteração de alvo com run não terminal, shipped ou abandoned; permitir depender de issue em execução. Serializar mutação/admissão no serviço e revalidar fonte atual antes de executar. Falha de publicação ou corrida não deixa estado local antecipado.",
+      "Aplicar bloqueio em start manual HTTP/CLI e encadeamento automático antes de spawn/worktree. Só stage shipped satisfaz dependência; falha/cancelamento/abandono não libera sucessora. Aprovação não ignora bloqueio; metadados inválidos causam conflito claro.",
+      "Expor blockedBy/unmetBlockers e aprovação nas leituras CLI/API de backlog/fila, incluindo aprovadas bloqueadas; manter nextIssue apenas elegível. Sem reordenar por timestamp/rank ou autoaprovar. Atualizar guide/operations com exemplo fictício de sequência.",
+      "Testar lote válido e reversão [], cadeia fora da ordem numérica, ciclo indireto, revisão obsoleta, falha atômica, alvo ativo, restart, main protegida e início manual/automático bloqueado. Pai shipped libera filho aprovado, não os demais; tudo com Git/providers simulados."
+    ],
+    "boundaries": [
+      "Executar após a GSHIP-873 atual e antes da GSHIP-869, conforme pedido explícito do operador. Não interromper a run atual nem aprovar/iniciar outras issues durante a implementação.",
+      "Reusar grafo blockedBy, intake e runtime existentes; sem scheduler novo, banco paralelo, drag-and-drop ou redesign. Ordenação real decorre de dependências, não da posição visual.",
+      "Manter Luna, modelos/esforços atuais, worktrees isoladas, revisão read-only, autenticação e proteções de main. Não editar .gship ou registros de produção diretamente.",
+      "Implementação não hardcodeia IDs desta rodada nem aplica grafo de produção por script de migração. Depois da entrega, agente externo aplica ordem autorizada pela nova operação.",
+      "Configurar dependências não concede aprovação nem resolve teto pendente da GSHIP-864. Não iniciar sucessora sem aprovação válida e dependências entregues."
+    ],
+    "verify": [
+      "bun test test/issues/graph.test.ts test/issues/plannable.test.ts test/runtime/issue-intake.test.ts test/commands/agent.test.ts",
+      "bun test test/web/issue-intake-api.test.ts test/web/project-scoped-run-api.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "e2ee531246c16e6607cb404596835f402c37601eff8052f0280b0a9f5c0fbc56",
+    "approvedAt": "2026-09-11T13:39:53.759Z"
+  }
+}
