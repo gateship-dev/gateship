@@ -26,6 +26,8 @@
   "scripts": {
     "build:release": "bun run build:ui && bash scripts/build-release.sh",
     "build:ui": "vite build webui",
+    "test:ui:smoke:fixed": "bun scripts/ui-test.ts smoke",
+    "test:ui:visual:fixed": "bun scripts/ui-test.ts visual",
     "prepare": "bun run build:ui",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit && bunx tsc -p webui/tsconfig.app.json --noEmit",
@@ -36,6 +38,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.10",
     "@playwright/cli": "0.1.19",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "latest",
     "@types/react": "^19.2.18",
