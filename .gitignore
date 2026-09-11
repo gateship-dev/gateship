@@ -29,6 +29,7 @@ webui/dist/
 .local/
 .claude/
 .gship-test-tmp/
+test-results/
 
 # Optional, local-only Claude Code source reference.
 claude-code-harness/
