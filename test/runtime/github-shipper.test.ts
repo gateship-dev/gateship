@@ -17,7 +17,7 @@ import {
 import { join } from 'node:path';
 
 import type { CommandResult } from '../../src/runtime/git-runtime.ts';
-import { GithubShipper, type ShipCommandRunner } from '../../src/runtime/github-shipper.ts';
+import { GithubShipper, type GithubPullRequestInput, type ShipCommandRunner } from '../../src/runtime/github-shipper.ts';
 import type { RuntimeShipInput } from '../../src/runtime/run-runtime.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -32,6 +32,7 @@ const UPDATED_SHAS = [
 	'c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3',
 ];
 const PR_URL = 'https://github.com/gateship-dev/gateship/pull/385\n';
+const PROTECTED_BASE_SHA = 'base-1234567890abcdef';
 
 interface RecordedCall {
 	command: string;
@@ -309,12 +310,22 @@ function ghView(repo: FakeRepo): CommandResult {
 		state,
 		mergeStateStatus,
 		headRefOid: repo.prHeadRefOid,
+		baseRefOid: PROTECTED_BASE_SHA,
 		url: PR_URL.trim(),
 		statusCheckRollup: repo.statusCheckRollups[Math.min(
 			repo.views - 1,
 			repo.statusCheckRollups.length - 1,
 		)] ?? [],
 	}));
+}
+
+function protectedPullRequestInput(cwd: string, baseRefOid = PROTECTED_BASE_SHA): GithubPullRequestInput {
+	return {
+		runId: 'intake-CAM-1', evidence: { workflowRevision: 'intake', review: 'not-applicable', fullVerification: 'not-applicable' },
+		cwd, issueId: 'CAM-1', title: 'protected intake', branch: BRANCH, headSha: HEAD_SHA,
+		verificationCommands: [], signal: new AbortController().signal, emit: () => {}, initialCiStatus: 'not-reported' as const,
+		deleteBranch: true, protectedBaseSha: baseRefOid,
+	};
 }
 
 /**
@@ -426,6 +437,37 @@ function disarmCalls(calls: RecordedCall[]): RecordedCall[] {
 }
 
 describe('the GitHub shipper', () => {
+	test('protected PR requests a direct merge and accepts the advanced base after merge', async () => {
+		const repo = createRepo({ openMergeState: 'CLEAN', mergedOnView: Number.MAX_SAFE_INTEGER });
+		const calls: RecordedCall[] = [];
+		const result = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.mergePullRequest(protectedPullRequestInput(createWorkspace()));
+		expect(result).toMatchObject({ outcome: 'merged' });
+		expect(repo.directMergeAttempts).toBe(1);
+		expect(repo.armAttempts).toBe(0);
+		expect(findCall(calls, 'gh', 'pr', 'merge').some((call) => !call.args.includes('--auto'))).toBe(true);
+	});
+
+	test('protected PR recognises an externally merged exact head', async () => {
+		const repo = createRepo({ prNumber: 385, prState: 'MERGED', mergedOnView: Number.MAX_SAFE_INTEGER });
+		const calls: RecordedCall[] = [];
+		const result = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.mergePullRequest(protectedPullRequestInput(createWorkspace()));
+		expect(result).toMatchObject({ outcome: 'merged' });
+		expect(repo.directMergeAttempts).toBe(0);
+	});
+
+	test('protected PR fails on a divergent base without requesting merge', async () => {
+		const repo = createRepo({ openMergeState: 'CLEAN', mergedOnView: Number.MAX_SAFE_INTEGER });
+		const calls: RecordedCall[] = [];
+		const result = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.mergePullRequest(protectedPullRequestInput(createWorkspace(), 'different-base'));
+		expect(result).toMatchObject({ outcome: 'failed' });
+		expect((result as { detail: string }).detail).toContain('protected intake base changed');
+		expect(repo.directMergeAttempts).toBe(0);
+		expect(repo.armAttempts).toBe(0);
+	});
+
 	test('monitors an intake control PR through the same pinned-head lifecycle and deletes it after merge', async () => {
 		const cwd = createWorkspace();
 		const repo = createRepo();
@@ -567,6 +609,7 @@ describe('the GitHub shipper', () => {
 		const events: string[] = [];
 		const payloads = new Map<string, Record<string, unknown> | undefined>();
 		const repo = createRepo({
+			mergedOnView: 2,
 			statusCheckRollups: [[{
 				name: 'lint',
 				status: 'COMPLETED',
@@ -1166,7 +1209,7 @@ describe('the GitHub shipper', () => {
 		const views = findCall(calls, 'gh', 'pr', 'view');
 		expect(views).toHaveLength(3);
 		for (const view of views) {
-			expect(view.args).toContain('state,mergeStateStatus,headRefOid,url,statusCheckRollup');
+			expect(view.args).toContain('state,mergeStateStatus,headRefOid,baseRefOid,url,statusCheckRollup');
 		}
 	});
 

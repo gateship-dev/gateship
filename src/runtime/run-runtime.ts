@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { validateDependencyGraph } from '../issues/graph.ts';
 import { isPlannable } from '../issues/plannable.ts';
-import { profileSpec, validateCurrentResearchAtRunStart, validateSpec, type ResearchContract } from '../issues/spec.ts';
+import { profileSpec, type ResearchContract, validateCurrentResearchAtRunStart, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { type ExecutorHandoffRecord, selectExecutorHandoff } from './agent-executor-router.ts';
 import {
@@ -14,10 +15,11 @@ import type {
 	WorkspaceNotice,
 	WorkspaceRunReference,
 } from './git-workspace.ts';
+import type { GithubPullRequestMerger } from './github-shipper.ts';
 import {
-	emptyModelSettings,
 	type AgentDefaults,
 	type AgentSettingSource,
+	emptyModelSettings,
 	type ModelSettings,
 } from './model-settings.ts';
 import { selectOperatorDecisions } from './operator-decision.ts';
@@ -27,18 +29,18 @@ import {
 	type PullRequestDelivery,
 	selectPullRequestDelivery,
 } from './pull-request-delivery.ts';
+import { HttpResearcher, type ResearchBundle, type ResearchExcerpt, type Researcher, ResearchFailure, validateResearchBundle } from './research.ts';
 import { type RunRoundOrigins, selectRunRoundOrigins } from './round-origin.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
 import type { ProposalDraft, RunProposal } from './run-proposal.ts';
 import { canTransition, isTerminalRunState } from './run-state.ts';
-import { HttpResearcher, type ResearchBundle, ResearchFailure, type Researcher, type ResearchExcerpt, validateResearchBundle } from './research.ts';
 import {
 	type ClaudeUsageWindow,
 	type ProjectBrief,
 	type RunCostSummary,
 	type RunEvent,
-	type RunEventPage,
 	type RunEventClass,
+	type RunEventPage,
 	type RunRecord,
 	RunStore,
 } from './run-store.ts';
@@ -649,14 +651,21 @@ export class RunRuntime {
 		this.#resumeWaitingChainReconciliation();
 	}
 
+	/** The configured publisher is shared with protected-main intake writes. */
+	getIntakeShipper(): GithubPullRequestMerger | undefined {
+		return this.#shipper as GithubPullRequestMerger | undefined;
+	}
+
 	/** Binds the registry-owned defaults for an injected boot runtime. */
 	setAgentDefaultsResolver(agentDefaults: () => AgentDefaults): void {
 		this.#agentDefaults = agentDefaults;
 	}
 
-	#admitIssue(issueId: string, runStartedAt: string): IssueEntry | undefined {
+	#admitIssue(issueId: string, runStartedAt: string, snapshot?: IssueEntry[]): IssueEntry | undefined {
 		let admittedIssue: IssueEntry | undefined;
-		if (this.#listBacklog !== undefined) {
+		if (snapshot !== undefined) {
+			admittedIssue = snapshot.find((entry) => entry.id === issueId);
+		} else if (this.#listBacklog !== undefined) {
 			try {
 				admittedIssue = this.#listBacklog().find((entry) => entry.id === issueId);
 			} catch {
@@ -670,6 +679,28 @@ export class RunRuntime {
 		const temporal = validateCurrentResearchAtRunStart(admittedIssue.spec, runStartedAt, this.#now());
 		if (!temporal.ok) throw new RuntimeConflictError(`${issueId} research is not current at run admission: ${temporal.errors.join(' ')}`);
 		return admittedIssue;
+	}
+
+	#validatedAdmissionBacklog(): IssueEntry[] | undefined {
+		if (this.#listBacklog === undefined) return undefined;
+		let backlog: IssueEntry[];
+		try {
+			backlog = this.#listBacklog();
+		} catch (error) {
+			throw new RuntimeConflictError(`Dependency graph could not be validated: ${errorMessage(error)}`);
+		}
+		const graph = validateDependencyGraph(backlog);
+		if (!graph.ok) throw new RuntimeConflictError(`Invalid dependency graph: ${graph.errors.join(' ')}`);
+		return backlog;
+	}
+
+	#validateStartIssue(issueId: string, runStartedAt: string): IssueEntry | undefined {
+		const backlog = this.#validatedAdmissionBacklog();
+		const issue = this.#admitIssue(issueId, runStartedAt, backlog);
+		if (issue === undefined || backlog === undefined || isPlannable(issue, backlog)) return issue;
+		const blockers = issue.blockedBy.filter((id) => backlog.find((entry) => entry.id === id)?.stage !== 'shipped');
+		if (blockers.length > 0) throw new RuntimeConflictError(`${issueId} is blocked by ${blockers.join(', ')}`);
+		return issue;
 	}
 
 	async #prepareRunWorkspace(runId: string, issueId: string): Promise<string> {
@@ -702,7 +733,7 @@ export class RunRuntime {
 		}
 		const runStartedAt = this.#now();
 		this.#preflight?.(normalizedIssueId);
-		const admittedIssue = this.#admitIssue(normalizedIssueId, runStartedAt);
+		const admittedIssue = this.#validateStartIssue(normalizedIssueId, runStartedAt);
 		const id = this.#newId();
 		const workspacePath = await this.#prepareRunWorkspace(id, normalizedIssueId);
 		let specProfile = profileSpec(undefined);
@@ -2630,6 +2661,8 @@ export class RunRuntime {
 	 */
 	#nextAdmissibleIssueId(): string | null {
 		const backlog = this.#listBacklog?.() ?? [];
+		const graph = validateDependencyGraph(backlog);
+		if (!graph.ok) throw new RuntimeConflictError(`Invalid dependency graph: ${graph.errors.join(' ')}`);
 		return backlog.find((entry) => isPlannable(entry, backlog))?.id ?? null;
 	}
 

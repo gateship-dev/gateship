@@ -83,7 +83,7 @@ export function compareBacklogEntries(a: IssueEntry, b: IssueEntry): number {
 function unmetBlockersOf(issue: IssueEntry, byId: Map<string, IssueEntry>): string[] {
 	return issue.blockedBy.filter((depId) => {
 		const dep = byId.get(depId);
-		return dep !== undefined && dep.stage !== 'shipped';
+		return dep === undefined || dep.stage !== 'shipped';
 	});
 }
 

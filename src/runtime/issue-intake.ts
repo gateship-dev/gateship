@@ -14,6 +14,7 @@ import {
 	validateSpec,
 } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
+import { validateDependencyGraph } from '../issues/graph.ts';
 import {
 	defaultRunGit,
 	evidenceOutputText,
@@ -59,6 +60,9 @@ export interface CreatedOperatorIssue {
 	title: string;
 	sha: string;
 }
+
+export interface DependencyChange { issueId: string; blockedBy: string[] }
+export interface SetDependenciesInput { projectId: string; expectedRevision: string; changes: DependencyChange[]; authorization: string }
 
 export type IssueIntakeErrorCode =
 	| 'invalid-request'
@@ -366,13 +370,14 @@ function intakeControlBranch(issueId: string, headSha: string): string {
 async function publishProtectedEntry(
 	worktree: string,
 	entry: IssueEntry,
-	sha: string,
+	headSha: string,
+	baseSha: string,
 	options: IssueEvidenceExecutionOptions,
 ): Promise<{ kind: 'published'; issue: CreatedOperatorIssue }> {
 	// The head suffix makes the branch stable for a retry of this exact write,
 	// while a later specify/approve/abandon commit for the same issue cannot
 	// accidentally reuse the already-merged pull request from an earlier head.
-	const branch = intakeControlBranch(entry.id, sha);
+	const branch = intakeControlBranch(entry.id, headSha);
 	const controlPushed = git(worktree, [
 		'push', '--quiet', 'origin', `HEAD:refs/heads/${branch}`,
 	]);
@@ -386,15 +391,19 @@ async function publishProtectedEntry(
 		issueId: entry.id,
 		title: entry.title,
 		branch,
-		headSha: sha,
+		headSha,
 		verificationCommands: entry.spec?.verify ?? [],
 		signal: options.signal ?? new AbortController().signal,
 		emit: () => {},
 		initialCiStatus: 'not-reported',
 		deleteBranch: true,
+		protectedBaseSha: baseSha,
 	});
 	if (merged.outcome === 'merged') {
-		return { kind: 'published', issue: { id: entry.id, title: entry.title, sha } };
+		return { kind: 'published', issue: { id: entry.id, title: entry.title, sha: headSha } };
+	}
+	if (merged.outcome === 'failed' && merged.detail.includes('protected intake base changed')) {
+		throw new IssueIntakeError('publish-conflict', merged.detail, 409);
 	}
 	throw commandFailure(
 		'Could not merge the protected intake pull request',
@@ -448,13 +457,127 @@ async function publishEntryAttempt(
 		}
 		if (isPushRace(pushed.stderr)) return { kind: 'retry' };
 		if (requiresPullRequest(pushed.stderr)) {
-			return await publishProtectedEntry(worktree, entry, sha, options);
+			return await publishProtectedEntry(worktree, entry, sha, sourceSha, options);
 		}
 		throw commandFailure('Could not publish the issue', pushed.stderr);
 	} finally {
 		git(cwd, ['worktree', 'remove', '--force', worktree]);
 		rmSync(tempRoot, { recursive: true, force: true });
 	}
+}
+
+function parseDependencyChanges(value: unknown): DependencyChange[] {
+	if (!Array.isArray(value) || value.length === 0) throw new IssueIntakeError('invalid-request', 'changes must be a non-empty list.', 400);
+	return value.map((raw, index) => {
+		if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new IssueIntakeError('invalid-request', `changes[${index}] must be an object.`, 400);
+		const item = raw as Record<string, unknown>;
+		const issueId = requiredString(item['issueId'], `changes[${index}].issueId`);
+		if (!Array.isArray(item['blockedBy'])) throw new IssueIntakeError('invalid-request', `changes[${index}].blockedBy must be a list.`, 400);
+		const blockedBy = item['blockedBy'].map((id) => requiredString(id, `changes[${index}].blockedBy`));
+		if (new Set(blockedBy).size !== blockedBy.length) throw new IssueIntakeError('invalid-request', `${issueId} has duplicate dependencies.`, 400);
+		return { issueId, blockedBy };
+	});
+}
+
+export function parseSetDependenciesInput(value: unknown): SetDependenciesInput {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new IssueIntakeError('invalid-request', 'A JSON object is required.', 400);
+	const input = value as Record<string, unknown>;
+	const projectId = requiredString(input['projectId'], 'projectId');
+	const expectedRevision = requiredString(input['expectedRevision'], 'expectedRevision');
+	const changes = parseDependencyChanges(input['changes']);
+	const authorization = requiredString(input['authorization'], 'authorization');
+	return { projectId, expectedRevision, changes, authorization };
+}
+
+/** Replace several dependency lists in one commit against one immutable source revision. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: atomic intake validation and publication keeps each failure boundary explicit
+export async function setIssueDependencies(
+	cwd: string,
+	rawInput: unknown,
+	ensureIdentity: () => GitIdentityResult = () => ensureGitIdentity(cwd),
+	now: () => string = () => new Date().toISOString(),
+	options: Pick<IssueEvidenceExecutionOptions, 'signal' | 'shipper'> & { activeIssueIds?: readonly string[]; beforeProtectedMerge?: () => void; afterProtectedValidation?: () => void } = {},
+): Promise<{ revision: string; changes: DependencyChange[] }> {
+	const input = parseSetDependenciesInput(rawInput);
+	for (let attempt = 0; attempt < MAX_PUBLISH_ATTEMPTS; attempt += 1) {
+		const sourceSha = refreshRuntimeSource(cwd);
+		if (sourceSha !== input.expectedRevision) throw new IssueIntakeError('publish-conflict', `Backlog revision is ${sourceSha}; expected ${input.expectedRevision}.`, 409);
+		const backlog = readBacklogFromMain(cwd, spawnSync, sourceSha);
+		const byId = new Map(backlog.map((issue) => [issue.id, issue]));
+		const ids = new Set<string>();
+		for (const change of input.changes) {
+			if (ids.has(change.issueId)) throw new IssueIntakeError('invalid-request', `changes contains ${change.issueId} more than once.`, 400);
+			ids.add(change.issueId);
+			const issue = byId.get(change.issueId);
+			if (issue === undefined) throw new IssueIntakeError('issue-not-found', `${change.issueId} does not exist in the backlog.`, 404);
+		}
+		const changed = input.changes.filter((change) => byId.get(change.issueId)!.blockedBy.join('\0') !== change.blockedBy.join('\0'));
+		for (const change of changed) {
+			const issue = byId.get(change.issueId)!;
+			if (options.activeIssueIds?.includes(change.issueId)) throw new IssueIntakeError('issue-run-active', `${change.issueId} is being executed; dependency changes are not allowed while its run is active.`, 409);
+			if (issue.stage === 'shipped' || issue.status === 'abandoned') throw new IssueIntakeError('issue-not-eligible', `${change.issueId} is ${issue.stage}/${issue.status} and cannot change dependencies.`, 409);
+		}
+		const proposed = backlog.map((issue) => {
+			const change = input.changes.find((candidate) => candidate.issueId === issue.id);
+			if (change === undefined) return issue;
+			const updated: IssueEntry = { ...issue, blockedBy: change.blockedBy, updatedAt: now() };
+			delete updated.approval;
+			return updated;
+		});
+		const graph = validateDependencyGraph(proposed);
+		if (!graph.ok) throw new IssueIntakeError('invalid-request', graph.errors.join(' '), 400);
+		if (changed.length === 0) return { revision: sourceSha, changes: [] };
+		const identity = ensureIdentity();
+		if (identity.outcome === 'missing') throw commandFailure('Could not create the commit', identity.detail);
+		const tempRoot = mkdtempSync(join(tmpdir(), 'gship-dependencies-'));
+		const worktree = join(tempRoot, 'checkout');
+		try {
+			const added = git(cwd, ['worktree', 'add', '--quiet', '--detach', worktree, sourceSha]);
+			if (added.exitCode !== 0) throw commandFailure('Could not stage dependency changes', added.stderr);
+			const paths: string[] = [];
+			for (const change of changed) {
+				const issue = proposed.find((candidate) => candidate.id === change.issueId)!;
+				const path = issueFilePath(issue.id);
+				mkdirSync(dirname(join(worktree, path)), { recursive: true });
+				writeFileSync(join(worktree, path), `${JSON.stringify(issue, null, 2)}\n`);
+				paths.push(path);
+			}
+			const committed = git(worktree, ['add', '--', ...paths]);
+			if (committed.exitCode !== 0) throw commandFailure('Could not record dependency changes', committed.stderr);
+			const commit = git(worktree, ['commit', '--quiet', '-m', 'chore(gship): set issue dependencies']);
+			if (commit.exitCode !== 0) throw commandFailure('Could not create the dependency commit', commit.stderr);
+			const sha = git(worktree, ['rev-parse', 'HEAD']).stdout.trim();
+			const pushed = git(worktree, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+			if (pushed.exitCode === 0) { fetchRuntimeSource(defaultRunGit, cwd); return { revision: sha, changes: changed }; }
+			if (isPushRace(pushed.stderr)) continue;
+			if (requiresPullRequest(pushed.stderr)) {
+				const entry = proposed.find((candidate) => candidate.id === changed[0]!.issueId)!;
+				options.beforeProtectedMerge?.();
+				const confirmedBaseSha = refreshRuntimeSource(cwd);
+				if (confirmedBaseSha !== sourceSha) {
+					throw new IssueIntakeError('publish-conflict', 'The backlog advanced before the protected dependency merge; try again.', 409);
+				}
+				const confirmedBacklog = readBacklogFromMain(cwd, undefined, confirmedBaseSha);
+				const confirmedProposed = confirmedBacklog.map((issue) => {
+					const change = input.changes.find((candidate) => candidate.issueId === issue.id);
+					return change === undefined ? issue : { ...issue, blockedBy: change.blockedBy };
+				});
+				const confirmedGraph = validateDependencyGraph(confirmedProposed);
+				if (!confirmedGraph.ok) throw new IssueIntakeError('publish-conflict', confirmedGraph.errors.join(' '), 409);
+				options.afterProtectedValidation?.();
+				await publishProtectedEntry(worktree, entry, sha, sourceSha, options);
+				const publishedRevision = refreshRuntimeSource(cwd);
+				const publishedBacklog = readBacklogFromMain(cwd, undefined, publishedRevision);
+				const publishedGraph = validateDependencyGraph(publishedBacklog);
+				if (!publishedGraph.ok) throw new IssueIntakeError('publish-conflict', `Dependency batch was published at ${publishedRevision}, but the resulting graph is invalid: ${publishedGraph.errors.join(' ')}`, 409);
+				return { revision: publishedRevision, changes: changed };
+			}
+			throw commandFailure('Could not publish dependency changes', pushed.stderr);
+		} finally {
+			git(cwd, ['worktree', 'remove', '--force', worktree]); rmSync(tempRoot, { recursive: true, force: true });
+		}
+	}
+	throw new IssueIntakeError('publish-conflict', 'The backlog advanced during three attempts; try setting dependencies again.', 409);
 }
 
 function refreshRuntimeSource(cwd: string): string {

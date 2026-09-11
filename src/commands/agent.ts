@@ -67,6 +67,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'status.get': { method: 'GET', path: projectPath('/snapshot'), input: '{projectId}' },
 	'backlog.list': { method: 'GET', path: projectPath('/backlog'), input: '{projectId, limit?, offset?}' },
 	'issues.list': { method: 'GET', path: projectPath('/issues'), input: '{projectId, limit?, offset?}', listField: 'issues' },
+	'issues.set_dependencies': { method: 'POST', path: projectPath('/issues/dependencies'), input: '{projectId, expectedRevision, changes, authorization}' },
 	'issues.get': { method: 'GET', path: issuePath(), input: '{projectId, issueId}' },
 	'runs.list': { method: 'GET', path: projectPath('/runs'), input: '{projectId, limit?, offset?}', listField: 'runs' },
 	'runs.get': { method: 'GET', path: runPath(''), input: '{projectId, runId}' },
@@ -96,6 +97,7 @@ const GUIDE = [
 	'Before acting, call status.get and read the relevant issue or run in detail.',
 	'Never edit .gship directly and never start another Gateship service.',
 	'Never invent operator approval or authorization; pass only explicit operator text.',
+	'Use issues.set_dependencies for a sequence, for example GSHIP-10 blocked by GSHIP-9.',
 	'Prefer issues.create_approved with cited explicit authorization',
 	'Use `gship agent operations` for operation names and input formats.',
 	'Call with `gship agent call <operation> --input <json>`.',
@@ -225,6 +227,9 @@ function issueListItem(value: unknown): Record<string, unknown> {
 		status: shortString(issue['status'], 16),
 		blockedBy: Array.isArray(issue['blockedBy'])
 			? issue['blockedBy'].filter((id): id is string => typeof id === 'string')
+			: [],
+		unmetBlockers: Array.isArray(issue['unmetBlockers'])
+			? issue['unmetBlockers'].filter((id): id is string => typeof id === 'string')
 			: [],
 		updatedAt: shortString(issue['updatedAt'], 48),
 		approved,
@@ -499,7 +504,7 @@ async function readJsonResponse(
 }
 
 function requireOperationAuthorization(operationName: string, input: Record<string, unknown>): void {
-	if (operationName === 'projects.create' || operationName === 'issues.create_approved') {
+	if (operationName === 'projects.create' || operationName === 'issues.create_approved' || operationName === 'issues.set_dependencies') {
 		requiredString(input, 'authorization');
 	}
 }

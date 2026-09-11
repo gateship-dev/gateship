@@ -48,18 +48,14 @@ describe('durable run runtime', () => {
 		runtime.close();
 	});
 
-	test('preserves an unknown spec profile when the backlog reader fails', async () => {
+	test('rejects admission when the backlog reader fails before dependency validation', async () => {
 		const runtime = new RunRuntime({
 			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-failed-profile-read',
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			listBacklog: () => { throw new Error('backlog unavailable'); },
 		});
-		const run = await runtime.startRun('GSHIP-833');
-		expect(runtime.listRunEvents(run.id)[0]?.payload['specProfile']).toEqual({
-			version: 'unknown', fingerprint: null,
-			counts: { acceptance: null, boundaries: null, verify: null, evidence: null },
-		});
+		await expect(runtime.startRun('GSHIP-833')).rejects.toThrow('could not be validated');
 		await runtime.stop();
 		runtime.close();
 	});
@@ -3412,6 +3408,69 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 // GSHIP-638: encadear runs aprovadas em serie. The switch creates no new
 // authority -- it only starts what isPlannable (src/issues/plannable.ts)
 // already admits -- and only a run that settles as `done` advances the queue.
+describe('dependency admission (GSHIP-875)', () => {
+	test('manual and automatic starts stay blocked until the dependency stage is shipped', async () => {
+		const spec = { version: 2 as const, objective: 'O', acceptance: ['A'], verify: ['V'] };
+		for (const parentStage of ['specified', 'idea', 'planned'] as const) {
+			let prepareCalls = 0;
+			const parent: IssueEntry = { id: 'CAM-875-parent', title: 'parent', stage: parentStage, status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec };
+			const child: IssueEntry = { id: 'CAM-875-child', title: 'child', stage: 'specified', status: 'open', blockedBy: [parent.id], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } };
+			const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:'), executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) }, workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => [parent, child] });
+			await expect(runtime.startRun(child.id)).rejects.toThrow('blocked by');
+			runtime.setChainRuns(true);
+			expect(await runtime.startNextAdmissibleIssue()).toBeNull();
+			expect(prepareCalls).toBe(0);
+			await runtime.stop(); runtime.close();
+		}
+
+		let prepareCalls = 0;
+		const parent: IssueEntry = { id: 'CAM-875-parent', title: 'parent', stage: 'shipped', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec };
+		const child: IssueEntry = { id: 'CAM-875-child', title: 'child', stage: 'specified', status: 'open', blockedBy: [parent.id], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } };
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:'), executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) }, workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => [parent, child] });
+		runtime.setChainRuns(true);
+		expect((await runtime.startNextAdmissibleIssue())?.issueId).toBe(child.id);
+		expect(prepareCalls).toBe(1);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('missing dependency metadata fails closed before workspace preparation', async () => {
+		let prepareCalls = 0;
+		const spec = { version: 2 as const, objective: 'O', acceptance: ['A'], verify: ['V'] };
+		const child: IssueEntry = { id: 'CAM-875-missing', title: 'child', stage: 'specified', status: 'open', blockedBy: ['CAM-875-unknown'], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } };
+		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:'), executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) }, workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => [child] });
+		await expect(runtime.startRun(child.id)).rejects.toThrow('Unknown dependency');
+		expect(prepareCalls).toBe(0);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('manual and automatic admission reject every invalid dependency graph before preparation', async () => {
+		const spec = { version: 2 as const, objective: 'O', acceptance: ['A'], verify: ['V'] };
+		const cases: Array<{ name: string; backlog: IssueEntry[]; reason: string }> = [
+			{ name: 'duplicate shipped dependency', backlog: [
+				{ id: 'CAM-875-parent', title: 'parent', stage: 'shipped', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec },
+				{ id: 'CAM-875-child', title: 'child', stage: 'specified', status: 'open', blockedBy: ['CAM-875-parent', 'CAM-875-parent'], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } },
+			], reason: 'Duplicate dependency' },
+			{ name: 'self-reference', backlog: [{ id: 'CAM-875-self', title: 'self', stage: 'specified', status: 'open', blockedBy: ['CAM-875-self'], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } }], reason: 'Self-reference' },
+			{ name: 'cycle', backlog: [
+				{ id: 'CAM-875-a', title: 'a', stage: 'specified', status: 'open', blockedBy: ['CAM-875-b'], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } },
+				{ id: 'CAM-875-b', title: 'b', stage: 'specified', status: 'open', blockedBy: ['CAM-875-a'], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } },
+			], reason: 'Dependency cycle' },
+			{ name: 'unknown dependency', backlog: [{ id: 'CAM-875-unknown', title: 'unknown', stage: 'specified', status: 'open', blockedBy: ['CAM-875-missing'], createdAt: '', updatedAt: '', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '' } }], reason: 'Unknown dependency' },
+		];
+		for (const candidate of cases) {
+			for (const automatic of [false, true]) {
+				let prepareCalls = 0;
+				const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:'), executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) }, workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => candidate.backlog });
+				if (automatic) runtime.setChainRuns(true);
+				const attempt = automatic ? runtime.startNextAdmissibleIssue() : runtime.startRun(candidate.backlog[0]!.id);
+				await expect(attempt).rejects.toThrow(candidate.reason);
+				expect(prepareCalls, candidate.name).toBe(0);
+				await runtime.stop(); runtime.close();
+			}
+		}
+	});
+});
+
 describe('chaining approved runs in series (GSHIP-638)', () => {
 	const SPEC = { scope: 'Scope.', verify: ['bun test'] };
 
