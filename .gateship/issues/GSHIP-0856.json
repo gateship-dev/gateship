@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-856",
   "title": "Central: padronizar Visão geral e Filas com componentes Gateship",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:15.626Z",
-  "updatedAt": "2026-09-11T02:51:48.893Z",
+  "updatedAt": "2026-09-11T03:32:53.661Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
