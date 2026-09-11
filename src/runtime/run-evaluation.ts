@@ -37,6 +37,21 @@ export interface RunRoleConfiguration {
 	providers: AgentProviderId[];
 }
 
+export type RunGuidanceChannel = 'web' | 'agent-cli' | 'other' | 'unknown';
+export type AuthorizationEvidence = 'observed' | 'absent' | 'unknown';
+
+export interface RunDispatches {
+	total: number;
+	executor: number;
+	reviewer: number;
+	orchestrator: number;
+}
+
+export interface RunGuidanceEvidence {
+	channels: Record<RunGuidanceChannel, number>;
+	authorization: Record<AuthorizationEvidence, number>;
+}
+
 /**
  * Replayable facts for one run. Every field is derived from the run and its
  * complete durable decision log; no evaluator model or stored score exists.
@@ -44,6 +59,8 @@ export interface RunRoleConfiguration {
 export interface RunEvaluation {
 	specProfile: SpecProfile;
 	corrections: { verification: number; review: number; fullVerify: number; ci: number; total: number };
+	dispatches?: RunDispatches;
+	guidance?: RunGuidanceEvidence;
 	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
 	reconciliations: { unchanged: number; adapted: number; 'contract-change-required': number; total: number };
 	workflowRevision: string | null;
@@ -257,6 +274,43 @@ function countByOrigin(events: readonly RunEvent[], kind: string, field: string)
 	return result;
 }
 
+function guidanceChannel(event: RunEvent): RunGuidanceChannel {
+	const source = event.payload['source'];
+	if (source === 'web') return 'web';
+	if (source === 'agent-cli') return 'agent-cli';
+	if (typeof source === 'string' && source.trim().length > 0) return 'other';
+	return 'unknown';
+}
+
+function authorizationEvidence(event: RunEvent): AuthorizationEvidence {
+	const value = event.payload['authorizationEvidence'];
+	if (value === 'explicit' || event.payload['operatorAuthorized'] === true) return 'observed';
+	if (value === 'absent' || event.payload['operatorAuthorized'] === false) return 'absent';
+	return 'unknown';
+}
+
+function guidanceEvidence(events: readonly RunEvent[]): RunGuidanceEvidence {
+	const channels: RunGuidanceEvidence['channels'] = { web: 0, 'agent-cli': 0, other: 0, unknown: 0 };
+	const authorization: RunGuidanceEvidence['authorization'] = { observed: 0, absent: 0, unknown: 0 };
+	for (const event of events) {
+		if (event.kind !== 'run.operator-guidance') continue;
+		channels[guidanceChannel(event)] += 1;
+		authorization[authorizationEvidence(event)] += 1;
+	}
+	return { channels, authorization };
+}
+
+function dispatchesOf(events: readonly RunEvent[]): RunDispatches {
+	const dispatches: RunDispatches = { total: 0, executor: 0, reviewer: 0, orchestrator: 0 };
+	for (const event of events) {
+		const role = MODEL_EVENT_ROLES[event.kind];
+		if (role === undefined) continue;
+		dispatches[role] += 1;
+		dispatches.total += 1;
+	}
+	return dispatches;
+}
+
 interface RoleConfigurationAccumulator {
 	models: Set<string>;
 	efforts: Set<string>;
@@ -352,6 +406,8 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 	return {
 		specProfile: specProfileOf(events),
 		corrections: { ...corrections, total: Object.values(corrections).reduce((sum, count) => sum + count, 0) },
+		dispatches: dispatchesOf(events),
+		guidance: guidanceEvidence(events),
 		cycleQuestions: { ...cycleQuestions, total: Object.values(cycleQuestions).reduce((sum, count) => sum + count, 0) },
 		reconciliations: { ...reconciliations, total: Object.values(reconciliations).reduce((sum, count) => sum + count, 0) },
 		workflowRevision: workflowRevisionOf(events),

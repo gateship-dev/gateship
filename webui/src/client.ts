@@ -23,6 +23,10 @@ export const PROJECT_ONBOARDING_PATH = '/api/project/onboarding';
 export const OPERATOR_PROFILE_PATH = '/api/operator-profile';
 export const DIAGNOSTICS_PATH = '/api/diagnostics';
 export const DIAGNOSTIC_SCHEDULE_PATH = '/api/diagnostics/schedule';
+
+export type AutonomyDenominatorCode = 'selected-historical-runs';
+export type AutonomyPercentileMethodCode = 'median-center-nearest-rank-p90';
+export type DispatchCeilingReasonCode = 'equivalent-outcome-not-demonstrated';
 export const DIAGNOSTIC_FINDINGS_PATH = '/api/diagnostic-findings';
 export const RUNS_PATH = '/api/runs';
 export const EVENTS_PATH = '/api/events';
@@ -327,6 +331,8 @@ export interface HistoricalOverviewView {
 		profile?: { commands: { count: number; denominator: number }; corrections: { count: number; denominator: number }; filesAltered: { count: number; denominator: number }; researchRequired: { count: number; denominator: number } };
 	}>;
 	cohortsPage?: { limit: number; offset: number; returned: number; total: number };
+	autonomyEvidence?: { count: number; period: { from: string | null; to: string | null }; workflows: string[]; models: string[]; efforts: string[]; outcomes: { shipped: number; failed: number; cancelled: number; incomplete: number }; interventionRuns: number; guidance: { channels: { web: number; 'agent-cli': number; other: number; unknown: number }; authorization: { observed: number; absent: number; unknown: number } }; missing: Record<string, number>; comparables: { corrections: Record<string, { median: number | null; p90: number | null; max: number | null; known: number; denominator: number }>; dispatches: { median: number | null; p90: number | null; max: number | null; known: number; denominator: number }; waits: { provider: { median: number | null; p90: number | null; max: number | null; known: number; denominator: number }; operator: { median: number | null; p90: number | null; max: number | null; known: number; denominator: number } }; phases: Record<string, { median: number | null; p90: number | null; max: number | null; known: number; denominator: number }>; totalDuration: { median: number | null; p90: number | null; max: number | null; known: number; denominator: number }; activeRecoveryDuration: { median: number | null; p90: number | null; max: number | null; known: number; denominator: number } }; denominator: AutonomyDenominatorCode; percentileMethod: AutonomyPercentileMethodCode };
+	dispatchCeilings?: { known: number; denominator: number; candidates: Array<{ ceiling: number; observedRuns: number | null; cappedDispatches: number | null }>; recommended: number | null; reason: DispatchCeilingReasonCode };
 }
 
 export interface HistoricalOverviewFilters {

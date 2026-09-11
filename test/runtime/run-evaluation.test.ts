@@ -73,6 +73,8 @@ describe('replayable run evaluation', () => {
 			corrections: { verification: 0, review: 0, fullVerify: 0, ci: 0, total: 0 },
 			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
 			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
+			dispatches: { total: 4, executor: 3, reviewer: 1, orchestrator: 0 },
+			guidance: { channels: { web: 0, 'agent-cli': 0, other: 0, unknown: 2 }, authorization: { observed: 0, absent: 0, unknown: 2 } },
 			workflowRevision: 'revision-b',
 			provider: 'claude',
 			outcome: 'shipped',
@@ -130,6 +132,24 @@ describe('replayable run evaluation', () => {
 		expect(evaluation.verificationCadence).toEqual({
 			focused: { executed: 2, skipped: 1 },
 			full: { executed: 2, skipped: 1 },
+		});
+	});
+
+	test('uses the complete log for dispatches and preserves channel and authorization uncertainty', () => {
+		const events = Array.from({ length: 51 }, (_, index) => event(
+			index % 3 === 0 ? 'provider.model' : index % 3 === 1 ? 'review.model' : 'run.cycle-response',
+			'working', 'working', index === 0 ? { source: 'web', authorizationEvidence: 'explicit' } : {},
+		));
+		events.push(
+			event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'web', authorizationEvidence: 'explicit' }),
+			event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'agent-cli', operatorAuthorized: false }),
+			event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'plugin-channel' }),
+		);
+		const evaluation = evaluateRun(RUN, events);
+		expect(evaluation.dispatches).toEqual({ total: 51, executor: 17, reviewer: 17, orchestrator: 17 });
+		expect(evaluation.guidance).toEqual({
+			channels: { web: 1, 'agent-cli': 1, other: 1, unknown: 0 },
+			authorization: { observed: 1, absent: 1, unknown: 1 },
 		});
 	});
 

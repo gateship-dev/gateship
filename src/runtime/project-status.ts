@@ -176,6 +176,49 @@ export interface HistoricalOverview {
 		inputTokens: number | null;
 		outputTokens: number | null;
 	}>;
+	autonomyEvidence?: {
+		count: number;
+		period: { from: string | null; to: string | null };
+		workflows: string[];
+		models: string[];
+		efforts: string[];
+		outcomes: HistoricalOverview['runsByOutcome'];
+		interventionRuns: number;
+		guidance: {
+			channels: { web: number; 'agent-cli': number; other: number; unknown: number };
+			authorization: { observed: number; absent: number; unknown: number };
+		};
+		missing: Record<string, number>;
+		comparables: {
+			corrections: Record<string, ComparativeDistribution>;
+			dispatches: ComparativeDistribution;
+			waits: { provider: ComparativeDistribution; operator: ComparativeDistribution };
+			phases: Record<string, ComparativeDistribution>;
+			totalDuration: ComparativeDistribution;
+			activeRecoveryDuration: ComparativeDistribution;
+		};
+		denominator: AutonomyDenominatorCode;
+		percentileMethod: AutonomyPercentileMethodCode;
+	};
+	dispatchCeilings?: {
+		known: number;
+		denominator: number;
+		candidates: Array<{ ceiling: number; observedRuns: number | null; cappedDispatches: number | null }>;
+		recommended: number | null;
+		reason: DispatchCeilingReasonCode;
+	};
+}
+
+export type AutonomyDenominatorCode = 'selected-historical-runs';
+export type AutonomyPercentileMethodCode = 'median-center-nearest-rank-p90';
+export type DispatchCeilingReasonCode = 'equivalent-outcome-not-demonstrated';
+
+export interface ComparativeDistribution {
+	median: number | null;
+	p90: number | null;
+	max: number | null;
+	known: number;
+	denominator: number;
 }
 
 export interface CohortMetric { count: number; denominator: number }
@@ -312,6 +355,107 @@ function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 		cohorts: [],
 		cohortsPage: { limit: COHORT_DEFAULT_LIMIT, offset: 0, returned: 0, total: 0 },
 	};
+}
+
+type AutonomyAccumulator = {
+	timestamps: number[];
+	workflows: Set<string>;
+	models: Set<string>;
+	efforts: Set<string>;
+	outcomes: ReturnType<typeof emptyOutcomes>;
+	missing: Record<string, number>;
+	interventionRuns: number;
+	guidance: { channels: { web: number; 'agent-cli': number; other: number; unknown: number }; authorization: { observed: number; absent: number; unknown: number } };
+	values: Record<string, number[]>;
+};
+
+function recoveryActiveDuration(item: PersistedRunHistory): number | null {
+	const values = item.events
+		.filter((event) => event.kind === 'run.recovered-interrupted' || event.kind === 'run.recovered-shippable')
+		.map((event) => event.payload['activeDurationMs'])
+		.filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+	return values.length === 0 ? null : values.reduce((sum, value) => sum + value, 0);
+}
+
+function addMissingField(missing: Record<string, number>, field: string, absent: boolean): void {
+	if (absent) missing[field] = (missing[field] ?? 0) + 1;
+}
+
+function addAutonomyValue(values: Record<string, number[]>, key: string, value: number | null): void {
+	if (value !== null) (values[key] ??= []).push(value);
+}
+
+function addAutonomyTimestamp(timestamps: number[], value: string): void {
+	const timestamp = Date.parse(value);
+	if (Number.isFinite(timestamp)) timestamps.push(timestamp);
+}
+
+function accumulateAutonomyRun(item: PersistedRunHistory, accumulator: AutonomyAccumulator): void {
+	const { evaluation } = item;
+	const guidance = evaluation.guidance ?? { channels: { web: 0, 'agent-cli': 0, other: 0, unknown: 0 }, authorization: { observed: 0, absent: 0, unknown: 0 } };
+	const roleModels = evaluation.roles.flatMap((role) => role.models);
+	const roleEfforts = evaluation.roles.flatMap((role) => role.efforts);
+	addAutonomyTimestamp(accumulator.timestamps, item.run.createdAt);
+	accumulator.outcomes[evaluation.outcome] += 1;
+	if (evaluation.operatorInterventions > 0) accumulator.interventionRuns += 1;
+	for (const channel of ['web', 'agent-cli', 'other', 'unknown'] as const) accumulator.guidance.channels[channel] += guidance.channels[channel];
+	for (const evidence of ['observed', 'absent', 'unknown'] as const) accumulator.guidance.authorization[evidence] += guidance.authorization[evidence];
+	if (evaluation.workflowRevision === null) addMissingField(accumulator.missing, 'workflowRevision', true); else accumulator.workflows.add(evaluation.workflowRevision);
+	for (const model of roleModels) accumulator.models.add(model);
+	for (const effort of roleEfforts) accumulator.efforts.add(effort);
+	addMissingField(accumulator.missing, 'model', roleModels.length === 0);
+	addMissingField(accumulator.missing, 'effort', roleEfforts.length === 0);
+	addMissingField(accumulator.missing, 'cost', item.cost.totalCostUsd === null);
+	addMissingField(accumulator.missing, 'wallTime', evaluation.wallTimeMs === null);
+	addMissingField(accumulator.missing, 'authorizationEvidence', guidance.authorization.unknown > 0 || guidance.authorization.observed + guidance.authorization.absent === 0);
+	addMissingField(accumulator.missing, 'guidanceChannel', guidance.channels.unknown > 0);
+	addMissingField(accumulator.missing, 'dispatches', evaluation.dispatches?.total === undefined);
+	addAutonomyValue(accumulator.values, 'corrections', evaluation.corrections.total);
+	addAutonomyValue(accumulator.values, 'dispatches', evaluation.dispatches?.total ?? null);
+	addAutonomyValue(accumulator.values, 'wait:provider', evaluation.phaseDurations['waiting-provider'].durationMs);
+	addAutonomyValue(accumulator.values, 'wait:operator', evaluation.phaseDurations['waiting-user'].durationMs);
+	addAutonomyValue(accumulator.values, 'totalDuration', evaluation.wallTimeMs);
+	addAutonomyValue(accumulator.values, 'activeRecoveryDuration', recoveryActiveDuration(item));
+	for (const [phase, duration] of Object.entries(evaluation.phaseDurations)) addAutonomyValue(accumulator.values, `phase:${phase}`, duration.durationMs);
+	for (const role of ['verification', 'review', 'fullVerify', 'ci'] as const) addAutonomyValue(accumulator.values, `correction:${role}`, evaluation.corrections[role]);
+}
+
+function autonomyEvidence(items: readonly PersistedRunHistory[]): NonNullable<HistoricalOverview['autonomyEvidence']> {
+	const accumulator: AutonomyAccumulator = {
+		timestamps: [], workflows: new Set(), models: new Set(), efforts: new Set(), outcomes: emptyOutcomes(), missing: {}, interventionRuns: 0,
+		guidance: { channels: { web: 0, 'agent-cli': 0, other: 0, unknown: 0 }, authorization: { observed: 0, absent: 0, unknown: 0 } }, values: {},
+	};
+	for (const item of items) accumulateAutonomyRun(item, accumulator);
+	const comparable = (key: string): ComparativeDistribution => {
+		const numbers = accumulator.values[key] ?? [];
+		return { median: median(numbers), p90: percentile(numbers, 0.9), max: numbers.length === 0 ? null : Math.max(...numbers), known: numbers.length, denominator: items.length };
+	};
+	return {
+		count: items.length,
+		period: { from: accumulator.timestamps.length === 0 ? null : new Date(Math.min(...accumulator.timestamps)).toISOString(), to: accumulator.timestamps.length === 0 ? null : new Date(Math.max(...accumulator.timestamps)).toISOString() },
+		workflows: [...accumulator.workflows].sort(), models: [...accumulator.models].sort(), efforts: [...accumulator.efforts].sort(), outcomes: accumulator.outcomes,
+		interventionRuns: accumulator.interventionRuns, guidance: accumulator.guidance, missing: accumulator.missing,
+		comparables: {
+			corrections: Object.fromEntries(['verification', 'review', 'fullVerify', 'ci'].map((role) => [role, comparable(`correction:${role}`)])),
+			dispatches: comparable('dispatches'),
+			waits: { provider: comparable('wait:provider'), operator: comparable('wait:operator') },
+			phases: Object.fromEntries(RUN_DURATION_PHASES.map((phase) => [phase, comparable(`phase:${phase}`)])),
+			totalDuration: comparable('totalDuration'),
+			activeRecoveryDuration: comparable('activeRecoveryDuration'),
+		},
+		denominator: 'selected-historical-runs',
+		percentileMethod: 'median-center-nearest-rank-p90',
+	};
+}
+
+function dispatchCeilingAnalysis(items: readonly PersistedRunHistory[]): NonNullable<HistoricalOverview['dispatchCeilings']> {
+	const observed = items.filter((item) => item.evaluation.dispatches?.total !== undefined);
+	const candidates = [7, 9, 18].map((ceiling) => ({
+		ceiling,
+		observedRuns: observed.length === 0 ? null : observed.filter((item) => item.evaluation.dispatches!.total > ceiling).length,
+		cappedDispatches: observed.length === 0 ? null : observed.reduce((sum, item) => sum + Math.max(0, item.evaluation.dispatches!.total - ceiling), 0),
+	}));
+	return { known: observed.length, denominator: items.length, candidates, recommended: null, reason: 'equivalent-outcome-not-demonstrated' };
 }
 
 export const COHORT_MINIMUM_SAMPLE = 5;
@@ -854,6 +998,8 @@ function historicalOverview(
 	result.configurations.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
 	result.daily = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
 	result.cohorts = historicalCohorts(selected);
+	result.autonomyEvidence = autonomyEvidence(selected);
+	result.dispatchCeilings = dispatchCeilingAnalysis(selected);
 	return paginateHistoricalOverview(result, pagination, filters.cohortSortBy, filters.cohortSortDirection);
 }
 
