@@ -99,6 +99,22 @@ function flush(): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+function isolatedNotificationPaths(cwd: string): { cwd: string; stateDir: string; legacyStateDir: string } {
+	return {
+		cwd,
+		stateDir: join(cwd, '.gship'),
+		legacyStateDir: createTestTmpdir('gship-notification-legacy-'),
+	};
+}
+
+function isolatedNotifier(
+	cwd: string,
+	env: Record<string, string | undefined>,
+	fetchImpl: typeof fetch,
+): (event: RunEvent) => void {
+	return createRemoteNotifier({ ...isolatedNotificationPaths(cwd), env, fetchImpl });
+}
+
 /** `noUncheckedIndexedAccess` makes `calls[0]` optional; a single asserted call never is. */
 function onlyCall(calls: readonly FetchCall[]): FetchCall {
 	expect(calls).toHaveLength(1);
@@ -109,11 +125,12 @@ function onlyCall(calls: readonly FetchCall[]): FetchCall {
 
 describe('createRemoteNotifier', () => {
 	test('a missing topic URL sends nothing and never throws', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-missing-');
 		const { fetchImpl, calls } = stubFetch();
 		// An explicit, empty cwd -- never `process.cwd()` -- so this stays true
 		// regardless of whatever `.gship/ntfy-url` an operator's own checkout
 		// might carry (GSHIP-652).
-		const notifier = createRemoteNotifier({ cwd: createTestTmpdir('gship-ntfy-missing-'), env: {}, fetchImpl });
+		const notifier = isolatedNotifier(cwd, {}, fetchImpl);
 
 		expect(() => notifier(event('waiting-user', 'run.waiting-user'))).not.toThrow();
 		await flush();
@@ -122,8 +139,9 @@ describe('createRemoteNotifier', () => {
 	});
 
 	test('sends exactly one request per qualifying transition, carrying the title and body', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-isolated-');
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl });
+		const notifier = isolatedNotifier(cwd, { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl);
 
 		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }));
 		await flush();
@@ -137,8 +155,9 @@ describe('createRemoteNotifier', () => {
 	});
 
 	test('a transition that does not need attention sends nothing', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-isolated-');
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl });
+		const notifier = isolatedNotifier(cwd, { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl);
 
 		notifier(event('review', 'run.review-started'));
 		notifier(event('done', 'run.shipped'));
@@ -178,7 +197,7 @@ describe('createRemoteNotifier', () => {
 		});
 
 		const { fetchImpl, calls } = stubFetch();
-		runtime.subscribe(createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl }));
+		runtime.subscribe(isolatedNotifier(createTestTmpdir('gship-runtime-notify-'), { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl));
 
 		const run = await runtime.startRun('CAM-51');
 		await executorStarted;
@@ -262,7 +281,7 @@ describe('createRemoteNotifier', () => {
 		// Subscribed only once the run is parked, so this asserts on the
 		// cancellation alone, not on the waiting-user alert already covered above.
 		const { fetchImpl, calls } = stubFetch();
-		runtime.subscribe(createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl }));
+		runtime.subscribe(isolatedNotifier(createTestTmpdir('gship-runtime-notify-'), { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl));
 
 		const cancelled = await runtime.cancelRun(run.id);
 		expect(cancelled?.state).toBe('interrupted');
@@ -276,8 +295,9 @@ describe('createRemoteNotifier', () => {
 	});
 
 	test('a network failure is swallowed and never reaches the caller', async () => {
+		const cwd = createTestTmpdir('gship-ntfy-isolated-');
 		const { fetchImpl, calls } = stubFetch(() => Promise.reject(new Error(`network down: ${TOPIC_URL}`)));
-		const notifier = createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl });
+		const notifier = isolatedNotifier(cwd, { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl);
 
 		expect(() => notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }))).not.toThrow();
 		await flush();
@@ -298,7 +318,7 @@ describe('createRemoteNotifier', () => {
 			installedSpies.push(logSpy, warnSpy, errorSpy);
 
 			const { fetchImpl } = stubFetch(() => Promise.reject(new Error(`network down: ${TOPIC_URL}`)));
-			const notifier = createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl });
+			const notifier = isolatedNotifier(createTestTmpdir('gship-ntfy-isolated-'), { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl);
 
 			let thrown: unknown;
 			try {
@@ -316,7 +336,7 @@ describe('createRemoteNotifier', () => {
 
 		test('the fetch call itself carries the URL, but nothing returned or thrown does', async () => {
 			const { fetchImpl, calls } = stubFetch();
-			const notifier = createRemoteNotifier({ env: { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl });
+			const notifier = isolatedNotifier(createTestTmpdir('gship-ntfy-isolated-'), { [NTFY_URL_ENV_VAR]: TOPIC_URL }, fetchImpl);
 
 			const result = notifier(event('waiting-user', 'run.waiting-user'));
 			await flush();
@@ -380,7 +400,7 @@ describe('the project-local secret file (GSHIP-652)', () => {
 		expect(isNtfyConfigured(cwd, {})).toBe(false);
 
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+		const notifier = isolatedNotifier(cwd, {}, fetchImpl);
 		expect(() => notifier(event('waiting-user', 'run.waiting-user'))).not.toThrow();
 		expect(calls).toHaveLength(0);
 	});
@@ -389,7 +409,7 @@ describe('the project-local secret file (GSHIP-652)', () => {
 		const cwd = createTestTmpdir('gship-ntfy-file-');
 		writeNtfyUrlFile(cwd, TOPIC_URL);
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+		const notifier = isolatedNotifier(cwd, {}, fetchImpl);
 
 		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }));
 		await flush();
@@ -418,7 +438,7 @@ describe('the project-local secret file (GSHIP-652)', () => {
 	test('a notifier built before the file existed still delivers once the file is created, with no restart', async () => {
 		const cwd = createTestTmpdir('gship-ntfy-file-');
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+		const notifier = isolatedNotifier(cwd, {}, fetchImpl);
 
 		notifier(event('waiting-user', 'run.waiting-user'));
 		await flush();
@@ -444,12 +464,12 @@ describe('the project-local secret file (GSHIP-652)', () => {
 		expect(isNtfyConfigured(cwd, {})).toBe(false);
 
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: {}, fetchImpl });
+		const notifier = isolatedNotifier(cwd, {}, fetchImpl);
 		notifier(event('waiting-user', 'run.waiting-user'));
 		await flush();
 		expect(calls).toHaveLength(0);
 
-		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+		const result = await sendNtfyTestNotification({ ...isolatedNotificationPaths(cwd), env: {}, fetchImpl });
 		expect(result).toEqual({ outcome: 'not-configured' });
 	});
 });
@@ -459,7 +479,7 @@ describe('sendNtfyTestNotification', () => {
 		const cwd = createTestTmpdir('gship-ntfy-test-');
 		const { fetchImpl, calls } = stubFetch();
 
-		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+		const result = await sendNtfyTestNotification({ ...isolatedNotificationPaths(cwd), env: {}, fetchImpl });
 
 		expect(result).toEqual({ outcome: 'not-configured' });
 		expect(calls).toHaveLength(0);
@@ -470,7 +490,7 @@ describe('sendNtfyTestNotification', () => {
 		writeNtfyUrlFile(cwd, TOPIC_URL);
 		const { fetchImpl, calls } = stubFetch();
 
-		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+		const result = await sendNtfyTestNotification({ ...isolatedNotificationPaths(cwd), env: {}, fetchImpl });
 
 		expect(result).toEqual({ outcome: 'sent' });
 		expect(onlyCall(calls).url).toContain(TOPIC_URL);
@@ -481,7 +501,7 @@ describe('sendNtfyTestNotification', () => {
 		writeNtfyUrlFile(cwd, TOPIC_URL);
 		const { fetchImpl } = stubFetch(() => Promise.resolve(new Response(null, { status: 403 })));
 
-		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+		const result = await sendNtfyTestNotification({ ...isolatedNotificationPaths(cwd), env: {}, fetchImpl });
 
 		expect(result.outcome).toBe('rejected');
 		expect(JSON.stringify(result)).not.toContain(TOPIC_URL);
@@ -492,7 +512,7 @@ describe('sendNtfyTestNotification', () => {
 		writeNtfyUrlFile(cwd, TOPIC_URL);
 		const { fetchImpl } = stubFetch(() => Promise.reject(new Error(`network down: ${TOPIC_URL}`)));
 
-		const result = await sendNtfyTestNotification({ cwd, env: {}, fetchImpl });
+		const result = await sendNtfyTestNotification({ ...isolatedNotificationPaths(cwd), env: {}, fetchImpl });
 
 		expect(result.outcome).toBe('unreachable');
 		expect(JSON.stringify(result)).not.toContain(TOPIC_URL);
@@ -530,7 +550,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 	test('a complete configuration sends, carrying the three values to the Resend HTTP API', async () => {
 		const cwd = createTestTmpdir('gship-resend-');
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+		const notifier = isolatedNotifier(cwd, resendEnv(), fetchImpl);
 
 		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }));
 		await flush();
@@ -557,12 +577,12 @@ describe('the Resend channel (GSHIP-653)', () => {
 		expect(resolveResendMissingFields(cwd, {})).toEqual(['apiKey', 'from', 'to']);
 
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: resendEnv(['to']), fetchImpl });
+		const notifier = isolatedNotifier(cwd, resendEnv(['to']), fetchImpl);
 		notifier(event('waiting-user', 'run.waiting-user'));
 		await flush();
 		expect(calls).toHaveLength(0);
 
-		const result = await sendResendTestNotification({ cwd, env: resendEnv(['to']), fetchImpl });
+		const result = await sendResendTestNotification({ ...isolatedNotificationPaths(cwd), env: resendEnv(['to']), fetchImpl });
 		expect(result).toEqual({ outcome: 'not-configured', detail: RESEND_FIELD_LABELS.to });
 		expect(calls).toHaveLength(0);
 	});
@@ -570,7 +590,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 	test('a network failure is swallowed and never propagates', async () => {
 		const cwd = createTestTmpdir('gship-resend-');
 		const { fetchImpl, calls } = stubFetch(() => Promise.reject(new Error(`network down: ${RESEND_API_KEY}`)));
-		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+		const notifier = isolatedNotifier(cwd, resendEnv(), fetchImpl);
 
 		expect(() => notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }))).not.toThrow();
 		await flush();
@@ -582,7 +602,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 		const cwd = createTestTmpdir('gship-resend-');
 		writeNtfyUrlFile(cwd, TOPIC_URL);
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+		const notifier = isolatedNotifier(cwd, resendEnv(), fetchImpl);
 
 		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }));
 		await flush();
@@ -592,10 +612,34 @@ describe('the Resend channel (GSHIP-653)', () => {
 		expect(calls.some((call) => call.url === 'https://api.resend.com/emails')).toBe(true);
 	});
 
+	test('explicit state directories isolate ntfy from Resend files in the project directory', async () => {
+		const cwd = createTestTmpdir('gship-notification-isolation-project-');
+		const ntfyStateDir = createTestTmpdir('gship-notification-isolation-ntfy-');
+		const legacyStateDir = createTestTmpdir('gship-notification-isolation-legacy-');
+		writeFileSync(join(ntfyStateDir, 'ntfy-url'), `${TOPIC_URL}\n`, { mode: 0o600 });
+		writeResendApiKey(cwd, RESEND_API_KEY);
+		writeResendSettings(cwd, RESEND_FROM, RESEND_TO);
+
+		const { fetchImpl, calls } = stubFetch();
+		const notifier = createRemoteNotifier({
+			cwd,
+			stateDir: ntfyStateDir,
+			legacyStateDir,
+			env: {},
+			fetchImpl,
+		});
+
+		notifier(event('waiting-user', 'run.waiting-user', { summary: 'Escolha.' }));
+		await flush();
+
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.url).toContain(TOPIC_URL);
+	});
+
 	test('Resend alone -- with no ntfy topic URL anywhere -- still delivers on its own', async () => {
 		const cwd = createTestTmpdir('gship-resend-');
 		const { fetchImpl, calls } = stubFetch();
-		const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+		const notifier = isolatedNotifier(cwd, resendEnv(), fetchImpl);
 
 		notifier(event('waiting-user', 'run.waiting-user'));
 		await flush();
@@ -617,7 +661,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 
 			const cwd = createTestTmpdir('gship-resend-');
 			const { fetchImpl } = stubFetch(() => Promise.reject(new Error(`network down: ${RESEND_API_KEY}`)));
-			const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+			const notifier = isolatedNotifier(cwd, resendEnv(), fetchImpl);
 
 			let thrown: unknown;
 			try {
@@ -636,7 +680,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 		test('the request itself carries the key in its header, but nothing returned or thrown does', async () => {
 			const cwd = createTestTmpdir('gship-resend-');
 			const { fetchImpl, calls } = stubFetch();
-			const notifier = createRemoteNotifier({ cwd, env: resendEnv(), fetchImpl });
+			const notifier = isolatedNotifier(cwd, resendEnv(), fetchImpl);
 
 			const result = notifier(event('waiting-user', 'run.waiting-user'));
 			await flush();
@@ -649,7 +693,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 		test('sendResendTestNotification never leaks the key on a rejection or an unreachable network', async () => {
 			const cwd = createTestTmpdir('gship-resend-');
 			const rejected = await sendResendTestNotification({
-				cwd,
+				...isolatedNotificationPaths(cwd),
 				env: resendEnv(),
 				fetchImpl: stubFetch(() => Promise.resolve(new Response(null, { status: 403 }))).fetchImpl,
 			});
@@ -657,7 +701,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 			expect(JSON.stringify(rejected)).not.toContain(RESEND_API_KEY);
 
 			const unreachable = await sendResendTestNotification({
-				cwd,
+				...isolatedNotificationPaths(cwd),
 				env: resendEnv(),
 				fetchImpl: stubFetch(() => Promise.reject(new Error(`network down: ${RESEND_API_KEY}`))).fetchImpl,
 			});
@@ -725,7 +769,7 @@ describe('browser-managed Resend files (GSHIP-688)', () => {
 		expect(existsSync(join(cwd, '.gship'))).toBe(false);
 
 		const { fetchImpl, calls } = stubFetch();
-		createRemoteNotifier({ cwd, stateDir, env: {}, fetchImpl })(
+		createRemoteNotifier({ cwd, stateDir, legacyStateDir: createTestTmpdir('gship-notification-legacy-'), env: {}, fetchImpl })(
 			event('waiting-user', 'run.waiting-user'),
 		);
 		await waitFor(() => calls.length === 2);
