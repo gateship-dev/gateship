@@ -391,6 +391,20 @@ describe('release.yml release-image job (GSHIP-657, GSHIP-665, GSHIP-699)', () =
 		writeFileSync(fakeDocker, `#!/usr/bin/env bash
 set -e
 echo "$*" >> "$FAKE_LOG"
+if [[ "$1" == pull || "$1" == run ]]; then
+  platform=""
+  image=""
+  while (($#)); do
+    [[ "$1" == --platform ]] && platform="$2"
+    [[ "$1" == example/gateship@* ]] && image="$1"
+    shift
+  done
+  case "$platform:$image" in
+    linux/amd64:example/gateship@sha256:amd64-verified) ;;
+    linux/arm64:example/gateship@sha256:arm64-verified) ;;
+    *) exit 3 ;;
+  esac
+fi
 if [[ "$1 $2 $3" == "buildx imagetools inspect" ]]; then echo 'Digest: sha256:published'; fi
 if [[ "$1 $2" == "inspect --format" ]]; then echo healthy; fi
 `);
@@ -398,9 +412,55 @@ if [[ "$1 $2" == "inspect --format" ]]; then echo healthy; fi
 		const succeeded = Bun.spawnSync(['bash', RELEASE_IMAGE_HELPER], { env });
 		expect(succeeded.exitCode).toBe(0);
 		const commands = readFileSync(log, 'utf8');
+		expect(commands).toContain('pull --platform linux/amd64 example/gateship@sha256:amd64-verified');
+		expect(commands).toContain('pull --platform linux/arm64 example/gateship@sha256:arm64-verified');
+		expect(commands).toContain('run --platform linux/amd64');
+		expect(commands).toContain('run --platform linux/arm64');
 		expect(commands).toContain('buildx imagetools create --tag example/gateship:v1.2.3 example/gateship@sha256:amd64-verified example/gateship@sha256:arm64-verified');
 		expect(commands).toContain('buildx imagetools create --tag example/gateship:commit-sha example/gateship@sha256:amd64-verified example/gateship@sha256:arm64-verified');
 		expect(commands).not.toContain('build --');
+	});
+
+	test('blocks promotion when the ARM64 verification fails', () => {
+		const dir = createTestTmpdir('gship-release-image-arm-failure-');
+		const fakeBin = resolve(dir, 'bin');
+		const fakeDocker = resolve(fakeBin, 'docker');
+		const fakeCurl = resolve(fakeBin, 'curl');
+		const log = resolve(dir, 'commands.log');
+		Bun.spawnSync(['mkdir', '-p', fakeBin]);
+		writeFileSync(fakeDocker, `#!/usr/bin/env bash
+set -e
+echo "$*" >> "$FAKE_LOG"
+if [[ "$1" == pull || "$1" == run ]]; then
+  platform=""
+  while (($#)); do
+    [[ "$1" == --platform ]] && platform="$2"
+    shift
+  done
+  [[ "$platform" == linux/amd64 ]] || exit 1
+fi
+if [[ "$1 $2 $3" == "buildx imagetools inspect" ]]; then echo 'Digest: sha256:published'; fi
+if [[ "$1 $2" == "inspect --format" ]]; then echo healthy; fi
+`);
+		chmodSync(fakeDocker, 0o755);
+		writeFileSync(fakeCurl, '#!/usr/bin/env bash\nexit 0\n');
+		chmodSync(fakeCurl, 0o755);
+		const result = Bun.spawnSync(['bash', RELEASE_IMAGE_HELPER], {
+			env: {
+				...process.env,
+				DOCKER_BIN: fakeDocker,
+				FAKE_LOG: log,
+				PATH: `${fakeBin}:${process.env.PATH}`,
+				GITHUB_OUTPUT: resolve(dir, 'output'),
+				IMAGE_BASE: 'example/gateship',
+				AMD64_DIGEST: 'sha256:amd64-verified',
+				ARM64_DIGEST: 'sha256:arm64-verified',
+				VERSION_TAG: 'v1.2.3',
+				SHA_TAG: 'commit-sha',
+			},
+		});
+		expect(result.exitCode).not.toBe(0);
+		expect(readFileSync(log, 'utf8')).not.toContain('buildx imagetools create');
 	});
 
 	test('uses the Docker executable from PATH when DOCKER_BIN is absent', () => {
@@ -433,7 +493,7 @@ if [[ "$1 $2" == "inspect --format" ]]; then echo healthy; fi
 			},
 		});
 		expect(result.exitCode).toBe(0);
-		expect(readFileSync(log, 'utf8')).toContain('pull example/gateship@sha256:amd64-verified');
+		expect(readFileSync(log, 'utf8')).toContain('pull --platform linux/amd64 example/gateship@sha256:amd64-verified');
 	});
 
 	test('attests build provenance for the pushed image digest', () => {
