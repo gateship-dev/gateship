@@ -3,9 +3,11 @@
   "title": "Autonomia: distinguir progresso técnico de repetição de perguntas",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-869"
+  ],
   "createdAt": "2026-09-11T12:26:18.709Z",
-  "updatedAt": "2026-09-11T13:10:12.016Z",
+  "updatedAt": "2026-09-11T23:34:50.312Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

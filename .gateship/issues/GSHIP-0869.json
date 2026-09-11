@@ -3,9 +3,11 @@
   "title": "Autonomia: fornecer contrato e contexto verificável em todos os ciclos",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-880"
+  ],
   "createdAt": "2026-09-11T12:26:03.704Z",
-  "updatedAt": "2026-09-11T13:10:08.538Z",
+  "updatedAt": "2026-09-11T23:34:50.312Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

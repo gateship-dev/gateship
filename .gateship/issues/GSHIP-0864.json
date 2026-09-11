@@ -3,9 +3,16 @@
   "title": "Notificações: resolver bloqueios técnicos antes de convocar o operador",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-863",
+    "GSHIP-873",
+    "GSHIP-869",
+    "GSHIP-870",
+    "GSHIP-871",
+    "GSHIP-872"
+  ],
   "createdAt": "2026-09-11T02:41:26.459Z",
-  "updatedAt": "2026-09-11T13:10:19.504Z",
+  "updatedAt": "2026-09-11T23:34:50.312Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

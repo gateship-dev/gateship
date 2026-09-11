@@ -3,9 +3,13 @@
   "title": "Autonomia: persistir orçamento compartilhado de recuperação por run",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-873",
+    "GSHIP-869",
+    "GSHIP-870"
+  ],
   "createdAt": "2026-09-11T12:26:46.082Z",
-  "updatedAt": "2026-09-11T13:10:15.784Z",
+  "updatedAt": "2026-09-11T23:34:50.312Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

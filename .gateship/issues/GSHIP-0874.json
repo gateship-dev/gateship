@@ -3,9 +3,16 @@
   "title": "Autonomia: verificar integração e comparar resultados após a ativação",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-873",
+    "GSHIP-869",
+    "GSHIP-870",
+    "GSHIP-871",
+    "GSHIP-864",
+    "GSHIP-872"
+  ],
   "createdAt": "2026-09-11T13:10:33.901Z",
-  "updatedAt": "2026-09-11T13:10:33.901Z",
+  "updatedAt": "2026-09-11T23:34:50.312Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

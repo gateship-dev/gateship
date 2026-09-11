@@ -3,9 +3,14 @@
   "title": "Revisão: fornecer evidências observáveis sem ampliar permissões",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-869",
+    "GSHIP-871",
+    "GSHIP-855",
+    "GSHIP-859"
+  ],
   "createdAt": "2026-09-11T12:27:36.697Z",
-  "updatedAt": "2026-09-11T13:10:22.903Z",
+  "updatedAt": "2026-09-11T23:34:50.312Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
