@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-877",
+  "title": "CI: reduzir builds redundantes preservando imagens portáteis",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T18:55:49.046Z",
+  "updatedAt": "2026-09-11T18:55:49.046Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Reduzir o tempo de entrega e as reconstruções de imagens: CI de PR proporcional ao empacotamento, cache reutilizável e imagens de release construídas uma vez, verificadas e publicadas sem reconstrução. Manter a frequência atual das releases.",
+    "acceptance": [
+      "Manter core/UI e check obrigatório ci em PRs e pushes elegíveis. PR comum constrói/testa AMD64. Filtros de arquitetura nunca deixam checks pendentes. Remover builds de imagem do CI pós-merge; a release valida as imagens finais.",
+      "PR exige ARM64 também ao alterar Dockerfile, .dockerignore, compose.yaml, provider-cli-versions.json, .bun-version, package.json, bun.lock, scripts/configuração de build ou workflows. Diff usa base/head reais, inclui remoções/renomes; se indisponível exige ambas.",
+      "Usar cache BuildKit reutilizável por arquitetura no CI/release, sem dispensar build/smoke. PRs/forks não recebem credenciais de publicação nem executam código via pull_request_target.",
+      "Release constrói cada variante uma vez do SHA/versão resolvidos. Validar Claude, Codex e inicialização/healthcheck em AMD64/ARM64 sem credenciais. Após ambas passarem, publicar os mesmos artefatos nas tags versão/SHA, sem reconstruir, com attestation do digest.",
+      "Preservar quatro binários nativos, checksums, rerun idempotente e frequência/gatilhos atuais de release. Falha da imagem impede apresentar a release como pronta; coordenar publicação na workflow existente pelo mecanismo mínimo necessário.",
+      "Testar seleção PR comum/empacotamento/diff desconhecido, push sem build duplicado, release com ambas, falha impedindo publicação e identidade entre artefato verificado/publicado. Não fixar nomes de etapas/texto incidental.",
+      "Validar o CI real desta PR de workflow em ambas as arquiteturas e sua primeira release. Relatar etapas/durações observadas; não prometer percentual sem comparação adequada."
+    ],
+    "boundaries": [
+      "Executar após GSHIP-875, sem interrompê-la, antes das próximas issues não aprovadas. Autorização explícita: 'boa, vamos fazer isso' e 'boa, sigo essa sugestao'.",
+      "Alterar workflows CI/release, testes e documentação necessária; auxiliares só se reduzirem duplicação. Preservar reparo Claude PR730, TLS/pins, autenticação, modelos/esforços Luna/Sol e sandbox.",
+      "Manter uma imagem de produto. Sem novo serviço, socket Docker, framework, instalador paralelo, credenciais no código, remoção de arquitetura ou inferência paga.",
+      "Não editar .gship nem mover main local. Não mudar runtime, frequência das releases, lotes, cron, scheduler ou atualização dos usuários."
+    ],
+    "verify": [
+      "bun test test/ci-workflow.test.ts test/release-workflow.test.ts test/compose-config.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "9580f4e074bbac34ba82319ab87c8d29df83f398e307774b1836d9f5c9bfdc95",
+    "approvedAt": "2026-09-11T18:55:49.046Z"
+  }
+}
