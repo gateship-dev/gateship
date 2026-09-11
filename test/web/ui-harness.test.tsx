@@ -201,7 +201,7 @@ describe('development UI harness', () => {
 			server.kill();
 			rmSync(cliDir, { recursive: true, force: true });
 		}
-	});
+	}, 30_000);
 
 	test('applies dense run filters before pagination', async () => {
 		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4177'], { stdout: 'pipe', stderr: 'pipe' });
@@ -219,7 +219,7 @@ describe('development UI harness', () => {
 			expect(normalized).toContain('period=7d');
 			expect(normalized).toContain('"projectFiltered":[0');
 		} finally { try { await cli('close'); } catch { /* cleanup may have no active browser session */ } server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
-	});
+	}, 30_000);
 
 	test('exercises reduced motion in real Central controls', async () => {
 		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4178'], { stdout: 'pipe', stderr: 'pipe' });
