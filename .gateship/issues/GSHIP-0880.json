@@ -1,0 +1,31 @@
+{
+  "id": "GSHIP-880",
+  "title": "Release: informar repositório no job final sem checkout",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T23:11:52.643Z",
+  "updatedAt": "2026-09-11T23:11:52.643Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Finalizar a publicação conjunta já aprovada na GSHIP-877/878. Os binários e ambas as imagens passaram na release 34656562411, mas publish-release falhou porque gh release edit depende de checkout inexistente.",
+    "acceptance": [
+      "O job publish-release informa explicitamente o repositório GitHub correto por --repo ou GH_REPO, sem adicionar checkout só para inferir esse contexto. Preservar tag resolvida, token de job e gate de ambos os ramos.",
+      "Teste cobre o comando efetivamente usado fora de checkout e exige contexto explícito de repositório, além de manter falha de binário/imagem bloqueando publicação. Não fazer chamadas GitHub reais no teste.",
+      "Preservar frequência, caches, builds únicos, plataformas, smokes, attestation, quatro binários/checksums, draft e rerun idempotente. CI e primeira release desta correção precisam passar até publish-release."
+    ],
+    "boundaries": [
+      "Reparo estrito do AC5/7 da GSHIP-877 e publicação conjunta da GSHIP-878, antes de 869. Somente workflow e testes necessários; sem novo serviço ou helper desnecessário.",
+      "Não editar runtime/.gship/main local, credenciais, versões de providers, proteções ou frequência. Luna/Sol preservados. Não repetir build antigo cegamente nem sobrescrever tags."
+    ],
+    "verify": [
+      "bun test test/release-workflow.test.ts test/ci-workflow.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "f48038c2c17bb578e8a60c36dc9d37a3170b2bfabeb25a31459370764df53a9c",
+    "approvedAt": "2026-09-11T23:11:52.643Z"
+  }
+}
