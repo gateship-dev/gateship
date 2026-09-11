@@ -1,0 +1,33 @@
+{
+  "id": "GSHIP-873",
+  "title": "Autonomia: avaliar recuperações e separar atenção humana de agente externo",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T12:27:56.432Z",
+  "updatedAt": "2026-09-11T12:27:56.432Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Medir efeitos reais da recuperação com eventos reproduzíveis e cenários determinísticos, sem confundir intervenção de agente externo com atenção humana ou criar aprovação automática por métricas.",
+    "acceptance": [
+      "Derivar separadamente: pedidos de atenção, recuperações internas, paradas por estagnação/orçamento, falhas de diagnóstico e orientações por origem confirmada/agent-cli/desconhecida. Manter semântica do campo legado e adicionar campos claros sem reclassificar histórico.",
+      "Usar log durável completo, não últimos 50 eventos. Preservar modelo, esforço, provedor e revisão do workflow para comparação; custo ausente fica null/desconhecido. Mensagem enviada e confirmação de entrega são fatos distintos.",
+      "Matriz determinística cobre: repetição com avanço, reformulação sem avanço, 2 estagnações, avanço sem reset global, decisão humana, dado externo, tentativa 7, prazo expirado, crash/replay, CI sem diff, resolver inválido e cancelamento durante recuperação.",
+      "Cada cenário verifica resultado, eventos/ordem, despachos e alertas por canal; corrigir fixtures sem enfraquecer asserts de segurança. Reproduzir a causa técnica do popup GSHIP-855 em fixture sintética, sem alegar replay real de inteligência do Luna.",
+      "Comparação de comportamento antigo/novo usa mesma fixture e saídas de provedor simuladas. Descrever como validação da máquina de estados, não evidência de superioridade do modelo ou aumento medido de taxa de sucesso.",
+      "Documentar protocolo futuro pareado: mesmo Luna/esforço, mesmo commit/tarefa, ferramentas e orçamento comparáveis; medir correção final, defeitos, tempo, custo conhecido e pedidos humanos. Não executar benchmark pago, runs ou alterar produção nesta issue.",
+      "Expor novos fatos pelos detalhes/avaliação existentes e testes de serialização; sem dashboard novo, score composto ou heurística que aprove/inicie/bloqueie trabalho. Métricas permanecem consultivas e mantêm origem dos dados."
+    ],
+    "boundaries": [
+      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
+      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
+      "Sem agentes avaliadores adicionais, rede real, criação de runs, mudança de modelo ou mudanças estéticas. Comparação de produto permanece hipótese até experimento autorizado.",
+      "Pré-requisitos: GSHIP-864 e GSHIP-872 entregues, além de GSHIP-863. Dependência documental; comparar somente depois da integração e sem iniciar runs de benchmark."
+    ],
+    "verify": [
+      "bun test test/runtime/run-evaluation.test.ts test/runtime/run-overview.test.ts test/runtime/run-runtime.test.ts test/runtime/remote-notifier.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
