@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T15:04:11.643Z",
-  "updatedAt": "2026-09-11T15:04:11.643Z",
+  "updatedAt": "2026-09-11T18:32:53.202Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -29,5 +29,9 @@
       "bun test test/compose-config.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "25a40776f9773aa0063fa4d016c7ba69da17e0b2b0e81c2f7aca1a2aa08a8e17",
+    "approvedAt": "2026-09-11T18:32:53.202Z"
   }
 }
