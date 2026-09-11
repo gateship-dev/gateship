@@ -12,6 +12,10 @@ bun run test:ui:smoke:fixed
 bun run test:ui:visual:fixed
 ```
 
+To regenerate baselines deliberately, use `bun run test:ui:visual:update:fixed`.
+The wrapper runs every command in the pinned Playwright `linux/amd64` image;
+inside that image it invokes Playwright directly.
+
 The commands write Playwright's HTML report, JSON result and failure evidence
 under `test-results/ui/`. Smoke assertions protect navigation, focus, menus,
 sorting, pagination, internal table scrolling and layout overflow. Visual
