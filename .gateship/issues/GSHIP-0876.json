@@ -1,0 +1,33 @@
+{
+  "id": "GSHIP-876",
+  "title": "Container: restaurar Claude Code na imagem linux arm64",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T15:04:11.643Z",
+  "updatedAt": "2026-09-11T15:04:11.643Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Corrigir a instalação pinada do Claude Code para que o launcher claude exista e responda nas imagens linux amd64 e arm64, preservando a imagem única, autenticação por assinatura e os smokes integrais.",
+    "acceptance": [
+      "Reproduzir e registrar a falha observada na PR 730: a imagem linux arm64 conclui o build, mas o comando claude --version falha porque o launcher não existe no PATH.",
+      "Usar um método oficial de instalação pinado a provider-cli-versions.json que entregue uma release completa do Claude Code nas duas arquiteturas; não usar latest mutável e não copiar credenciais do host.",
+      "Preservar Codex e Claude como processos filhos na mesma imagem, o PATH estável, o volume único e a autenticação por assinatura configurada pelo operador.",
+      "Atualizar o teste de pinagem para validar versão fixa, origem oficial e disponibilidade do launcher sem congelar acidentalmente uma única implementação de instalador.",
+      "Manter os quatro smokes do CI: Claude e Codex em linux amd64 e linux arm64. Não omitir arquitetura, provedor ou falha.",
+      "Construir e inspecionar localmente a arquitetura disponível; deixar a prova cruzada de arm64 para o CI com QEMU. Nenhum teste acessa credenciais ou autentica provedores.",
+      "Documentar a fonte oficial usada e explicar por que a instalação anterior podia concluir sem fornecer o launcher arm64."
+    ],
+    "boundaries": [
+      "Mudança limitada ao Dockerfile, contrato de versões, teste de pinagem e comentário ou documentação diretamente necessária.",
+      "Não adicionar sidecar, segundo container, framework, fallback genérico, download não oficial ou cobrança por API.",
+      "Não enfraquecer check, remover arm64, alterar modelos ou esforços, nem tocar na implementação funcional da GSHIP-873.",
+      "Se a fonte oficial não oferecer release completa para arm64, retornar a incompatibilidade como bloqueio; não simular suporte."
+    ],
+    "verify": [
+      "bun test test/compose-config.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
