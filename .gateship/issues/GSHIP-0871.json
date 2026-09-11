@@ -5,26 +5,25 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T12:26:46.082Z",
-  "updatedAt": "2026-09-11T12:26:46.082Z",
+  "updatedAt": "2026-09-11T13:10:15.784Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
-    "objective": "Permitir correções úteis com limites duráveis e verificáveis de duração, tentativas e estagnação, sem reiniciar orçamento por troca de fase, pergunta ou processo.",
+    "objective": "Preparar contagem durável e orçamento explícito de recuperação, sem prazo corrido ou teto numérico inventado; calibrar a proposta com o baseline antes da ativação em GSHIP-864.",
     "acceptance": [
-      "Para novas runs, registrar política versionada: até 6 despachos de correção do executor e prazo de 60 minutos corridos desde a primeira recuperação. São tetos iniciais de contenção, não prova de qualidade; snapshot imutável por run e relógio injetável em testes.",
-      "Compartilhar orçamento entre executor, verify, review, full-verify e CI. Contar toda reentrada corretiva, inclusive a primeira; implementação inicial e retomada do mesmo despacho interrompido não contam como nova correção.",
-      "Reservar despacho duravelmente antes de invocar provedor. Replay/restart com reserva pendente não cria duplicata ou saldo novo; crash antes/depois de reserva e antes/depois de resultado têm testes. Identificar tentativa por ID estável.",
-      "Prazo absoluto não renova em pause, waiting-provider, resume, restart ou mudança de fase. Verificar antes de diagnóstico/despacho e limitar chamada corretiva ao restante; ao expirar, interromper recuperação com preservação do worktree, sem editar ou destruir trabalho.",
-      "Exaustão ou dois ciclos sem avanço produz motivo técnico, saldo, tentativas e próximo passo seguro; jamais acusar falta de decisão de produto. Expiração depois de encerrada recuperação não cancela shipping já autorizado.",
-      "Resume comum, mensagem de agente ou alteração de config não repõem saldo. Esta entrega não cria API de extensão automática; com saldo esgotado, reportar necessidade de nova autorização/proposta. Custo monetário ausente permanece desconhecido, não zero.",
-      "Runs já criadas preservam política legada até terminal; sem migração ativa. Testar sexta/sétima tentativa, relógio no limite, corrida cancel/timeout, fase alternada e replays idempotentes. GSHIP-864 fará ativação; esta issue não remove bloqueios atuais isoladamente."
+      "Usar baseline GSHIP-873 para propor maxRecoveryDispatches com amostra, recorte e limitações. Não fixar 3/6, percentil automático ou outro default sem aprovação. GSHIP-864 só pode ser aprovada após receber o valor finito escolhido e sua justificativa.",
+      "Implementar contrato interno versionado com teto inteiro positivo obrigatório quando política estiver habilitada; ausência mantém política legada, nunca ilimitada. Snapshot da política por nova run; trocar config não altera runs já criadas.",
+      "Contar todo despacho corretivo real do executor em todas as origens; implementação inicial não conta. Reservar antes do spawn com ID estável; finalização repetida não debita duas vezes. Leituras/diagnóstico sem executor não criam reserva de correção.",
+      "Após crash, reconciliar reserva com identidade/estado do processo antes de invocar. Reconectar ao mesmo processo vivo não é novo despacho; reinvocar provedor exige nova reserva e débito. Estado incerto não autoriza spawn duplicado; parar com falha técnica preservando trabalho.",
+      "Remover deadline de 60 minutos corridos e parada fixa após dois ciclos. Manter timeouts/cancelamento atuais por chamada; pause e waiting-provider não gastam despachos. Resumes/restarts, rephrasing e mudança de fase não renovam saldo.",
+      "Sem saldo, preservar worktree e informar exaustão técnica com tentativas; não fabricar ambiguidade humana. Não repor orçamento via mensagem de agente ou config. Extensão não integra esta entrega; recomendar proposta explícita pelo fluxo autorizado.",
+      "Entrega registra contagem observacional e testa mecanismo com tetos sintéticos, crash antes/depois de spawn e cancelamento. Não habilitar política nem mudar roteamento; GSHIP-864 ativa depois da escolha explícita. Custo ausente permanece desconhecido."
     ],
     "boundaries": [
-      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
-      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
-      "Reusar SQLite/eventos e cancelamento existentes; sem timer daemon, orçamento por string, nova tela de configuração ou alteração automática de modelo.",
-      "Os valores 6/60min são defaults iniciais explícitos para novas runs, revisáveis por proposta baseada em observação; não aprender/aumentar limites automaticamente.",
-      "Pré-requisitos: GSHIP-869 e GSHIP-870 entregues. GSHIP-864 ativa a política no fluxo. Dependência documental; não aprovar fora dessa ordem."
+      "Manter Luna e modelos/esforços configurados, sandbox, allowlists, autenticação por assinatura, worktree isolada e reviewer independente read-only.",
+      "Não aprovar/iniciar/retomar/cancelar runs, alterar credenciais, enfraquecer checks ou editar .gship diretamente. Dependências abaixo são documentais, não bloqueios automáticos.",
+      "Pré-requisitos: GSHIP-873, GSHIP-869 e GSHIP-870. Número final é escolha pré-aprovação de GSHIP-864, não decisão silenciosa do Luna.",
+      "Reusar eventos, persistência e controle de processo existentes. Sem cron, relógio paralelo, UI de orçamento, escolha automática de modelo ou novo serviço."
     ],
     "verify": [
       "bun test test/runtime/run-runtime.test.ts test/runtime/run-store.test.ts test/runtime/run-state.test.ts",
