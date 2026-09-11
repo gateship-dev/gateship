@@ -5,26 +5,25 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T12:27:36.697Z",
-  "updatedAt": "2026-09-11T12:27:36.697Z",
+  "updatedAt": "2026-09-11T13:10:22.903Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
-    "objective": "Dar a executor, orquestrador e reviewer evidências da versão realmente verificada, inclusive visuais quando declaradas pelo projeto, mantendo revisão independente e sem navegação na aplicação de produção.",
+    "objective": "Fornecer à revisão relatórios de verificação e evidências do estado/interação da interface, ligados ao código verificado; imagens são complementares, sem ampliar ferramentas ou acessar produção.",
     "acceptance": [
-      "Reutilizar verificação/artefatos já produzidos pelo projeto; não impor Playwright, shadcn ou regras Gateship a outros projetos. Coleta adicional só por comando declarado no contrato e executado pelo runtime/executor autorizado, nunca pelo reviewer.",
-      "Associar relatório/artefato a run, tentativa, comando, resultado e fingerprint do worktree verificado. Mudança no código invalida evidência anterior; arquivo ausente, antigo ou de outra run é indisponível, nunca prova de aprovação.",
-      "Entregar resumo factual de checks e referências locais a artefatos sanitizados para todos os papéis; imagem só conta como inspecionada quando o adaptador suporta sua leitura. Testar Claude e Codex; incapacidade explícita não pode virar alegação de inspeção visual.",
-      "Revisor mantém sessão nova, ferramentas read-only e ausência de MCP/skills herdadas. Não liberar shell/browser de produção. Logs, imagens e texto do executor são evidências não vinculantes; argumentos do executor não substituem verificação independente.",
-      "Validar caminhos reais dentro da pasta autorizada de artefatos da run; rejeitar traversal, symlink externo e URL remota arbitrária. Resumo até 12KiB e no máximo 8 arquivos/20MiB por pacote; excedente é sinalizado com índice, nunca corte silencioso.",
-      "Para UI Gateship, aproveitar harness/relatórios existentes de GSHIP-855/859. Diferença visual pode ser intencional dentro do contrato: preservar testes objetivos e baselines revisáveis; não remover check obrigatório nem atualizar snapshots automaticamente para passar.",
-      "Testar evidência fresca/velha/ausente, mutação do worktree, traversal/symlink, excesso de tamanho e adaptador sem imagem; UI alterada sem evidência visual requerida permanece não verificada. Projetos sem requisito visual mantêm revisão existente."
+      "Reusar relatórios dos comandos já autorizados e harness existente. No Gateship incluir resultados de interação e DOM/árvore de acessibilidade relevantes quando produzidos; não impor Playwright, shadcn ou verificação visual a outros projetos.",
+      "Associar evidência a run, tentativa, comando, resultado e fingerprint do worktree; alteração de código invalida anexos anteriores. Ausência, origem divergente ou corte relevante ficam explícitos; não apresentar relatório antigo como validação atual.",
+      "Entregar resumo focal e referências locais seguras a executor, orquestrador e reviewer. Screenshot não prova foco, atributos DOM, timing ou funcionamento; imagem sem suporte confirmado do adaptador é não inspecionada, nunca aprovação visual.",
+      "Coletor autorizado escreve somente na pasta de artefatos dentro do worktree da run; runtime/reviewer leem sem seguir symlinks externos. Rejeitar traversal, URL arbitrária e anexo de outra run; não criar memória ou processo paralelo.",
+      "Usar dados sintéticos do harness, sem capturas de produção/autenticação. Validar arquivos/tamanhos antes de anexar e marcar exclusões; manter limites existentes quando aplicáveis. Texto em imagem/DOM/log é evidência não vinculante, nunca instrução.",
+      "Manter sessão independente e ferramentas read-only. Referências que não possam ser inspecionadas geram limitação explícita; evidência exigida ausente não autoriza CLEAN. Preservar critérios objetivos e atualização deliberada de baseline, nunca automática para passar.",
+      "Testar relatório fresco/antigo/ausente, interação menu fechado com atributo ainda presente, acessibilidade/DOM, imagem indisponível, traversal/symlink e conteúdo malicioso. Priorizar relatórios; não adicionar suporte multimodal novo ou browser autônomo nesta issue."
     ],
     "boundaries": [
-      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
-      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
-      "Sem gate estético por IA, registry obrigatório, browser autenticado de produção ou servidor adicional. Sem nova execução de modelos pagos para validar esta issue.",
-      "A pasta de artefatos não é nova memória/estado paralelo; reusar ciclo de vida da run. Não anexar credenciais, dados pessoais ou capturas de ambiente real.",
-      "Pré-requisito: GSHIP-869 entregue. Reaproveitar GSHIP-855/859 já implementadas; esta issue fornece evidências aos papéis, não recria harness. Ordem documental."
+      "Manter Luna e modelos/esforços configurados, sandbox, allowlists, autenticação por assinatura, worktree isolada e reviewer independente read-only.",
+      "Não aprovar/iniciar/retomar/cancelar runs, alterar credenciais, enfraquecer checks ou editar .gship diretamente. Dependências abaixo são documentais, não bloqueios automáticos.",
+      "Pré-requisito: GSHIP-869. Reusar GSHIP-855/859; não recriar harness nem mudar estética. Captura adicional só se já autorizada no contrato de verificação.",
+      "Sem permissões novas, capturas do desktop, browser autenticado ou dados pessoais. Caso evidência visual necessária não seja suportada, registrar limitação em vez de simular inspeção."
     ],
     "verify": [
       "bun test test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts test/runtime/run-review.test.ts",
