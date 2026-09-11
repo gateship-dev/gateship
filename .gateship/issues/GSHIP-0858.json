@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:22.976Z",
-  "updatedAt": "2026-09-10T20:39:28.409Z",
+  "updatedAt": "2026-09-11T05:24:03.642Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -70,5 +70,9 @@
         }
       ]
     }
+  },
+  "approval": {
+    "fingerprint": "ebf732aded524953874edd69b6504757a4872397e35241ad6bdf036bb03e1186",
+    "approvedAt": "2026-09-11T05:24:03.642Z"
   }
 }
