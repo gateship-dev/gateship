@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -8,6 +8,7 @@ import {
 	createOperatorIssue,
 	IssueIntakeError,
 	parseOperatorSpecInput,
+	setIssueDependencies,
 	specifyOperatorIssue,
 } from '../../src/runtime/issue-intake.ts';
 import type { GitIdentityResult } from '../../src/runtime/git-identity.ts';
@@ -15,6 +16,7 @@ import { fingerprintSpec, type ResearchContract } from '../../src/issues/spec.ts
 import { VERIFICATION_COMMAND_TIMEOUT_MS } from '../../src/runtime/git-runtime.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
+import { readBacklogFromMain } from '../../src/issues/backlog.ts';
 
 function git(cwd: string, args: string[]): string {
 	const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
@@ -90,7 +92,176 @@ done
 	chmodSync(hook, 0o755);
 }
 
+function publishIssueEdits(fixture: ReturnType<typeof seedFixture>, edits: Record<string, string[]>): string {
+	const directory = join(fixture.seed, '.gateship', 'issues');
+	for (const [id, blockedBy] of Object.entries(edits)) {
+		const number = id.slice(id.indexOf('-') + 1);
+		const path = join(directory, `${id.slice(0, id.indexOf('-'))}-${number.padStart(4, '0')}.json`);
+		const issue = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+		issue['blockedBy'] = blockedBy;
+		writeFileSync(path, `${JSON.stringify(issue, null, 2)}\n`);
+	}
+	git(fixture.seed, ['add', '.']); git(fixture.seed, ['commit', '-q', '-m', 'invalid dependency graph fixture']); git(fixture.seed, ['push', '-q', fixture.remote, 'main']); git(fixture.local, ['fetch', '-q', 'origin', 'main']);
+	return git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+}
+
+function advanceMainAfterIntakeBranchPush(fixture: ReturnType<typeof seedFixture>, edits: Record<string, string[]>): string {
+	const directory = join(fixture.seed, '.gateship', 'issues');
+	for (const [id, blockedBy] of Object.entries(edits)) {
+		const number = id.slice(id.indexOf('-') + 1);
+		const path = join(directory, `${id.slice(0, id.indexOf('-'))}-${number.padStart(4, '0')}.json`);
+		const issue = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+		issue['blockedBy'] = blockedBy;
+		writeFileSync(path, `${JSON.stringify(issue, null, 2)}\n`);
+	}
+	git(fixture.seed, ['add', '.']);
+	git(fixture.seed, ['commit', '-q', '-m', 'concurrent main change']);
+	const concurrentSha = git(fixture.seed, ['rev-parse', 'HEAD']);
+	git(fixture.seed, ['push', '-q', fixture.remote, `HEAD:refs/heads/concurrent-${concurrentSha.slice(0, 8)}`]);
+	blockDirectPushToMain(fixture.local, 'BLOCKED: direct push to refs/heads/main is not allowed.');
+	return concurrentSha;
+}
+
 describe('remote-main operator issue intake', () => {
+	test('sets a dependency batch, reverses it with [], preserves unrelated fields and is idempotent', async () => {
+		const fixture = seedFixture();
+		const revision = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		const first = await setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }] });
+		expect(first.changes).toHaveLength(1);
+		const changed = readBacklogFromMain(fixture.local, undefined, RUNTIME_SOURCE_REF).find((issue) => issue.id === 'CAM-1')!;
+		expect(changed.blockedBy).toEqual(['CAM-2']);
+		expect(changed.approval).toBeUndefined();
+		const revision2 = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		const noop = await setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision2, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }] });
+		expect(noop.changes).toEqual([]);
+		const revision3 = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		await setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision3, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: [] }] });
+		expect(readBacklogFromMain(fixture.local, undefined, RUNTIME_SOURCE_REF).find((issue) => issue.id === 'CAM-1')!.blockedBy).toEqual([]);
+	});
+
+	test('rejects indirect cycles and stale revisions without recording anything', async () => {
+		const fixture = seedFixture();
+		const revision = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		await expect(setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision, authorization: 'operator', changes: [
+			{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }, { issueId: 'CAM-2', blockedBy: ['CAM-1'] },
+		]})).rejects.toThrow('Dependency cycle');
+		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(revision);
+		await expect(setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: 'stale', authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }] })).rejects.toThrow('expected stale');
+		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(revision);
+	});
+
+	test('rejects idempotent requests over an already invalid graph without writing or invalidating approval', async () => {
+		const cases: Array<{ edits: Record<string, string[]>; changes: Array<{ issueId: string; blockedBy: string[] }>; reason: string }> = [
+			{ edits: { 'CAM-1': ['CAM-1'] }, changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-1'] }], reason: 'CAM-1' },
+			{ edits: { 'CAM-1': ['CAM-2'], 'CAM-2': ['CAM-1'] }, changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }, { issueId: 'CAM-2', blockedBy: ['CAM-1'] }], reason: 'CAM-1 -> CAM-2 -> CAM-1' },
+			{ edits: { 'CAM-1': ['CAM-MISSING'] }, changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-MISSING'] }], reason: 'CAM-MISSING' },
+		];
+		for (const candidate of cases) {
+			const fixture = seedFixture();
+			const revision = publishIssueEdits(fixture, candidate.edits);
+			await expect(setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision, authorization: 'operator', changes: candidate.changes })).rejects.toThrow(candidate.reason);
+			expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(revision);
+			expect(readBacklogFromMain(fixture.local, undefined, RUNTIME_SOURCE_REF).find((issue) => issue.id === 'CAM-1')!.blockedBy).toEqual(candidate.edits['CAM-1']!);
+		}
+	});
+
+	test('rejects an active target and keeps a failed batch atomic', async () => {
+		const fixture = seedFixture();
+		const revision = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		await expect(setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }] }, undefined, undefined, { activeIssueIds: ['CAM-1'] })).rejects.toThrow('being executed');
+		await expect(setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }, { issueId: 'CAM-999', blockedBy: [] }] })).rejects.toThrow('does not exist');
+		expect(readBacklogFromMain(fixture.local, undefined, RUNTIME_SOURCE_REF).find((issue) => issue.id === 'CAM-1')!.blockedBy).toEqual([]);
+	});
+
+	test('treats identical shipped and abandoned dependencies as no-op, including mixed batches', async () => {
+		const fixture = seedFixture();
+		const directory = join(fixture.seed, '.gateship', 'issues');
+		writeFileSync(join(directory, 'CAM-3.json'), `${JSON.stringify({ id: 'CAM-3', title: 'shipped', stage: 'shipped', status: 'open', blockedBy: [], createdAt: '', updatedAt: '' }, null, 2)}\n`);
+		writeFileSync(join(directory, 'CAM-4.json'), `${JSON.stringify({ id: 'CAM-4', title: 'abandoned', stage: 'specified', status: 'abandoned', blockedBy: [], createdAt: '', updatedAt: '' }, null, 2)}\n`);
+		git(fixture.seed, ['add', '.']); git(fixture.seed, ['commit', '-q', '-m', 'dependency no-op fixtures']); git(fixture.seed, ['push', '-q', fixture.remote, 'main']); git(fixture.local, ['fetch', '-q', 'origin', 'main']);
+		const revision = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		for (const issueId of ['CAM-3', 'CAM-4']) {
+			const result = await setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision, authorization: 'operator', changes: [{ issueId, blockedBy: [] }] });
+			expect(result.changes).toEqual([]);
+			expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(revision);
+		}
+		const mixed = await setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: revision, authorization: 'operator', changes: [{ issueId: 'CAM-3', blockedBy: [] }, { issueId: 'CAM-1', blockedBy: ['CAM-2'] }] });
+		expect(mixed.changes.map((change) => change.issueId)).toEqual(['CAM-1']);
+		const changedRevision = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		await expect(setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: changedRevision, authorization: 'operator', changes: [{ issueId: 'CAM-3', blockedBy: ['CAM-2'] }] })).rejects.toThrow('cannot change dependencies');
+		await expect(setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: changedRevision, authorization: 'operator', changes: [{ issueId: 'CAM-4', blockedBy: ['CAM-2'] }] })).rejects.toThrow('cannot change dependencies');
+	});
+
+	test('returns the post-merge revision for a protected dependency batch and it survives a fresh clone', async () => {
+		const fixture = seedFixture();
+		blockDirectPushToMain(fixture.local, 'BLOCKED: direct push to refs/heads/main is not allowed.');
+		const shipper = { mergePullRequest: async (input: { headSha: string }) => { git(fixture.remote, ['update-ref', 'refs/heads/main', input.headSha]); return { outcome: 'merged' as const, prNumber: 1 }; } };
+		const before = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		const result = await setIssueDependencies(fixture.local, { projectId: 'p', expectedRevision: before, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }] }, undefined, undefined, { shipper });
+		expect(result.revision).toBe(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]));
+		const restarted = join(fixture.root, 'restarted');
+		git(fixture.root, ['clone', '-q', fixture.remote, restarted]);
+		expect(readBacklogFromMain(restarted, undefined, 'main').find((issue) => issue.id === 'CAM-1')!.blockedBy).toEqual(['CAM-2']);
+	});
+
+	test('rejects protected intake when main advances concurrently, including a new cycle', async () => {
+		const fixture = seedFixture();
+		const before = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		const concurrent = advanceMainAfterIntakeBranchPush(fixture, { 'CAM-1': ['CAM-2'], 'CAM-2': ['CAM-1'] });
+		const mergeCalls: string[] = [];
+		const shipper = { mergePullRequest: async (input: { headSha: string }) => {
+			mergeCalls.push(input.headSha);
+			return { outcome: 'merged' as const, prNumber: 1 };
+		} };
+		await expect(setIssueDependencies(fixture.local, {
+			projectId: 'p', expectedRevision: before, authorization: 'operator',
+			changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }],
+		}, undefined, undefined, { shipper, beforeProtectedMerge: () => git(fixture.remote, ['update-ref', 'refs/heads/main', concurrent]) })).rejects.toThrow('backlog advanced');
+		expect(mergeCalls).toEqual([]);
+		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(concurrent);
+		expect(readBacklogFromMain(fixture.local, undefined, RUNTIME_SOURCE_REF).find((issue) => issue.id === 'CAM-1')!.blockedBy).toEqual(['CAM-2']);
+	});
+
+	test('rejects protected intake when main advances concurrently without a cycle', async () => {
+		const fixture = seedFixture();
+		const before = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		const concurrent = advanceMainAfterIntakeBranchPush(fixture, { 'CAM-2': ['CAM-1'] });
+		const mergeCalls: string[] = [];
+		const shipper = { mergePullRequest: async (input: { headSha: string }) => {
+			mergeCalls.push(input.headSha);
+			return { outcome: 'merged' as const, prNumber: 1 };
+		} };
+		await expect(setIssueDependencies(fixture.local, {
+			projectId: 'p', expectedRevision: before, authorization: 'operator',
+			changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }],
+		}, undefined, undefined, { shipper, beforeProtectedMerge: () => git(fixture.remote, ['update-ref', 'refs/heads/main', concurrent]) })).rejects.toThrow('backlog advanced');
+		expect(mergeCalls).toEqual([]);
+		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(concurrent);
+	});
+
+	test('reports the effective concurrent revision after a protected merge', async () => {
+		const fixture = seedFixture();
+		const before = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		const concurrent = advanceMainAfterIntakeBranchPush(fixture, { 'CAM-1': ['CAM-2'] });
+		const shipper = { mergePullRequest: async () => ({ outcome: 'merged' as const, prNumber: 1 }) };
+		const result = await setIssueDependencies(fixture.local, {
+			projectId: 'p', expectedRevision: before, authorization: 'operator',
+			changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }],
+		}, undefined, undefined, { shipper, afterProtectedValidation: () => git(fixture.remote, ['update-ref', 'refs/heads/main', concurrent]) });
+		expect(result.revision).toBe(concurrent);
+	});
+
+	test('reports a published conflict when the effective graph is invalid after merge', async () => {
+		const fixture = seedFixture();
+		const before = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+		const concurrent = advanceMainAfterIntakeBranchPush(fixture, { 'CAM-1': ['CAM-2'], 'CAM-2': ['CAM-1'] });
+		const shipper = { mergePullRequest: async () => ({ outcome: 'merged' as const, prNumber: 1 }) };
+		await expect(setIssueDependencies(fixture.local, {
+			projectId: 'p', expectedRevision: before, authorization: 'operator',
+			changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }],
+		}, undefined, undefined, { shipper, afterProtectedValidation: () => git(fixture.remote, ['update-ref', 'refs/heads/main', concurrent]) })).rejects.toThrow(`published at ${concurrent}`);
+		expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(concurrent);
+	});
 	test('accepts a verify command longer than 1000 characters', () => {
 		const command = 'x'.repeat(1001);
 		expect(parseOperatorSpecInput({ objective: 'Objetivo.', acceptance: ['Critério.'], verify: [command] })).toEqual({

@@ -57,7 +57,7 @@ describe('canonical agent CLI', () => {
 		expect(result.output).toMatchObject({ ok: true, version: 'v1' });
 		const guide = result.output['guide'];
 		expect(typeof guide).toBe('string');
-		expect(String(guide).length).toBeLessThan(950);
+		expect(String(guide).length).toBeLessThan(1100);
 		expect(guide).toContain('Never edit .gship directly');
 		expect(guide).toContain('Never invent operator approval');
 		expect(guide).toContain('Prefer issues.create_approved with cited explicit authorization');
@@ -70,7 +70,7 @@ describe('canonical agent CLI', () => {
 			'project.inspect', 'projects.list', 'projects.overview', 'projects.cohort_regression_proposal', 'runs.list_all', 'queues.list', 'projects.status', 'projects.register',
 			'projects.import', 'projects.create',
 			'projects.unregister', 'status.get',
-			'backlog.list', 'issues.list', 'issues.get',
+			'backlog.list', 'issues.list', 'issues.set_dependencies', 'issues.get',
 			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.create_approved', 'issues.specify', 'issues.approve',
 			'issues.abandon', 'brief.get', 'brief.update', 'runs.start', 'runs.respond',
 			'runs.cancel', 'runs.abandon', 'runs.ship',
@@ -387,7 +387,7 @@ describe('canonical agent CLI', () => {
 		}
 		const issueItem = ((listedIssues.output['result'] as { issues: Record<string, unknown>[] }).issues[0])!;
 		expect(Object.keys(issueItem)).toEqual([
-			'id', 'title', 'stage', 'status', 'blockedBy', 'updatedAt', 'approved',
+			'id', 'title', 'stage', 'status', 'blockedBy', 'unmetBlockers', 'updatedAt', 'approved',
 		]);
 		expect(issueItem).not.toHaveProperty('description');
 		expect(issueItem).not.toHaveProperty('spec');

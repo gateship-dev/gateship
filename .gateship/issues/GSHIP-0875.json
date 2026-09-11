@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-875",
   "title": "Fila: configurar dependências e garantir ordem de execução por CLI/API",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T13:39:53.759Z",
-  "updatedAt": "2026-09-11T13:39:53.759Z",
+  "updatedAt": "2026-09-11T21:24:21.836Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

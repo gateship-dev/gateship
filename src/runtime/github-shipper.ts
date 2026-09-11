@@ -248,6 +248,8 @@ export interface GithubPullRequestInput {
 	initialCiStatus: RuntimeShipInput['initialCiStatus'];
 	/** Delete the deterministic control branch once its exact head is merged. */
 	deleteBranch?: boolean;
+	/** Intake publication must never rebase or arm auto-merge after its base check. */
+	protectedBaseSha?: string;
 }
 
 /** Minimal seam used by intake; the production implementation is GithubShipper. */
@@ -265,6 +267,7 @@ interface WorkspaceIssue {
 interface PullRequestView {
 	state: string;
 	mergeStateStatus: string;
+	baseRefOid: string;
 	/** The head GitHub currently records for the branch, empty when unreported. */
 	headRefOid: string;
 	url: string;
@@ -402,6 +405,7 @@ function parsePullRequestView(json: string): PullRequestView {
 	const view = parsed as {
 		state?: unknown;
 		mergeStateStatus?: unknown;
+		baseRefOid?: unknown;
 		headRefOid?: unknown;
 		url?: unknown;
 		statusCheckRollup?: unknown;
@@ -409,6 +413,7 @@ function parsePullRequestView(json: string): PullRequestView {
 	return {
 		state: typeof view?.state === 'string' ? view.state : 'UNKNOWN',
 		mergeStateStatus: typeof view?.mergeStateStatus === 'string' ? view.mergeStateStatus : 'UNKNOWN',
+		baseRefOid: typeof view?.baseRefOid === 'string' ? view.baseRefOid : '',
 		headRefOid: typeof view?.headRefOid === 'string' ? view.headRefOid : '',
 		url: typeof view?.url === 'string' ? view.url : '',
 		statusCheckRollup: Array.isArray(view?.statusCheckRollup) ? view.statusCheckRollup : [],
@@ -622,6 +627,9 @@ export class GithubShipper implements RuntimeShipper {
 		if (settled !== null) return settled;
 
 		const prNumber = pullRequest.number;
+		if (input.protectedBaseSha !== undefined) {
+			return await this.#awaitMerge(input, prNumber, input.branch, input.headSha, true);
+		}
 		try {
 			await this.#checked(
 				input,
@@ -849,7 +857,7 @@ export class GithubShipper implements RuntimeShipper {
 	 * updated head, not the one originally pushed.
 	 */
 	async #awaitMerge(
-		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch'>,
+		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch' | 'protectedBaseSha'>,
 		prNumber: number,
 		branch: string,
 		initialHeadSha: string,
@@ -907,7 +915,7 @@ export class GithubShipper implements RuntimeShipper {
 	 * count as a pending status or spend the merge timeout.
 	 */
 	async #pollOnce(
-		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch'>,
+		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch' | 'protectedBaseSha'>,
 		prNumber: number,
 		branch: string,
 		headSha: string,
@@ -928,7 +936,7 @@ export class GithubShipper implements RuntimeShipper {
 		let view: PullRequestView;
 		try {
 			view = parsePullRequestView(await this.#checked(input, 'gh', [
-				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,url,statusCheckRollup',
+				'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,baseRefOid,url,statusCheckRollup',
 			], { retryIdempotent: true }));
 		} catch (error) {
 			if (error instanceof GithubUnavailableError) {
@@ -937,6 +945,11 @@ export class GithubShipper implements RuntimeShipper {
 			throw error;
 		}
 		const ci = ciAggregate(view.statusCheckRollup);
+		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
+		if (verdict !== null) return { result: verdict };
+		if (input.protectedBaseSha !== undefined && view.baseRefOid !== input.protectedBaseSha) {
+			return { result: { outcome: 'failed', detail: `protected intake base changed from ${input.protectedBaseSha} to ${view.baseRefOid || 'unknown'} before merge` } };
+		}
 		if (ci.status !== lastCiStatus) {
 			input.emit('ship.ci-status', {
 				prNumber,
@@ -945,7 +958,9 @@ export class GithubShipper implements RuntimeShipper {
 				...(ci.status === 'failed' ? { failedChecks: ci.failedChecks } : {}),
 			});
 		}
-		const behind = await this.#pollBehind(input, prNumber, branch, headSha, branchUpdates, view);
+		const behind = input.protectedBaseSha === undefined
+			? await this.#pollBehind(input, prNumber, branch, headSha, branchUpdates, view)
+			: null;
 		if (behind !== null) {
 			return 'result' in behind
 				? behind
@@ -953,8 +968,6 @@ export class GithubShipper implements RuntimeShipper {
 		}
 		const blocked = await this.#pollBlocked(input, prNumber, headSha, view);
 		if (blocked !== null) return { result: blocked };
-		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
-		if (verdict !== null) return { result: verdict };
 		directMergeRequested = await this.#requestDirectMerge(
 			input,
 			prNumber,
@@ -1070,7 +1083,7 @@ export class GithubShipper implements RuntimeShipper {
 	/** Read the full state needed to settle a branch-update race safely. */
 	async #pullRequestView(input: RuntimeShipInput, prNumber: number): Promise<PullRequestView> {
 		return parsePullRequestView(await this.#checked(input, 'gh', [
-			'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,url,statusCheckRollup',
+			'pr', 'view', String(prNumber), '--json', 'state,mergeStateStatus,headRefOid,baseRefOid,url,statusCheckRollup',
 		], { retryIdempotent: true }));
 	}
 

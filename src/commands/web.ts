@@ -65,6 +65,8 @@ import {
 	parseOperatorAbandonInput,
 	parseOperatorIssueInput,
 	parseOperatorSpecInput,
+	setIssueDependencies,
+	type DependencyChange,
 	specifyOperatorIssue,
 } from '../runtime/issue-intake.ts';
 import {
@@ -293,6 +295,7 @@ interface ProjectCycleContext {
 	approveIssue: IssueApprover;
 	issueAbandoner: IssueAbandoner;
 	issueReader: (id: string) => IssueEntry | null;
+	setDependencies: (input: unknown, options?: { activeIssueIds?: readonly string[] }) => Promise<{ revision: string; changes: DependencyChange[] }>;
 	close(): Promise<void>;
 }
 
@@ -1459,6 +1462,12 @@ function readPublishedIssues(cwd: string): IssueEntry[] {
 	return readBacklogFromMain(cwd, spawnSync, RUNTIME_SOURCE_REF);
 }
 
+function currentBacklogRevision(cwd: string): string {
+	const result = defaultRunGit(cwd, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
+	if (result.exitCode !== 0) throw new Error(result.stderr || 'Could not resolve backlog revision.');
+	return result.stdout.trim();
+}
+
 function readPublishedIssue(cwd: string, id: string): IssueEntry | null {
 	return readPublishedIssues(cwd).find((issue) => issue.id === id) ?? null;
 }
@@ -1469,7 +1478,15 @@ function resolveIssueReader(options: WebServerOptions): (id: string) => IssueEnt
 
 function listPublishedIssues(cwd: string): Response {
 	try {
-		return Response.json({ issues: readPublishedIssues(cwd) });
+		const issues = readPublishedIssues(cwd);
+		const byId = new Map(issues.map((entry) => [entry.id, entry]));
+		return Response.json({
+			issues: issues.map((issue) => ({
+				...issue,
+				unmetBlockers: issue.blockedBy.filter((id) => byId.get(id)?.stage !== 'shipped'),
+			})),
+			revision: currentBacklogRevision(cwd),
+		});
 	} catch (error) {
 		return Response.json(
 			{ ok: false, code: 'backlog-unavailable', message: error instanceof Error ? error.message : String(error) },
@@ -1478,14 +1495,18 @@ function listPublishedIssues(cwd: string): Response {
 	}
 }
 
-function readPublishedIssueResponse(issueReader: (id: string) => IssueEntry | null, id: string): Response {
+function readPublishedIssueResponse(issueReader: (id: string) => IssueEntry | null, id: string, cwd?: string): Response {
 	try {
 		const issue = issueReader(id);
 		if (issue === null) {
 			return Response.json({ ok: false, code: 'issue-not-found', message: 'Issue not found.' }, { status: 404 });
 		}
+		const backlog = cwd === undefined ? [] : readPublishedIssues(cwd);
+		const byId = new Map(backlog.map((entry) => [entry.id, entry]));
+		const unmetBlockers = issue.blockedBy.filter((depId) => byId.get(depId)?.stage !== 'shipped');
 		return Response.json({
-			issue,
+			issue: { ...issue, unmetBlockers },
+			...(cwd === undefined ? {} : { revision: currentBacklogRevision(cwd) }),
 			...(issue.spec === undefined ? {} : { fingerprint: fingerprintSpec(issue.spec) }),
 		});
 	} catch (error) {
@@ -1493,6 +1514,31 @@ function readPublishedIssueResponse(issueReader: (id: string) => IssueEntry | nu
 			{ ok: false, code: 'backlog-unavailable', message: error instanceof Error ? error.message : String(error) },
 			{ status: 503 },
 		);
+	}
+}
+
+async function setDependenciesFromOperator(
+	request: Request,
+	projectId: string,
+	runtime: RunRuntime,
+	setDependencies: (input: unknown, options?: { activeIssueIds?: readonly string[] }) => Promise<{ revision: string; changes: DependencyChange[] }>,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try { body = await request.json(); } catch {
+		return Response.json({ ok: false, code: 'invalid-request', message: 'A JSON object is required.' }, { status: 400 });
+	}
+	try {
+		const release = runtime.acquireAdmissionFence('issue dependency mutation in progress');
+		if (release === undefined) throw new IssueIntakeError('publish-conflict', 'Another issue mutation or run admission is in progress.', 409);
+		const bodyRecord = body !== null && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : {};
+		try {
+			const active = new Set(runtime.listRuns().filter((run) => !isTerminalRunState(run.state)).map((run) => run.issueId));
+			return Response.json({ ok: true, ...(await setDependencies({ ...bodyRecord, projectId }, { activeIssueIds: [...active] })) });
+		} finally { release(); }
+	} catch (error) {
+		if (!(error instanceof IssueIntakeError)) throw error;
+		return Response.json({ ok: false, code: error.code, message: error.message }, { status: error.status });
 	}
 }
 
@@ -2751,6 +2797,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		),
 		issueAbandoner,
 		issueReader,
+		setDependencies: (input, options) => setIssueDependencies(projectRoot, input, ensureGitIdentityOnce, undefined, { ...options, shipper: runRuntime.getIntakeShipper() }),
 	} as ProjectCycleContext;
 	bootContext.close = async () => {};
 	const composeProjectRuntime = (project: RegisteredProject): ProjectCycleContext => {
@@ -2796,6 +2843,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				() => { projectRuntimes.admitStart(project.id); },
 			),
 			issueReader: (id) => readPublishedIssue(project.root, id),
+			setDependencies: (input, options) => setIssueDependencies(project.root, input, ensureIdentity, undefined, { ...options, shipper: runtime.getIntakeShipper() }),
 		} as ProjectCycleContext;
 		context.close = async () => {
 			unsubscribe();
@@ -3113,6 +3161,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					(context) => createIssueFromOperator(request, context.issueIntake),
 				),
 			},
+			'/api/projects/:projectId/issues/dependencies': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => setDependenciesFromOperator(request, request.params.projectId, context.runtime, context.setDependencies),
+				),
+			},
 			'/api/projects/:projectId/issues/create-approved': {
 				POST: (request) => projectOperation(
 					request.params.projectId,
@@ -3122,7 +3176,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/api/projects/:projectId/issues/:issueId': {
 				GET: (request) => projectOperation(
 					request.params.projectId,
-					(context) => readPublishedIssueResponse(context.issueReader, request.params.issueId),
+					(context) => readPublishedIssueResponse(context.issueReader, request.params.issueId, context.root),
 				),
 			},
 			'/api/projects/:projectId/issues/:issueId/spec': {

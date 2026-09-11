@@ -10,7 +10,7 @@ export function isBlocked(issue: IssueEntry, backlog: IssueEntry[]): boolean {
 	const byId = new Map(backlog.map((e) => [e.id, e]));
 	for (const depId of issue.blockedBy) {
 		const dep = byId.get(depId);
-		if (dep !== undefined && dep.stage !== "shipped") return true;
+		if (dep === undefined || dep.stage !== "shipped") return true;
 	}
 	return false;
 }
@@ -64,4 +64,42 @@ export function checkReferentialIntegrity(backlog: IssueEntry[]): {
 		}
 	}
 	return { ok: errors.length === 0, errors };
+}
+
+/** Validate a complete proposed dependency graph before it is persisted. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: graph validation keeps each invalid edge reason explicit
+export function validateDependencyGraph(backlog: IssueEntry[]): { ok: boolean; errors: string[] } {
+	const errors: string[] = [];
+	const byId = new Map<string, IssueEntry>();
+	for (const entry of backlog) {
+		if (byId.has(entry.id)) errors.push(`Duplicate issue id: ${entry.id}`);
+		byId.set(entry.id, entry);
+	}
+	for (const entry of backlog) {
+		const seen = new Set<string>();
+		for (const depId of entry.blockedBy) {
+			if (seen.has(depId)) errors.push(`Duplicate dependency: ${entry.id} lists ${depId} more than once`);
+			seen.add(depId);
+			if (depId === entry.id) errors.push(`Self-reference: ${entry.id} lists itself in blockedBy`);
+			else if (!byId.has(depId)) errors.push(`Unknown dependency: ${entry.id} references ${depId}`);
+		}
+	}
+	const visiting = new Set<string>();
+	const visited = new Set<string>();
+	const visit = (id: string, path: string[]): void => {
+		if (visiting.has(id)) {
+			const start = path.indexOf(id);
+			errors.push(`Dependency cycle: ${[...path.slice(start), id].join(' -> ')}`);
+			return;
+		}
+		if (visited.has(id)) return;
+		const entry = byId.get(id);
+		if (entry === undefined) return;
+		visiting.add(id);
+		for (const depId of entry.blockedBy) visit(depId, [...path, id]);
+		visiting.delete(id);
+		visited.add(id);
+	};
+	for (const entry of backlog) visit(entry.id, []);
+	return { ok: errors.length === 0, errors: [...new Set(errors)] };
 }

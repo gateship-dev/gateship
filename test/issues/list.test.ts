@@ -191,7 +191,7 @@ describe("deriveBacklogView — unmet blockers", () => {
 		expect(entry2?.unmetBlockers).toEqual([]);
 	});
 
-	test("a missing (unknown) blockedBy id is NOT reported as an unmet blocker", () => {
+	test("a missing (unknown) blockedBy id is reported as an unmet blocker", () => {
 		const backlog: IssueEntry[] = [
 			makeIssue({
 				id: "CAM-5",
@@ -202,7 +202,7 @@ describe("deriveBacklogView — unmet blockers", () => {
 		const view = deriveBacklogView(backlog);
 		const specified = view.find((g) => g.stage === "specified");
 		const entry = specified?.entries.find((e) => e.issue.id === "CAM-5");
-		expect(entry?.unmetBlockers).toEqual([]);
+		expect(entry?.unmetBlockers).toEqual(["CAM-MISSING"]);
 	});
 
 	test("an entry with no blockedBy has an empty unmetBlockers array", () => {

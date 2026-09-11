@@ -46,9 +46,9 @@ describe("isBlocked", () => {
 		expect(isBlocked(issue, [dep, issue])).toBe(false);
 	});
 
-	test("returns false when dep is missing from backlog (not isBlocked's concern)", () => {
+	test("returns true when dep is missing from backlog (fail-closed)", () => {
 		const issue = makeEntry("A", "idea", ["UNKNOWN"]);
-		expect(isBlocked(issue, [issue])).toBe(false);
+		expect(isBlocked(issue, [issue])).toBe(true);
 	});
 
 	test("returns true when at least one dep is non-shipped among multiple", () => {

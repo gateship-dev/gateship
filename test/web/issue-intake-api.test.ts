@@ -1,13 +1,82 @@
 import { describe, expect, test } from 'bun:test';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import { IssueIntakeError } from '../../src/runtime/issue-intake.ts';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
+import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
+function git(cwd: string, args: string[]): string {
+	const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+	const stdout = new TextDecoder().decode(result.stdout).trim();
+	const stderr = new TextDecoder().decode(result.stderr).trim();
+	if (result.exitCode !== 0) throw new Error(stderr || stdout);
+	return stdout;
+}
+
+function protectedIssueFixture(): { local: string; remote: string } {
+	const root = createTestTmpdir('gship-dependency-api-');
+	const seed = join(root, 'seed'); mkdirSync(join(seed, '.gateship', 'issues'), { recursive: true });
+	git(seed, ['init', '-q', '-b', 'main']);
+	git(seed, ['config', 'user.name', 'Gateship Test']); git(seed, ['config', 'user.email', 'test@example.invalid']);
+	writeFileSync(join(seed, '.gateship', 'issues', 'CAM-0001.json'), `${JSON.stringify({ id: 'CAM-1', title: 'target', stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: { verify: ['true'], scope: 'fixture' } }, null, 2)}\n`);
+	writeFileSync(join(seed, '.gateship', 'issues', 'CAM-0002.json'), `${JSON.stringify({ id: 'CAM-2', title: 'dependency', stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: { verify: ['true'], scope: 'fixture' } }, null, 2)}\n`);
+	git(seed, ['add', '.']); git(seed, ['commit', '-q', '-m', 'seed']);
+	const remote = join(root, 'remote.git'); git(root, ['clone', '-q', '--bare', seed, remote]);
+	const local = join(root, 'local'); git(root, ['clone', '-q', remote, local]);
+	git(local, ['config', 'user.name', 'Gateship Test']); git(local, ['config', 'user.email', 'test@example.invalid']);
+	const hook = join(local, '.git', 'hooks', 'pre-push');
+	writeFileSync(hook, '#!/bin/sh\nwhile read local_ref local_sha remote_ref remote_sha; do\n  if [ "$remote_ref" = refs/heads/main ]; then echo "BLOCKED: direct push to refs/heads/main is not allowed." >&2; exit 1; fi\ndone\n'); chmodSync(hook, 0o755);
+	return { local, remote };
+}
+
 describe('operator issue intake API', () => {
+	test('public dependency endpoint uses the configured shipper for protected main', async () => {
+		const fixture = protectedIssueFixture();
+		const mergeCalls: string[] = [];
+		const shipper = {
+			ship: async () => ({ outcome: 'failed' as const, detail: 'not a run ship' }),
+			mergePullRequest: async (input: { headSha: string }) => { mergeCalls.push(input.headSha); git(fixture.remote, ['update-ref', 'refs/heads/main', input.headSha]); return { outcome: 'merged' as const, prNumber: 1 }; },
+		};
+		const runtime = new RunRuntime({ cwd: fixture.local, store: new RunStore(':memory:'), shipper });
+		const handle = startWebServer({ port: 0, cwd: fixture.local, runRuntime: runtime });
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const revision = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+			const projects = await (await fetch(`${origin}/api/projects`)).json() as { projects: Array<{ id: string; root: string }> };
+			const projectId = projects.projects.find((project) => project.root === fixture.local)!.id;
+			const response = await fetch(`${origin}/api/projects/${encodeURIComponent(projectId)}/issues/dependencies`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ projectId, expectedRevision: revision, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }] }) });
+			const body = await response.json() as { changes?: Array<{ issueId: string }>; message?: string };
+			expect(response.status, body.message).toBe(200);
+			expect(body).toMatchObject({ changes: [{ issueId: 'CAM-1' }] });
+			expect(mergeCalls).toHaveLength(1);
+			expect(git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF])).toBe(git(fixture.remote, ['rev-parse', 'main']));
+		} finally { await handle.stop(); await runtime.stop(); runtime.close(); }
+	});
+	test('public dependency endpoint keeps an active issue idempotent but rejects a real change', async () => {
+		const fixture = protectedIssueFixture();
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({ cwd: fixture.local, store });
+		store.createRun({ id: 'run-active', issueId: 'CAM-1', sessionId: 'session-active', workspacePath: '/workspaces/run-active', createdAt: new Date().toISOString() });
+		const handle = startWebServer({ port: 0, cwd: fixture.local, runRuntime: runtime });
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const revision = git(fixture.local, ['rev-parse', RUNTIME_SOURCE_REF]);
+			const projects = await (await fetch(`${origin}/api/projects`)).json() as { projects: Array<{ id: string; root: string }> };
+			const projectId = projects.projects.find((project) => project.root === fixture.local)!.id;
+			const endpoint = `${origin}/api/projects/${encodeURIComponent(projectId)}/issues/dependencies`;
+			const noOp = await fetch(endpoint, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ projectId, expectedRevision: revision, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: [] }] }) });
+			expect(noOp.status).toBe(200);
+			expect(await noOp.json()).toMatchObject({ ok: true, changes: [] });
+			const changed = await fetch(endpoint, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ projectId, expectedRevision: revision, authorization: 'operator', changes: [{ issueId: 'CAM-1', blockedBy: ['CAM-2'] }] }) });
+			expect(changed.status).toBe(409);
+			expect(await changed.json()).toMatchObject({ ok: false, code: 'issue-run-active' });
+		} finally { await handle.stop(); await runtime.stop(); runtime.close(); }
+	});
 	test('creates a validated issue only for a trusted same-origin request', async () => {
 		const received: unknown[] = [];
 		const runtime = new RunRuntime({ cwd: '/project', store: new RunStore(':memory:') });
