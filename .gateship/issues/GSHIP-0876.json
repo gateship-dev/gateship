@@ -2,10 +2,10 @@
   "id": "GSHIP-876",
   "title": "Container: restaurar Claude Code na imagem linux arm64",
   "stage": "specified",
-  "status": "open",
+  "status": "abandoned",
   "blockedBy": [],
   "createdAt": "2026-09-11T15:04:11.643Z",
-  "updatedAt": "2026-09-11T18:32:53.202Z",
+  "updatedAt": "2026-09-11T18:33:44.071Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -33,5 +33,6 @@
   "approval": {
     "fingerprint": "25a40776f9773aa0063fa4d016c7ba69da17e0b2b0e81c2f7aca1a2aa08a8e17",
     "approvedAt": "2026-09-11T18:32:53.202Z"
-  }
+  },
+  "abandonedReason": "Contrato de reparo aprovado pelo operador (faça isso) consolidado na run GSHIP-873 96fcbd28-0a58-456f-8a46-d93f2c908c16 e PR730 por decisão explícita registrada via runs.respond. Encerramento administrativo para evitar execução duplicada; implementação/CI/entrega ainda em andamento na run873, sem alegar conclusão."
 }
