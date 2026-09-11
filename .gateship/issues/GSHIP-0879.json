@@ -1,0 +1,33 @@
+{
+  "id": "GSHIP-879",
+  "title": "Release: selecionar plataforma explícita nos smokes por digest",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T22:47:55.618Z",
+  "updatedAt": "2026-09-11T22:47:55.618Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Concluir a validação multiarch já aprovada na GSHIP-877: a release corrigida passou AMD64 mas falhou ao baixar o digest ARM64 no runner AMD64 sem selecionar plataforma. Corrigir somente o smoke de release e sua cobertura.",
+    "acceptance": [
+      "Em scripts/release-image-verify-publish.sh, pull e todos os run de cada variante usam explicitamente linux/amd64 ou linux/arm64 coerentes com o digest. Não depender da arquitetura do runner nem de seleção implícita de manifest.",
+      "Manter QEMU existente, testes reais Claude/Codex/health nas duas arquiteturas, promoção dos mesmos digests sem rebuild, cleanup e bloqueio de publicação após qualquer falha.",
+      "Teste comportamental do helper rejeita pull/run sem plataforma ou plataforma incompatível com o digest, prova execução das duas variantes e falha ARM impedindo promoção. Sem Docker/rede em teste unitário.",
+      "CI e primeira release reais devem passar até publicação conjunta final. Preservar draft até ambos ramos passarem, caches, binários/checksums, frequência e idempotência existentes."
+    ],
+    "boundaries": [
+      "Reparo estrito dos ACs 4, 6 e 7 da GSHIP-877 após falha real 34654934837; executar antes de 869, sem escopo novo.",
+      "Somente helper de smoke/release e testes relevantes. Não mudar runtime, Dockerfile/pins, autenticação, arquiteturas, frequência, main local ou .gship. Luna/Sol preservados.",
+      "Não instalar v0.498.0 ou release parcial; não rerodar commit defeituoso nem sobrescrever tags antigas."
+    ],
+    "verify": [
+      "bun test test/release-workflow.test.ts test/ci-workflow.test.ts test/compose-config.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "e6f331fde4c1a5b451520be8643bd27a8653661c858c4596d671af9fafc56541",
+    "approvedAt": "2026-09-11T22:47:55.618Z"
+  }
+}
