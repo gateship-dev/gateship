@@ -5,26 +5,25 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T02:41:26.459Z",
-  "updatedAt": "2026-09-11T12:27:10.712Z",
+  "updatedAt": "2026-09-11T13:10:19.504Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
-    "objective": "Integrar diagnóstico e orçamento nos pontos de escalada para reduzir pedidos técnicos desnecessários, preservando notificação imediata de autoridade faltante e parada explícita por estagnação ou exaustão.",
+    "objective": "Ativar recuperação técnica baseada em evidências e orçamento aprovado antes de notificar o operador, distinguindo autorização faltante, estagnação diagnosticada e falhas técnicas.",
     "acceptance": [
-      "Auditar executor waiting-user, verify, review, full-verify, CI repetida, CI sem diff, resolver ausente/inválido e provider indisponível. Trocar limites locais duplicados por GSHIP-870/GSHIP-871 apenas nas novas runs; manter semântica própria de waiting-provider.",
-      "Bloqueio técnico recuperável segue orquestrador read-only -> Luna -> verificações aplicáveis -> revisão independente, sem transição transitória a waiting-user. Nenhuma resposta do modelo marca teste como passado, review clean ou merge realizado.",
-      "Autoridade/decisão/dado humano faltante pede intervenção sem gastar tentativas técnicas inúteis. Estagnação, orçamento esgotado e diagnóstico indisponível param com causas distintas, nunca se apresentam como escolha de produto.",
-      "Email e ntfy usam a mesma transição durável real para waiting-user. Recuperação interna gera zero envios; um envio por canal configurado por nova transição; não reenviar enquanto esperando. Manter teste manual separado e totalmente mockado.",
-      "Mensagem informa projeto/issue, bloqueio concreto, tentativas/evidências resumidas e ação solicitada. Usar summary ou reason conforme evento; não mandar texto genérico quando existe razão segura; nenhum segredo ou log bruto.",
-      "Testar 0 alertas para pergunta repetida com avanço e CI recuperada; 1/canal para autorização necessária, estagnação/exaustão e falha de diagnóstico; nova espera legítima após retomada pode notificar de novo. Sem rede, email ou ntfy reais nos testes.",
-      "Alinhar AGENTS.md/HANDOFF e prompts: substituir regra de uma correção por recuperação limitada por evidência/orçamento; preservar julgamento humano e revisão independente. Atualizar GSHIP-864 ainda draft, substituindo sua recuperação adicional única."
+      "Antes de aprovar esta issue, inserir aqui maxRecoveryDispatches finito e justificativa do baseline GSHIP-873/proposta GSHIP-871. Sem essa escolha, esta spec não está pronta para aprovação: Luna não deve inventar teto nem habilitar recuperação ilimitada.",
+      "Após pré-requisitos, ativar GSHIP-870/871 apenas para novas runs com política explícita. Cobrir executor, verify, review, full-verify, CI repetida/sem diff; remover cortes locais incompatíveis somente nesses caminhos. Runs legadas mantêm comportamento.",
+      "Recuperável segue diagnóstico read-only -> Luna -> verificação e revisão aplicáveis, sem waiting-user transitório. Repetição sinaliza diagnóstico, não parada automática. Toda reinvocação corretiva debita saldo; modelo não declara check passado ou merge concluído.",
+      "Decisão humana exige pergunta específica. Exaustão e ausência de ação autorizada viável permitem waiting-user com motivo técnico e próximo passo; contrato ausente, resposta inválida e erro de diagnóstico são falhas técnicas, nunca consentimento implícito. Preservar waiting-provider.",
+      "Notificar email/ntfy só por transição real a waiting-user, com projeto/issue, razão segura e ação solicitada. Zero alertas durante recuperação; um envio/canal por nova transição, silêncio enquanto esperando; nova espera legítima pode notificar. Não prometer entrega.",
+      "Testes mockados cobrem ação nova com evidência, repetição sem fatos, autorização via fluxo CLI/web, saldo, crash/reinvocação, falha de contexto/diagnóstico e CI sem diff. Não usar config real, rede, segredos ou debounce para esconder alerta.",
+      "Alinhar AGENTS.md/HANDOFF/prompts com política aprovada e causas de parada; eliminar referências à recuperação extra única e aos limites antigos conflitantes. Não editar esta própria issue em execução nem declarar dependências entregues sem verificar."
     ],
     "boundaries": [
-      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
-      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
-      "Depende de isolamento GSHIP-863 comprovado. Não criar LLM no notifier, outbox genérica, retry de entrega, autoaprovação, atalhos de shipping ou enfraquecer verificações.",
-      "Substitui a proposta de apenas uma recuperação adicional por run; não acumular limites contraditórios da especificação anterior.",
-      "Pré-requisitos: GSHIP-863, GSHIP-869, GSHIP-870 e GSHIP-871 entregues. Dependências documentais; não aprovar enquanto faltarem. Não reiniciar runs existentes."
+      "Manter Luna e modelos/esforços configurados, sandbox, allowlists, autenticação por assinatura, worktree isolada e reviewer independente read-only.",
+      "Não aprovar/iniciar/retomar/cancelar runs, alterar credenciais, enfraquecer checks ou editar .gship diretamente. Dependências abaixo são documentais, não bloqueios automáticos.",
+      "Pré-requisitos: GSHIP-863, GSHIP-873, GSHIP-869, GSHIP-870 e GSHIP-871 entregues; teto escolhido deve constar na spec antes da aprovação.",
+      "Não criar LLM no notifier, autoaprovação, gate estético ou bypass de shipping. Mudança de autoridade continua exigindo aprovação explícita, não apenas mensagem de agente."
     ],
     "verify": [
       "bun test test/runtime/run-runtime.test.ts test/runtime/run-review.test.ts test/runtime/run-ship.test.ts test/runtime/remote-notifier.test.ts",
