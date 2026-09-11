@@ -18,7 +18,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { chmodSync, existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { createTestTmpdir } from './helpers/test-tmpdir.ts';
 
 const WORKFLOW_PATH = resolve(
 	import.meta.dir,
@@ -28,6 +30,7 @@ const WORKFLOW_PATH = resolve(
 	'release.yml',
 );
 const workflow = readFileSync(WORKFLOW_PATH, 'utf8');
+const RELEASE_IMAGE_HELPER = resolve(import.meta.dir, '..', 'scripts', 'release-image-verify-publish.sh');
 
 /** Slice from a step's own boundary to the next step boundary at the same (6-space) indentation. */
 function stepBlock(haystack: string, marker: string): string {
@@ -289,27 +292,62 @@ describe('release.yml release-image job (GSHIP-657, GSHIP-665, GSHIP-699)', () =
 		);
 	});
 
-	test('tags the published image with both the resolved version and the resolved commit', () => {
-		const buildStepIdx = releaseImageJobBlock.indexOf(
-			'uses: docker/build-push-action@v6',
-		);
-		expect(buildStepIdx).toBeGreaterThan(-1);
-		const nextStepIdx = releaseImageJobBlock.indexOf(
-			'\n      - name:',
-			buildStepIdx,
-		);
-		const buildStepBlock = releaseImageJobBlock.slice(
-			buildStepIdx,
-			nextStepIdx === -1 ? releaseImageJobBlock.length : nextStepIdx,
-		);
-		expect(buildStepBlock).toContain('push: true');
-		expect(buildStepBlock).toContain('platforms: linux/amd64,linux/arm64');
-		expect(buildStepBlock).toContain(
-			'ghcr.io/${{ github.repository }}:${{ needs.resolve-release.outputs.tag }}',
-		);
-		expect(buildStepBlock).toContain(
-			'ghcr.io/${{ github.repository }}:${{ needs.resolve-release.outputs.sha }}',
-		);
+	test('builds each architecture once with reusable architecture-scoped caches', () => {
+		expect(releaseImageJobBlock.match(/uses: docker\/build-push-action@v6/g)).toHaveLength(2);
+		expect(releaseImageJobBlock).toContain('platforms: linux/amd64');
+		expect(releaseImageJobBlock).toContain('platforms: linux/arm64');
+		expect(releaseImageJobBlock).toContain('scope=gateship-release-linux-amd64');
+		expect(releaseImageJobBlock).toContain('scope=gateship-release-linux-arm64');
+		expect(releaseImageJobBlock).toContain('release-${{ needs.resolve-release.outputs.sha }}-${{ github.run_attempt }}-amd64');
+		expect(releaseImageJobBlock).toContain('release-${{ needs.resolve-release.outputs.sha }}-${{ github.run_attempt }}-arm64');
+		expect(releaseImageJobBlock).toContain('id: build_amd64');
+		expect(releaseImageJobBlock).toContain('id: build_arm64');
+	});
+
+	test('validates both artifacts before publishing version and SHA tags without rebuilding', () => {
+		expect(releaseImageJobBlock).toContain('run: bash scripts/release-image-verify-publish.sh');
+		expect(releaseImageJobBlock).toContain('steps.publish_image.outputs.digest');
+	});
+
+	test('does not publish after a verification failure and publishes the verified digests on success', () => {
+		const dir = createTestTmpdir('gship-release-image-helper-');
+		const fakeBin = resolve(dir, 'bin');
+		const log = resolve(dir, 'commands.log');
+		const fakeDocker = resolve(fakeBin, 'docker');
+		const fakeCurl = resolve(fakeBin, 'curl');
+		Bun.spawnSync(['mkdir', '-p', fakeBin]);
+		writeFileSync(fakeDocker, '#!/usr/bin/env bash\nexit 1\n');
+		writeFileSync(fakeCurl, '#!/usr/bin/env bash\nexit 0\n');
+		chmodSync(fakeDocker, 0o755);
+		chmodSync(fakeCurl, 0o755);
+		const env = {
+			...process.env,
+			PATH: `${fakeBin}:${process.env.PATH}`,
+			DOCKER_BIN: fakeDocker,
+			FAKE_LOG: log,
+			GITHUB_OUTPUT: resolve(dir, 'output'),
+			IMAGE_BASE: 'example/gateship',
+			AMD64_DIGEST: 'sha256:amd64-verified',
+			ARM64_DIGEST: 'sha256:arm64-verified',
+			VERSION_TAG: 'v1.2.3',
+			SHA_TAG: 'commit-sha',
+		};
+		const failed = Bun.spawnSync(['bash', RELEASE_IMAGE_HELPER], { env: { ...env, DOCKER_BIN: '/usr/bin/false' } });
+		expect(failed.exitCode).not.toBe(0);
+		expect(existsSync(log)).toBe(false);
+		writeFileSync(fakeDocker, `#!/usr/bin/env bash
+set -e
+echo "$*" >> "$FAKE_LOG"
+if [[ "$1 $2 $3" == "buildx imagetools inspect" ]]; then echo 'Digest: sha256:published'; fi
+if [[ "$1 $2" == "inspect --format" ]]; then echo healthy; fi
+`);
+		chmodSync(fakeDocker, 0o755);
+		const succeeded = Bun.spawnSync(['bash', RELEASE_IMAGE_HELPER], { env });
+		expect(succeeded.exitCode).toBe(0);
+		const commands = readFileSync(log, 'utf8');
+		expect(commands).toContain('buildx imagetools create --tag example/gateship:v1.2.3 example/gateship@sha256:amd64-verified example/gateship@sha256:arm64-verified');
+		expect(commands).toContain('buildx imagetools create --tag example/gateship:commit-sha example/gateship@sha256:amd64-verified example/gateship@sha256:arm64-verified');
+		expect(commands).not.toContain('build --');
 	});
 
 	test('attests build provenance for the pushed image digest', () => {
@@ -319,7 +357,7 @@ describe('release.yml release-image job (GSHIP-657, GSHIP-665, GSHIP-699)', () =
 		expect(attestIdx).toBeGreaterThan(-1);
 		const attestBlock = releaseImageJobBlock.slice(attestIdx);
 		expect(attestBlock).toContain('subject-name: ghcr.io/${{ github.repository }}');
-		expect(attestBlock).toContain('subject-digest: ${{ steps.build.outputs.digest }}');
+		expect(attestBlock).toContain('subject-digest: ${{ steps.publish_image.outputs.digest }}');
 		expect(attestBlock).toContain('push-to-registry: true');
 	});
 });

@@ -227,22 +227,46 @@ jobs:
       # GSHIP_RELEASE_VERSION is the same version this run's tag names, so
       # `gship --version` inside the image reports the released version, not
       # the development sentinel (GSHIP-665).
-      - name: Build and push the versioned container image
-        id: build
+      - name: Build and push the verified amd64 image artifact
+        id: build_amd64
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
+          cache-from: type=gha,scope=gateship-release-linux-amd64
+          cache-to: type=gha,scope=gateship-release-linux-amd64,mode=max
           build-args: |
             GSHIP_BUILD_SHA=${{ needs.resolve-release.outputs.sha }}
             GSHIP_RELEASE_VERSION=${{ needs.resolve-release.outputs.version }}
           tags: |
-            ghcr.io/${{ github.repository }}:${{ needs.resolve-release.outputs.tag }}
-            ghcr.io/${{ github.repository }}:${{ needs.resolve-release.outputs.sha }}
-      - name: Attest build provenance for the container image
+            ghcr.io/${{ github.repository }}:release-${{ needs.resolve-release.outputs.sha }}-${{ github.run_attempt }}-amd64
+      - name: Build and push the verified arm64 image artifact
+        id: build_arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/arm64
+          cache-from: type=gha,scope=gateship-release-linux-arm64
+          cache-to: type=gha,scope=gateship-release-linux-arm64,mode=max
+          build-args: |
+            GSHIP_BUILD_SHA=${{ needs.resolve-release.outputs.sha }}
+            GSHIP_RELEASE_VERSION=${{ needs.resolve-release.outputs.version }}
+          tags: |
+            ghcr.io/${{ github.repository }}:release-${{ needs.resolve-release.outputs.sha }}-${{ github.run_attempt }}-arm64
+      - name: Verify and publish the final image artifacts
+        id: publish_image
+        env:
+          IMAGE_BASE: ghcr.io/${{ github.repository }}
+          AMD64_DIGEST: ${{ steps.build_amd64.outputs.digest }}
+          ARM64_DIGEST: ${{ steps.build_arm64.outputs.digest }}
+          VERSION_TAG: ${{ needs.resolve-release.outputs.tag }}
+          SHA_TAG: ${{ needs.resolve-release.outputs.sha }}
+        run: bash scripts/release-image-verify-publish.sh
+      - name: Attest build provenance for the verified container image digest
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.publish_image.outputs.digest }}
           push-to-registry: true

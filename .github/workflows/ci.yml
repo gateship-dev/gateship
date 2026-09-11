@@ -13,7 +13,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  packaging_diff:
+    runs-on: ubuntu-latest
+    outputs:
+      needs_arm64: ${{ steps.diff.outputs.needs_arm64 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - name: Detect packaging changes
+        id: diff
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bun scripts/select-ci-architectures.ts "${BASE_SHA}" "${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+      - name: Skip packaging diff for pushes
+        id: push-diff
+        if: github.event_name != 'pull_request'
+        run: GITHUB_EVENT_NAME=push bun scripts/select-ci-architectures.ts >> "$GITHUB_OUTPUT"
+
   core:
+    needs: [packaging_diff]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -25,21 +50,39 @@ jobs:
       - name: Run core gates
         run: bun run check:all
       - name: Register arm64 emulation
+        if: github.event_name == 'pull_request' && needs.packaging_diff.outputs.needs_arm64 == 'true'
         uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@v3
+        if: github.event_name == 'pull_request'
       - name: Build the amd64 container image
-        run: docker buildx build --platform linux/amd64 --build-arg GSHIP_BUILD_SHA="${{ github.sha }}" -t gateship:ci-amd64 --load .
+        if: github.event_name == 'pull_request'
+        run: |
+          docker buildx build --platform linux/amd64 \
+            --build-arg GSHIP_BUILD_SHA="${{ github.sha }}" \
+            --cache-from type=gha,scope=gateship-ci-linux-amd64 \
+            --cache-to type=gha,scope=gateship-ci-linux-amd64,mode=max \
+            -t gateship:ci-amd64 --load .
       - name: Build the arm64 container image
-        run: docker buildx build --platform linux/arm64 --build-arg GSHIP_BUILD_SHA="${{ github.sha }}" -t gateship:ci-arm64 --load .
+        if: github.event_name == 'pull_request' && needs.packaging_diff.outputs.needs_arm64 == 'true'
+        run: |
+          docker buildx build --platform linux/arm64 \
+            --build-arg GSHIP_BUILD_SHA="${{ github.sha }}" \
+            --cache-from type=gha,scope=gateship-ci-linux-arm64 \
+            --cache-to type=gha,scope=gateship-ci-linux-arm64,mode=max \
+            -t gateship:ci-arm64 --load .
       - name: Verify both agent CLIs respond inside the built image
+        if: github.event_name == 'pull_request'
         run: |
           docker run --rm --entrypoint claude gateship:ci-amd64 --version
           docker run --rm --entrypoint codex gateship:ci-amd64 --version
-          docker run --rm --entrypoint claude gateship:ci-arm64 --version
-          docker run --rm --entrypoint codex gateship:ci-arm64 --version
+          if [[ "${{ needs.packaging_diff.outputs.needs_arm64 }}" == true ]]; then
+            docker run --rm --entrypoint claude gateship:ci-arm64 --version
+            docker run --rm --entrypoint codex gateship:ci-arm64 --version
+          fi
       - name: Smoke test the Linux container healthcheck
+        if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
           docker run --rm -d --name gateship-ci -p 127.0.0.1:17777:7777 gateship:ci-amd64
