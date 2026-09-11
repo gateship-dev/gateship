@@ -41,7 +41,7 @@ const overviewRunsPath = (input: Record<string, unknown>) => {
 };
 const overviewPath = (input: Record<string, unknown>) => {
 	const query = new URLSearchParams();
-	for (const field of ['cohortLimit', 'cohortOffset', 'projectId', 'providerId', 'model', 'role', 'effort'] as const) {
+	for (const field of ['cohortLimit', 'cohortOffset', 'cohortSortBy', 'cohortSortDirection', 'projectId', 'providerId', 'model', 'role', 'effort', 'cohortFilter'] as const) {
 		if (typeof input[field] === 'string' || typeof input[field] === 'number') query.set(field, String(input[field]));
 	}
 	const suffix = query.toString();
@@ -55,7 +55,7 @@ const runPath = (suffix: string) => (input: Record<string, unknown>) =>
 export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'project.inspect': { method: 'GET', path: () => '/api/project', input: '{}' },
 	'projects.list': { method: 'GET', path: () => '/api/projects', input: '{}', listField: 'projects' },
-	'projects.overview': { method: 'GET', path: overviewPath, input: '{cohortLimit?, cohortOffset?, cohortSortBy?, cohortSortDirection?, projectId?, providerId?, model?, role?, effort?}' },
+	'projects.overview': { method: 'GET', path: overviewPath, input: '{cohortLimit?, cohortOffset?, cohortSortBy?, cohortSortDirection?, cohortFilter?, projectId?, providerId?, model?, role?, effort?}' },
 	'projects.cohort_regression_proposal': { method: 'POST', path: projectPath('/cohort-regression-proposal'), input: '{projectId, baselineCohortId, candidateCohortId, metric, direction, threshold, hypothesis}' },
 	'runs.list_all': { method: 'GET', path: overviewRunsPath, input: '{limit?, offset?, projectId?, state?, providerId?, period?, search?, sortBy?, sortDirection?}' },
 	'queues.list': { method: 'GET', path: () => '/api/overview/queues', input: '{}' },

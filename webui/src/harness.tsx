@@ -11,7 +11,7 @@ import type { RunView } from './run-view.ts';
 
 type Theme = 'light' | 'dark';
 type Motion = 'full' | 'reduced';
-type Scenario = 'usual' | 'empty' | 'loading' | 'error' | 'attention' | 'unavailable' | 'long' | 'refreshing' | 'dense' | 'sidebar-expanded' | 'sidebar-collapsed' | 'tooltip-open' | 'selector-open';
+type Scenario = 'usual' | 'empty' | 'loading' | 'error' | 'attention' | 'unavailable' | 'long' | 'refreshing' | 'dense' | 'insights-zero' | 'insights-null' | 'insights-long' | 'insights-cohorts' | 'sidebar-expanded' | 'sidebar-collapsed' | 'tooltip-open' | 'selector-open';
 type Viewport = '390' | '768' | '1440';
 const CENTRAL_ROUTES = ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const;
 const PROJECT = { id: 'harness-project', name: 'Gateship fixture', root: '/fixture/gateship', stateDir: '/fixture/state', readiness: 'ready' as const, repository: 'fixture/gateship', current: true };
@@ -35,7 +35,7 @@ const DENSE_QUEUES: QueueOverviewView = { queues: [
 	{ ...QUEUES.queues[0]!, project: ATTENTION_PROJECT, readiness: 'needs-attention', chainEnabled: false, pause: { reason: 'chain-disabled', createdAt: FIXED_NOW }, currentIssue: { id: 'GSHIP-864', title: 'Attention queue item' }, plannedIssues: [{ id: 'GSHIP-864', title: 'Attention queue item' }] },
 ], errors: [] };
 const FRAME_WIDTHS = ['390', '768', '1440'] as const;
-const SCENARIOS = ['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'sidebar-expanded', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const satisfies readonly Scenario[];
+const SCENARIOS = ['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'insights-zero', 'insights-null', 'insights-long', 'insights-cohorts', 'sidebar-expanded', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const satisfies readonly Scenario[];
 let harnessScenario: Scenario = 'usual';
 let responseRevision = 0;
 let clockInstalled = false;
@@ -66,6 +66,8 @@ const DENSE_EVALUATION: NonNullable<RunView['evaluation']> = {
 const DENSE_ROWS: OverviewRunsPageView['runs'] = Array.from({ length: 45 }, (_, index) => { const project = index % 2 === 0 ? PROJECT : SECOND_PROJECT; const states = ['done', 'failed', 'waiting-user'] as const; const state = states[index % states.length]!; const updatedAt = index % 5 === 0 ? '2026-08-01T12:00:00.000Z' : index % 2 === 0 ? FIXED_NOW : '2026-09-06T12:00:00.000Z'; return { id: `fixture-run-${index + 1}`, issueId: `GSHIP-${900 + index}`, state, createdAt: updatedAt, updatedAt, providerId: index % 2 === 0 ? 'codex' as const : 'claude' as const, projectId: project.id, projectName: project.name, repository: project.repository, runId: `fixture-run-${index + 1}`, roles: [], evaluation: DENSE_EVALUATION, cost: RUN.cost, coverage: { verified: true, reviewed: true, fullVerification: true }, pullRequest: null, ci: null, merge: state === 'done' ? { status: 'merged' as const } : null }; });
 const USUAL_RUNS: OverviewRunsPageView = { runs: [{ ...DENSE_ROWS[0]!, issueId: 'GSHIP-855', runId: 'fixture-run' }], page: { limit: 20, offset: 0, returned: 1, total: 1 }, errors: [] };
 const DENSE_COHORT: ProjectOperationalOverviewView['overview']['cohorts'][number] = { workflowRevision: 'fixture-v2', specVersion: 'v2', latestTerminalRunAt: FIXED_NOW, sampleSize: 2, evidenceSufficient: true, outcomes: { shipped: { count: 2, denominator: 2 }, failed: { count: 0, denominator: 2 }, cancelled: { count: 0, denominator: 2 } }, corrections: { verification: { count: 0, denominator: 2 }, review: { count: 0, denominator: 2 }, fullVerify: { count: 0, denominator: 2 }, ci: { count: 0, denominator: 2 } }, cycleQuestions: { executor: { count: 0, denominator: 2 }, review: { count: 0, denominator: 2 }, fullVerify: { count: 0, denominator: 2 } }, reconciliations: { unchanged: { count: 2, denominator: 2 }, adapted: { count: 0, denominator: 2 }, 'contract-change-required': { count: 0, denominator: 2 } }, attentionRequests: { count: 0, denominator: 2 }, operatorInterventions: { count: 0, denominator: 2 }, providerHolds: { count: 0, denominator: 2 } };
+const INSIGHTS_DAILY = (length: number, zero = false): NonNullable<ProjectOperationalOverviewView['overview']>['daily'] => Array.from({ length }, (_, index) => ({ date: `2026-08-${String((index % 30) + 1).padStart(2, '0')}`, totalRuns: zero ? 0 : 4, runsWithKnownCost: 0, knownCostUsd: null, terminalRuns: zero ? 0 : 4, shippedWithoutIntervention: 0, ciCorrections: 0, inputTokens: null, outputTokens: null, runsByOutcome: zero ? { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 } : { shipped: 1, failed: 1, cancelled: 1, incomplete: 1 } }));
+const INSIGHTS_COHORTS = Array.from({ length: 25 }, (_, index) => ({ ...DENSE_COHORT, cohortId: `fixture-cohort-${index + 1}`, workflowRevision: `fixture-v${index + 1}`, latestTerminalRunAt: index % 3 === 0 ? null : FIXED_NOW }));
 
 function denseRuns(url: string): OverviewRunsPageView {
 	const params = new URL(url, 'http://harness.invalid').searchParams;
@@ -103,7 +105,21 @@ function sortDenseRuns(rows: OverviewRunsPageView['runs'], params: URLSearchPara
 }
 
 function denseOverview(): NonNullable<ProjectOperationalOverviewView['overview']> {
-	return { ...OVERVIEW.overview!, totalRuns: 45, cohorts: Array.from({ length: 25 }, () => DENSE_COHORT), cohortsPage: { limit: 20, offset: 0, returned: 20, total: 25 } };
+	return { ...OVERVIEW.overview!, totalRuns: 180, daily: INSIGHTS_DAILY(45), cohorts: INSIGHTS_COHORTS, cohortsPage: { limit: 20, offset: 0, returned: 20, total: 25 } };
+}
+
+function insightsOverview(scenario: Scenario, url = ''): NonNullable<ProjectOperationalOverviewView['overview']> {
+	const base = OVERVIEW.overview!;
+	if (scenario === 'insights-zero') return { ...base, totalRuns: 0, daily: INSIGHTS_DAILY(3, true), cohorts: [], cohortsPage: { limit: 20, offset: 0, returned: 0, total: 0 } };
+	if (scenario === 'insights-null') return { ...base, totalRuns: 1, daily: [], cohorts: [], cohortsPage: { limit: 20, offset: 0, returned: 0, total: 0 } };
+	const allCohorts = scenario === 'insights-cohorts' ? INSIGHTS_COHORTS : [DENSE_COHORT];
+	const params = new URL(url, 'http://harness.invalid').searchParams;
+	const filter = (params.get('cohortFilter') ?? '').toLocaleLowerCase();
+	const filtered = filter === '' ? allCohorts : allCohorts.filter((cohort) => `${cohort.cohortId ?? ''} ${cohort.workflowRevision ?? ''} ${cohort.specVersion}`.toLocaleLowerCase().includes(filter));
+	const offset = Math.max(0, Number(params.get('cohortOffset') ?? 0));
+	const limit = Math.max(1, Number(params.get('cohortLimit') ?? 20));
+	const cohorts = filtered.slice(offset, offset + limit);
+	return { ...base, totalRuns: scenario === 'insights-long' ? 180 : 4, daily: INSIGHTS_DAILY(scenario === 'insights-long' ? 45 : 3), cohorts, cohortsPage: { limit, offset, returned: cohorts.length, total: filtered.length } };
 }
 
 function longRuns(): OverviewRunsPageView { return { runs: [{ ...DENSE_ROWS[0]!, issueId: LONG_RUN.issueId, projectId: LONG_PROJECT.id, projectName: LONG_PROJECT.name, repository: LONG_PROJECT.repository, runId: LONG_RUN.id }], page: { limit: 20, offset: 0, returned: 1, total: 1 }, errors: [] }; }
@@ -135,7 +151,7 @@ function harnessResponse(url: string, method: string | undefined, json: (body: u
 	if (method !== undefined && method !== 'GET') return json({ message: 'Harness transport is read-only.' });
 	if (url.includes('/api/overview/runs')) return runsResponse(url, json);
 	if (url.includes('/api/overview/queues')) return queueResponse(json);
-	if (url.includes('/api/overview')) return overviewResponse(json);
+	if (url.includes('/api/overview')) return overviewResponse(url, json);
 	return new Response(JSON.stringify({ message: 'Harness fixture route not found.' }), { status: 404, headers: { 'content-type': 'application/json' } });
 }
 
@@ -145,8 +161,9 @@ function runsResponse(url: string, json: (body: unknown) => Response): Response 
 	return json(harnessScenario === 'empty' ? EMPTY_RUNS : USUAL_RUNS);
 }
 
-function overviewResponse(json: (body: unknown) => Response): Response {
+function overviewResponse(url: string, json: (body: unknown) => Response): Response {
 	if (harnessScenario === 'dense' || harnessScenario === 'refreshing') return json({ overview: denseOverview() });
+	if (harnessScenario.startsWith('insights-')) return json({ overview: insightsOverview(harnessScenario, url) });
 	return json({ overview: harnessScenario === 'long' ? longOverview() : OVERVIEW });
 }
 
@@ -217,7 +234,7 @@ function scenarioFixture(scenario: Scenario): Scenario {
 }
 
 function fixtureRun(scenario: Scenario): RunView {
-	return scenario === 'usual' ? { ...RUN, state: 'done' as const, summary: 'Completed deterministic fixture' } : scenario === 'long' ? LONG_RUN : RUN;
+	return scenario === 'usual' || scenario.startsWith('insights-') ? { ...RUN, state: 'done' as const, summary: 'Completed deterministic fixture' } : scenario === 'long' ? LONG_RUN : RUN;
 }
 
 export function Harness(): React.ReactElement {
@@ -235,7 +252,7 @@ export function Harness(): React.ReactElement {
 	if (interaction === 'sidebar-expanded' || interaction === 'selector-open') globalThis.localStorage?.setItem('gship-sidebar', 'open');
 	const [route, setRoute] = useState<OperatorRoute>(isCentralRoute(requestedRoute) ? requestedRoute : '/overview'); const [locale, setLocale] = useState<Locale>(isLocale(requestedLocale) ? requestedLocale : 'pt-BR'); const [theme, setTheme] = useState<Theme>(isTheme(requestedTheme) ? requestedTheme : 'light'); const [motion, setMotion] = useState<Motion>(isMotion(requestedMotion) ? requestedMotion : 'full'); const [scenario, setScenario] = useState<Scenario>(initialScenario(interaction, requestedScenario)); const viewport: Viewport = frame === '390' || frame === '768' || frame === '1440' ? frame : '1440';
 	harnessScenario = scenario;
-	const props = useMemo(() => fixtureProps(locale, route, scenario), [locale, route, scenario]);
+	const props = useMemo(() => { const next = fixtureProps(locale, route, scenario); if (route === '/overview/insights' && scenario.startsWith('insights-')) next.overview = { ...OVERVIEW, overview: insightsOverview(scenario) }; return next; }, [locale, route, scenario]);
 	const previousScenario = useRef<Scenario | null>(null);
 	useEffect(() => { syncInteractionScenario(scenario, previousScenario); }, [scenario]);
 	useEffect(() => { const browser = globalThis as unknown as { window?: { dispatchEvent: (event: unknown) => void } }; browser.window?.dispatchEvent(new Event('popstate')); }, [scenario]);

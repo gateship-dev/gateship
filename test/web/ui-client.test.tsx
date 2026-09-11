@@ -3315,6 +3315,18 @@ function factualCohortOverview(cohorts: unknown[], cohortsPage?: { limit: number
 	return { overview: history };
 }
 
+function factualTrendOverview() {
+	const result = factualCohortOverview([]) as { overview: { daily: unknown[] } };
+	result.overview.daily = [{ date: '2026-09-01', totalRuns: 4, runsByOutcome: { shipped: 1, failed: 1, cancelled: 1, incomplete: 1 }, runsWithKnownCost: 0, knownCostUsd: null, terminalRuns: 4, shippedWithoutIntervention: 0, ciCorrections: 0, inputTokens: null, outputTokens: null }];
+	return result;
+}
+
+function factualTokenOverview() {
+	const result = factualCohortOverview([]) as { overview: { reportedTokens: { inputTokens: number | null; outputTokens: number | null } } };
+	result.overview.reportedTokens = { inputTokens: 1_234_567, outputTokens: null };
+	return result;
+}
+
 function factualSmallCohort() {
 	return {
 		workflowRevision: 'revision-1234567890abcdef', specVersion: 'v2', sampleSize: 3, evidenceSufficient: false,
@@ -3339,7 +3351,7 @@ function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: Retu
 	expect(smallHtml).toContain('revision…');
 	expect(smallHtml).not.toContain('revision-1234567890abcdef');
 	expect(smallHtml).toContain('v2');
-	expect(smallHtml).toContain(`>3 (${catalog.cohortEvidenceInsufficient})</td>`);
+	expect(smallHtml).toContain(`3 (${catalog.cohortEvidenceInsufficient})`);
 	expect(smallHtml).toContain(catalog.cohortEvidenceInsufficient);
 	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(smallHtml).toContain(label);
 	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
@@ -3361,12 +3373,27 @@ function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: R
 	expect(firstPage).toContain(catalog.cohortPage(1, 2, 3));
 	expect(lastPage).toContain(catalog.cohortPage(3, 3, 3));
 	expect(onePage).toContain(catalog.cohortPage(1, 1, 1));
-	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(1);
+	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(2);
 	expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
-	expect(firstPage).toContain(`aria-label="${catalog.previousCohorts}"`);
-	expect(lastPage).toContain(`aria-label="${catalog.nextCohorts}"`);
-	expect(onePage.match(/disabled=""/g)?.length).toBe(2);
+	expect(firstPage).toContain(`aria-label="${locale === 'en-US' ? 'Previous page' : 'Página anterior'}"`);
+	expect(lastPage).toContain(`aria-label="${locale === 'en-US' ? 'Next page' : 'Próxima página'}"`);
+	expect(onePage.match(/disabled=""/g)?.length).toBe(4);
 }
+
+test('distingue os quatro resultados do gráfico por padrões não cromáticos em ambos os locales', () => {
+	for (const locale of ['en-US', 'pt-BR'] as const) {
+		const html = renderInsightsWithLoadedOverview(locale, factualTrendOverview());
+		const patternIds = ['shipped', 'failed', 'cancelled', 'incomplete'].map((key) => `insights-pattern-${key}`);
+		expect(patternIds.every((id) => html.includes(`id="${id}"`))).toBe(true);
+		expect((html.match(/id="insights-pattern-(?:shipped|failed|cancelled|incomplete)"/g) ?? []).length).toBe(4);
+		expect(html).toContain(`data-outcome-patterns="${patternIds.join(' ')}"`);
+		for (const id of patternIds) expect(html).toContain(`url(#${id})`);
+		expect(html).toContain(locale === 'en-US' ? 'Shipped' : 'Enviadas');
+		expect(html).toContain(locale === 'en-US' ? 'Failed' : 'Falhas');
+		expect(html).toContain(locale === 'en-US' ? 'Cancelled' : 'Canceladas');
+		expect(html).toContain(locale === 'en-US' ? 'Incomplete' : 'Incompletas');
+	}
+});
 
 describe('operator shell', () => {
 	test('normalizes a direct or refreshed Insights page beyond the available cohorts to the last page', () => {
@@ -3387,6 +3414,8 @@ describe('operator shell', () => {
 		expect(overviewRunsQueryFromUrl({ location: { search: '?sortBy=runId&sortDirection=asc' } })).toMatchObject({ sortBy: undefined, sortDirection: 'asc' });
 		expect(overviewRunsQueryFromUrl({ location: { search: '?limit=0' } }).limit).toBe(20);
 		expect(insightsQueryFromUrl({ location: { search: '?cohortLimit=7&cohortOffset=14' } })).toMatchObject({ cohortLimit: 7, cohortOffset: 14 });
+		expect(insightsQueryFromUrl({ location: { search: '?cohortSortBy=sampleSize&cohortSortDirection=asc&cohortFilter=revision-11' } })).toMatchObject({ cohortSortBy: 'sampleSize', cohortSortDirection: 'asc', cohortFilter: 'revision-11' });
+		expect(insightsQueryFromUrl({ location: { search: '?cohortSortBy=latestTerminalRunAt&cohortSortDirection=desc' } })).toMatchObject({ cohortSortBy: 'latestTerminalRunAt', cohortSortDirection: 'desc' });
 		expect(insightsQueryFromUrl({ location: { search: '?cohortLimit=-1' } }).cohortLimit).toBe(10);
 		expect(insightUrl('all', 'project-1', 0, undefined, undefined, 10)).toBe('/overview/insights?window=all&projectId=project-1');
 	expect(insightUrl('all', 'project-1', 14, undefined, undefined, 7)).toBe('/overview/insights?window=all&projectId=project-1&cohortOffset=14&cohortLimit=7');
@@ -3398,6 +3427,22 @@ describe('operator shell', () => {
 	test('reinicia a página ao remover qualquer ordenação de coortes', () => {
 		expect(updatedInsightsQuery({ window: 'all', cohortLimit: 10, cohortOffset: 20, cohortSortBy: 'sampleSize' }, { cohortSortBy: undefined })).toMatchObject({ cohortOffset: 0, cohortSortBy: undefined });
 		expect(updatedInsightsQuery({ window: 'all', cohortLimit: 10, cohortOffset: 20, cohortSortDirection: 'asc' }, { cohortSortDirection: undefined })).toMatchObject({ cohortOffset: 0, cohortSortDirection: undefined });
+		expect(updatedInsightsQuery({ window: 'all', cohortLimit: 10, cohortOffset: 20, cohortSortBy: 'latestTerminalRunAt', cohortSortDirection: 'asc' }, { cohortSortDirection: 'desc' })).toMatchObject({ cohortOffset: 0, cohortSortBy: 'latestTerminalRunAt', cohortSortDirection: 'desc' });
+		expect(insightUrl('all', 'project-1', 0, 'latestTerminalRunAt', 'desc')).toBe('/overview/insights?window=all&projectId=project-1&cohortSortBy=latestTerminalRunAt&cohortSortDirection=desc');
+	});
+	test('reinicia a página ao alterar o filtro global de coortes', () => {
+		expect(updatedInsightsQuery({ window: 'all', cohortLimit: 10, cohortOffset: 20, cohortFilter: 'old' }, { cohortFilter: 'revision-11' })).toMatchObject({ cohortOffset: 0, cohortFilter: 'revision-11' });
+		expect(insightUrl('all', 'project-1', 0, 'sampleSize', 'asc', 10, 'revision-11')).toBe('/overview/insights?window=all&projectId=project-1&cohortSortBy=sampleSize&cohortSortDirection=asc&cohortFilter=revision-11');
+	});
+	test('exibe a última run terminal da coorte com localização e ausência explícita', () => {
+		const cohort = { ...factualSmallCohort(), latestTerminalRunAt: '2026-09-01T15:30:00.000Z' };
+		const missing = { ...factualSmallCohort(), workflowRevision: 'revision-missing', latestTerminalRunAt: null };
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const html = renderInsightsWithLoadedOverview(locale, factualCohortOverview([cohort, missing]));
+			expect(html).toContain(locale === 'en-US' ? 'Latest terminal run' : 'Última run terminal');
+		expect(html).toContain(locale === 'en-US' ? 'Sep 1, 2026' : 'set. de 2026');
+			expect(html).toContain('—');
+		}
 	});
 
 	test('Insights renders localized empty and loading states for both locales', () => {
@@ -3416,6 +3461,13 @@ describe('operator shell', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			assertFactualCohortContent(locale, smallCohort);
 			assertFactualCohortPagination(locale, smallCohort);
+		}
+	});
+	test('formata tokens de Análises conforme o locale e preserva dado ausente', () => {
+		for (const [locale, expected] of [['en-US', '1,234,567'], ['pt-BR', '1.234.567']] as const) {
+			const html = renderInsightsWithLoadedOverview(locale, factualTokenOverview());
+			expect(html).toContain(expected);
+			expect(html).toMatch(new RegExp(`${LOCALE_CATALOG[locale].overviewInsights.outputTokens}.*?—`));
 		}
 	});
 

@@ -335,6 +335,7 @@ export interface HistoricalOverviewFilters {
 	model?: string;
 	role?: 'orchestrator' | 'executor' | 'reviewer';
 	effort?: string;
+	cohortFilter?: string;
 	cohortLimit?: number;
 	cohortOffset?: number;
 	cohortSortBy?: 'latestTerminalRunAt' | 'sampleSize' | 'workflowRevision' | 'specVersion';

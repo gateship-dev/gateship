@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-858",
   "title": "Central: Análises com gráficos legíveis e comparações TanStack",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:22.976Z",
-  "updatedAt": "2026-09-11T05:24:03.642Z",
+  "updatedAt": "2026-09-11T06:36:09.233Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
