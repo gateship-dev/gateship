@@ -78,10 +78,17 @@ describe('container provider CLI installation', () => {
 
 	test('pins both provider CLIs to complete releases instead of mutable latest', () => {
 		expect(dockerfile).toContain('COPY provider-cli-versions.json /tmp/provider-cli-versions.json');
-		expect(dockerfile).toContain('bash -s "${claude_version}"');
-		expect(dockerfile).not.toContain('https://claude.ai/install.sh | bash\n');
+		expect(dockerfile).toContain('bash "${claude_installer}" "${claude_version}"');
 		expect(dockerfile).toContain('bun add -g "@openai/codex@${codex_version}"');
 		expect(dockerfile).not.toContain('RUN bun add -g @openai/codex\n');
+	});
+
+	test('falha a camada quando o download do instalador Claude falha', () => {
+		expect(dockerfile).toContain('--fail --silent --show-error --location --retry 3');
+		expect(dockerfile).toContain('-o "${claude_installer}" https://claude.ai/install.sh');
+		expect(dockerfile).toContain('bash "${claude_installer}" "${claude_version}"');
+		expect(dockerfile).toContain('claude_reported_version="$(claude --version)"');
+		expect(dockerfile).not.toContain('curl -fsSL https://claude.ai/install.sh | bash');
 	});
 });
 
