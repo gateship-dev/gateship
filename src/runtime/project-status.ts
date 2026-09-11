@@ -268,6 +268,7 @@ export interface HistoricalOverviewFilters {
 	model?: string;
 	role?: 'orchestrator' | 'executor' | 'reviewer';
 	effort?: string;
+	cohortFilter?: string;
 	cohortSortBy?: CohortSort;
 	cohortSortDirection?: SortDirection;
 }
@@ -809,7 +810,7 @@ function historicalOverview(
 ): HistoricalOverview {
 	const days = OVERVIEW_WINDOWS[window];
 	const cutoff = days === null ? -Infinity : now.getTime() - days * 24 * 60 * 60 * 1000;
-	const selected = history.filter((item) => {
+	const scopedSelected = history.filter((item) => {
 		const { run } = item;
 		const timestamp = Date.parse(run.createdAt);
 		if (!Number.isFinite(timestamp) || timestamp < cutoff) return false;
@@ -827,6 +828,17 @@ function historicalOverview(
 			&& (filters.model === undefined || configuration.model === filters.model)
 			&& (filters.effort === undefined || configuration.effort === filters.effort));
 	});
+	const cohortFilter = filters.cohortFilter?.trim().toLocaleLowerCase();
+	const matchingCohortKeys = cohortFilter === undefined || cohortFilter.length === 0
+		? null
+		: new Set(historicalCohorts(scopedSelected)
+			.filter((cohort) => [cohort.cohortId, cohort.workflowRevision, cohort.specVersion]
+				.some((value) => value?.toLocaleLowerCase().includes(cohortFilter)))
+			.map((cohort) => `${cohort.workflowRevision ?? ''}\0${cohort.specVersion}`));
+	const selected = matchingCohortKeys === null
+		? scopedSelected
+		: scopedSelected.filter((item) => item.evaluation.outcome !== 'incomplete'
+			&& matchingCohortKeys.has(`${item.evaluation.workflowRevision ?? ''}\0${item.evaluation.specProfile.version}`));
 	const result = emptyHistoricalOverview(window);
 	dispatchToMergeSamples.set(result, []);
 	const configurations = new Set<string>();

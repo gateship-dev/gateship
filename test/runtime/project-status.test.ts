@@ -264,6 +264,28 @@ test('ordena e pagina coortes estavelmente sem descartar versões factuais', () 
 	expect(last.cohorts.map((cohort) => cohort.workflowRevision)).toEqual(['revision-10', 'revision-11']);
 	expect(read({ cohortLimit: 1, cohortOffset: 1 }).cohorts[0]).toMatchObject({ specVersion: 'unknown' });
 	expect(read({ cohortLimit: 1, cohortOffset: 2 }).cohorts[0]).toMatchObject({ specVersion: 'legacy' });
+	const filtered = readProjectHistoricalOverview(project, 'all', new Date('2026-09-21T00:00:00.000Z'), () => histories, { cohortFilter: 'revision-11' }, { cohortLimit: 1, cohortOffset: 0 });
+	expect(filtered.overview?.cohorts.map((cohort) => cohort.workflowRevision)).toEqual(['revision-11']);
+	expect(filtered.overview?.cohortsPage).toEqual({ limit: 1, offset: 0, returned: 1, total: 1 });
+});
+
+test('aplica filtro de coorte antes dos agregados históricos', () => {
+	const histories = [
+		cohortHistory('filtered-shipped', { revision: 'revision-shipped', version: 'v2', outcome: 'shipped', createdAt: '2026-09-10T00:00:00.000Z' }),
+		cohortHistory('filtered-failed', { revision: 'revision-failed', version: 'v2', outcome: 'failed', createdAt: '2026-09-11T00:00:00.000Z' }),
+	];
+	const filtered = readProjectHistoricalOverview(
+		project, 'all', new Date('2026-09-21T00:00:00.000Z'), () => histories,
+		{ cohortFilter: 'revision-failed' }, { cohortLimit: 1, cohortOffset: 0 },
+	).overview!;
+
+	expect(filtered).toMatchObject({
+		totalRuns: 1,
+		runsByOutcome: { shipped: 0, failed: 1, cancelled: 0, incomplete: 0 },
+		cohortsPage: { limit: 1, offset: 0, returned: 1, total: 1 },
+	});
+	expect(filtered.daily.map((day) => day.date)).toEqual(['2026-09-11']);
+	expect(filtered.cohorts.map((cohort) => cohort.workflowRevision)).toEqual(['revision-failed']);
 });
 
 function runTime(run: HistoryRun, suffix: number): string {

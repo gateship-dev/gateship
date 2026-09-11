@@ -2911,6 +2911,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					...(params.get('model') === null ? {} : { model: params.get('model')! }),
 					...(role === null ? {} : { role }),
 					...(params.get('effort') === null ? {} : { effort: params.get('effort')! }),
+					...(params.get('cohortFilter')?.trim() ? { cohortFilter: params.get('cohortFilter')!.trim() } : {}),
 				};
 				const cohortSortBy = params.get('cohortSortBy');
 				const cohortSortDirection = params.get('cohortSortDirection');

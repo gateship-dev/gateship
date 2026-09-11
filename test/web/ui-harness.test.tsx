@@ -314,4 +314,21 @@ describe('development UI harness', () => {
 			expect(normalized).toContain('"emulatedFull":"0s"');
 		} finally { try { await cli('close'); } catch { /* cleanup may have no active browser session */ } server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
 	}, 60_000);
+
+	test('cobre Análises extensas e estados incompletos no viewport real', async () => {
+		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4180'], { stdout: 'pipe', stderr: 'pipe' });
+		const cliDir = createTestTmpdir('gship-ui-harness-insights-');
+		const cli = (...args: string[]): Promise<string> => runPlaywrightCli(cliDir, args);
+		try {
+			for (let attempt = 0; attempt < 20; attempt++) { try { if ((await fetch('http://127.0.0.1:4180/harness.html')).ok) break; } catch { /* server is starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
+			await cli('open', 'about:blank');
+			const result = await cli('run-code', "async page => { const matrix = []; for (const locale of ['pt-BR', 'en-US']) for (const theme of ['light', 'dark']) for (const width of [390, 768, 1440]) { await page.setViewportSize({ width, height: 800 }); await page.goto('http://127.0.0.1:4180/harness.html?frame=' + width + '&route=/overview/insights&scenario=insights-long&locale=' + locale + '&theme=' + theme); await page.locator('[data-chart]').waitFor({ state: 'visible' }); const chart = page.locator('[data-chart]').first(); const box = await chart.boundingBox(); matrix.push([locale, theme, width, await page.locator('main').evaluate(node => node.scrollWidth <= node.clientWidth), box?.height ?? 0, await page.locator('[aria-labelledby=insights-outcomes] tbody tr').count(), await page.locator('ul[aria-label]').count(), await chart.getAttribute('data-outcome-patterns')]); } await page.goto('http://127.0.0.1:4180/harness.html?frame=390&route=/overview/insights&scenario=insights-cohorts&locale=en-US&theme=dark'); await page.locator('input[aria-label*=Specification]').waitFor({ state: 'visible' }); const cohorts = page.locator('[data-slot=data-table]').last(); await page.waitForTimeout(1000); const before = await cohorts.locator('tbody tr').count(); await page.locator('input[aria-label*=Specification]').fill('fixture-cohort-25'); await page.waitForTimeout(1000); const after = await cohorts.locator('tbody tr').count(); const filteredLabel = await page.locator('span[aria-live=polite]').first().innerText(); await page.goto('http://127.0.0.1:4180/harness.html?frame=768&route=/overview/insights&scenario=insights-zero&locale=pt-BR&theme=light'); const zero = await page.locator('body').innerText(); await page.goto('http://127.0.0.1:4180/harness.html?frame=768&route=/overview/insights&scenario=insights-null&locale=pt-BR&theme=light'); const missing = await page.locator('body').innerText(); return JSON.stringify({ matrix, before, after, filteredLabel, zero, missing }); }");
+			const normalized = result.replaceAll('\\', '');
+			expect(normalized).toContain('"matrix"');
+			expect(normalized).toContain('"insights-pattern-shipped insights-pattern-failed insights-pattern-cancelled insights-pattern-incomplete"');
+			expect(normalized).toContain('"before":10');
+			expect(normalized).toContain('"after":1');
+			expect(normalized).toContain('Nenhuma run histórica neste período.');
+		} finally { try { await cli('close'); } catch { /* cleanup may have no active browser session */ } server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
+	}, 90_000);
 });
