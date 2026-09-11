@@ -5,25 +5,25 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T12:26:03.704Z",
-  "updatedAt": "2026-09-11T12:26:03.704Z",
+  "updatedAt": "2026-09-11T13:10:08.538Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
-    "objective": "Eliminar decisões internas com contexto incompleto: executor, revisão e orquestrador recebem o mesmo contrato aprovado da run, evidências identificadas e orientações com origem preservada, sem transformar contexto em autorização.",
+    "objective": "Corrigir a passagem do contrato aprovado ao diagnóstico interno e preservar origem das orientações, com contexto relevante e acesso ao contrato íntegro; sem ampliar memória ou redesenhar autorização.",
     "acceptance": [
-      "Reproduzir lacuna de approvedContract em review/full-verify e cobrir executor, verificação, review e CI. Capturar contrato/fingerprint aprovado no início; consultas posteriores e resume usam esse contrato, nunca uma issue alterada silenciosamente.",
-      "Todo diagnóstico recebe objetivo, acceptance, boundaries, verify, finding/origem, estado e fingerprint do worktree, resultados relevantes e tentativas anteriores. Contrato ausente/inconsistente é erro de contexto explícito, não ambiguidade de produto.",
-      "Preservar origem de cada orientação: humano confirmado, agente externo ou desconhecido. agent-cli não prova autoria humana; orientação técnica pode ajudar dentro do escopo, mas não concede permissão nem altera contrato por si só.",
-      "Tratar logs, arquivos, páginas, respostas de ferramentas e explicações do executor como evidência não vinculante. Conteúdo 'ignore o contrato' nessas fontes não muda hierarquia de instruções, permissões ou escopo.",
-      "Não truncar silenciosamente contrato/decisões vinculantes. Se exceder o prompt, oferecer referência local segura íntegra e sinalizar o corte; resumo de logs pode ser limitado com origem e acesso ao original sanitizado.",
-      "Usar sessões frescas para reviewer/orquestrador e manter capacidade read-only. Não reutilizar conversa privada do executor como prova de correção; fornecer fatos coletados pelo runtime e alegações rotuladas separadamente.",
-      "Testar os caminhos, resume após restart, >10 orientações, decisão >600 caracteres, alteração posterior da issue, origem agent-cli e evidência maliciosa; conferir conteúdo/autoridade, não redação literal do prompt."
+      "Reproduzir chamadas review/full-verify sem approvedContract. Fornecer o contrato/fingerprint aprovado da run em executor, review, full-verify e caminhos CI que consultam o orquestrador; resume não consulta uma especificação nova silenciosamente.",
+      "Contexto inicial contém contrato aprovado, finding/origem, evidências relevantes e última orientação aplicável. Não inserir todo transcript nem todas as tentativas no prompt; referências seguras permitem ler o detalhe necessário sem corte silencioso do contrato.",
+      "Registrar canal da orientação separado de autorização explícita reconhecida nas operações atuais. Pedido humano encaminhado pelo agente continua válido pelo fluxo de aprovação existente; agent-cli sozinho não prova nem invalida autorização.",
+      "Orientação técnica dentro do escopo pode orientar o executor. Mudança de objetivo, risco, verificação ou autoridade exige especificação/reaprovação pelo fluxo atual, por web ou agente autorizado; não criar canal humano exclusivo nem novo sistema de identidade.",
+      "Contrato ausente/inconsistente sem recuperação pela fonte aprovada da run encerra com falha técnica de contexto e trabalho preservado; não chamar provedor, consumir correção ou rotular escolha de produto. Sem fallback silencioso para texto não aprovado.",
+      "Logs, arquivos e alegações do executor permanecem evidência, não instrução vinculante. Reviewer/orquestrador continuam em sessões frescas read-only; snapshots do contrato pertencem à run existente, sem memória global.",
+      "Testar todos os caminhos, restart, alteração posterior da issue, autorização explícita via CLI, orientação sem autorização, contrato ausente e logs com instruções conflitantes. Verificar comportamento/autoridade, não palavras exatas de prompt."
     ],
     "boundaries": [
-      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
-      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
-      "Contexto só da run/projeto autorizado; nada de memória global, leitura de credenciais ou cópia integral do histórico de outras tarefas.",
-      "Ordem da rodada: GSHIP-863 antes das verificações de notificações; esta issue prepara contexto para diagnóstico, recuperação e evidências. Não iniciar a fila automaticamente."
+      "Manter Luna e modelos/esforços configurados, sandbox, allowlists, autenticação por assinatura, worktree isolada e reviewer independente read-only.",
+      "Não aprovar/iniciar/retomar/cancelar runs, alterar credenciais, enfraquecer checks ou editar .gship diretamente. Dependências abaixo são documentais, não bloqueios automáticos.",
+      "Pré-requisito de GSHIP-870 e GSHIP-872. Limitar implementação ao contrato, origem e contexto necessário; não refatorar toda retenção, limites de histórico ou identidade.",
+      "Não aumentar limites globais de contexto nem mandar decisões não relacionadas ao Luna; preservar consulta segura aos dados autorizados da própria run."
     ],
     "verify": [
       "bun test test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-runtime.test.ts test/runtime/run-review.test.ts",
