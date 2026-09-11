@@ -3321,6 +3321,27 @@ function factualTrendOverview() {
 	return result;
 }
 
+function factualAutonomyOverview(known = 3) {
+	const result = factualCohortOverview([]) as { overview: Record<string, unknown> };
+	result.overview.autonomyEvidence = {
+		count: 3, period: { from: '2026-09-01T00:00:00.000Z', to: '2026-09-03T00:00:00.000Z' },
+		workflows: ['workflow-a'], models: ['model-a'], efforts: ['high'],
+		outcomes: { shipped: 1, failed: 1, cancelled: 0, incomplete: 1 }, interventionRuns: 1,
+		guidance: { channels: { web: 2, 'agent-cli': 3, other: 1, unknown: 1 }, authorization: { observed: 3, absent: 1, unknown: 3 } },
+		missing: { cost: 1 }, denominator: 'selected-historical-runs', percentileMethod: 'median-center-nearest-rank-p90',
+		comparables: {
+			corrections: { verification: { median: 1, p90: 2, max: 2, known, denominator: 5 } },
+			dispatches: { median: 2, p90: 3, max: 3, known, denominator: 5 },
+			waits: { provider: { median: 1, p90: 2, max: 2, known, denominator: 5 }, operator: { median: null, p90: null, max: null, known: 0, denominator: 5 } },
+			phases: { working: { median: 1000, p90: 2000, max: 2000, known, denominator: 5 } },
+			totalDuration: { median: 1000, p90: 2000, max: 2000, known, denominator: 5 },
+			activeRecoveryDuration: { median: null, p90: null, max: null, known: 0, denominator: 5 },
+		},
+	};
+	result.overview.dispatchCeilings = { known: 0, denominator: 3, candidates: [7, 9, 18].map((ceiling) => ({ ceiling, observedRuns: null, cappedDispatches: null })), recommended: null, reason: 'equivalent-outcome-not-demonstrated' };
+	return result;
+}
+
 function factualTokenOverview() {
 	const result = factualCohortOverview([]) as { overview: { reportedTokens: { inputTokens: number | null; outputTokens: number | null } } };
 	result.overview.reportedTokens = { inputTokens: 1_234_567, outputTokens: null };
@@ -3393,6 +3414,55 @@ test('distingue os quatro resultados do gráfico por padrões não cromáticos e
 		expect(html).toContain(locale === 'en-US' ? 'Cancelled' : 'Canceladas');
 		expect(html).toContain(locale === 'en-US' ? 'Incomplete' : 'Incompletas');
 	}
+});
+
+function expectCommonAutonomyReport(html: string): void {
+	expect(html).toContain('web 2');
+}
+
+test('renderiza o relatório agregado de autonomia em en-US', () => {
+	const html = renderInsightsWithLoadedOverview('en-US', factualAutonomyOverview());
+	expectCommonAutonomyReport(html);
+	expect(html).toContain('Autonomy evidence');
+	expect(html).toContain('guidance channels');
+	expect(html).toContain('authorization evidence');
+	expect(html).toContain('observed 3');
+	expect(html).toContain('insufficient data');
+	expect(html).toContain('7: insufficient data');
+	expect(html).toContain('no recommendation');
+	expect(html).toContain('runs in the selected historical slice');
+	expect(html).toContain('the history does not demonstrate an equivalent outcome under a ceiling');
+	expect(html).not.toContain('Runs no recorte histórico selecionado');
+});
+
+test('renderiza o relatório agregado de autonomia em pt-BR', () => {
+	const html = renderInsightsWithLoadedOverview('pt-BR', factualAutonomyOverview());
+	expectCommonAutonomyReport(html);
+	expect(html).toContain('Evidência de autonomia');
+	expect(html).toContain('canais da orientação');
+	expect(html).toContain('evidência de autorização');
+	expect(html).toContain('observada 3');
+	expect(html).toContain('outro 1');
+	expect(html).toContain('desconhecido 1');
+	expect(html).toContain('ausente 1');
+	expect(html).toContain('dados insuficientes');
+	expect(html).toContain('7: dados insuficientes');
+	expect(html).toContain('sem recomendação');
+	expect(html).toContain('runs do recorte histórico selecionado');
+	expect(html).toContain('o histórico não demonstra resultado equivalente sob um teto');
+	expect(html).not.toContain('other 1');
+	expect(html).not.toContain('unknown 1');
+	expect(html).not.toContain('observed 3');
+	expect(html).not.toContain('absent 1');
+});
+
+test('declara dados insuficientes até haver cinco medições comparáveis', () => {
+	for (const known of [1, 4] as const) {
+		const html = renderInsightsWithLoadedOverview('pt-BR', factualAutonomyOverview(known));
+		expect(html).toContain(`dados insuficientes · ${known}/5`);
+	}
+	const sufficient = renderInsightsWithLoadedOverview('pt-BR', factualAutonomyOverview(5));
+	expect(sufficient).toContain('mediana 1');
 });
 
 describe('operator shell', () => {

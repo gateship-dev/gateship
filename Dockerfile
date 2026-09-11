@@ -69,7 +69,16 @@ COPY provider-cli-versions.json /tmp/provider-cli-versions.json
 RUN set -eu; \
 	claude_version="$(bun -e 'const v = await Bun.file("/tmp/provider-cli-versions.json").json(); console.log(v.claudeCode)')"; \
 	codex_version="$(bun -e 'const v = await Bun.file("/tmp/provider-cli-versions.json").json(); console.log(v.codexCli)')"; \
-	curl -fsSL https://claude.ai/install.sh | bash -s "${claude_version}"; \
+	claude_installer="/tmp/claude-install.sh"; \
+	trap 'rm -f "${claude_installer}"' EXIT; \
+	curl --fail --silent --show-error --location --retry 3 --retry-delay 2 --retry-max-time 60 --retry-all-errors \
+		-o "${claude_installer}" https://claude.ai/install.sh; \
+	bash "${claude_installer}" "${claude_version}"; \
+	claude_reported_version="$(claude --version)"; \
+	case "${claude_reported_version}" in \
+		"${claude_version}"|"${claude_version} "*) ;; \
+		*) echo "Claude Code version mismatch: expected ${claude_version}, got ${claude_reported_version}" >&2; exit 1 ;; \
+	esac; \
 	bun add -g "@openai/codex@${codex_version}"
 
 COPY --from=builder /out/gateship /usr/local/bin/gateship

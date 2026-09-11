@@ -349,6 +349,7 @@ describe('durable web run API', () => {
 				body: JSON.stringify({ issueId: 'CAM-14' }),
 			});
 			while (runtime.getRun('run-answer')?.state !== 'waiting-user') await Bun.sleep(5);
+			expect(runtime.listRunEvents('run-answer').find((event) => event.kind === 'run.created')?.payload).not.toHaveProperty('source');
 
 			const missing = await fetch(`${origin}/api/runs/run-answer/resume`, {
 				method: 'POST',

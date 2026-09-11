@@ -168,6 +168,8 @@ export interface ProviderUsageView {
 export interface RunEvaluationView {
 	specProfile: { version: 'legacy' | 'v2' | 'unknown'; fingerprint: string | null; counts: { acceptance: number | null; boundaries: number | null; verify: number | null; evidence: number | null } };
 	corrections: { verification: number; review: number; fullVerify: number; ci: number; total: number };
+	dispatches?: { total: number; executor: number; reviewer: number; orchestrator: number };
+	guidance?: { channels: Record<'web' | 'agent-cli' | 'other' | 'unknown', number>; authorization: Record<'observed' | 'absent' | 'unknown', number> };
 	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
 	reconciliations: { unchanged: number; adapted: number; 'contract-change-required': number; total: number };
 	workflowRevision: string | null;

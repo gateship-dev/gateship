@@ -695,6 +695,8 @@ function SpecFactsPanel({
 				<dt className="text-muted-foreground">{catalog.specFacts.corrections}</dt><dd>{catalog.specFacts.correctionCounts(corrections.verification, corrections.review, corrections.fullVerify, corrections.ci, corrections.total)}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.questions}</dt><dd>{catalog.specFacts.questionCounts(cycleQuestions.executor, cycleQuestions.review, cycleQuestions.fullVerify, cycleQuestions.total)}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.reconciliations}</dt><dd>{catalog.specFacts.reconciliationCounts(reconciliations.unchanged, reconciliations.adapted, reconciliations['contract-change-required'], reconciliations.total)}</dd>
+				{evaluation.dispatches === undefined ? null : <><dt className="text-muted-foreground">{catalog.specFacts.dispatches}</dt><dd>{catalog.specFacts.dispatchCounts(evaluation.dispatches.executor, evaluation.dispatches.reviewer, evaluation.dispatches.orchestrator, evaluation.dispatches.total)}</dd></>}
+				{evaluation.guidance === undefined ? null : <><dt className="text-muted-foreground">{catalog.specFacts.guidance}</dt><dd>{catalog.specFacts.guidanceCounts(evaluation.guidance.channels.web, evaluation.guidance.channels['agent-cli'], evaluation.guidance.channels.other, evaluation.guidance.channels.unknown)}</dd><dt className="text-muted-foreground">{catalog.specFacts.authorization}</dt><dd>{catalog.specFacts.authorizationCounts(evaluation.guidance.authorization.observed, evaluation.guidance.authorization.absent, evaluation.guidance.authorization.unknown)}</dd></>}
 			</dl>
 			<div className="mt-4 border-t pt-3">
 				<h3 className="text-sm font-medium">{catalog.specFacts.durationTitle}</h3>
