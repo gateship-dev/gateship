@@ -1,0 +1,34 @@
+{
+  "id": "GSHIP-878",
+  "title": "Release: corrigir recursão do Docker e publicação prematura da GSHIP-877",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T22:18:48.860Z",
+  "updatedAt": "2026-09-11T22:18:48.860Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Concluir o contrato aprovado da GSHIP-877 após falha real da primeira release: eliminar recursão do wrapper Docker e impedir release pública antes da validação das imagens e dos binários, sem mudar frequência ou arquitetura.",
+    "acceptance": [
+      "O caminho padrão sem DOCKER_BIN chama o executável Docker pelo PATH, sem resolver a própria função. Preservar teste isolado sem Docker real; cobrir explicitamente variável ausente e injeção alternativa, se mantida.",
+      "A mesma workflow só torna a release pública após sucesso dos quatro binários/checksums e das imagens AMD64/ARM64 verificadas. Falha de qualquer ramo mantém artefatos em draft ou Actions, nunca release pronta.",
+      "Manter builds únicos por arquitetura, smokes de Claude/Codex/health sem credenciais, promoção dos digests verificados às tags versão/SHA e attestation. Preservar cache, proteções, triggers e rerun idempotente.",
+      "Testes comportamentais devem falhar no wrapper recursivo original e provar falha impedindo publicação e sucesso conjunto permitindo publicação; não depender apenas de nomes de steps.",
+      "Validar CI real da correção e primeira release completa. Não instalar v0.498.0 com release-image falha nem tratar sua publicação parcial como entrega concluída."
+    ],
+    "boundaries": [
+      "Correção dos ACs 4, 5, 6 e 7 já aprovados na GSHIP-877; antes de GSHIP-869. Não ampliar produto nem renovar aprovação de escopo.",
+      "Somente scripts/workflow de release e testes necessários. Não editar .gship, runtime, credenciais, pins, arquitetura ou main local. Luna/Sol preservados.",
+      "Não reexecutar cegamente a release defeituosa nem sobrescrever tags antigas. Correção sai por nova PR/release normal; sem bypass de CI."
+    ],
+    "verify": [
+      "bun test test/ci-workflow.test.ts test/release-workflow.test.ts test/compose-config.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "ab3c1989161cac0697656c6fe0955de603309a5efb3a67d43a773f8f70c8052f",
+    "approvedAt": "2026-09-11T22:18:48.860Z"
+  }
+}
