@@ -479,12 +479,12 @@ describe('canonical agent CLI', () => {
 		}]);
 
 		const explicit = await executeAgent(['call', 'projects.overview', '--input', JSON.stringify({
-			cohortLimit: 2, cohortOffset: 4, projectId: 'project / 1', providerId: 'codex', model: 'model-a', role: 'executor', effort: 'high',
+			cohortLimit: 2, cohortOffset: 4, cohortSortBy: 'sampleSize', cohortSortDirection: 'asc', projectId: 'project / 1', providerId: 'codex', model: 'model-a', role: 'executor', effort: 'high',
 		})], async (url) => {
 			calls.push(String(url));
 			return jsonResponse({ window: '7d', summary: { totalProjects: 1 }, overview: { cohorts: cohorts.slice(4, 6), cohortsPage: { limit: 2, offset: 4, returned: 2, total: 11 } }, projects: [project] });
 		});
-		expect(calls[1]).toBe('http://127.0.0.1:7777/api/overview?cohortLimit=2&cohortOffset=4&projectId=project+%2F+1&providerId=codex&model=model-a&role=executor&effort=high');
+		expect(calls[1]).toBe('http://127.0.0.1:7777/api/overview?cohortLimit=2&cohortOffset=4&cohortSortBy=sampleSize&cohortSortDirection=asc&projectId=project+%2F+1&providerId=codex&model=model-a&role=executor&effort=high');
 		expect(explicit.exitCode).toBe(0);
 		expect(Buffer.byteLength(JSON.stringify(explicit.output))).toBeLessThanOrEqual(AGENT_MAX_OUTPUT_BYTES);
 		expect((explicit.output['result'] as { overview: { cohorts: unknown[]; cohortsPage: unknown } }).overview.cohorts).toHaveLength(2);
