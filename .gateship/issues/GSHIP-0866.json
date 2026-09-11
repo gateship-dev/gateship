@@ -1,0 +1,36 @@
+{
+  "id": "GSHIP-866",
+  "title": "CI visual: fixar amd64 e tornar o gate obrigatório",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T08:25:42.589Z",
+  "updatedAt": "2026-09-11T08:25:42.589Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Tornar a verificação visual reproduzível entre Apple Silicon e GitHub Actions e impedir que uma pull request seja mergeada quando o check de UI falhar.",
+    "acceptance": [
+      "O wrapper Bun executa smoke, visual e atualização de baselines na imagem Playwright fixada com `--platform linux/amd64`; dentro do container fixado executa diretamente, sem Docker aninhado.",
+      "Regenerar os 32 baselines em linux/amd64 e provar que o comando visual fixo passa sem máscaras, tolerância ampla ou atualização automática.",
+      "O workflow separa o trabalho pesado em `core` e a UI em `ui`, e mantém um check final chamado `ci` que depende dos dois e falha se qualquer dependência falhar ou for cancelada.",
+      "O job de UI publica screenshots, diffs, traces, relatório HTML e JSON com `if: always()`, sem versionar artefatos transitórios.",
+      "Cobrir deterministicamente os argumentos de plataforma do wrapper e a topologia core/ui/ci para prevenir a regressão do gate obrigatório."
+    ],
+    "boundaries": [
+      "Não alterar tolerância visual, mascarar conteúdo ou aceitar novos baselines sem geração explícita no ambiente fixado.",
+      "Não incluir navegador nem testes na imagem distribuída do Gateship.",
+      "Não depender de configuração manual de branch protection além do check `ci` já requerido."
+    ],
+    "verify": [
+      "bun run test:ui:smoke:fixed",
+      "bun run test:ui:visual:fixed",
+      "bun test test/web/ui-harness.test.tsx test/web/embedded-ui.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "06b99dcc803110ca59200a5d3bb64663dd67a17e267481842ff3a0879a86eb7a",
+    "approvedAt": "2026-09-11T08:25:42.589Z"
+  }
+}
