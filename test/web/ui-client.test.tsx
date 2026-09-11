@@ -3383,6 +3383,8 @@ describe('operator shell', () => {
 	});
 	test('restaura tamanhos de página válidos, omite padrões e descarta valores inválidos nas URLs', () => {
 		expect(overviewRunsQueryFromUrl({ location: { search: '?limit=25&offset=50' } }).limit).toBe(25);
+		expect(overviewRunsQueryFromUrl({ location: { search: '?limit=20&offset=15' } })).toMatchObject({ limit: 20, offset: 15 });
+		expect(overviewRunsQueryFromUrl({ location: { search: '?sortBy=runId&sortDirection=asc' } })).toMatchObject({ sortBy: undefined, sortDirection: 'asc' });
 		expect(overviewRunsQueryFromUrl({ location: { search: '?limit=0' } }).limit).toBe(20);
 		expect(insightsQueryFromUrl({ location: { search: '?cohortLimit=7&cohortOffset=14' } })).toMatchObject({ cohortLimit: 7, cohortOffset: 14 });
 		expect(insightsQueryFromUrl({ location: { search: '?cohortLimit=-1' } }).cohortLimit).toBe(10);

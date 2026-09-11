@@ -33,19 +33,20 @@ import { cn } from '../../webui/src/lib/cn.ts';
 import { ContextPanel } from '../../webui/src/screens/operator-controls.tsx';
 import {
 	DataTable,
+	DataTableColumnVisibility,
 	DataTablePagination,
 	gateshipTableFeatures,
 	useGateshipTable,
 	type GateshipColumnDef,
 } from '../../webui/src/components/ui/data-table.tsx';
 
-type TableFixtureRow = { id: string; name: string; state: string };
+type TableFixtureRow = { id: string; name: string; state: string; execution?: string; providerId?: string };
 const TABLE_FIXTURE_COLUMNS: GateshipColumnDef<TableFixtureRow>[] = [
 	{ accessorKey: 'name', header: 'Name', minSize: 160 },
 	{ accessorKey: 'state', header: 'State', minSize: 120 },
 ];
 
-function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, server = false }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; pinned?: boolean; server?: boolean }): React.ReactElement {
+function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, server = false, loading = false, pageSize = 1, rowCount = 4 }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; pinned?: boolean; server?: boolean; loading?: boolean; pageSize?: number; rowCount?: number }): React.ReactElement {
 	const table = useGateshipTable({
 		columns,
 		data,
@@ -54,14 +55,20 @@ function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, s
 		manualFiltering: server,
 		manualPagination: server,
 		manualSorting: server,
-		rowCount: server ? 4 : undefined,
+		rowCount: server ? rowCount : undefined,
 		state: {
-			pagination: { pageIndex: server ? 1 : 0, pageSize: 1 },
+			pagination: { pageIndex: server ? 1 : 0, pageSize },
 			...(pinned ? { columnPinning: { start: ['name'], end: [] } } : {}),
 			...(server ? { globalFilter: 'not applied locally', sorting: [{ desc: true, id: 'name' }] } : {}),
 		},
 	});
-	return <><DataTable table={table} locale="pt-BR" /><DataTablePagination table={table} locale="pt-BR" /></>;
+	return <><DataTable table={table} locale="pt-BR" status={loading ? 'loading' : 'ready'} /><DataTablePagination table={table} locale="pt-BR" /></>;
+}
+
+function TableControlsFixture(): React.ReactElement {
+	const columns: GateshipColumnDef<TableFixtureRow>[] = [{ accessorKey: 'execution', header: 'Execução', enableSorting: false }, { accessorKey: 'providerId', header: 'Provider / modelo' }, ...TABLE_FIXTURE_COLUMNS];
+	const table = useGateshipTable({ columns, data: [{ id: 'a', name: 'Nome', state: 'Pronto', execution: 'run-1', providerId: 'Claude Code / modelo' }], features: gateshipTableFeatures, getRowId: (row) => row.id, rowCount: 1, state: { sorting: [], pagination: { pageIndex: 0, pageSize: 1 } } });
+	return <><DataTable table={table} locale="pt-BR" /><DataTablePagination table={table} locale="pt-BR" /><DataTableColumnVisibility defaultOpen table={table} locale="pt-BR" /></>;
 }
 
 describe('ui primitives', () => {
@@ -76,14 +83,40 @@ describe('ui primitives', () => {
 		expect(other).toContain('Estado');
 	});
 
+	test('data tables announce their initial loading state', () => {
+		const html = renderToStaticMarkup(<TableFixture data={[]} loading />);
+		expect(html).toContain('aria-busy="true"');
+		expect(html).toContain('role="status"');
+		expect(html).toContain('Carregando…');
+	});
+
 	test('data tables preserve pinned columns and server-owned row processing', () => {
 		const html = renderToStaticMarkup(<TableFixture pinned data={[{ id: 'a', name: 'Nome fixado', state: 'Pronto' }]} />);
 		const server = renderToStaticMarkup(<TableFixture server data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }, { id: 'b', name: 'Resposta do servidor B', state: 'Em fila' }]} />);
 		expect(html).toContain('position:sticky');
+		expect((html.match(/position:sticky/g) ?? []).length).toBeGreaterThanOrEqual(2);
+		expect(html).toContain('background-color:var(--background)');
 		expect(html).toContain('inset-inline-start:0');
 		expect(server).toContain('Resposta do servidor A');
 		expect(server).toContain('Resposta do servidor B');
 		expect(server).toContain('Página 2 / 4');
+		const server25 = renderToStaticMarkup(<TableFixture server pageSize={25} rowCount={100} data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }]} />);
+		expect(server25).toContain('Página 2 / 4');
+	});
+
+	test('data table controls name their column and localize sorting and ranges', () => {
+		const html = renderToStaticMarkup(<TableControlsFixture />);
+		expect(html).toContain('aria-label="Colunas: Name"');
+		expect(html).toContain('aria-label="Fixar no início: Name"');
+		expect(html).toContain('aria-label="Tamanho: Name"');
+		expect(html).toContain('aria-label="Restaurar tamanho: Name"');
+		expect(html).toContain('Execução');
+		expect(html).toContain('Provider / modelo');
+		expect(html).toContain('aria-label="Colunas: Provider / modelo"');
+		expect(html).not.toContain('title="Ordenar Execução');
+		expect(html).toContain('title="Ordenar Name, sem ordenação"');
+		expect(html).toContain('1–1 de 1');
+		expect(html).not.toContain(' of ');
 	});
 
 	test('card composition owns its standard, compact, split and form rhythm', () => {

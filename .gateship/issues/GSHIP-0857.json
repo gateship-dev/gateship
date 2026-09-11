@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-857",
   "title": "Central: migrar Execuções para tabela TanStack operacional",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:19.481Z",
-  "updatedAt": "2026-09-11T03:41:51.872Z",
+  "updatedAt": "2026-09-11T05:00:44.636Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
