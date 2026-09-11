@@ -5,30 +5,30 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T02:41:26.459Z",
-  "updatedAt": "2026-09-11T02:41:26.459Z",
+  "updatedAt": "2026-09-11T12:27:10.712Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
-    "objective": "Evitar e-mail/ntfy por bloqueios técnicos ainda resolvíveis dentro do contrato: concluir recuperação interna limitada antes de entrar em waiting-user, preservando pedidos humanos legítimos e evidências claras da escalada.",
+    "objective": "Integrar diagnóstico e orçamento nos pontos de escalada para reduzir pedidos técnicos desnecessários, preservando notificação imediata de autoridade faltante e parada explícita por estagnação ou exaustão.",
     "acceptance": [
-      "Reproduzir com fixtures sintéticas os casos da GSHIP-855: pergunta de teste repetida apesar de mudança concreta e CI após primeira correção. Cobrir rotas executor/review/full-verify/CI, inclusive ci-fix-limit e ci-fix-no-change que hoje escalam diretamente.",
-      "Antes de waiting-user, distinguir decisão/autoridade/dado externo necessários de entrave técnico. Avaliar contrato aprovado, decisões registradas, evidência do erro, diff e resultado das tentativas; repetição literal da pergunta não prova ausência de progresso.",
-      "Reutilizar o orquestrador read-only para diagnóstico e orientação ao executor: admitir uma recuperação técnica adicional por run, persistida e limitada. Não reiniciar orçamento por resume/restart ou reformulação da pergunta; sem loops ilimitados.",
-      "Se o diagnóstico indicar correção concreta autorizada, continuar sem entrada transitória em waiting-user, notificação ou falsa intervenção humana. Tratar ausência/falha do resolver como bloqueio explícito; não autorizar mudanças de risco/escopo ou ações irreversíveis.",
-      "Escalar quando houver decisão humana específica ou recuperação esgotada, com motivo, tentativas e próxima ação clara. Nova evidência pode mudar diagnóstico, mas não renovar orçamento automaticamente; nenhum alerta legítimo é ocultado por atraso arbitrário.",
-      "Produzir contexto público consistente no evento: projeto/issue, motivo e ação solicitada. E-mail/ntfy usam esse contexto, inclusive cycle-response e ci-fix-limit, sem cair em mensagem genérica quando reason/summary existem; sem expor logs ou segredos.",
-      "Testes com envios simulados provam zero avisos durante recuperação, envio por canal na escalada final, silêncio enquanto continua esperando e novo aviso para novo pedido legítimo. Preservar limites após restart, decisões humanas reais e origem interna/externa dos eventos."
+      "Auditar executor waiting-user, verify, review, full-verify, CI repetida, CI sem diff, resolver ausente/inválido e provider indisponível. Trocar limites locais duplicados por GSHIP-870/GSHIP-871 apenas nas novas runs; manter semântica própria de waiting-provider.",
+      "Bloqueio técnico recuperável segue orquestrador read-only -> Luna -> verificações aplicáveis -> revisão independente, sem transição transitória a waiting-user. Nenhuma resposta do modelo marca teste como passado, review clean ou merge realizado.",
+      "Autoridade/decisão/dado humano faltante pede intervenção sem gastar tentativas técnicas inúteis. Estagnação, orçamento esgotado e diagnóstico indisponível param com causas distintas, nunca se apresentam como escolha de produto.",
+      "Email e ntfy usam a mesma transição durável real para waiting-user. Recuperação interna gera zero envios; um envio por canal configurado por nova transição; não reenviar enquanto esperando. Manter teste manual separado e totalmente mockado.",
+      "Mensagem informa projeto/issue, bloqueio concreto, tentativas/evidências resumidas e ação solicitada. Usar summary ou reason conforme evento; não mandar texto genérico quando existe razão segura; nenhum segredo ou log bruto.",
+      "Testar 0 alertas para pergunta repetida com avanço e CI recuperada; 1/canal para autorização necessária, estagnação/exaustão e falha de diagnóstico; nova espera legítima após retomada pode notificar de novo. Sem rede, email ou ntfy reais nos testes.",
+      "Alinhar AGENTS.md/HANDOFF e prompts: substituir regra de uma correção por recuperação limitada por evidência/orçamento; preservar julgamento humano e revisão independente. Atualizar GSHIP-864 ainda draft, substituindo sua recuperação adicional única."
     ],
     "boundaries": [
-      "Não adicionar um segundo LLM ao notifier; resolver a necessidade antes da transição que publica o alerta.",
-      "Não tratar agent-cli automaticamente como pessoa nem fabricar autorização; preservar provenance. Orientação técnica e consentimento humano são distintos.",
-      "Não enfraquecer verificações, ampliar contrato, ignorar achados ou continuar indefinidamente para evitar mensagens.",
-      "Não alterar a GSHIP-855 ativa, responder por ela, reiniciar serviço ou mudar a fila aprovada; esta é uma proposta nova, não aprovada.",
-      "Pré-requisito: GSHIP-863 para testes isolados. Não usar debounce/supressão como solução; manter revisão independente. Ordem documental, sem bloqueio automático."
+      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
+      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
+      "Depende de isolamento GSHIP-863 comprovado. Não criar LLM no notifier, outbox genérica, retry de entrega, autoaprovação, atalhos de shipping ou enfraquecer verificações.",
+      "Substitui a proposta de apenas uma recuperação adicional por run; não acumular limites contraditórios da especificação anterior.",
+      "Pré-requisitos: GSHIP-863, GSHIP-869, GSHIP-870 e GSHIP-871 entregues. Dependências documentais; não aprovar enquanto faltarem. Não reiniciar runs existentes."
     ],
     "verify": [
-      "bun test test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-runtime.test.ts",
-      "bun test test/runtime/remote-notifier.test.ts test/web/notifications.test.ts",
+      "bun test test/runtime/run-runtime.test.ts test/runtime/run-review.test.ts test/runtime/run-ship.test.ts test/runtime/remote-notifier.test.ts",
+      "bun test test/web/notifications.test.ts test/web/notifications-api.test.ts",
       "bun run typecheck"
     ]
   }
