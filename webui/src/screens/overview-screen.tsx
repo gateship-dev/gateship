@@ -1,20 +1,24 @@
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectOperationalOverviewView, ProjectOverviewView, RegisteredProjectView } from '../client.ts';
-import { Badge } from '../components/ui/badge.tsx';
+import { AttentionCard } from '../components/ui/attention-card.tsx';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
+import { Badge } from '../components/ui/badge.tsx';
 import { Card, CardPanel } from '../components/ui/card.tsx';
 import { CardGrid } from '../components/ui/card-layout.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
+import { Item, ItemContent, ItemGroup } from '../components/ui/item.tsx';
+import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Stat } from '../components/ui/stat.tsx';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
 import { cn } from '../lib/cn.ts';
-import { LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, OverviewCatalog, ProjectsCatalog } from '../locale.ts';
-import { toneOf } from '../run-view.ts';
+import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunState } from '../run-view.ts';
-import { SurfaceColumn } from './surface-column.tsx';
+import { toneOf } from '../run-view.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { formatRunTimestamp } from './runs.tsx';
+import { SurfaceColumn } from './surface-column.tsx';
 
 export const READINESS_TONE: Readonly<Record<RegisteredProjectView['readiness'], BadgeVariant>> = {
 	ready: 'success', empty: 'secondary', 'needs-attention': 'warning',
@@ -46,12 +50,10 @@ function ActiveWork({ overview, catalog, locale }: { overview: ProjectOperationa
 	return <section aria-labelledby="overview-active-work" className="flex flex-col gap-3">
 		<h2 className="sr-only" id="overview-active-work">{catalog.activeWork}</h2>
 		{entries.length === 0 ? <EmptyState compact>{catalog.noActiveWork}</EmptyState> : (
-			<ul className="divide-y divide-border rounded-lg border" aria-label={catalog.activeWork}>
-				{entries.map((entry) => <li className="flex min-w-0 flex-wrap items-center justify-between gap-3 px-4 py-3" key={entry.project.id}>
-					<a className={cn(TITLE_LINK_CLASS, 'min-w-0 truncate')} href={`/projects/${encodeURIComponent(entry.project.id)}/runs`}>{entry.project.name}</a>
-					<ProjectActivity entry={entry} catalog={catalog} locale={locale} />
-				</li>)}
-			</ul>
+			<ItemGroup aria-label={catalog.activeWork}>{entries.map((entry) => <Item key={entry.project.id}>
+				<ItemContent><a className={cn(TITLE_LINK_CLASS, 'block truncate')} href={`/projects/${encodeURIComponent(entry.project.id)}/runs`}>{entry.project.name}</a></ItemContent>
+				<ProjectActivity entry={entry} catalog={catalog} locale={locale} />
+			</Item>)}</ItemGroup>
 		)}
 	</section>;
 }
@@ -59,26 +61,20 @@ function ActiveWork({ overview, catalog, locale }: { overview: ProjectOperationa
 function ProjectStatusTable({ overview, catalog, projectCatalog, locale }: { overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; projectCatalog: ProjectsCatalog; locale: Locale }): React.ReactElement {
 	return <section aria-labelledby="overview-project-status" className="flex flex-col gap-3">
 		<h2 className="sr-only" id="overview-project-status">{catalog.projectStatus}</h2>
-		<div className="overflow-hidden rounded-lg border">
-			<table className="w-full text-sm">
+		<div className="rounded-lg border">
+			<Table>
 				<caption className="sr-only">{catalog.projectStatus}</caption>
-				<thead className="border-b bg-muted/40 text-left text-muted-foreground"><tr>
-					<th className="px-4 py-3 font-medium">{catalog.project}</th>
-					<th className="px-4 py-3 font-medium">{projectCatalog.readinessLabel}</th>
-					<th className="px-4 py-3 font-medium">{catalog.activity}</th>
-					<th className="hidden px-4 py-3 font-medium sm:table-cell">{catalog.backlogLabel}</th>
-					<th className="hidden px-4 py-3 font-medium md:table-cell">{catalog.lastDelivery}</th>
-				</tr></thead>
-				<tbody className="divide-y divide-border">
-					{overview.projects.map((entry) => <tr key={entry.project.id}>
-						<td className="max-w-44 px-4 py-3"><span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(entry.project.id)}`}>{entry.project.name}</a>{entry.project.current ? <Badge variant="info">{projectCatalog.currentBadge}</Badge> : null}</span></td>
-						<td className="px-4 py-3"><Badge variant={READINESS_TONE[entry.project.readiness]}>{projectCatalog.readiness[entry.project.readiness]}</Badge></td>
-						<td className="max-w-56 px-4 py-3"><ProjectActivity entry={entry} catalog={catalog} locale={locale} /></td>
-						<td className="hidden px-4 py-3 font-mono tabular-nums sm:table-cell">{entry.backlog.state === 'available' ? entry.backlog.counts.planned : <span className="text-muted-foreground">{catalog.partial}</span>}</td>
-						<td className="hidden px-4 py-3 md:table-cell">{entry.overview.overview === null ? <span className="text-muted-foreground">{catalog.historyUnavailable}</span> : entry.latestRun === null || entry.latestRunOutcome === null ? <span className="text-muted-foreground">{catalog.noDelivery}</span> : <span className="inline-flex flex-wrap items-center gap-2"><Badge variant={OUTCOME_TONE[entry.latestRunOutcome] ?? 'secondary'}>{catalog.outcomes[entry.latestRunOutcome]}</Badge><time className="font-mono text-muted-foreground text-xs" dateTime={entry.latestRun.updatedAt}>{formatRunTimestamp(entry.latestRun.updatedAt, locale)}</time></span>}</td>
-					</tr>)}
-				</tbody>
-			</table>
+				<TableHeader className="bg-muted/40"><TableRow>
+					<TableHead>{catalog.project}</TableHead><TableHead>{projectCatalog.readinessLabel}</TableHead><TableHead>{catalog.activity}</TableHead>
+					<TableHead className="hidden sm:table-cell">{catalog.backlogLabel}</TableHead><TableHead className="hidden md:table-cell">{catalog.lastDelivery}</TableHead>
+				</TableRow></TableHeader>
+				<TableBody>{overview.projects.map((entry) => <TableRow key={entry.project.id}>
+					<TableCell className="max-w-44"><span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(entry.project.id)}`}>{entry.project.name}</a>{entry.project.current ? <Badge variant="info">{projectCatalog.currentBadge}</Badge> : null}</span></TableCell>
+					<TableCell><Badge variant={READINESS_TONE[entry.project.readiness]}>{projectCatalog.readiness[entry.project.readiness]}</Badge></TableCell><TableCell className="max-w-56"><ProjectActivity entry={entry} catalog={catalog} locale={locale} /></TableCell>
+					<TableCell className="hidden font-mono tabular-nums sm:table-cell">{entry.backlog.state === 'available' ? entry.backlog.counts.planned : <span className="text-muted-foreground">{catalog.partial}</span>}</TableCell>
+					<TableCell className="hidden md:table-cell">{entry.overview.overview === null ? <span className="text-muted-foreground">{catalog.historyUnavailable}</span> : entry.latestRun === null || entry.latestRunOutcome === null ? <span className="text-muted-foreground">{catalog.noDelivery}</span> : <span className="inline-flex flex-wrap items-center gap-2"><Badge variant={OUTCOME_TONE[entry.latestRunOutcome] ?? 'secondary'}>{catalog.outcomes[entry.latestRunOutcome]}</Badge><time className="font-mono text-muted-foreground text-xs" dateTime={entry.latestRun.updatedAt}>{formatRunTimestamp(entry.latestRun.updatedAt, locale)}</time></span>}</TableCell>
+				</TableRow>)}</TableBody>
+			</Table>
 		</div>
 	</section>;
 }
@@ -86,7 +82,7 @@ function ProjectStatusTable({ overview, catalog, projectCatalog, locale }: { ove
 export function OverviewData({ props, overview, catalog, attention }: { props: AppProps; overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; attention: number }): React.ReactElement {
 	return <>
 		<CardGrid className="sm:grid-cols-2 xl:grid-cols-4" compact equalHeight>
-			<Stat className={cn(attention > 0 && 'border-attention-ui bg-attention-surface shadow-[0_6px_28px_rgba(200,255,0,0.09)]')} label={catalog.metrics.attention} value={attention} />
+			{attention > 0 ? <AttentionCard title={catalog.metrics.attention}><p className="type-data text-2xl">{attention}</p></AttentionCard> : <Stat label={catalog.metrics.attention} value={attention} />}
 			<Stat label={catalog.metrics.activeRuns} value={overview.summary.nonTerminalRuns} />
 			<Stat label={catalog.metrics.approvedIssues} value={overview.summary.backlog.planned} />
 			<Stat label={catalog.metrics.deliveries} value={overview.overview.runsByOutcome.shipped} />
@@ -103,7 +99,7 @@ export function OverviewSurface(props: AppProps): React.ReactElement {
 	const attention = overview?.projects.filter((project) => project.project.readiness === 'needs-attention'
 		|| project.activeRun?.state === 'waiting-user' || project.activeRun?.state === 'interrupted').length ?? 0;
 	return <SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.routeLabels.overview} status={props.status}>
-		{props.overviewLoading && overview === null ? <p role="status">{catalog.loading}</p> : null}
+		{props.overviewLoading && overview === null ? <div role="status" aria-label={catalog.loading}><Skeleton className="h-20 w-full" /><span className="sr-only">{catalog.loading}</span></div> : null}
 		{overview === null && props.overviewError !== null && props.overviewError !== undefined ? <Card><CardPanel><p role="alert">{catalog.error}</p><p className="text-muted-foreground text-xs">{props.overviewError}</p></CardPanel></Card> : null}
 		{(overview === null || overview.projects.length === 0) && !props.overviewLoading && !props.overviewError && props.projects.length === 0 ? <EmptyState>{catalog.empty}</EmptyState> : null}
 		{props.overviewError ? <p className="text-warning-foreground text-sm" role="alert">{catalog.error}: {props.overviewError}</p> : null}

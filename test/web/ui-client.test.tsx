@@ -12,12 +12,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
 	App,
 	type AppProps,
-	handleProjectShortcut,
 	handleOverviewShortcut,
+	handleProjectShortcut,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
-import { presentationPlatform, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
 import {
 	AGENT_DEFAULTS_PATH,
 	abandonIssue,
@@ -107,6 +106,7 @@ import {
 	unregisterProject,
 } from '../../webui/src/client.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
+import { presentationPlatform, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
 import {
 	canReturnToLiveEdge,
 	createLiveEdgeController,
@@ -122,9 +122,6 @@ import {
 	readLocalePreference,
 } from '../../webui/src/locale.ts';
 import { clientNavigationTarget } from '../../webui/src/navigation.ts';
-import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
-import { insightUrl, normalizedCohortOffset, queryFromUrl as insightsQueryFromUrl, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
-import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
 import {
 	beginOperationalReads,
 	beginOperationalRefresh,
@@ -149,16 +146,19 @@ import {
 	displayedRunId,
 	eventsForRun,
 	invalidatesSnapshot,
-	runStageStatuses,
 	type RunCostView,
 	type RunEventView,
 	type RunRoundOriginsView,
 	type RunState,
 	type RunView,
+	runStageStatuses,
 	summarizeWorkflow,
 	summarizeWorkflowCohorts,
 } from '../../webui/src/run-view.ts';
-import { nextControlCenterDisclosureState, type NotificationItem, type PanelKeyEvent, notificationItems, NotificationsPopover, PanelToggleGlyph, projectSwitcherTooltipText, ShellSidebar } from '../../webui/src/screens/shell.tsx';
+import { queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
+import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
+import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
+import { type NotificationItem, NotificationsPopover, nextControlCenterDisclosureState, notificationItems, type PanelKeyEvent, PanelToggleGlyph, projectSwitcherTooltipText, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
 const BACKLOG = [
 	{ id: 'CAM-900', title: 'primeira issue plannable' },
@@ -3420,6 +3420,11 @@ describe('operator shell', () => {
 	test('queue empty states distinguish no projects, an unknown filter and an unavailable filtered project in both locales', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const catalog = LOCALE_CATALOG[locale].overview.queues;
+			const surface = renderAt('/overview/queues', { locale, projects: [CURRENT_PROJECT] });
+			expect(surface).toContain('data-slot="select-trigger"');
+			expect(surface).toContain(catalog.allProjects);
+			expect(surface).toContain(CURRENT_PROJECT.name);
+			expect(surface).not.toContain('<select');
 			const empty = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter={undefined} locale={locale} projectCount={0} queues={[]} />);
 			const unknownFilter = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter="missing" locale={locale} projectCount={1} queues={[]} />);
 			const unavailable = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[{ projectId: 'project-1', projectName: 'Project', code: 'project-unavailable', message: 'Project queue is unavailable.' }]} filter="project-1" locale={locale} projectCount={1} queues={[]} />);
@@ -3438,11 +3443,15 @@ describe('operator shell', () => {
 		expect(queueErrorsForFilter([...errors], undefined)).toHaveLength(2);
 		const queue = { project: { id: 'project-1', name: 'One' }, readiness: 'ready', chainEnabled: true, pause: null, currentRun: null, currentIssue: null, plannedIssues: [], nextIssue: null, lastDelivery: { state: 'unavailable' } } as never;
 		const html = renderToStaticMarkup(<QueueRow catalog={LOCALE_CATALOG['en-US'].overview.queues} locale="en-US" queue={queue} />);
+		expect((html.match(/>One</g) ?? []).length).toBe(1);
 		expect(html).toContain('<dl');
 		expect(html).toContain('<dt');
 		expect(html).toContain('<dd');
 		expect(html).toContain('Delivery history unavailable.');
 		expect(html).not.toContain('No delivery yet');
+		expect(html).not.toContain('open=""');
+		const planned = { ...(queue as Record<string, unknown>), plannedIssues: [{ id: 'GSHIP-856', title: 'Preserve queue expansion' }] } as never;
+		expect(renderToStaticMarkup(<QueueRow catalog={LOCALE_CATALOG['en-US'].overview.queues} locale="en-US" queue={planned} />)).toContain('open=""');
 	});
 	test('known internal destinations use history across surfaces and projects', () => {
 		const base = {

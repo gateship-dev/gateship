@@ -128,6 +128,7 @@ export function SelectField({
 	value,
 	defaultValue,
 	onValueChange,
+	'aria-label': ariaLabel,
 	className,
 }: {
 	items: readonly SelectFieldItem[];
@@ -139,6 +140,7 @@ export function SelectField({
 	value?: string;
 	defaultValue?: string;
 	onValueChange?: (value: string) => void;
+	'aria-label'?: string;
 	className?: string;
 }): React.ReactElement {
 	return (
@@ -153,7 +155,7 @@ export function SelectField({
 			required={required}
 			value={value}
 		>
-			<SelectTrigger className={className} id={id}>
+			<SelectTrigger aria-label={ariaLabel} className={className} id={id}>
 				<SelectValue placeholder={placeholder} />
 			</SelectTrigger>
 			<SelectContent>
