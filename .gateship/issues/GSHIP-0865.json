@@ -1,0 +1,34 @@
+{
+  "id": "GSHIP-865",
+  "title": "Execuções: remover supressão de complexidade da tabela",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T05:09:08.878Z",
+  "updatedAt": "2026-09-11T05:09:08.878Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Reduzir de fato a complexidade cognitiva de OverviewRunsTable abaixo do limite do projeto, removendo a supressão introduzida na GSHIP-857 sem alterar comportamento, contrato visual ou consulta.",
+    "acceptance": [
+      "Remover o comentário biome-ignore lint/complexity/noExcessiveCognitiveComplexity de OverviewRunsTable e manter o lint verde pelo desenho real do código.",
+      "Extrair estado controlado, callbacks ou composição em funções/hooks locais coesos até OverviewRunsTable ficar no limite de complexidade, sem duplicar estado nem criar um segundo contrato de tabela.",
+      "Preservar filtros, sorting server-side, paginação por offset, URL, preferências versionadas, reset da fixação padrão, loading, links e acessibilidade entregues pela GSHIP-857.",
+      "Manter os testes observáveis existentes verdes e acrescentar apenas cobertura necessária às novas fronteiras extraídas."
+    ],
+    "boundaries": [
+      "Não desativar regra de lint, aumentar limite ou adicionar outra supressão.",
+      "Não redesenhar a tela, mudar API/runtime ou ampliar o refactor além de OverviewRunsScreen e helpers diretamente necessários.",
+      "Não remover funcionalidades para reduzir a métrica."
+    ],
+    "verify": [
+      "bun test test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/web/ui-harness.test.tsx test/runtime/run-overview.test.ts",
+      "bunx biome lint webui/src/screens/overview-runs-screen.tsx webui/src/components/ui/data-table.tsx test/web/ui-client.test.tsx test/web/ui-primitives.test.tsx test/web/ui-harness.test.tsx --error-on-warnings",
+      "bun run typecheck && bun run build:ui"
+    ]
+  },
+  "approval": {
+    "fingerprint": "f19d03f6664717a5999167c1d44bbb051b8a0ed950221351d8ccca8b088c3fbe",
+    "approvedAt": "2026-09-11T05:09:08.878Z"
+  }
+}
