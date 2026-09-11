@@ -1,9 +1,21 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Harness } from '../../webui/src/harness.tsx';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
+
+const require = createRequire(import.meta.url);
+const PLAYWRIGHT_PACKAGE = require.resolve('@playwright/cli/package.json');
+const PLAYWRIGHT_CLI = resolve(import.meta.dir, '../../node_modules/.bin/playwright-cli');
+
+async function runPlaywrightCli(cwd: string, args: string[]): Promise<string> {
+	const process = Bun.spawn([PLAYWRIGHT_CLI, ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+	const [stdout, stderr, exitCode] = await Promise.all([new Response(process.stdout).text(), new Response(process.stderr).text(), process.exited]);
+	if (exitCode !== 0) throw new Error(`playwright-cli exited with ${exitCode}: ${stderr}`);
+	return stdout;
+}
 
 describe('development UI harness', () => {
 	test('renders the real Central routes and deterministic fixture controls', async () => {
@@ -19,13 +31,12 @@ describe('development UI harness', () => {
 	});
 
 	test('exercises the real browser viewport at every supported width', async () => {
+		expect(PLAYWRIGHT_CLI).toContain(resolve(import.meta.dir, '../../node_modules/.bin'));
+		expect(PLAYWRIGHT_PACKAGE).toContain(resolve(import.meta.dir, '../../node_modules/@playwright/cli'));
 		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4174'], { stdout: 'pipe', stderr: 'pipe' });
 		const cliDir = createTestTmpdir('gship-ui-harness-playwright-');
 		const statusBefore = new TextDecoder().decode(Bun.spawnSync(['git', 'status', '--short'], { stdout: 'pipe', stderr: 'pipe' }).stdout);
-		const cli = async (...args: string[]): Promise<string> => {
-			const process = Bun.spawn(['playwright-cli', ...args], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' });
-			return await new Response(process.stdout).text();
-		};
+		const cli = (...args: string[]): Promise<string> => runPlaywrightCli(cliDir, args);
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) {
 				try { if ((await fetch('http://127.0.0.1:4174/harness.html')).ok) break; } catch { /* server is starting */ }
@@ -132,7 +143,7 @@ describe('development UI harness', () => {
 			expect(normalized).toContain('"selectorOpen":true');
 			expect(normalized).toContain('"queueStates":{"usual":true,"attention":true,"empty":true,"unavailable":true,"error":true}');
 		} finally {
-			await cli('close');
+			try { await cli('close'); } catch { /* cleanup may have no active browser session */ }
 			server.kill();
 			rmSync(cliDir, { recursive: true, force: true });
 			const statusAfter = new TextDecoder().decode(Bun.spawnSync(['git', 'status', '--short'], { stdout: 'pipe', stderr: 'pipe' }).stdout);
@@ -173,10 +184,7 @@ describe('development UI harness', () => {
 	test('restores direct URL fixture settings and sidebar geometry', async () => {
 		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4175'], { stdout: 'pipe', stderr: 'pipe' });
 		const cliDir = createTestTmpdir('gship-ui-harness-direct-');
-		const cli = async (...args: string[]): Promise<string> => {
-			const process = Bun.spawn(['playwright-cli', ...args], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' });
-			return await new Response(process.stdout).text();
-		};
+		const cli = (...args: string[]): Promise<string> => runPlaywrightCli(cliDir, args);
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) {
 				try { if ((await fetch('http://127.0.0.1:4175/harness.html')).ok) break; } catch { /* server is starting */ }
@@ -189,7 +197,7 @@ describe('development UI harness', () => {
 		expect(normalized).toContain('"restored":["dense","en-US","dark",["en-US",true]]');
 			expect(normalized).toContain('"sidebarRegression":true');
 		} finally {
-			await cli('close');
+			try { await cli('close'); } catch { /* cleanup may have no active browser session */ }
 			server.kill();
 			rmSync(cliDir, { recursive: true, force: true });
 		}
@@ -198,7 +206,7 @@ describe('development UI harness', () => {
 	test('applies dense run filters before pagination', async () => {
 		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4177'], { stdout: 'pipe', stderr: 'pipe' });
 		const cliDir = createTestTmpdir('gship-ui-harness-filters-');
-		const cli = async (...args: string[]): Promise<string> => { const process = Bun.spawn(['playwright-cli', ...args], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' }); return await new Response(process.stdout).text(); };
+		const cli = (...args: string[]): Promise<string> => runPlaywrightCli(cliDir, args);
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) { try { if ((await fetch('http://127.0.0.1:4177/harness.html')).ok) break; } catch { /* server is starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
 			await cli('open', 'http://127.0.0.1:4177/harness.html?frame=1440&scenario=dense');
@@ -210,13 +218,13 @@ describe('development UI harness', () => {
 			expect(normalized).toContain('providerId=codex');
 			expect(normalized).toContain('period=7d');
 			expect(normalized).toContain('"projectFiltered":[0');
-		} finally { await cli('close'); server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
+		} finally { try { await cli('close'); } catch { /* cleanup may have no active browser session */ } server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
 	});
 
 	test('exercises reduced motion in real Central controls', async () => {
 		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4178'], { stdout: 'pipe', stderr: 'pipe' });
 		const cliDir = createTestTmpdir('gship-ui-harness-motion-');
-		const cli = async (...args: string[]): Promise<string> => { const process = Bun.spawn(['playwright-cli', ...args], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' }); return await new Response(process.stdout).text(); };
+		const cli = (...args: string[]): Promise<string> => runPlaywrightCli(cliDir, args);
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) { try { if ((await fetch('http://127.0.0.1:4178/harness.html')).ok) break; } catch { /* server is starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
 			await cli('open', 'about:blank');
@@ -227,13 +235,13 @@ describe('development UI harness', () => {
 			expect(normalized).toContain('"sidebar":"0s"');
 			expect(normalized).toContain('"popup":["none","0s"]');
 			expect(normalized).toContain('"pulse":"none"');
-		} finally { await cli('close'); server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
+		} finally { try { await cli('close'); } catch { /* cleanup may have no active browser session */ } server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
 	});
 
 	test('restores Central route and motion settings from the URL', async () => {
 		const server = Bun.spawn(['bunx', 'vite', 'webui', '--host', '127.0.0.1', '--port', '4179'], { stdout: 'pipe', stderr: 'pipe' });
 		const cliDir = createTestTmpdir('gship-ui-harness-route-');
-		const cli = async (...args: string[]): Promise<string> => { const process = Bun.spawn(['playwright-cli', ...args], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' }); return await new Response(process.stdout).text(); };
+		const cli = (...args: string[]): Promise<string> => runPlaywrightCli(cliDir, args);
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) { try { if ((await fetch('http://127.0.0.1:4179/harness.html')).ok) break; } catch { /* server is starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
 			await cli('open', 'http://127.0.0.1:4179/harness.html?frame=1440&route=/overview/runs&scenario=dense&locale=en-US&theme=dark&motion=reduced');
@@ -245,6 +253,6 @@ describe('development UI harness', () => {
 			expect(normalized).toContain('"reloaded"');
 			expect(normalized).toContain('"reduced":"0s"');
 			expect(normalized).toContain('"emulatedFull":"0s"');
-		} finally { await cli('close'); server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
+		} finally { try { await cli('close'); } catch { /* cleanup may have no active browser session */ } server.kill(); rmSync(cliDir, { recursive: true, force: true }); }
 	}, 60_000);
 });
