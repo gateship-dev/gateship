@@ -6,9 +6,11 @@ set -euo pipefail
 : "${ARM64_DIGEST:?}"
 : "${VERSION_TAG:?}"
 : "${SHA_TAG:?}"
-: "${DOCKER_BIN:=docker}"
-
-docker() { "${DOCKER_BIN}" "$@"; }
+if [[ -n "${DOCKER_BIN:-}" ]]; then
+	docker() { "${DOCKER_BIN}" "$@"; }
+else
+	docker() { command docker "$@"; }
+fi
 
 cleanup() { status=$?; docker rm -f gateship-release-amd64 gateship-release-arm64 >/dev/null 2>&1 || true; exit "${status}"; }
 trap cleanup EXIT

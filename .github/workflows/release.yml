@@ -168,7 +168,7 @@ jobs:
             dist/gateship-darwin-x64
             dist/gateship-linux-x64
             dist/gateship-linux-arm64
-      - name: Publish prerelease with the four binaries and checksum manifest
+      - name: Stage draft release with the four binaries and checksum manifest
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.resolve-release.outputs.tag }}
@@ -186,10 +186,12 @@ jobs:
           # for this same commit) gets its assets replaced in place; only a
           # genuinely new tag creates a new release.
           if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --draft=true
             gh release upload "$TAG" "${ASSETS[@]}" --clobber
           else
             gh release create "$TAG" \
               "${ASSETS[@]}" \
+              --draft \
               --prerelease \
               --title "$TAG" \
               --generate-notes
@@ -270,3 +272,16 @@ jobs:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.publish_image.outputs.digest }}
           push-to-registry: true
+
+  publish-release:
+    needs: [resolve-release, release, release-image]
+    if: needs.release.result == 'success' && needs.release-image.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the verified draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.resolve-release.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false

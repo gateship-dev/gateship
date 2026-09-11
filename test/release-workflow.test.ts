@@ -160,11 +160,12 @@ describe('release.yml release job gating (GSHIP-665)', () => {
 	});
 });
 
-describe('release.yml gh release publish step (US-R1-002, CAM-495, GSHIP-665)', () => {
-	const publishBlock = stepBlock(workflow, '- name: Publish prerelease with the four binaries and checksum manifest');
+describe('release.yml gh release staging step (US-R1-002, CAM-495, GSHIP-665, GSHIP-878)', () => {
+	const publishBlock = stepBlock(workflow, '- name: Stage draft release with the four binaries and checksum manifest');
 
 	test('the invocation is present and uses the resolved tag, not github.ref_name', () => {
 		expect(publishBlock).toContain('gh release create "$TAG"');
+		expect(publishBlock).toContain('--draft');
 		expect(publishBlock).toContain('TAG: ${{ needs.resolve-release.outputs.tag }}');
 	});
 
@@ -181,7 +182,59 @@ describe('release.yml gh release publish step (US-R1-002, CAM-495, GSHIP-665)', 
 
 	test('a rerun replaces existing release assets instead of failing on a duplicate tag', () => {
 		expect(publishBlock).toContain('gh release view "$TAG"');
+		expect(publishBlock).toContain('gh release edit "$TAG" --draft=true');
 		expect(publishBlock).toContain('gh release upload "$TAG" "${ASSETS[@]}" --clobber');
+	});
+});
+
+describe('release.yml final publication gate (GSHIP-878)', () => {
+	const publishReleaseJobIdx = workflow.indexOf('\n  publish-release:');
+	const publishReleaseJobBlock = workflow.slice(publishReleaseJobIdx);
+
+	test('blocks publication when either branch fails and publishes after both succeed', () => {
+		expect(publishReleaseJobIdx).toBeGreaterThan(-1);
+		const conditionMatch = publishReleaseJobBlock.match(/^    if: (.+)$/m);
+		const publishCommandMatch = publishReleaseJobBlock.match(/^        run: (gh release edit .+)$/m);
+		expect(conditionMatch).not.toBeNull();
+		expect(publishCommandMatch).not.toBeNull();
+		if (!conditionMatch || !publishCommandMatch) throw new Error('publish-release gate is incomplete');
+		const condition = conditionMatch[1]!;
+		const publishCommand = publishCommandMatch[1]!;
+		expect(condition).toBe("needs.release.result == 'success' && needs.release-image.result == 'success'");
+		expect(publishCommand).toBe('gh release edit "$TAG" --draft=false');
+
+		const dir = createTestTmpdir('gship-release-publication-gate-');
+		const fakeBin = resolve(dir, 'bin');
+		const fakeGh = resolve(fakeBin, 'gh');
+		const log = resolve(dir, 'publication.log');
+		Bun.spawnSync(['mkdir', '-p', fakeBin]);
+		writeFileSync(fakeGh, `#!/usr/bin/env bash
+set -e
+echo "$*" >> "${log}"
+`);
+		chmodSync(fakeGh, 0o755);
+
+		const runGate = (releaseResult: string, imageResult: string) => Bun.spawnSync(
+			['bash', '-c', `if [[ ${condition
+				.replaceAll('needs.release.result', '"$RELEASE_RESULT"')
+				.replaceAll('needs.release-image.result', '"$IMAGE_RESULT"')
+			} ]]; then\n${publishCommand}\nfi`],
+			{
+				env: {
+					...process.env,
+					PATH: `${fakeBin}:${process.env.PATH}`,
+					RELEASE_RESULT: releaseResult,
+					IMAGE_RESULT: imageResult,
+					TAG: 'v1.2.3',
+				},
+			},
+		);
+
+		expect(runGate('failure', 'success').exitCode).toBe(0);
+		expect(runGate('success', 'failure').exitCode).toBe(0);
+		expect(existsSync(log)).toBe(false);
+		expect(runGate('success', 'success').exitCode).toBe(0);
+		expect(readFileSync(log, 'utf8')).toBe('release edit v1.2.3 --draft=false\n');
 	});
 });
 
@@ -348,6 +401,39 @@ if [[ "$1 $2" == "inspect --format" ]]; then echo healthy; fi
 		expect(commands).toContain('buildx imagetools create --tag example/gateship:v1.2.3 example/gateship@sha256:amd64-verified example/gateship@sha256:arm64-verified');
 		expect(commands).toContain('buildx imagetools create --tag example/gateship:commit-sha example/gateship@sha256:amd64-verified example/gateship@sha256:arm64-verified');
 		expect(commands).not.toContain('build --');
+	});
+
+	test('uses the Docker executable from PATH when DOCKER_BIN is absent', () => {
+		const dir = createTestTmpdir('gship-release-image-default-docker-');
+		const fakeBin = resolve(dir, 'bin');
+		const fakeDocker = resolve(fakeBin, 'docker');
+		const fakeCurl = resolve(fakeBin, 'curl');
+		const log = resolve(dir, 'commands.log');
+		Bun.spawnSync(['mkdir', '-p', fakeBin]);
+		writeFileSync(fakeDocker, `#!/usr/bin/env bash
+set -e
+echo "$*" >> "${log}"
+if [[ "$1 $2 $3" == "buildx imagetools inspect" ]]; then echo 'Digest: sha256:published'; fi
+if [[ "$1 $2" == "inspect --format" ]]; then echo healthy; fi
+`);
+		chmodSync(fakeDocker, 0o755);
+		writeFileSync(fakeCurl, '#!/usr/bin/env bash\nexit 0\n');
+		chmodSync(fakeCurl, 0o755);
+		const { DOCKER_BIN: _ignored, ...envWithoutDockerBin } = process.env;
+		const result = Bun.spawnSync(['bash', RELEASE_IMAGE_HELPER], {
+			env: {
+				...envWithoutDockerBin,
+				PATH: `${fakeBin}:${process.env.PATH}`,
+				GITHUB_OUTPUT: resolve(dir, 'output'),
+				IMAGE_BASE: 'example/gateship',
+				AMD64_DIGEST: 'sha256:amd64-verified',
+				ARM64_DIGEST: 'sha256:arm64-verified',
+				VERSION_TAG: 'v1.2.3',
+				SHA_TAG: 'commit-sha',
+			},
+		});
+		expect(result.exitCode).toBe(0);
+		expect(readFileSync(log, 'utf8')).toContain('pull example/gateship@sha256:amd64-verified');
 	});
 
 	test('attests build provenance for the pushed image digest', () => {
