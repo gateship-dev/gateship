@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-863",
   "title": "Notificações: isolar testes de configuração real e impedir envios externos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T02:41:22.795Z",
-  "updatedAt": "2026-09-11T13:18:44.412Z",
+  "updatedAt": "2026-09-11T13:26:07.880Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
