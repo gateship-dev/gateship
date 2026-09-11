@@ -1,0 +1,32 @@
+{
+  "id": "GSHIP-868",
+  "title": "Insights: suportar acesso direto e recarga da rota",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T09:26:44.099Z",
+  "updatedAt": "2026-09-11T09:26:44.099Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Fazer /overview/insights servir a aplicação web diretamente, preservando navegação e recarga sem 404.",
+    "acceptance": [
+      "GET /overview/insights retorna 200 e o mesmo HTML da aplicação web.",
+      "Abrir ou recarregar /overview/insights renderiza Insights sem depender de navegação client-side prévia.",
+      "Um teste determinístico inclui /overview/insights na matriz de rotas web servidas."
+    ],
+    "boundaries": [
+      "Não adicionar fallback catch-all para caminhos desconhecidos.",
+      "Não alterar o conteúdo visual ou o contrato da tela de Insights.",
+      "Não adicionar dependências."
+    ],
+    "verify": [
+      "bun test test/web/embedded-ui.test.ts test/web/ui-client.test.tsx",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "3a7ff33e777045a2e1620a843282f252fda699c4ec65e4bb952da21ef3f2579a",
+    "approvedAt": "2026-09-11T09:26:44.099Z"
+  }
+}
