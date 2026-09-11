@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-879",
   "title": "Release: selecionar plataforma explícita nos smokes por digest",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T22:47:55.618Z",
-  "updatedAt": "2026-09-11T22:47:55.618Z",
+  "updatedAt": "2026-09-11T22:53:12.559Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

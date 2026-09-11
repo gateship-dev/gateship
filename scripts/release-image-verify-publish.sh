@@ -17,14 +17,18 @@ trap cleanup EXIT
 
 for arch in amd64 arm64; do
 	digest="${AMD64_DIGEST}"
-	if [[ "${arch}" == arm64 ]]; then digest="${ARM64_DIGEST}"; fi
+	platform="linux/amd64"
+	if [[ "${arch}" == arm64 ]]; then
+		digest="${ARM64_DIGEST}"
+		platform="linux/arm64"
+	fi
 	image="${IMAGE_BASE}@${digest}"
-	docker pull "${image}"
-	docker run --rm --entrypoint claude "${image}" --version
-	docker run --rm --entrypoint codex "${image}" --version
+	docker pull --platform "${platform}" "${image}"
+	docker run --platform "${platform}" --rm --entrypoint claude "${image}" --version
+	docker run --platform "${platform}" --rm --entrypoint codex "${image}" --version
 	name="gateship-release-${arch}"
 	port=$([[ "${arch}" == amd64 ]] && echo 17778 || echo 17779)
-	docker run --rm -d --name "${name}" -p "127.0.0.1:${port}:7777" "${image}"
+	docker run --platform "${platform}" --rm -d --name "${name}" -p "127.0.0.1:${port}:7777" "${image}"
 	for attempt in {1..30}; do
 		if curl --fail --silent "http://127.0.0.1:${port}/api/snapshot" >/dev/null \
 			&& [[ "$(docker inspect --format '{{.State.Health.Status}}' "${name}")" == healthy ]]; then
