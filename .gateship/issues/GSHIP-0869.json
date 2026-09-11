@@ -7,7 +7,7 @@
     "GSHIP-880"
   ],
   "createdAt": "2026-09-11T12:26:03.704Z",
-  "updatedAt": "2026-09-11T23:34:50.312Z",
+  "updatedAt": "2026-09-11T23:35:20.230Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -32,5 +32,9 @@
       "bun test test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "23571595d8d26bd544365cf277b36ad9a55a1f5854e2cd1c8cd219435cd7d320",
+    "approvedAt": "2026-09-11T23:35:20.230Z"
   }
 }
