@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T12:26:18.709Z",
-  "updatedAt": "2026-09-11T12:26:18.709Z",
+  "updatedAt": "2026-09-11T12:28:27.857Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -22,7 +22,7 @@
     "boundaries": [
       "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
       "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
-      "Preparar diagnóstico tipado e evidências observáveis compatíveis com o fluxo atual; não mudar roteamento ainda. A4 ativa A2/A3 juntos. Sem segundo modelo avaliador nem score de confiança.",
+      "Preparar diagnóstico tipado e evidências compatíveis com o fluxo atual, sem mudar roteamento. GSHIP-864 ativa diagnóstico e orçamento juntos. Sem segundo avaliador ou score de confiança.",
       "Pré-requisito: GSHIP-869 entregue. GSHIP-864 ativará diagnóstico e orçamento juntos após a issue de orçamento. Dependência documental: não aprovar fora dessa ordem."
     ],
     "verify": [
