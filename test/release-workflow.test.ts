@@ -201,7 +201,9 @@ describe('release.yml final publication gate (GSHIP-878)', () => {
 		const condition = conditionMatch[1]!;
 		const publishCommand = publishCommandMatch[1]!;
 		expect(condition).toBe("needs.release.result == 'success' && needs.release-image.result == 'success'");
-		expect(publishCommand).toBe('gh release edit "$TAG" --draft=false');
+		expect(publishReleaseJobBlock).not.toContain('actions/checkout');
+		expect(publishReleaseJobBlock).toContain('GH_REPO: ${{ github.repository }}');
+		expect(publishCommand).toBe('gh release edit "$TAG" --repo "$GH_REPO" --draft=false');
 
 		const dir = createTestTmpdir('gship-release-publication-gate-');
 		const fakeBin = resolve(dir, 'bin');
@@ -210,7 +212,7 @@ describe('release.yml final publication gate (GSHIP-878)', () => {
 		Bun.spawnSync(['mkdir', '-p', fakeBin]);
 		writeFileSync(fakeGh, `#!/usr/bin/env bash
 set -e
-echo "$*" >> "${log}"
+echo "$PWD|$GH_REPO|$*" >> "${log}"
 `);
 		chmodSync(fakeGh, 0o755);
 
@@ -220,21 +222,23 @@ echo "$*" >> "${log}"
 				.replaceAll('needs.release-image.result', '"$IMAGE_RESULT"')
 			} ]]; then\n${publishCommand}\nfi`],
 			{
-				env: {
-					...process.env,
-					PATH: `${fakeBin}:${process.env.PATH}`,
-					RELEASE_RESULT: releaseResult,
-					IMAGE_RESULT: imageResult,
-					TAG: 'v1.2.3',
+					env: {
+						...process.env,
+						PATH: `${fakeBin}:${process.env.PATH}`,
+						RELEASE_RESULT: releaseResult,
+						IMAGE_RESULT: imageResult,
+						GH_REPO: 'octo/gateship',
+						TAG: 'v1.2.3',
+					},
+					cwd: dir,
 				},
-			},
 		);
 
 		expect(runGate('failure', 'success').exitCode).toBe(0);
 		expect(runGate('success', 'failure').exitCode).toBe(0);
 		expect(existsSync(log)).toBe(false);
 		expect(runGate('success', 'success').exitCode).toBe(0);
-		expect(readFileSync(log, 'utf8')).toBe('release edit v1.2.3 --draft=false\n');
+		expect(readFileSync(log, 'utf8')).toBe(`${dir}|octo/gateship|release edit v1.2.3 --repo octo/gateship --draft=false\n`);
 	});
 });
 
