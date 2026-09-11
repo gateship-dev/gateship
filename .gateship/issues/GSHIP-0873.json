@@ -5,28 +5,28 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T12:27:56.432Z",
-  "updatedAt": "2026-09-11T12:27:56.432Z",
+  "updatedAt": "2026-09-11T13:10:04.000Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
-    "objective": "Medir efeitos reais da recuperação com eventos reproduzíveis e cenários determinísticos, sem confundir intervenção de agente externo com atenção humana ou criar aprovação automática por métricas.",
+    "objective": "Antecipar baseline reproduzível de correções, duração e atenção a partir do histórico completo, distinguindo observação de estimativa e autoria de canal; subsidiar o orçamento sem alterar o runtime.",
     "acceptance": [
-      "Derivar separadamente: pedidos de atenção, recuperações internas, paradas por estagnação/orçamento, falhas de diagnóstico e orientações por origem confirmada/agent-cli/desconhecida. Manter semântica do campo legado e adicionar campos claros sem reclassificar histórico.",
-      "Usar log durável completo, não últimos 50 eventos. Preservar modelo, esforço, provedor e revisão do workflow para comparação; custo ausente fica null/desconhecido. Mensagem enviada e confirmação de entrega são fatos distintos.",
-      "Matriz determinística cobre: repetição com avanço, reformulação sem avanço, 2 estagnações, avanço sem reset global, decisão humana, dado externo, tentativa 7, prazo expirado, crash/replay, CI sem diff, resolver inválido e cancelamento durante recuperação.",
-      "Cada cenário verifica resultado, eventos/ordem, despachos e alertas por canal; corrigir fixtures sem enfraquecer asserts de segurança. Reproduzir a causa técnica do popup GSHIP-855 em fixture sintética, sem alegar replay real de inteligência do Luna.",
-      "Comparação de comportamento antigo/novo usa mesma fixture e saídas de provedor simuladas. Descrever como validação da máquina de estados, não evidência de superioridade do modelo ou aumento medido de taxa de sucesso.",
-      "Documentar protocolo futuro pareado: mesmo Luna/esforço, mesmo commit/tarefa, ferramentas e orçamento comparáveis; medir correção final, defeitos, tempo, custo conhecido e pedidos humanos. Não executar benchmark pago, runs ou alterar produção nesta issue.",
-      "Expor novos fatos pelos detalhes/avaliação existentes e testes de serialização; sem dashboard novo, score composto ou heurística que aprove/inicie/bloqueie trabalho. Métricas permanecem consultivas e mantêm origem dos dados."
+      "Derivar do log durável completo por run correções por origem, despachos observáveis, esperas por provedor/operador e duração das fases. Não usar últimos 50 eventos nem tratar fixRounds como sinônimo de chamadas ao provedor.",
+      "Separar canal da orientação (web, agent-cli, outro/desconhecido) e evidência de autorização explícita já registrada. Canal não prova pessoa; manter campo legado sem reclassificar histórico como humano confirmado por inferência.",
+      "Publicar amostra com quantidade, período, workflow/modelo/esforço, runs concluídas e falhas, intervenções e campos ausentes. Distinguir duração total de tempo ativo de recuperação; não estimar este último sem eventos suficientes.",
+      "Para contagens comparáveis, mostrar mediana, p90 e máximo com definição do denominador e método de percentil; com dados insuficientes declarar isso. Não excluir falhas, esperas ou intervenções sem mostrar o efeito no recorte.",
+      "Simular tetos sobre eventos históricos apenas como análise contrafactual de despacho, sem afirmar que o modelo teria obtido o mesmo resultado. Rodadas 7/9/18 observadas não equivalem automaticamente a tentativas autônomas comparáveis.",
+      "Expor fatos nos detalhes/avaliação existentes, sem tela nova ou mutação da run. Testar >50 eventos, origens mistas, restart, custo desconhecido, intervalos incompletos e ausência de evidência de autorização.",
+      "Entrega inclui relatório da amostra e proposta justificada de teto, ou lacunas que impedem escolhê-lo. Sem definir/ativar default, executar benchmark pago ou alegar melhora de inteligência. Comparação pós-mudança fica em issue sucessora."
     ],
     "boundaries": [
-      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
-      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
-      "Sem agentes avaliadores adicionais, rede real, criação de runs, mudança de modelo ou mudanças estéticas. Comparação de produto permanece hipótese até experimento autorizado.",
-      "Pré-requisitos: GSHIP-864 e GSHIP-872 entregues, além de GSHIP-863. Dependência documental; comparar somente depois da integração e sem iniciar runs de benchmark."
+      "Manter Luna e modelos/esforços configurados, sandbox, allowlists, autenticação por assinatura, worktree isolada e reviewer independente read-only.",
+      "Não aprovar/iniciar/retomar/cancelar runs, alterar credenciais, enfraquecer checks ou editar .gship diretamente. Dependências abaixo são documentais, não bloqueios automáticos.",
+      "Pré-requisito: GSHIP-863 para qualquer teste de notificações. Executar antes de GSHIP-871 e GSHIP-864; não depende das mudanças de autonomia.",
+      "Consulta ad hoc sem alterações em produção: reusar API e avaliação existentes; não criar nova memória, daemon, score ou gate estatístico."
     ],
     "verify": [
-      "bun test test/runtime/run-evaluation.test.ts test/runtime/run-overview.test.ts test/runtime/run-runtime.test.ts test/runtime/remote-notifier.test.ts",
+      "bun test test/runtime/run-evaluation.test.ts test/runtime/run-overview.test.ts",
       "bun run typecheck"
     ]
   }
