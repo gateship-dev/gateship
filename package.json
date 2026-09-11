@@ -28,6 +28,7 @@
     "build:ui": "vite build webui",
     "test:ui:smoke:fixed": "bun scripts/ui-test.ts smoke",
     "test:ui:visual:fixed": "bun scripts/ui-test.ts visual",
+    "test:ui:visual:update:fixed": "bun scripts/ui-test.ts update",
     "prepare": "bun run build:ui",
     "test": "bun test",
     "typecheck": "bunx tsc --noEmit && bunx tsc -p webui/tsconfig.app.json --noEmit",
