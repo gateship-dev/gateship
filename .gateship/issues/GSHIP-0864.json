@@ -1,0 +1,35 @@
+{
+  "id": "GSHIP-864",
+  "title": "Notificações: resolver bloqueios técnicos antes de convocar o operador",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T02:41:26.459Z",
+  "updatedAt": "2026-09-11T02:41:26.459Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Evitar e-mail/ntfy por bloqueios técnicos ainda resolvíveis dentro do contrato: concluir recuperação interna limitada antes de entrar em waiting-user, preservando pedidos humanos legítimos e evidências claras da escalada.",
+    "acceptance": [
+      "Reproduzir com fixtures sintéticas os casos da GSHIP-855: pergunta de teste repetida apesar de mudança concreta e CI após primeira correção. Cobrir rotas executor/review/full-verify/CI, inclusive ci-fix-limit e ci-fix-no-change que hoje escalam diretamente.",
+      "Antes de waiting-user, distinguir decisão/autoridade/dado externo necessários de entrave técnico. Avaliar contrato aprovado, decisões registradas, evidência do erro, diff e resultado das tentativas; repetição literal da pergunta não prova ausência de progresso.",
+      "Reutilizar o orquestrador read-only para diagnóstico e orientação ao executor: admitir uma recuperação técnica adicional por run, persistida e limitada. Não reiniciar orçamento por resume/restart ou reformulação da pergunta; sem loops ilimitados.",
+      "Se o diagnóstico indicar correção concreta autorizada, continuar sem entrada transitória em waiting-user, notificação ou falsa intervenção humana. Tratar ausência/falha do resolver como bloqueio explícito; não autorizar mudanças de risco/escopo ou ações irreversíveis.",
+      "Escalar quando houver decisão humana específica ou recuperação esgotada, com motivo, tentativas e próxima ação clara. Nova evidência pode mudar diagnóstico, mas não renovar orçamento automaticamente; nenhum alerta legítimo é ocultado por atraso arbitrário.",
+      "Produzir contexto público consistente no evento: projeto/issue, motivo e ação solicitada. E-mail/ntfy usam esse contexto, inclusive cycle-response e ci-fix-limit, sem cair em mensagem genérica quando reason/summary existem; sem expor logs ou segredos.",
+      "Testes com envios simulados provam zero avisos durante recuperação, envio por canal na escalada final, silêncio enquanto continua esperando e novo aviso para novo pedido legítimo. Preservar limites após restart, decisões humanas reais e origem interna/externa dos eventos."
+    ],
+    "boundaries": [
+      "Não adicionar um segundo LLM ao notifier; resolver a necessidade antes da transição que publica o alerta.",
+      "Não tratar agent-cli automaticamente como pessoa nem fabricar autorização; preservar provenance. Orientação técnica e consentimento humano são distintos.",
+      "Não enfraquecer verificações, ampliar contrato, ignorar achados ou continuar indefinidamente para evitar mensagens.",
+      "Não alterar a GSHIP-855 ativa, responder por ela, reiniciar serviço ou mudar a fila aprovada; esta é uma proposta nova, não aprovada.",
+      "Pré-requisito: GSHIP-863 para testes isolados. Não usar debounce/supressão como solução; manter revisão independente. Ordem documental, sem bloqueio automático."
+    ],
+    "verify": [
+      "bun test test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-runtime.test.ts",
+      "bun test test/runtime/remote-notifier.test.ts test/web/notifications.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
