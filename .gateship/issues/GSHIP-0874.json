@@ -1,0 +1,34 @@
+{
+  "id": "GSHIP-874",
+  "title": "Autonomia: verificar integração e comparar resultados após a ativação",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T13:10:33.901Z",
+  "updatedAt": "2026-09-11T13:10:33.901Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Validar a recuperação integrada e preparar comparação com baseline sem confundir testes da máquina de estados com evidência de melhoria do Luna.",
+    "acceptance": [
+      "Pré-requisitos entregues: GSHIP-873, GSHIP-869, GSHIP-870, GSHIP-871, GSHIP-864 e GSHIP-872. Ler política aprovada efetiva; testes parametrizam o teto dessa política, sem recriar 3/6 tentativas, 60 minutos corridos ou parada fixa por dois ciclos.",
+      "Matriz integrada: pergunta igual com evidência nova, frase nova sem observação, diagnóstico que refuta hipótese sem passar teste, ação repetida, autoridade faltante, contexto ausente, CI sem diff, falha do resolver e cancelamento.",
+      "Cobrir reinício/reserva pendente, processo ainda vivo, novo spawn debitado, saldo esgotado e troca de fase sem renovação. Cada caso confere estado, eventos, despachos e notificações por canal; nenhum envio externo ou provider real.",
+      "Reproduzir em fixture sintética Tooltip/Menu compartilhando data-popup-open: observar menu fechado e atributo ainda presente. Corrigir diagnóstico com evidência de interação/DOM, sem remover teste obrigatório ou alegar que screenshot basta.",
+      "Comparar dados disponíveis com baseline da GSHIP-873, preservando workflow/modelo/esforço e exposição de falhas/intervenções. Ausência de novas runs é dado indisponível, não zero falhas nem justificativa para criar runs automaticamente.",
+      "Simulações com saídas de provedor mockadas demonstram comportamento do runtime, não inteligência do Luna. Documentar experimento pareado futuro com mesmo modelo/esforço, commit, tarefa, ferramentas, orçamento e múltiplas repetições.",
+      "Relatório separa correção final, defeitos, tempo ativo/espera, custo conhecido e atenção por origem; registra regressões e limitações. Comparação é consultiva, não score composto, gate de aprovação ou troca automática de configuração."
+    ],
+    "boundaries": [
+      "Manter Luna e modelos/esforços configurados, sandbox, allowlists, autenticação por assinatura, worktree isolada e reviewer independente read-only.",
+      "Não aprovar/iniciar/retomar/cancelar runs, alterar credenciais, enfraquecer checks ou editar .gship diretamente. Dependências abaixo são documentais, não bloqueios automáticos.",
+      "Não executar benchmark pago, criar runs ou consultar provedores reais para testes. Experimento de capacidade depende de autorização própria; esta entrega usa evidências existentes e fixtures.",
+      "Dependências documentais: executar por último nesta rodada. Uma amostra sem comparabilidade não sustenta alegação causal de melhoria."
+    ],
+    "verify": [
+      "bun test test/runtime/run-evaluation.test.ts test/runtime/run-runtime.test.ts test/runtime/run-review.test.ts test/runtime/run-ship.test.ts",
+      "bun test test/runtime/remote-notifier.test.ts test/web/notifications.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
