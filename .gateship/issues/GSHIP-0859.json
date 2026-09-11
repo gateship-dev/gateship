@@ -5,13 +5,13 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-10T18:42:26.479Z",
-  "updatedAt": "2026-09-11T06:44:05.916Z",
+  "updatedAt": "2026-09-11T07:35:15.643Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
     "objective": "Adicionar testes de browser e comparação visual ao harness existente, fazendo o fluxo Gateship verificar regressões objetivas e entregar evidências ao revisor sem proibir composições novas ou exigir aprovação humana por screenshot.",
     "acceptance": [
-      "Adicionar Playwright como ferramenta de desenvolvimento e scripts bun run test:ui:smoke e bun run test:ui:visual; fixtures não usam backend vivo, relógio/fontes/locale são controlados e versões de browser/ambiente são fixadas.",
+      "Adicionar Playwright e scripts smoke/visual. Fixtures não usam backend vivo; relógio, fontes, locale, browser e ambiente são fixos. O contrato local roda ambos pelo mesmo container fixado por digest do CI, via wrapper Bun multiplataforma sem Docker aninhado.",
       "Smoke verifica navegação, foco, menus, sorting/paginação e corte/sobreposição/overflow. Ao colapsar, centros dos ícones variam no máximo 1px; canvas ocupa viewport sem gutter externo. Tabelas podem rolar internamente; testar tooltip único e supressão ao abrir seletor.",
       "Visual cobre quatro telas em 390/1440px, claro/escuro e PT/EN; 768px no smoke. Cobrir sidebar expandida/recolhida, texto longo, overlays, atenção e tabela densa; verificar gutter com scrollbars clássicas/sobrepostas sem multiplicar toda combinação.",
       "Integrar CI e contrato local de verificação do projeto: smoke obrigatório e visual nos caminhos afetados, dependências compartilhadas ampliam cobertura; falhas produzem expected/actual/diff e relatório acessíveis ao revisor.",
@@ -27,8 +27,8 @@
       "Pré-requisitos: GSHIP-855, GSHIP-856, GSHIP-857, GSHIP-858. Não iniciar antes da entrega; ordem documentada, não bloqueio automático."
     ],
     "verify": [
-      "bun run test:ui:smoke",
-      "bun run test:ui:visual",
+      "bun run test:ui:smoke:fixed",
+      "bun run test:ui:visual:fixed",
       "bun test test/web/ui-harness.test.tsx test/web/embedded-ui.test.ts",
       "bun run typecheck"
     ],
@@ -59,9 +59,5 @@
         }
       ]
     }
-  },
-  "approval": {
-    "fingerprint": "f47bfbc59b3c77e4f7b9d62b629cdcad87fc3384ae705024a96d12eb8b1b6292",
-    "approvedAt": "2026-09-11T06:44:05.916Z"
   }
 }
