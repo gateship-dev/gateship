@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-868",
   "title": "Insights: suportar acesso direto e recarga da rota",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T09:26:44.099Z",
-  "updatedAt": "2026-09-11T09:26:44.099Z",
+  "updatedAt": "2026-09-11T09:31:43.903Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

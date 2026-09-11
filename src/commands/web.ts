@@ -2863,6 +2863,7 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			'/overview': () => serveWebAsset(assets.indexHtml),
 			'/overview/runs': () => serveWebAsset(assets.indexHtml),
 			'/overview/queues': () => serveWebAsset(assets.indexHtml),
+			'/overview/insights': () => serveWebAsset(assets.indexHtml),
 			'/projects': () => serveWebAsset(assets.indexHtml),
 			'/runs': redirect(`${projectPath}/runs`),
 			'/work': redirect(`${projectPath}/work`),

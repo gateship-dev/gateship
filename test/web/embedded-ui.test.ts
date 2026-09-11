@@ -88,6 +88,7 @@ describe('embedded web bundle', () => {
 
 			for (const path of [
 				'/overview/runs',
+				'/overview/insights',
 				`/projects/${currentId}`,
 				`/projects/${currentId}/runs`,
 				`/projects/${currentId}/runs/run-1`,
