@@ -71,16 +71,40 @@ type RunPagination = { pageIndex: number; pageSize: number };
 function updateRunSorting(value: RunSorting | ((current: RunSorting) => RunSorting), current: RunSorting, update: (changes: Partial<OverviewRunsQuery>) => void): void { const next = typeof value === 'function' ? value(current) : value; const first = next[0]; update({ sortBy: first?.id as OverviewRunsQuery['sortBy'] | undefined, sortDirection: first === undefined ? undefined : first.desc ? 'desc' : 'asc' }); }
 function updateRunPagination(value: RunPagination | ((current: RunPagination) => RunPagination), current: RunPagination, update: (changes: Partial<OverviewRunsQuery>) => void): void { const next = typeof value === 'function' ? value(current) : value; update({ limit: next.pageSize, offset: next.pageSize === current.pageSize ? next.pageIndex : 0 }); }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the screen owns one controlled table query boundary
-function OverviewRunsTable({ props, query, update, page, loading, error }: { props: AppProps; query: OverviewRunsQuery; update: (changes: Partial<OverviewRunsQuery>) => void; page: OverviewRunsPageView | null; loading: boolean; error: string | null }): React.ReactElement {
-	const catalog = LOCALE_CATALOG[props.locale].overviewRuns; const inspector = LOCALE_CATALOG[props.locale].runInspector;
+type OverviewRunsTableProps = { props: AppProps; query: OverviewRunsQuery; update: (changes: Partial<OverviewRunsQuery>) => void; page: OverviewRunsPageView | null; loading: boolean; error: string | null };
+type OverviewRunsTableState = { table: ReturnType<typeof useGateshipTable<RunRow>>; rows: RunRow[] };
+
+function useOverviewRunsTableState({ catalog, inspector, query, update, page }: Pick<OverviewRunsTableProps, 'query' | 'update' | 'page'> & { catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): OverviewRunsTableState {
 	const [preferences] = useState(readPreferences); const [columnVisibility, setColumnVisibility] = useState(preferences.columnVisibility ?? {}); const [columnPinning, setColumnPinning] = useState<ColumnPinningState>(preferences.columnPinning ?? RUNS_DEFAULT_PINNING); const [columnSizing, setColumnSizing] = useState(preferences.columnSizing ?? {});
 	const rows = page?.runs ?? [];
 	const columns = useMemo(() => overviewRunsColumns(catalog, inspector), [catalog, inspector]);
 	const sorting: RunSorting = query.sortBy === undefined ? [] : [{ id: query.sortBy, desc: query.sortDirection === 'desc' }]; const pagination: RunPagination = { pageIndex: 0, pageSize: query.limit ?? 20 };
 	const table = useGateshipTable({ columns, data: rows, features: gateshipTableFeatures, getRowId: (row) => `${row.projectId}:${row.runId}`, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: page?.page.total ?? 0, state: { globalFilter: query.search ?? '', sorting, pagination, columnVisibility, columnPinning, columnSizing }, onGlobalFilterChange: (value) => update({ search: String(value ?? '') || undefined }), onSortingChange: (value) => updateRunSorting(value, sorting, update), onPaginationChange: (value) => updateRunPagination(value, pagination, update), onColumnVisibilityChange: (value) => setColumnVisibility(typeof value === 'function' ? value(columnVisibility) : value), onColumnPinningChange: (value) => setColumnPinning(typeof value === 'function' ? value(columnPinning) : value), onColumnSizingChange: (value) => setColumnSizing(typeof value === 'function' ? value(columnSizing) : value) });
 	useEffect(() => { try { globalThis.localStorage?.setItem(TABLE_PREFERENCES_KEY, JSON.stringify({ version: 1, columnVisibility, columnPinning, columnSizing })); } catch { /* storage is optional */ } }, [columnVisibility, columnPinning, columnSizing]);
-	return <><DataTableToolbar><DataTableFilter className="flex-1" label={catalog.search} placeholder={catalog.search} locale={props.locale} table={table} /><DataTableColumnVisibility defaultColumnPinning={RUNS_DEFAULT_PINNING} locale={props.locale} table={table} /></DataTableToolbar><OverviewRunsFilters props={props} query={query} update={update} catalog={catalog} />{error ? <p role="alert" className="text-destructive-foreground text-sm">{catalog.error}: {error}</p> : null}{page !== null && page.errors.length > 0 ? <p role="status" className="text-warning-foreground text-sm">{catalog.partial}</p> : null}<div className="scroll-container overflow-x-auto rounded-lg border"><DataTable className="min-w-max" error={error ? `${catalog.error}: ${error}` : undefined} emptyState={catalog.empty} locale={props.locale} status={error ? 'error' : loading && page === null ? 'loading' : loading ? 'updating' : 'ready'} table={table} /><DataTablePagination locale={props.locale} offset={page?.page.offset ?? query.offset ?? 0} total={page?.page.total ?? 0} onOffsetChange={(offset) => update({ offset })} onPageSizeChange={(limit) => update({ limit, offset: 0 })} table={table} /></div>{page ? <p aria-live="polite" className="text-sm text-muted-foreground">{loading ? `${catalog.loading} ` : ''}{catalog.page((page.page.offset ?? 0) + 1, (page.page.offset ?? 0) + rows.length, page.page.total)}</p> : null}</>;
+	return { table, rows };
+}
+
+function OverviewRunsTable({ props, query, update, page, loading, error }: OverviewRunsTableProps): React.ReactElement {
+	const catalog = LOCALE_CATALOG[props.locale].overviewRuns; const inspector = LOCALE_CATALOG[props.locale].runInspector;
+	const { table, rows } = useOverviewRunsTableState({ catalog, inspector, query, update, page });
+	return <OverviewRunsTableContent {...{ catalog, error, loading, page, props, query, rows, table, update }} />;
+}
+
+function OverviewRunsTableContent({ catalog, error, loading, page, props, query, rows, table, update }: OverviewRunsTableProps & { catalog: OverviewRunsCatalog; rows: RunRow[]; table: ReturnType<typeof useGateshipTable<RunRow>> }): React.ReactElement {
+	return <><DataTableToolbar><DataTableFilter className="flex-1" label={catalog.search} placeholder={catalog.search} locale={props.locale} table={table} /><DataTableColumnVisibility defaultColumnPinning={RUNS_DEFAULT_PINNING} locale={props.locale} table={table} /></DataTableToolbar><OverviewRunsFilters props={props} query={query} update={update} catalog={catalog} /><OverviewRunsTableMessages catalog={catalog} error={error} page={page} /><OverviewRunsTableGrid catalog={catalog} error={error} loading={loading} locale={props.locale} page={page} query={query} table={table} update={update} /><OverviewRunsTableSummary catalog={catalog} loading={loading} page={page} rows={rows} /></>;
+}
+
+function OverviewRunsTableMessages({ catalog, error, page }: Pick<OverviewRunsTableProps, 'error' | 'page'> & { catalog: OverviewRunsCatalog }): React.ReactElement {
+	return <>{error ? <p role="alert" className="text-destructive-foreground text-sm">{catalog.error}: {error}</p> : null}{page !== null && page.errors.length > 0 ? <p role="status" className="text-warning-foreground text-sm">{catalog.partial}</p> : null}</>;
+}
+
+function OverviewRunsTableGrid({ catalog, error, loading, locale, page, query, table, update }: Pick<OverviewRunsTableProps, 'error' | 'loading' | 'page' | 'query' | 'update'> & { catalog: OverviewRunsCatalog; locale: AppProps['locale']; table: ReturnType<typeof useGateshipTable<RunRow>> }): React.ReactElement {
+	const status = error ? 'error' : loading && page === null ? 'loading' : loading ? 'updating' : 'ready';
+	return <div className="scroll-container overflow-x-auto rounded-lg border"><DataTable className="min-w-max" error={error ? `${catalog.error}: ${error}` : undefined} emptyState={catalog.empty} locale={locale} status={status} table={table} /><DataTablePagination locale={locale} offset={page?.page.offset ?? query.offset ?? 0} total={page?.page.total ?? 0} onOffsetChange={(offset) => update({ offset })} onPageSizeChange={(limit) => update({ limit, offset: 0 })} table={table} /></div>;
+}
+
+function OverviewRunsTableSummary({ catalog, loading, page, rows }: { catalog: OverviewRunsCatalog; loading: boolean; page: OverviewRunsPageView | null; rows: RunRow[] }): React.ReactElement | null {
+	return page ? <p aria-live="polite" className="text-sm text-muted-foreground">{loading ? `${catalog.loading} ` : ''}{catalog.page((page.page.offset ?? 0) + 1, (page.page.offset ?? 0) + rows.length, page.page.total)}</p> : null;
 }
 
 export function OverviewRunsSurface({ props }: { props: AppProps }): React.ReactElement { const catalog = LOCALE_CATALOG[props.locale].overviewRuns; const [query, update] = useOverviewRunsQuery(); const result = useOverviewRunsPage(query); return <SurfaceColumn label={catalog.title} status={props.status}><OverviewRunsTable {...{ props, query, update }} {...result} /></SurfaceColumn>; }
