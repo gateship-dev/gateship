@@ -1,4 +1,13 @@
 @import "tailwindcss";
+
+html.gship-harness-reduced-motion *,
+html.gship-harness-reduced-motion *::before,
+html.gship-harness-reduced-motion *::after {
+	animation-duration: 0s !important;
+	animation-iteration-count: 1 !important;
+	transition-duration: 0s !important;
+	scroll-behavior: auto !important;
+}
 @import "tw-animate-css";
 
 /* Gateship's operator theme and semantic state vocabulary. */

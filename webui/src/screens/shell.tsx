@@ -45,7 +45,7 @@ export const NAV_LINK_CLASS =
 	'aria-[current=page]:text-sidebar-accent-foreground';
 
 const RAIL_NAV_ITEM_CLASS =
-	'flex size-10 min-h-0 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ' +
+	'flex h-8 w-full min-h-0 items-center justify-start rounded-md px-3 py-2 text-sidebar-foreground outline-none ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
@@ -202,7 +202,7 @@ function SidebarTooltip({ children, content, disabled = false }: { children: Rea
 			<Tooltip.Trigger render={children} />
 			<Tooltip.Portal>
 				<Tooltip.Positioner className="z-50" side="right" sideOffset={8}>
-					<Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5">{content}</Tooltip.Popup>
+					<Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5" data-slot="sidebar-tooltip">{content}</Tooltip.Popup>
 				</Tooltip.Positioner>
 			</Tooltip.Portal>
 		</Tooltip.Root>
@@ -291,7 +291,7 @@ function ProjectSwitcherMenu({
 	return (
 		<Menu.Portal>
 			<Menu.Positioner align="start" className="z-50" sideOffset={6}>
-				<Menu.Popup className="relative min-w-(--anchor-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 duration-100 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+				<Menu.Popup className="relative min-w-(--anchor-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 motion-safe:duration-100 motion-reduce:animate-none motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
 					<div className="type-eyebrow px-2 pt-1.5 pb-1 text-muted-foreground">
 						{catalog.projectNavigationLabel}
 					</div>
@@ -396,7 +396,7 @@ function ControlCenterSubnavigation({ catalog, open, selection }: { catalog: She
 	return <ul className="flex flex-col gap-0.5 lg:pl-4" data-slot="control-center-subnavigation">
 		{CONTROL_CENTER_ITEMS.map((item) => <li className="shrink-0" key={item.href}>
 			<SidebarTooltip content={catalog.routeLabels[item.label]} disabled={open}>
-				<a aria-label={open ? undefined : catalog.routeLabels[item.label]} aria-current={selection.surface === item.surface ? 'page' : undefined} aria-keyshortcuts={item.surface === 'overview' ? KEYBOARD_SHORTCUTS.overview.aria : undefined} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, selection.surface === item.surface && 'bg-sidebar-accent text-sidebar-accent-foreground')} href={item.href}>
+				<a aria-label={open ? undefined : catalog.routeLabels[item.label]} aria-current={selection.surface === item.surface ? 'page' : undefined} aria-keyshortcuts={item.surface === 'overview' ? KEYBOARD_SHORTCUTS.overview.aria : undefined} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, selection.surface === item.surface && 'bg-sidebar-accent text-sidebar-accent-foreground')} data-sidebar-id={item.href} href={item.href}>
 					<NavGlyph name={item.glyph} />{open ? <span>{catalog.routeLabels[item.label]}</span> : null}
 				</a>
 			</SidebarTooltip>
@@ -468,6 +468,7 @@ export function ShellNavigation({
 									<a
 										aria-label={open ? undefined : catalog.routeLabels[surface.label]}
 										aria-current={surface.surface === selection.surface ? 'page' : undefined}
+										data-sidebar-id={`/projects/${selection.projectId ?? ''}${surface.suffix}`}
 										className={cn(
 											open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
 											surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
@@ -487,6 +488,7 @@ export function ShellNavigation({
 					<a
 						aria-label={open ? undefined : catalog.routeLabels.globalSettings}
 						aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
+						data-sidebar-id="/settings"
 						className={cn(
 							open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
 							selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground',
@@ -620,6 +622,7 @@ export function ShellControls({
 					{/* The sidebar toggle lives in the content area, not the sidebar. */}
 					<Button
 						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
+						aria-expanded={sidebarOpen}
 						data-slot="sidebar-toggle"
 						onClick={onToggleSidebar}
 						size="icon"
@@ -756,7 +759,7 @@ export function ShellSidebar({
 	/* The outer shell shares the global --sidebar canvas with html and body;
 	 * the content panel provides the deliberate surface contrast. */
 	return (
-		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-18 lg:gap-4')}>
+		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-18 lg:gap-4')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
@@ -768,7 +771,7 @@ export function ShellSidebar({
 				status={status}
 				open={open}
 			/>
-			<div className="hidden items-center gap-2 px-3 lg:mt-auto lg:flex" data-slot="sidebar-signature">
+							<div className="hidden items-center gap-2 px-3 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />
 				<span className={cn('flex items-center gap-2', !open && 'opacity-0')}>
 					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
