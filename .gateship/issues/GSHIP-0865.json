@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-865",
   "title": "Execuções: remover supressão de complexidade da tabela",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T05:09:08.878Z",
-  "updatedAt": "2026-09-11T05:09:08.878Z",
+  "updatedAt": "2026-09-11T05:16:07.045Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
