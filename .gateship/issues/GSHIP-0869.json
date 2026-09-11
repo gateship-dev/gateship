@@ -1,0 +1,34 @@
+{
+  "id": "GSHIP-869",
+  "title": "Autonomia: fornecer contrato e contexto verificável em todos os ciclos",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T12:26:03.704Z",
+  "updatedAt": "2026-09-11T12:26:03.704Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Eliminar decisões internas com contexto incompleto: executor, revisão e orquestrador recebem o mesmo contrato aprovado da run, evidências identificadas e orientações com origem preservada, sem transformar contexto em autorização.",
+    "acceptance": [
+      "Reproduzir lacuna de approvedContract em review/full-verify e cobrir executor, verificação, review e CI. Capturar contrato/fingerprint aprovado no início; consultas posteriores e resume usam esse contrato, nunca uma issue alterada silenciosamente.",
+      "Todo diagnóstico recebe objetivo, acceptance, boundaries, verify, finding/origem, estado e fingerprint do worktree, resultados relevantes e tentativas anteriores. Contrato ausente/inconsistente é erro de contexto explícito, não ambiguidade de produto.",
+      "Preservar origem de cada orientação: humano confirmado, agente externo ou desconhecido. agent-cli não prova autoria humana; orientação técnica pode ajudar dentro do escopo, mas não concede permissão nem altera contrato por si só.",
+      "Tratar logs, arquivos, páginas, respostas de ferramentas e explicações do executor como evidência não vinculante. Conteúdo 'ignore o contrato' nessas fontes não muda hierarquia de instruções, permissões ou escopo.",
+      "Não truncar silenciosamente contrato/decisões vinculantes. Se exceder o prompt, oferecer referência local segura íntegra e sinalizar o corte; resumo de logs pode ser limitado com origem e acesso ao original sanitizado.",
+      "Usar sessões frescas para reviewer/orquestrador e manter capacidade read-only. Não reutilizar conversa privada do executor como prova de correção; fornecer fatos coletados pelo runtime e alegações rotuladas separadamente.",
+      "Testar os caminhos, resume após restart, >10 orientações, decisão >600 caracteres, alteração posterior da issue, origem agent-cli e evidência maliciosa; conferir conteúdo/autoridade, não redação literal do prompt."
+    ],
+    "boundaries": [
+      "Manter executor Luna, modelos/esforços configurados, sandbox, autenticação e allowlists; nenhuma permissão nova, serviço auxiliar ou execução fora do worktree.",
+      "Não aprovar, iniciar, retomar, migrar ou cancelar runs existentes; não editar .gship diretamente nem substituir decisões humanas por inferências do agente.",
+      "Contexto só da run/projeto autorizado; nada de memória global, leitura de credenciais ou cópia integral do histórico de outras tarefas.",
+      "Ordem da rodada: GSHIP-863 antes das verificações de notificações; esta issue prepara contexto para diagnóstico, recuperação e evidências. Não iniciar a fila automaticamente."
+    ],
+    "verify": [
+      "bun test test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-runtime.test.ts test/runtime/run-review.test.ts",
+      "bun test test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
