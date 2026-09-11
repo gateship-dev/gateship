@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-880",
   "title": "Release: informar repositório no job final sem checkout",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T23:11:52.643Z",
-  "updatedAt": "2026-09-11T23:11:52.643Z",
+  "updatedAt": "2026-09-11T23:16:23.309Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
