@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-11T02:41:22.795Z",
-  "updatedAt": "2026-09-11T02:41:22.795Z",
+  "updatedAt": "2026-09-11T13:18:44.412Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -28,5 +28,9 @@
       "bun test test/runtime/remote-notifier.test.ts test/web/notifications.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "58eb668063b44bcd304546fee40e91d7b4409f81ebefb6dce8d5d62aff31a165",
+    "approvedAt": "2026-09-11T13:18:44.412Z"
   }
 }
