@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-867",
+  "title": "Agent CLI: cobrir ordenação explícita de coortes",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-11T09:01:43.254Z",
+  "updatedAt": "2026-09-11T09:01:43.254Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Versionar a cobertura determinística já existente localmente para provar que projects.overview encaminha cohortSortBy e cohortSortDirection sem alterar o comportamento de produção.",
+    "acceptance": [
+      "O teste canônico do agent CLI envia cohortSortBy=sampleSize e cohortSortDirection=asc e comprova esses parâmetros na URL de /api/overview."
+    ],
+    "boundaries": [
+      "Não alterar a implementação nem ampliar a superfície do agent CLI.",
+      "Não adicionar dependências ou novos comandos."
+    ],
+    "verify": [
+      "bun test test/commands/agent.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "4ab2446aceced2d89373b29eef9cd69a6f12907601592a1989be04659dc6c220",
+    "approvedAt": "2026-09-11T09:01:43.254Z"
+  }
+}
