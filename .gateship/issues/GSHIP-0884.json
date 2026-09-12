@@ -1,0 +1,31 @@
+{
+  "id": "GSHIP-884",
+  "title": "Ship: recuperar conflitos de merge na mesma run com nova verificação",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-12T20:34:46.498Z",
+  "updatedAt": "2026-09-12T20:34:46.498Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Tratar conflito confirmado da PR como recuperação do ciclo existente, preservando contrato, branch, histórico e evidência; sem espera cega de uma hora ou reparo manual externo como caminho normal.",
+    "acceptance": [
+      "Detectar conflito confirmado no GitHub separadamente de CI pendente, indisponibilidade e estado ainda desconhecido. Suspender o merge automático antes de qualquer alteração da branch; não interpretar merge como prova de CI.",
+      "Recuperação pertence à mesma run/PR: registrar head e base observados, motivo, origem, tentativa e resultado nos eventos existentes. Revalidar head antes de escrever; preservar trabalho desconhecido e impedir dois processos concorrentes no mesmo workspace.",
+      "Atualizar a branch sem force-push nem mover main do operador. Executor pode resolver conflitos somente dentro do contrato aprovado e preservando mudanças da base; conflito material de objetivo, risco, verificação ou autoridade exige reaprovação, não escolha automática de ours/theirs.",
+      "Qualquer resolução que altere a árvore invalida evidências anteriores para o novo head: executar verificação aprovada, revisão fresca read-only e full verify antes de publicar/reativar merge; CI válida deve pertencer ao head publicado. Retomar fases existentes, sem segundo pipeline de verificação.",
+      "Restart, cancelamento e chamada repetida não duplicam recuperação, dispatch ou push. Mesma evidência de conflito não dispara loop ilimitado; usar o mecanismo de recuperação disponível e seus limites, sem renovar orçamento e sem inventar novo teto global nesta issue.",
+      "Preservar o contrato/fingerprint aprovado quando o arquivo de issue também conflitar: divergência material não é resolvida escolhendo arquivo inteiro. Eventos de falha continuam disponíveis; contribuição de chamadas ao uso/custo segue captura existente, ausências são desconhecidas.",
+      "Provar com Git temporário e GitHub simulado: conflito textual, base avançada sem conflito, head alterado externamente, workspace sujo, restart, repetição, resolução fora do escopo, teste/review reprovado e sucesso no mesmo PR. A UI usa estado e motivo existentes, sem nova central de recuperação."
+    ],
+    "boundaries": [
+      "Não implementar a recuperação estrutural na PR738/GSHIP-869; esta issue é separada. Não criar daemon, serviço, tabela paralela de tentativas ou framework de retries.",
+      "Não enfraquecer gates, alterar credenciais, fazer force-push, editar SQLite/.gship ou modificar projetos externos. Manter modelos e esforços definidos pelo operador."
+    ],
+    "verify": [
+      "bun test test/runtime/github-shipper.test.ts test/runtime/github-shipper-source-sync.test.ts test/runtime/run-runtime.test.ts test/runtime/run-state.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
