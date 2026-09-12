@@ -1,0 +1,30 @@
+{
+  "id": "GSHIP-883",
+  "title": "CI: registrar resultado final no merge e reconciliar runs antigas",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-12T20:01:08.533Z",
+  "updatedAt": "2026-09-12T20:01:08.533Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Corrigir o estado CI pendente indevido em runs mergeadas, observado nas PRs 736 e 737, preservando a distinção entre merge confirmado e checks aprovados.",
+    "acceptance": [
+      "Reproduzir o salto de PR aberta com CI pending para MERGED com checks SUCCESS entre polls. Em github-shipper, persistir a evidência final de CI antes de encerrar o acompanhamento, mantendo validação do head e proteções existentes.",
+      "Merge isolado nunca implica CI passed. Checks ausentes, pendentes, falhos ou indisponíveis permanecem representados honestamente; não mudar critérios de merge para corrigir a exibição.",
+      "Oferecer reconciliação nativa, explícita, project-scoped e idempotente para runs concluídas com CI desatualizado, consultando a PR e o head correto no GitHub pela autenticação existente. Acrescentar evidência durável sem reescrever histórico, reexecutar agentes ou reabrir a run.",
+      "Usar o mesmo resultado persistido nas listas e detalhes existentes; incluir regressões de terminalidade, restart, head divergente, indisponibilidade do GitHub e repetição da reconciliação sem eventos redundantes.",
+      "Após entrega, reconciliar as runs da PR736 (3d74322e-8b67-45fb-a502-9018e6f62a0b) e PR737 (57951f01-dfdb-49ee-b7d5-b560c3f78cfe) e confirmar CI aprovado a partir de checks reais."
+    ],
+    "boundaries": [
+      "Não interromper a GSHIP-869 nem alterar a ordem vigente da fila neste registro; especificação adicionada para futura execução.",
+      "Não editar SQLite/.gship manualmente, fabricar eventos ou marcar CI aprovado por inferência do merge. Preservar contadores, estado done e histórico.",
+      "Sem serviço, dependência, scheduler ou redesenho visual novo. Reutilizar shipper, eventos, projeção e operações tipadas existentes."
+    ],
+    "verify": [
+      "bun test test/runtime/github-shipper.test.ts test/runtime/github-shipper-source-sync.test.ts test/runtime/run-ship.test.ts test/web/run-ship.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
