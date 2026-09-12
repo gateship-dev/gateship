@@ -15,7 +15,7 @@ import {
 	parseExecutionResult,
 	probeClaudeModel,
 } from '../../src/runtime/claude-cli-executor.ts';
-import { projectAssistantActivity } from '../../src/runtime/claude-cli-process.ts';
+import { projectAssistantActivity, projectToolObservation } from '../../src/runtime/claude-cli-process.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
 import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import { PROPOSAL_LIMITS } from '../../src/runtime/run-proposal.ts';
@@ -59,6 +59,34 @@ describe('Claude CLI runtime executor', () => {
 		expect(activity).toEqual({ text: 'Vou verificar o arquivo.', tools: ['Read'] });
 		expect(JSON.stringify(activity)).not.toContain('private reasoning');
 		expect(JSON.stringify(activity)).not.toContain('/secret/path');
+	});
+
+	test('preserves tool error state without persisting tool input', () => {
+		const raw = (isError: boolean | undefined) => ({
+			message: { content: [{
+				type: 'tool_result', content: 'same output',
+				...(isError === undefined ? {} : { is_error: isError }),
+				input: { secret: 'do-not-persist' },
+			}] },
+		});
+		expect(projectToolObservation(raw(false))).toEqual([{ action: 'result', result: 'same output', isError: false }]);
+		expect(projectToolObservation(raw(true))).toEqual([{ action: 'result', result: 'same output', isError: true }]);
+		expect(projectToolObservation(raw(undefined))).toEqual([{ action: 'result', result: 'same output' }]);
+		expect(JSON.stringify(projectToolObservation(raw(true)))).not.toContain('do-not-persist');
+		expect(projectToolObservation({
+			message: { content: [
+				{ type: 'tool_result', content: 'ok', is_error: false },
+				{ type: 'tool_result', content: 'failed', is_error: true },
+			] },
+		})).toEqual([
+			{ action: 'result', result: 'ok', isError: false },
+			{ action: 'result', result: 'failed', isError: true },
+		]);
+		expect(projectToolObservation({
+			message: { content: [{ type: 'tool_result', tool_use_id: 'tool-2', content: 'DOM', is_error: false }] },
+		}, new Map([['tool-2', 'browser']]))).toEqual([
+			{ tool: 'browser', action: 'result', toolUseId: 'tool-2', result: 'DOM', isError: false },
+		]);
 	});
 
 	test('uses a new session id on first execution and the same id on resume', () => {

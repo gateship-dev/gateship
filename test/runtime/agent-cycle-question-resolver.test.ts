@@ -89,6 +89,24 @@ describe('agent cycle question resolver', () => {
 			.toBeLessThan(prompt.indexOf('Prior durable cycle responses:'));
 	});
 
+	test('distinguishes a legacy stall from repetition alone', () => {
+		const prompt = buildCycleQuestionPrompt(questionInput({
+			priorResponses: [{
+				questionId: 'q-repeat',
+				outcome: 'continue',
+				finding: 'Escape repetido sem efeito',
+				origin: 'executor',
+				text: 'Tente Escape novamente.',
+				createdAt: '2026-09-12T00:00:00.000Z',
+			}],
+			finding: 'Escape repetido sem efeito',
+		}));
+		expect(prompt).toContain('Repetition alone, or two cycles without progress, does not determine the outcome.');
+		expect(prompt).toContain('preserve the legacy stall behavior and return operator');
+		expect(prompt).toContain('choose a distinct justified action, request recorded evidence, or identify a concrete impossibility');
+		expect(prompt).toContain('Return operator only for that legacy stall or a concrete missing decision, authority or human data.');
+	});
+
 	test('gives an executor question the approved contract and identifies its origin', () => {
 		const approvedContract = '{"id":"GSHIP-768","spec":{"scope":"decompor integralmente"}}';
 		const prompt = buildCycleQuestionPrompt(questionInput({

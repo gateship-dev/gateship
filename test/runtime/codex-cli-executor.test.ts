@@ -12,6 +12,7 @@ import {
 	buildCodexReviewArgv,
 	CodexAgentSession,
 	CodexCliExecutor,
+	projectCodexToolObservation,
 	probeCodexModel,
 } from '../../src/runtime/codex-cli-executor.ts';
 import type { ModelSlot } from '../../src/runtime/model-settings.ts';
@@ -45,6 +46,23 @@ function isProcessAlive(pid: number): boolean {
 }
 
 describe('Codex CLI runtime executor', () => {
+	test('preserves command output and exit code without persisting arguments', () => {
+		expect(projectCodexToolObservation({
+			type: 'command_execution', aggregated_output: 'same output', exit_code: 0,
+			command: ['cat', 'secret.txt'], env: { TOKEN: 'do-not-persist' },
+		})).toEqual({ tool: 'command_execution', action: 'completed', result: 'same output', exitCode: 0 });
+		expect(projectCodexToolObservation({
+			type: 'command_execution', output: 'same output', exit_code: 2,
+		})).toEqual({ tool: 'command_execution', action: 'completed', result: 'same output', exitCode: 2 });
+		expect(projectCodexToolObservation({
+			type: 'command_execution', result: 'same output',
+		})).toEqual({ tool: 'command_execution', action: 'completed', result: 'same output' });
+		expect(JSON.stringify(projectCodexToolObservation({
+			type: 'command_execution', aggregated_output: 'same output', exit_code: 0,
+			command: ['cat', 'secret.txt'], env: { TOKEN: 'do-not-persist' },
+		}))).not.toContain('do-not-persist');
+	});
+
 	test('builds new and resumed subscription-backed exec turns', () => {
 		const first = buildCodexCliArgv({
 			command: ['codex'],

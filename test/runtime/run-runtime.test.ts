@@ -13,10 +13,14 @@ import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
 import {
 	RunRuntime as BaseRunRuntime,
 	type RuntimeChainReconciliationInput,
+	type RuntimeCycleQuestionResult,
+	type RuntimeCycleResponse,
 	type RunRuntimeOptions,
 	type RuntimeShipInput,
 	type RuntimeTimer,
+	validateCycleQuestionResult,
 } from '../../src/runtime/run-runtime.ts';
+import type { CycleObservationReference } from '../../src/runtime/cycle-diagnostic.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
 import { ResearchFailure, type ResearchBundle, validateResearchBundle } from '../../src/runtime/research.ts';
 import { type RunEvent, type RunRecord, RunStore } from '../../src/runtime/run-store.ts';
@@ -3073,6 +3077,90 @@ describe('selectRunRoundOrigins', () => {
 const CYCLE_AUDIT_USAGE = { model: 'configured-model', effort: 'high' } as const;
 
 describe('orchestrator cycle questions (GSHIP-675)', () => {
+	const repeatedFinding = 'A decomposição coberta amplia escopo?';
+	const oldObservation: CycleObservationReference = {
+		id: 'observation-old', runId: 'run-cycle-validation', attempt: 1,
+		verifiedVersion: 'workflow-test', result: 'failed',
+	};
+	const newObservation: CycleObservationReference = {
+		id: 'observation-new', runId: 'run-cycle-validation', attempt: 2,
+		verifiedVersion: 'workflow-test', result: 'failed',
+	};
+	const priorCycleResponse: RuntimeCycleResponse = {
+		questionId: 'question-prior', outcome: 'continue', finding: repeatedFinding,
+		origin: 'executor', text: 'Tente a correção delimitada.', createdAt: '2026-09-12T00:00:00Z',
+		diagnostic: {
+			kind: 'correction', hypothesis: 'A hipótese antiga está incompleta.',
+			action: 'Inspecione o caminho delimitado.', expectedObservation: 'O check muda.',
+			evidence: [oldObservation],
+		},
+	};
+	const repeatedResult = (diagnostic: RuntimeCycleQuestionResult['diagnostic']): RuntimeCycleQuestionResult => ({
+		outcome: 'continue', guidance: 'Aplique a correção delimitada.', usage: CYCLE_AUDIT_USAGE, diagnostic,
+	});
+	const validateRepeated = (
+		result: RuntimeCycleQuestionResult,
+		priorResponses: readonly RuntimeCycleResponse[] = [priorCycleResponse],
+		observations: readonly CycleObservationReference[] = [oldObservation, newObservation],
+	) => validateCycleQuestionResult(result, 'executor', repeatedFinding, priorResponses, observations);
+
+	test('keeps repeated executor questions rejected even with a new correction observation', () => {
+		expect(validateRepeated(repeatedResult({
+			kind: 'correction',
+			hypothesis: 'A inspeção nova refuta a hipótese antiga.',
+			action: 'Aplique a ação distinta delimitada.',
+			expectedObservation: 'O resultado do check muda.',
+			evidence: [newObservation],
+		}))).toMatchObject({ ok: false });
+		expect(validateRepeated(repeatedResult(undefined))).toMatchObject({
+			ok: false, reason: 'Cycle question resolver returned continue for a repeated executor question.',
+		});
+		expect(validateRepeated(repeatedResult({
+			kind: 'correction',
+			hypothesis: 'A observação já conhecida basta.',
+			action: 'Repita a mesma ação.',
+			expectedObservation: 'Nada novo.',
+			evidence: [oldObservation],
+		}))).toMatchObject({ ok: false });
+		expect(validateRepeated(repeatedResult({
+			kind: 'correction',
+			hypothesis: 'A frase nova prova avanço.',
+			action: '',
+			expectedObservation: 'A frase muda.',
+			evidence: [newObservation],
+		}))).toMatchObject({ ok: false });
+		expect(validateRepeated(repeatedResult({
+			kind: 'correction',
+			hypothesis: 'O ID inválido prova avanço.',
+			action: 'Aplique uma ação.',
+			expectedObservation: 'O check muda.',
+			evidence: [{ ...newObservation, id: 'observation-invalid' }],
+		}))).toMatchObject({ ok: false });
+	});
+
+	test('keeps exit-only tool observations distinguishable and rejects empty observations', () => {
+		const result = (exitCode: number | undefined): RuntimeCycleQuestionResult => ({
+			outcome: 'continue', guidance: 'Aplique a correção.', usage: CYCLE_AUDIT_USAGE,
+			diagnostic: {
+				kind: 'correction', hypothesis: 'O resultado técnico distingue a hipótese.',
+				action: 'Aplique a ação delimitada.', expectedObservation: 'O código observado confirma a hipótese.',
+				evidence: exitCode === undefined ? [] : [{
+					id: 'observation-exit-' + exitCode, runId: 'run-cycle-validation', attempt: 1,
+					verifiedVersion: 'workflow-test', result: 'exit ' + exitCode, exitCode,
+				}],
+			},
+		});
+		expect(validateCycleQuestionResult(result(0), 'review', 'novo finding', [], [{
+			id: 'observation-exit-0', runId: 'run-cycle-validation', attempt: 1,
+			verifiedVersion: 'workflow-test', result: 'exit 0', exitCode: 0,
+		}])).toMatchObject({ ok: true });
+		expect(validateCycleQuestionResult(result(2), 'review', 'novo finding', [], [{
+			id: 'observation-exit-2', runId: 'run-cycle-validation', attempt: 1,
+			verifiedVersion: 'workflow-test', result: 'exit 2', exitCode: 2,
+		}])).toMatchObject({ ok: true });
+		expect(validateCycleQuestionResult(result(undefined), 'review', 'novo finding', [], [])).toMatchObject({ ok: true });
+	});
+
 	test('the production adapter always returns auditable model and effort values', async () => {
 		let access: string | undefined;
 		let resume: boolean | undefined;

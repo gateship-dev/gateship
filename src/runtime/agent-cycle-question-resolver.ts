@@ -8,6 +8,7 @@ import type {
 	RuntimeCycleQuestionResult,
 	RuntimeCycleResponseUsage,
 } from './run-runtime.ts';
+import { normalizeCycleDiagnostic, type CycleObservationReference } from './cycle-diagnostic.ts';
 
 export const CYCLE_QUESTION_RESULT_SCHEMA = {
 	type: 'object',
@@ -15,8 +16,9 @@ export const CYCLE_QUESTION_RESULT_SCHEMA = {
 		outcome: { type: 'string', enum: ['continue', 'operator'] },
 		guidance: { type: ['string', 'null'] },
 		reason: { type: ['string', 'null'] },
+		diagnostic: { type: ['object', 'null'] },
 	},
-	required: ['outcome', 'guidance', 'reason'],
+	required: ['outcome', 'guidance', 'reason', 'diagnostic'],
 	additionalProperties: false,
 } as const;
 
@@ -92,19 +94,22 @@ export function buildCycleQuestionPrompt(input: RuntimeCycleQuestionInput): stri
 		'Prior durable cycle responses:',
 		JSON.stringify(input.priorResponses),
 		'',
-		'If the same question has returned after concrete internal guidance without new evidence of progress, return operator with that stall as the public reason. A new technical question answered by the approved contract must return continue.',
+		'Classify the outcome in diagnostic. A correction must state hypothesis, concrete action and expected observation. Cite only observation IDs listed below. A new sentence, timestamp, diff or claimed advance is not an observation. Invalid or absent evidence means insufficient-evidence. Repetition alone, or two cycles without progress, does not determine the outcome. When the same executor question returns after concrete internal guidance and without a new recorded progress observation, preserve the legacy stall behavior and return operator with that stall as the public reason. Otherwise, treat repetition as a possible loop for re-evaluation by the existing orchestrator: choose a distinct justified action, request recorded evidence, or identify a concrete impossibility within the contract. Return operator only for that legacy stall or a concrete missing decision, authority or human data.',
+		'',
+		'Recorded tool observations:',
+		JSON.stringify(input.observations ?? []),
 	].join('\n');
 }
 
-function parseResult(value: unknown, usage: RuntimeCycleResponseUsage): RuntimeCycleQuestionResult {
+function parseResult(value: unknown, usage: RuntimeCycleResponseUsage, observations: readonly CycleObservationReference[]): RuntimeCycleQuestionResult {
 	const record = recordOf(value);
 	if (record?.['outcome'] === 'continue') {
-		return { outcome: 'continue', guidance: String(record['guidance'] ?? ''), usage };
+		return { outcome: 'continue', guidance: String(record['guidance'] ?? ''), usage, diagnostic: normalizeCycleDiagnostic(record['diagnostic'], observations) };
 	}
 	if (record?.['outcome'] === 'operator') {
-		return { outcome: 'operator', reason: String(record['reason'] ?? ''), usage };
+		return { outcome: 'operator', reason: String(record['reason'] ?? ''), usage, diagnostic: normalizeCycleDiagnostic(record['diagnostic'], observations) };
 	}
-	return { outcome: 'operator', reason: '', usage };
+	return { outcome: 'operator', reason: '', usage, diagnostic: normalizeCycleDiagnostic(null, observations) };
 }
 
 /** Routes each run to its own provider, always as a fresh read-only call. */
@@ -133,6 +138,6 @@ export class AgentCycleQuestionResolver implements RuntimeCycleQuestionResolver 
 				input.emit(kind, payload, eventClass);
 			},
 		});
-		return parseResult(result.structuredOutput, usageOf(usagePayload, modelPayload));
+		return parseResult(result.structuredOutput, usageOf(usagePayload, modelPayload), input.observations ?? []);
 	}
 }

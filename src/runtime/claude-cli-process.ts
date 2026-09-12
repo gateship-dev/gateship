@@ -8,6 +8,11 @@
 // here is what lets the reviewer be a second role instead of a second engine.
 
 import {
+	AgentProcessActivityTimeoutError,
+	type AgentProcessResult,
+	runAgentProcess,
+} from './agent-process.ts';
+import {
 	ProviderCallError,
 	providerErrorFromMessage,
 } from './agent-session.ts';
@@ -16,13 +21,8 @@ import {
 	type ClaudeResultUsage,
 	classifyHeadlessStreamLine,
 } from './claude-stream.ts';
-import {
-	AgentProcessActivityTimeoutError,
-	type AgentProcessResult,
-	runAgentProcess,
-} from './agent-process.ts';
-import { buildClaudeAuthEnv } from './provider-env.ts';
 import type { ModelSlot } from './model-settings.ts';
+import { buildClaudeAuthEnv } from './provider-env.ts';
 
 export const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const MAX_ACTIVITY_TEXT = 2_000;
@@ -101,6 +101,46 @@ export function projectAssistantActivity(raw: Record<string, unknown>): Record<s
 	};
 }
 
+/** Persist only a bounded tool result, never its name, arguments or environment. */
+export function projectToolObservation(
+	raw: Record<string, unknown>,
+	toolNames: ReadonlyMap<string, string> = new Map(),
+): Array<{ tool?: string; action: string; toolUseId?: string; result: string; isError?: boolean }> {
+	const message = raw['message'];
+	if (message === null || typeof message !== 'object' || Array.isArray(message)) return [];
+	const content = (message as Record<string, unknown>)['content'];
+	if (!Array.isArray(content)) return [];
+	return content.flatMap((block) => projectToolResultBlock(block, toolNames));
+}
+
+function projectToolResultBlock(
+	block: unknown,
+	toolNames: ReadonlyMap<string, string>,
+): Array<{ tool?: string; action: string; toolUseId?: string; result: string; isError?: boolean }> {
+	if (block === null || typeof block !== 'object' || Array.isArray(block)) return [];
+	const record = block as Record<string, unknown>;
+	if (record['type'] !== 'tool_result') return [];
+	const result = projectToolResultText(record['content']);
+	if (result.length === 0) return [];
+	const toolUseId = typeof record['tool_use_id'] === 'string' ? record['tool_use_id'] : undefined;
+	const tool = toolUseId === undefined ? undefined : toolNames.get(toolUseId);
+	const isError = typeof record['is_error'] === 'boolean' ? record['is_error'] : undefined;
+	return [{ action: 'result', ...(tool === undefined ? {} : { tool }),
+		...(toolUseId === undefined ? {} : { toolUseId }), result,
+		...(isError === undefined ? {} : { isError }) }];
+}
+
+function projectToolResultText(value: unknown): string {
+	const text = typeof value === 'string' ? value
+		: Array.isArray(value) ? value.flatMap((item) => {
+			if (item === null || typeof item !== 'object' || Array.isArray(item)) return [];
+			const text = (item as Record<string, unknown>)['text'];
+			return typeof text === 'string' ? [text] : [];
+		}).join('\n')
+		: '';
+	return text.trim().slice(0, MAX_ACTIVITY_TEXT);
+}
+
 function compact(record: object): Record<string, unknown> {
 	return Object.fromEntries(
 		Object.entries(record).filter(([, value]) => value !== undefined),
@@ -169,6 +209,7 @@ interface ClaudeStreamState {
 	summary: string;
 	structuredOutput: unknown;
 	rateLimitFailure?: ProviderCallError;
+	toolNames: Map<string, string>;
 }
 
 function rateLimitEventPayload(info: ClaudeRateLimitInfo | null): Record<string, unknown> {
@@ -191,40 +232,73 @@ function consumeClaudeLine(
 	// result and availability signals remain durable decisions.
 	switch (event.kind) {
 		case 'system':
-			input.emit(
-				`${input.eventPrefix}.system`,
-				{ subtype: event.subtype ?? 'unknown' },
-				'activity',
-			);
+			consumeClaudeSystem(event.subtype, input);
 			return;
 		case 'assistant':
-			input.emit(
-				`${input.eventPrefix}.activity`,
-				projectAssistantActivity(event.raw),
-				'activity',
-			);
+			consumeClaudeAssistant(event.raw, input, state);
 			return;
+		case 'user': {
+			consumeClaudeUser(event.raw, input, state.toolNames);
+			return;
+		}
 		case 'rate_limit_event': {
-			const info = readClaudeRateLimit(event.raw);
-			input.emit(`${input.eventPrefix}.rate-limit`, rateLimitEventPayload(info));
-			if (info?.status === 'rejected') state.rateLimitFailure = claudeUsageLimitError(info);
+			consumeClaudeRateLimit(event.raw, input, state);
 			return;
 		}
 		case 'result':
-			state.resultSeen = true;
-			state.resultIsError = event.raw.is_error === true;
-			if (typeof event.raw.result === 'string') state.summary = event.raw.result;
-			state.structuredOutput = event.raw['structured_output'];
-			input.emit(`${input.eventPrefix}.result`);
-			emitUsage(input.emit, input.eventPrefix, input.slot, {
-				totalCostUsd: event.totalCostUsd,
-				usage: event.usage,
-				modelUsage: event.modelUsage,
-			});
+			consumeClaudeResult(event, input, state);
 			return;
 		default:
 			return;
 	}
+}
+
+function consumeClaudeSystem(subtype: string | undefined, input: ClaudeCliRunInput): void {
+	input.emit(`${input.eventPrefix}.system`, { subtype: subtype ?? 'unknown' }, 'activity');
+}
+
+function consumeClaudeAssistant(raw: Record<string, unknown>, input: ClaudeCliRunInput, state: ClaudeStreamState): void {
+	const message = raw['message'];
+	const content = message !== null && typeof message === 'object' && !Array.isArray(message)
+		? (message as Record<string, unknown>)['content'] : undefined;
+	if (Array.isArray(content)) recordClaudeToolUses(content, state.toolNames);
+	input.emit(`${input.eventPrefix}.activity`, projectAssistantActivity(raw), 'activity');
+}
+
+function recordClaudeToolUses(content: unknown[], toolNames: Map<string, string>): void {
+	for (const block of content) {
+		if (block === null || typeof block !== 'object' || Array.isArray(block)) continue;
+		const record = block as Record<string, unknown>;
+		if (record['type'] === 'tool_use' && typeof record['id'] === 'string' && typeof record['name'] === 'string') {
+			toolNames.set(record['id'], record['name']);
+		}
+	}
+}
+
+function consumeClaudeUser(raw: Record<string, unknown>, input: ClaudeCliRunInput, toolNames: ReadonlyMap<string, string>): void {
+	for (const observation of projectToolObservation(raw, toolNames)) input.emit(input.eventPrefix + '.tool-observation', observation);
+}
+
+function consumeClaudeRateLimit(raw: Record<string, unknown>, input: ClaudeCliRunInput, state: ClaudeStreamState): void {
+	const info = readClaudeRateLimit(raw);
+	input.emit(`${input.eventPrefix}.rate-limit`, rateLimitEventPayload(info));
+	if (info?.status === 'rejected') state.rateLimitFailure = claudeUsageLimitError(info);
+}
+
+function consumeClaudeResult(
+	event: ReturnType<typeof classifyHeadlessStreamLine>,
+	input: ClaudeCliRunInput,
+	state: ClaudeStreamState,
+): void {
+	if (event.kind !== 'result') return;
+	state.resultSeen = true;
+	state.resultIsError = event.raw.is_error === true;
+	if (typeof event.raw.result === 'string') state.summary = event.raw.result;
+	state.structuredOutput = event.raw['structured_output'];
+	input.emit(`${input.eventPrefix}.result`);
+	emitUsage(input.emit, input.eventPrefix, input.slot, {
+		totalCostUsd: event.totalCostUsd, usage: event.usage, modelUsage: event.modelUsage,
+	});
 }
 
 /**
@@ -273,6 +347,7 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 		resultIsError: false,
 		summary: '',
 		structuredOutput: undefined,
+		toolNames: new Map(),
 	};
 	let processResult: AgentProcessResult;
 	try {

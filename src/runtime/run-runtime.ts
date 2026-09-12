@@ -11,6 +11,12 @@ import {
 	ProviderCallError,
 	type ProviderErrorKind,
 } from './agent-session.ts';
+import {
+	type CycleDiagnostic,
+	type CycleObservationReference,
+	cycleObservation,
+	normalizeCycleDiagnostic,
+} from './cycle-diagnostic.ts';
 import type {
 	RuntimeWorkspace,
 	WorkspaceNotice,
@@ -83,6 +89,44 @@ function isValidApprovedIssueRecord(value: unknown, issueId: string, registeredF
 
 /** Single `runtime_settings` row holding the executor handoff opt-in (GSHIP-722), beside `chain-runs`. */
 const EXECUTOR_HANDOFF_ENABLED_KEY = 'executor-handoff-enabled';
+const AUTHORIZED_TOOL_OBSERVATIONS = new Set([
+	'Read/result', 'Glob/result', 'Grep/result', 'web_search_call/completed',
+]);
+
+function projectCycleObservation(
+	runId: string,
+	version: string,
+	attempt: number,
+	event: RunEvent,
+): CycleObservationReference | null {
+	if (!isCycleObservationEvent(event.kind)) return null;
+	const isToolObservation = event.kind === 'provider.tool-observation' || event.kind === 'review.tool-observation';
+	const tool = typeof event.payload['tool'] === 'string' ? event.payload['tool'] : '';
+	const action = typeof event.payload['action'] === 'string' ? event.payload['action'] : '';
+	if (isToolObservation && !AUTHORIZED_TOOL_OBSERVATIONS.has(tool + '/' + action)) return null;
+	const result = cycleObservationResult(event.payload);
+	if (result.length === 0) return null;
+	return cycleObservation(runId, Math.max(1, attempt), version, event.seq, result, {
+		...(isToolObservation ? { tool, action } : {}),
+		...(typeof event.payload['toolUseId'] === 'string' ? { toolUseId: event.payload['toolUseId'] } : {}),
+		...(typeof event.payload['exitCode'] === 'number' ? { exitCode: event.payload['exitCode'] } : {}),
+		...(typeof event.payload['isError'] === 'boolean' ? { isError: event.payload['isError'] } : {}),
+	});
+}
+
+function isCycleObservationEvent(kind: string): boolean {
+	return kind === 'verify.command.completed' || kind === 'verify.command.finished'
+		|| kind === 'run.verification-retry-result'
+		|| kind === 'provider.tool-observation' || kind === 'review.tool-observation';
+}
+
+function cycleObservationResult(payload: Record<string, unknown>): string {
+	const result = typeof payload['result'] === 'string' ? payload['result']
+		: typeof payload['outcome'] === 'string' ? payload['outcome']
+		: typeof payload['detail'] === 'string' ? payload['detail']
+		: typeof payload['exitCode'] === 'number' ? 'exit ' + payload['exitCode'] : '';
+	return result.trim();
+}
 
 export interface RuntimeExecutionInput {
 	runId: string;
@@ -263,6 +307,7 @@ export interface RuntimeCycleResponse {
 	origin: RuntimeCycleQuestionOrigin;
 	text: string;
 	createdAt: string;
+	diagnostic?: CycleDiagnostic;
 }
 
 export type RuntimeCycleQuestionOrigin = 'executor' | 'review' | 'full-verify';
@@ -276,14 +321,15 @@ export interface RuntimeCycleQuestionInput {
 	/** Present for executor-origin questions, loaded by its provider adapter. */
 	approvedContract?: string;
 	priorResponses: readonly RuntimeCycleResponse[];
+	observations?: readonly CycleObservationReference[];
 	providerId: AgentProviderId;
 	signal: AbortSignal;
 	emit: (kind: string, payload?: Record<string, unknown>, eventClass?: RunEventClass) => void;
 }
 
 export type RuntimeCycleQuestionResult =
-	| { outcome: 'continue'; guidance: string; usage: RuntimeCycleResponseUsage }
-	| { outcome: 'operator'; reason: string; usage: RuntimeCycleResponseUsage };
+	| { outcome: 'continue'; guidance: string; usage: RuntimeCycleResponseUsage; diagnostic?: CycleDiagnostic }
+	| { outcome: 'operator'; reason: string; usage: RuntimeCycleResponseUsage; diagnostic?: CycleDiagnostic };
 
 /** Transport-neutral, fresh read-only answer to one unresolved review cycle. */
 export interface RuntimeCycleQuestionResolver {
@@ -596,20 +642,22 @@ function cycleUsageEventPayload(usage: RuntimeCycleResponseUsage): Record<string
 }
 
 type ValidatedCycleQuestionResult =
-	| { ok: true; result: RuntimeCycleQuestionResult; normalized: string }
+	| { ok: true; result: RuntimeCycleQuestionResult; normalized: string; diagnostic: CycleDiagnostic }
 	| { ok: false; reason: string };
 
-function validateCycleQuestionResult(
+export function validateCycleQuestionResult(
 	result: RuntimeCycleQuestionResult | undefined,
 	origin: RuntimeCycleQuestionOrigin,
 	finding: string,
 	priorResponses: readonly RuntimeCycleResponse[],
+	observations: readonly CycleObservationReference[],
 ): ValidatedCycleQuestionResult {
 	const text = result?.outcome === 'continue' ? result.guidance
 		: result?.outcome === 'operator' ? result.reason : '';
 	const normalized = typeof text === 'string' ? text.trim() : '';
 	const validAudit = typeof result?.usage?.model === 'string' && result.usage.model.trim().length > 0
 		&& typeof result.usage.effort === 'string' && result.usage.effort.trim().length > 0;
+	const diagnostic = normalizeCycleDiagnostic(result?.diagnostic, observations);
 	const repeatsAnsweredExecutorQuestion = origin === 'executor'
 		&& result?.outcome === 'continue'
 		&& priorResponses.some((response) => response.origin === 'executor'
@@ -621,7 +669,7 @@ function validateCycleQuestionResult(
 		|| normalized.length === 0 || !validAudit) {
 		return { ok: false, reason: 'Cycle question resolver returned an invalid response.' };
 	}
-	return { ok: true, result, normalized };
+	return { ok: true, result, normalized, diagnostic };
 }
 
 export class RunRuntime {
@@ -2155,8 +2203,25 @@ export class RunRuntime {
 					|| typeof finding !== 'string'
 					|| (normalizedOrigin !== 'executor' && normalizedOrigin !== 'review' && normalizedOrigin !== 'full-verify')
 					|| typeof text !== 'string') return [];
-				return [{ questionId, outcome, finding, origin: normalizedOrigin, text, createdAt: event.createdAt }];
+				const diagnostic = event.payload['diagnostic'];
+				return [{ questionId, outcome, finding, origin: normalizedOrigin, text, createdAt: event.createdAt,
+					...(diagnostic !== null && typeof diagnostic === 'object' && !Array.isArray(diagnostic)
+						? { diagnostic: diagnostic as CycleDiagnostic } : {}),
+				}];
 			});
+	}
+
+	#cycleObservations(runId: string): CycleObservationReference[] {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const created = events.find((event) => event.kind === 'run.created');
+		const version = created?.payload['workflowRevision'];
+		if (typeof version !== 'string' || version.trim().length === 0) return [];
+		let attempt = 0;
+		return events.flatMap((event) => {
+			if (event.kind === 'run.started' || event.kind === 'run.provider-retry-started') attempt += 1;
+			const observation = projectCycleObservation(runId, version, attempt, event);
+			return observation === null ? [] : [observation];
+		});
 	}
 
 	#recoveredCycleAttempt(
@@ -2318,6 +2383,7 @@ export class RunRuntime {
 		}
 		const started = performance.now();
 		const priorResponses = this.#cycleResponses(run.id);
+		const observations = this.#cycleObservations(run.id);
 		const unresolved = await resolver.resolve({
 			runId: run.id,
 			issueId: run.issueId,
@@ -2326,6 +2392,7 @@ export class RunRuntime {
 			origin,
 			...(approvedContract === undefined ? {} : { approvedContract }),
 			priorResponses,
+			observations,
 			providerId: run.providerId,
 			signal,
 			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
@@ -2334,7 +2401,7 @@ export class RunRuntime {
 			this.#interrupt(run.id);
 			return null;
 		}
-		const validation = validateCycleQuestionResult(unresolved, origin, finding, priorResponses);
+		const validation = validateCycleQuestionResult(unresolved, origin, finding, priorResponses, observations);
 		if (!validation.ok) {
 			const { reason } = validation;
 			if (origin === 'executor') throw new Error(reason);
@@ -2351,13 +2418,14 @@ export class RunRuntime {
 			});
 			return null;
 		}
-		const { result, normalized } = validation;
+		const { result, normalized, diagnostic } = validation;
 		const responsePayload = {
 			questionId,
 			responder: 'orchestrator',
 			source: 'internal',
 			outcome: result.outcome,
 			...(result.outcome === 'continue' ? { guidance: normalized } : { reason: normalized }),
+			diagnostic,
 			latencyMs: Math.max(0, Math.round(performance.now() - started)),
 			provider: run.providerId,
 			...cycleUsageEventPayload(result.usage),
