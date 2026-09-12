@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-882",
   "title": "Recuperação: limitar retry por falha após correção, não por run inteira",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-12T16:22:32.612Z",
-  "updatedAt": "2026-09-12T16:22:32.612Z",
+  "updatedAt": "2026-09-12T16:35:04.514Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

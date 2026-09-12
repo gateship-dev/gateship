@@ -887,17 +887,41 @@ export class RunRuntime {
 		if (run === null) throw new Error(`run not found: ${runId}`);
 		if (run.state !== 'failed') throw new Error(`run cannot retry verification from state ${run.state}`);
 		const events = this.#store.listRunDecisionEvents(runId);
-		if (events.some((event) => event.kind === 'run.verification-retry-requested')) throw new Error('verification retry was already used');
-		const ending = events.findLast((event) => event.toState === 'failed' && event.fromState !== 'failed');
-		if (ending?.kind !== 'run.verification-failed') throw new Error('run was not ended by issue verification failure');
+		const { ending, requests } = this.#verificationRetryAdmission(events);
 		this.#validateVerificationRetry(run);
 		const normalizedReason = reason.trim();
 		if (normalizedReason.length === 0) throw new Error('retry reason is required');
 		const reserved = this.#transition(run.id, 'verify', 'run.verification-retry-requested', {
-			payload: { source: source ?? 'web', reason: normalizedReason, attempt: 1 },
+			payload: {
+				source: source ?? 'web',
+				reason: normalizedReason,
+				attempt: requests.length + 1,
+				failureSeq: ending.seq,
+			},
 		}).run;
 		this.#launch(reserved, { resume: true, verificationOnly: true });
 		return this.#store.getRun(run.id) ?? reserved;
+	}
+
+	#verificationRetryAdmission(events: readonly RunEvent[]): { ending: RunEvent; requests: RunEvent[] } {
+		const ending = events.findLast((event) => event.toState === 'failed' && event.fromState !== 'failed');
+		if (ending?.kind !== 'run.verification-failed') throw new Error('run was not ended by issue verification failure');
+		const requests = events.filter((event) => event.kind === 'run.verification-retry-requested');
+		const previousRequest = requests.at(-1);
+		if (previousRequest === undefined) return { ending, requests };
+		const nextRequest = requests.find((event) => event.seq > previousRequest.seq);
+		const previousResult = events.find((event) => event.kind === 'run.verification-retry-result'
+			&& event.seq > previousRequest.seq && event.seq < (nextRequest?.seq ?? Infinity));
+		if (previousResult?.payload['outcome'] !== 'passed') throw new Error('verification retry was already used');
+		if (!events.some((event) => event.kind === 'run.work-completed'
+			&& event.seq > previousResult.seq && event.seq < ending.seq)) {
+			throw new Error('verification retry requires a completed correction after the previous retry');
+		}
+		const previousFailureSeq = previousRequest.payload['failureSeq'];
+		if (typeof previousFailureSeq === 'number' && previousFailureSeq === ending.seq) {
+			throw new Error('verification retry was already used for this failure');
+		}
+		return { ending, requests };
 	}
 
 	/** The run a resume may reopen, or the reason it may not. */
