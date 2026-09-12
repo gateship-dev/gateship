@@ -9,7 +9,7 @@
     "GSHIP-870"
   ],
   "createdAt": "2026-09-11T12:26:46.082Z",
-  "updatedAt": "2026-09-11T23:34:50.312Z",
+  "updatedAt": "2026-09-12T22:00:59.911Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -33,5 +33,9 @@
       "bun test test/runtime/run-runtime.test.ts test/runtime/run-store.test.ts test/runtime/run-state.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "640d61ac4dd5c49c5e824be99295cdac3cb91af65dba5cc9b2f91ab7bd5e219b",
+    "approvedAt": "2026-09-12T22:00:59.911Z"
   }
 }
