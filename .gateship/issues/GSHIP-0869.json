@@ -1,13 +1,13 @@
 {
   "id": "GSHIP-869",
   "title": "Autonomia: fornecer contrato e contexto verificável em todos os ciclos",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-880"
   ],
   "createdAt": "2026-09-11T12:26:03.704Z",
-  "updatedAt": "2026-09-11T23:35:20.230Z",
+  "updatedAt": "2026-09-12T20:22:40.078Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

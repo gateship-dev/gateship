@@ -2,6 +2,8 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import {
 	createRemoteNotifier,
@@ -29,6 +31,13 @@ import {
 import { RunStore, type RunEvent } from '../../src/runtime/run-store.ts';
 import type { RunState } from '../../src/runtime/run-state.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
+
+const NOTIFIER_SPEC = { version: 2 as const, objective: 'Notifier runtime test', acceptance: ['Notification behavior'], verify: ['bun test'] };
+const notifierIssue = (id: string): IssueEntry => ({
+	id, title: id, stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '',
+	spec: NOTIFIER_SPEC, approval: { fingerprint: fingerprintSpec(NOTIFIER_SPEC), approvedAt: '' },
+});
+const notifierBacklog = (): IssueEntry[] => ['CAM-51', 'GSHIP-735-A', 'GSHIP-735-B', 'CAM-52'].map(notifierIssue);
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
@@ -194,6 +203,7 @@ describe('createRemoteNotifier', () => {
 				}),
 			},
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: notifierBacklog,
 		});
 
 		const { fetchImpl, calls } = stubFetch();
@@ -233,6 +243,7 @@ describe('createRemoteNotifier', () => {
 			newId: () => 'run-global-notify-a',
 			executor: { execute: async () => ({ outcome: 'waiting-user' as const, summary: 'Projeto A precisa de você.' }) },
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: notifierBacklog,
 		});
 		const runtimeB = new RunRuntime({
 			cwd: projectB,
@@ -240,6 +251,7 @@ describe('createRemoteNotifier', () => {
 			newId: () => 'run-global-notify-b',
 			executor: { execute: async () => ({ outcome: 'waiting-user' as const, summary: 'Projeto B precisa de você.' }) },
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: notifierBacklog,
 		});
 		const { fetchImpl, calls } = stubFetch();
 		runtimeA.subscribe(createRemoteNotifier({ cwd: projectA, stateDir: globalStateDir, legacyStateDir: legacyStateDirA, env: {}, fetchImpl }));
@@ -273,6 +285,7 @@ describe('createRemoteNotifier', () => {
 				execute: async () => ({ outcome: 'waiting-user' as const, summary: 'Escolha o seam.' }),
 			},
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: notifierBacklog,
 		});
 
 		const run = await runtime.startRun('CAM-52');

@@ -7,13 +7,29 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import {
-	RunRuntime,
+	RunRuntime as BaseRunRuntime,
+	type RunRuntimeOptions,
 	type RuntimeExecutionInput,
 	type RuntimeReviewResult,
 	type RuntimeShipper,
 } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
+
+const REVIEW_SPEC = { version: 2 as const, objective: 'Test review', acceptance: ['Review behavior'], verify: ['bun test'] };
+const REVIEW_FINGERPRINT = fingerprintSpec(REVIEW_SPEC);
+const REVIEW_BACKLOG: IssueEntry[] = ['CAM-577', 'CAM-583', 'GSHIP-732'].map((id) => ({
+	id, title: id, stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: REVIEW_SPEC,
+	approval: { fingerprint: REVIEW_FINGERPRINT, approvedAt: '' },
+}));
+
+class RunRuntime extends BaseRunRuntime {
+	constructor(options: RunRuntimeOptions) {
+		super({ ...options, listBacklog: options.listBacklog ?? (() => REVIEW_BACKLOG) });
+	}
+}
 
 interface ExecutionCall {
 	resume: boolean;
@@ -145,7 +161,7 @@ describe('independent review stage', () => {
 			'run.cycle-question',
 			'run.review-fix-limit',
 		]);
-		expect(events.at(-2)?.payload).toEqual({
+		expect(events.at(-2)?.payload).toMatchObject({
 			questionId: 'run-review',
 			issueId: 'CAM-577',
 			finding: 'still broken in src/a.ts',

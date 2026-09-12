@@ -8,12 +8,20 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { createDefaultRunRuntimeOptions, startWebServer } from '../../src/commands/web.ts';
 import { GithubShipper } from '../../src/runtime/github-shipper.ts';
 import { RunRuntime, type RuntimeShipResult } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+
+const SHIP_SPEC = { version: 2 as const, objective: 'Web ship test', acceptance: ['Ship behavior'], verify: ['bun test'] };
+const SHIP_ISSUE: IssueEntry = {
+	id: 'CAM-583', title: 'CAM-583', stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '',
+	spec: SHIP_SPEC, approval: { fingerprint: fingerprintSpec(SHIP_SPEC), approvedAt: '' },
+};
 
 interface ShipHarness {
 	runtime: RunRuntime;
@@ -48,6 +56,7 @@ function createShipRuntime(): ShipHarness {
 				return { outcome: 'merged', prNumber: 385 };
 			},
 		},
+		listBacklog: () => [SHIP_ISSUE],
 	});
 	return { runtime, release, attempts: () => attempts };
 }

@@ -11,8 +11,9 @@ import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
 import {
-	RunRuntime,
+	RunRuntime as BaseRunRuntime,
 	type RuntimeChainReconciliationInput,
+	type RunRuntimeOptions,
 	type RuntimeShipInput,
 	type RuntimeTimer,
 } from '../../src/runtime/run-runtime.ts';
@@ -20,6 +21,28 @@ import { nextFixRounds } from '../../src/runtime/run-state.ts';
 import { ResearchFailure, type ResearchBundle, validateResearchBundle } from '../../src/runtime/research.ts';
 import { type RunEvent, type RunRecord, RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
+
+const SYNTHETIC_SPEC = { version: 2 as const, objective: 'Test objective', acceptance: ['Test acceptance'], verify: ['bun test'] };
+const SYNTHETIC_FINGERPRINT = fingerprintSpec(SYNTHETIC_SPEC);
+const SYNTHETIC_IDS = ['CAM-1', 'CAM-2', 'CAM-10', 'CAM-11', 'CAM-13', 'CAM-14', 'CAM-15', 'CAM-20', 'CAM-21', 'CAM-22', 'CAM-23', 'CAM-30', 'CAM-31', 'CAM-32', 'CAM-33', 'CAM-34', 'CAM-35', 'CAM-40', 'CAM-41', 'CAM-42', 'CAM-43', 'CAM-44', 'CAM-45', 'CAM-70', 'CAM-71', 'CAM-80', 'CAM-90', 'CAM-875', 'GSHIP-0', 'GSHIP-1', 'GSHIP-2', 'GSHIP-3', 'GSHIP-611', 'GSHIP-612', 'GSHIP-621', 'GSHIP-623', 'GSHIP-627', 'GSHIP-629', 'GSHIP-630', 'GSHIP-638', 'GSHIP-650', 'GSHIP-658', 'GSHIP-659', 'GSHIP-675', 'GSHIP-685', 'GSHIP-700', 'GSHIP-701', 'GSHIP-702', 'GSHIP-708', 'GSHIP-709', 'GSHIP-710', 'GSHIP-711', 'GSHIP-712', 'GSHIP-713', 'GSHIP-722', 'GSHIP-732', 'GSHIP-751', 'GSHIP-756', 'GSHIP-768', 'GSHIP-833', 'GSHIP-840', 'GSHIP-841', 'GSHIP-869', 'GSHIP-875', 'GSHIP-9'];
+const SYNTHETIC_BACKLOG: IssueEntry[] = SYNTHETIC_IDS.map((id) => ({
+	id, title: id, stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: SYNTHETIC_SPEC,
+	approval: { fingerprint: SYNTHETIC_FINGERPRINT, approvedAt: '' },
+}));
+
+function approvedRunFields(issueId: string) {
+	const issue = SYNTHETIC_BACKLOG.find((entry) => entry.id === issueId) ?? { ...SYNTHETIC_BACKLOG[0]!, id: issueId, title: issueId };
+	return {
+		specProfile: { version: 'v2' as const, fingerprint: SYNTHETIC_FINGERPRINT, counts: { acceptance: 1, boundaries: 0, verify: 1, evidence: 0 } },
+		approvedContract: JSON.stringify(issue),
+	};
+}
+
+class RunRuntime extends BaseRunRuntime {
+	constructor(options: RunRuntimeOptions) {
+		super({ ...options, listBacklog: options.listBacklog ?? (() => SYNTHETIC_BACKLOG) });
+	}
+}
 
 async function waitFor(
 	predicate: () => boolean,
@@ -34,7 +57,7 @@ async function waitFor(
 
 describe('durable run runtime', () => {
 	test('records an unknown spec profile when no backlog reader is configured', async () => {
-		const runtime = new RunRuntime({
+		const runtime = new BaseRunRuntime({
 			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-unknown-profile',
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: true }) },
@@ -135,7 +158,7 @@ describe('durable run runtime', () => {
 			receipts: [{ url: 'https://github.com/acme/project/tree/v1.0.0', sourceType: 'primary-code', fetchedAt: '2026-09-08T00:00:00Z', installedVersion: '1.0.0', resolvedRef: { kind: 'tag', value: 'v1.0.0' }, contentHash: `sha256:${'a'.repeat(64)}`, claim: 'Q', applicability: 'Q' }],
 		};
 		const store = new RunStore(dbPath);
-		store.createRun({ id: 'run-research-restart', issueId: 'GSHIP-841', sessionId: 'session', workspacePath: '/workspace', createdAt: '2026-09-08T00:00:00Z', research });
+		store.createRun({ id: 'run-research-restart', issueId: 'GSHIP-841', sessionId: 'session', workspacePath: '/workspace', createdAt: '2026-09-08T00:00:00Z', research, ...approvedRunFields('GSHIP-841') });
 		store.transition({ runId: 'run-research-restart', toState: 'research', kind: 'run.research-started', createdAt: '2026-09-08T00:00:01Z' });
 		store.close();
 
@@ -241,7 +264,7 @@ describe('durable run runtime', () => {
 		};
 		const freshSource = { ...oldSource, claim: 'Q2', applicability: 'Q2', excerpt: 'fresh' };
 		const runtime = new RunRuntime({
-			cwd: '/project', store, listBacklog: () => [{ id: 'GSHIP-841-history', title: 'history', stage: 'specified', status: 'open', blockedBy: [], createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z', spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research } }],
+			cwd: '/project', store, listBacklog: () => [{ id: 'GSHIP-841-history', title: 'history', stage: 'specified', status: 'open', blockedBy: [], createdAt: '2026-09-08T00:00:00Z', updatedAt: '2026-09-08T00:00:00Z', spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research }, approval: { fingerprint: fingerprintSpec({ version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research }), approvedAt: '2026-09-08T00:00:00Z' } }],
 			executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
 			researcher: { provider: 'test', model: 'test', effort: 'test', research: async () => ({ questions: research.questions, sources: [freshSource], provider: 'test', model: 'test', effort: 'test', latencyMs: 1 }) },
 		});
@@ -390,7 +413,7 @@ describe('durable run runtime', () => {
 
 	test('restores unconsumed issue verification feedback after interruption', async () => {
 		const store = new RunStore(':memory:');
-		store.createRun({ id: 'run-verification-recovery', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-01T00:00:00Z' });
+		store.createRun({ id: 'run-verification-recovery', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-01T00:00:00Z', ...approvedRunFields('GSHIP-756') });
 		store.transition({ runId: 'run-verification-recovery', toState: 'working', kind: 'run.started', createdAt: '2026-09-01T00:00:01Z' });
 		store.transition({ runId: 'run-verification-recovery', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-01T00:00:02Z' });
 		store.transition({ runId: 'run-verification-recovery', toState: 'working', kind: 'run.verification-fix-requested', payload: { findings: 'falha durável' }, createdAt: '2026-09-01T00:00:03Z' });
@@ -967,7 +990,9 @@ describe('durable run runtime', () => {
 			'run.work-completed',
 			'run.verified',
 		]);
-		expect(runtime.listRunEvents(run.id)[3]?.payload).toEqual({ text: 'Use the smaller seam.' });
+		expect(runtime.listRunEvents(run.id)[3]?.payload).toEqual({
+			text: 'Use the smaller seam.', authorizationEvidence: 'unknown',
+		});
 		await runtime.stop();
 		runtime.close();
 	});
@@ -2867,6 +2892,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		store.createRun({
 			id: 'run-executor-restart', issueId: 'GSHIP-768', sessionId: 'session-executor-restart',
 			workspacePath: '/project', createdAt: '2026-09-01T12:00:00.000Z',
+			...approvedRunFields('GSHIP-768'),
 		});
 		store.transition({
 			runId: 'run-executor-restart', toState: 'working', kind: 'run.started',
@@ -3111,6 +3137,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		store.createRun({
 			id: 'run-cycle-restart', issueId: 'GSHIP-675', sessionId: 'session-restart',
 			workspacePath: '/project', createdAt: '2026-08-21T12:00:00.000Z',
+			...approvedRunFields('GSHIP-675'),
 		});
 		const transition = (toState: RunRecord['state'], kind: string, payload?: Record<string, unknown>) =>
 			store.transition({
@@ -3176,6 +3203,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		store.createRun({
 			id: 'run-legacy-question', issueId: 'GSHIP-732', sessionId: 'session-legacy-question',
 			workspacePath: '/project', createdAt: '2026-08-21T12:00:00.000Z',
+			...approvedRunFields('GSHIP-732'),
 		});
 		const transition = (toState: RunRecord['state'], kind: string, payload?: Record<string, unknown>) =>
 			store.transition({
@@ -3220,6 +3248,7 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		store.createRun({
 			id: 'run-full-verify-restart', issueId: 'GSHIP-732', sessionId: 'session-full-verify-restart',
 			workspacePath: '/project', createdAt: '2026-08-21T12:00:00.000Z',
+			...approvedRunFields('GSHIP-732'),
 		});
 		const transition = (toState: RunRecord['state'], kind: string, payload?: Record<string, unknown>) =>
 			store.transition({
@@ -3268,6 +3297,112 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		expect(runtime.listRunDecisionEvents('run-full-verify-restart')
 			.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
 		await runtime.stop();
+		runtime.close();
+	});
+
+	test('recovers the approved contract for a legacy run restarting at review', async () => {
+		const spec = { version: 2 as const, objective: 'O', acceptance: ['A'], verify: ['V'] };
+		const issue: IssueEntry = {
+			id: 'GSHIP-869-legacy-review', title: 'legacy review', stage: 'specified', status: 'open', blockedBy: [],
+			createdAt: '2026-08-21T12:00:00.000Z', updatedAt: '2026-08-21T12:00:00.000Z', spec,
+			approval: { fingerprint: fingerprintSpec(spec), approvedAt: '2026-08-21T12:00:00.000Z' },
+		};
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-legacy-review', issueId: issue.id, sessionId: 'session-legacy-review', workspacePath: '/project',
+			createdAt: '2026-08-21T12:00:00.000Z', specProfile: {
+				version: 'v2', fingerprint: fingerprintSpec(spec), counts: { acceptance: 1, boundaries: 0, verify: 1, evidence: 0 },
+			},
+		});
+		store.transition({ runId: 'run-legacy-review', toState: 'working', kind: 'run.started', createdAt: '2026-08-21T12:00:01.000Z' });
+		store.transition({ runId: 'run-legacy-review', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-08-21T12:00:02.000Z' });
+		store.transition({ runId: 'run-legacy-review', toState: 'review', kind: 'run.review-started', createdAt: '2026-08-21T12:00:03.000Z' });
+		let received: string | undefined;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async (input) => { received = input.approvedContract; return { verdict: 'clean' }; } },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.resumeRun('run-legacy-review');
+		await waitFor(() => runtime.getRun('run-legacy-review')?.state === 'ready-to-ship');
+		expect(received).toBe(JSON.stringify(issue));
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('recovers the approved contract for a legacy run restarting at full-verify', async () => {
+		const spec = { version: 2 as const, objective: 'O', acceptance: ['A'], verify: ['V'] };
+		const issue: IssueEntry = {
+			id: 'GSHIP-869-legacy-full-verify', title: 'legacy full verify', stage: 'specified', status: 'open', blockedBy: [],
+			createdAt: '2026-08-21T12:00:00.000Z', updatedAt: '2026-08-21T12:00:00.000Z', spec,
+			approval: { fingerprint: fingerprintSpec(spec), approvedAt: '2026-08-21T12:00:00.000Z' },
+		};
+		const store = new RunStore(':memory:');
+		store.createRun({
+			id: 'run-legacy-full-verify', issueId: issue.id, sessionId: 'session-legacy-full-verify', workspacePath: '/project',
+			createdAt: '2026-08-21T12:00:00.000Z', specProfile: {
+				version: 'v2', fingerprint: fingerprintSpec(spec), counts: { acceptance: 1, boundaries: 0, verify: 1, evidence: 0 },
+			},
+		});
+		store.transition({ runId: 'run-legacy-full-verify', toState: 'working', kind: 'run.started', createdAt: '2026-08-21T12:00:01.000Z' });
+		store.transition({ runId: 'run-legacy-full-verify', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-08-21T12:00:02.000Z' });
+		store.transition({ runId: 'run-legacy-full-verify', toState: 'review', kind: 'run.review-started', createdAt: '2026-08-21T12:00:03.000Z' });
+		store.transition({ runId: 'run-legacy-full-verify', toState: 'full-verify', kind: 'run.review-clean', createdAt: '2026-08-21T12:00:04.000Z' });
+		let received: string | undefined;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			fullVerifier: { verify: async (input) => { received = input.approvedContract; return { ok: true }; } },
+		});
+		runtime.resumeRun('run-legacy-full-verify');
+		await waitFor(() => runtime.getRun('run-legacy-full-verify')?.state === 'ready-to-ship');
+		expect(received).toBe(JSON.stringify(issue));
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('fails closed when a legacy run cannot recover its approved contract', async () => {
+		const spec = { version: 2 as const, objective: 'O', acceptance: ['A'], verify: ['V'] };
+		const fingerprint = fingerprintSpec(spec);
+		for (const listBacklog of [undefined, () => [] as IssueEntry[], () => [{
+			id: 'GSHIP-869-legacy-fail', title: 'legacy fail', stage: 'specified' as const, status: 'open' as const, blockedBy: [],
+			createdAt: '', updatedAt: '', spec,
+		} as IssueEntry], () => [{
+			id: 'GSHIP-869-legacy-fail', title: 'legacy fail', stage: 'specified' as const, status: 'open' as const, blockedBy: [],
+			createdAt: '', updatedAt: '', spec, approval: { fingerprint: 'different', approvedAt: '' },
+		} as IssueEntry]]) {
+			const store = new RunStore(':memory:');
+			store.createRun({ id: 'run-legacy-fail', issueId: 'GSHIP-869-legacy-fail', sessionId: 'session', workspacePath: '/project', createdAt: '', specProfile: { version: 'v2', fingerprint, counts: { acceptance: 1, boundaries: 0, verify: 1, evidence: 0 } } });
+			store.transition({ runId: 'run-legacy-fail', toState: 'working', kind: 'run.started', createdAt: '1' });
+			store.transition({ runId: 'run-legacy-fail', toState: 'verify', kind: 'run.work-completed', createdAt: '2' });
+			store.transition({ runId: 'run-legacy-fail', toState: 'review', kind: 'run.review-started', createdAt: '3' });
+			let providers = 0;
+			const runtime = new RunRuntime({ cwd: '/project', store, executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) }, ...(listBacklog === undefined ? {} : { listBacklog }), reviewer: { review: async () => { providers += 1; return { verdict: 'clean' }; } } });
+			runtime.resumeRun('run-legacy-fail');
+			await waitFor(() => runtime.getRun('run-legacy-fail')?.state === 'failed');
+			expect(providers).toBe(0);
+			runtime.close();
+		}
+	});
+
+	test('fails closed when a resumed run has neither a snapshot nor a fingerprint', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-unanchored-resume', issueId: 'GSHIP-869-unanchored', sessionId: 'session', workspacePath: '/project', createdAt: '' });
+		store.transition({ runId: 'run-unanchored-resume', toState: 'working', kind: 'run.started', createdAt: '1' });
+		store.transition({ runId: 'run-unanchored-resume', toState: 'verify', kind: 'run.work-completed', createdAt: '2' });
+		store.transition({ runId: 'run-unanchored-resume', toState: 'review', kind: 'run.review-started', createdAt: '3' });
+		let providers = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, executor: { execute: async () => { providers += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => { providers += 1; return { ok: true }; } },
+			reviewer: { review: async () => { providers += 1; return { verdict: 'clean' }; } },
+		});
+		runtime.resumeRun('run-unanchored-resume');
+		await waitFor(() => runtime.getRun('run-unanchored-resume')?.state === 'failed');
+		expect(providers).toBe(0);
 		runtime.close();
 	});
 
@@ -3490,13 +3625,19 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 	}
 
 	function createChainableRuntime(listBacklog: () => IssueEntry[]): RunRuntime {
+		let admissionPending = true;
 		return new RunRuntime({
 			cwd: '/project',
 			store: new RunStore(':memory:'),
 			executor: { execute: async () => ({ outcome: 'completed', summary: 'change written' }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
-			listBacklog,
+			listBacklog: () => {
+				const backlog = listBacklog();
+				if (!admissionPending) return backlog;
+				admissionPending = false;
+				return backlog.some((issue) => issue.id === 'GSHIP-1') ? backlog : [admissibleIssue('GSHIP-1'), ...backlog];
+			},
 		});
 	}
 
@@ -3567,7 +3708,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: false, detail: 'verification failed' }) },
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
-			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')],
 		});
 		runtime.setChainRuns(true);
 
@@ -3621,7 +3762,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
 			listBacklog: () => {
-				if (backlogReads++ === 0) return [];
+				if (backlogReads++ === 0) return [admissibleIssue('GSHIP-1')];
 				throw new Error('git cat-file --batch failed');
 			},
 		});
@@ -3648,7 +3789,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 1 }) },
-			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')],
 		});
 
 		const run = await runtime.startRun('GSHIP-1');
@@ -3689,7 +3830,8 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 				const done = new Set(
 					store.listRuns().filter((r) => r.state === 'done').map((r) => r.issueId),
 				);
-				return [notApproved, nextInOrder, laterInOrder].filter((entry) => !done.has(entry.id));
+				const candidates = [notApproved, nextInOrder, laterInOrder].filter((entry) => !done.has(entry.id));
+				return store.listRuns().length === 0 ? [admissibleIssue('GSHIP-1'), ...candidates] : candidates;
 			},
 		});
 		runtime.setChainRuns(true);
@@ -3715,7 +3857,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			executor: { execute: async () => ({ outcome: 'completed' as const }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
-			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')],
 			chainReconciler: { reconcile: async () => {
 				await pending;
 				return { outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } };
@@ -3736,7 +3878,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		let releaseFirst!: () => void;
 		const firstPending = new Promise<void>((resolve) => { releaseFirst = resolve; });
 		let calls = 0;
-		let backlog = [admissibleIssue('GSHIP-2'), admissibleIssue('GSHIP-3')];
+		let backlog = [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2'), admissibleIssue('GSHIP-3')];
 		const reconciled: string[] = [];
 		const store = new RunStore(':memory:');
 		const runtime = new RunRuntime({
@@ -3782,7 +3924,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 					return { outcome: 'released' as const, branch: 'gship/gship-818' };
 				},
 			},
-			listBacklog: () => [admissibleIssue('GSHIP-2')]
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')]
 				.filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
 			chainReconciler: { reconcile: async (input) => {
 				reconciliationInput = input;
@@ -3820,6 +3962,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
 			listBacklog: () => [
+				admissibleIssue('GSHIP-1'),
 				admissibleIssue('GSHIP-2'),
 				admissibleIssue('GSHIP-3'),
 			].filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
@@ -3845,6 +3988,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		beforeStore.createRun({
 			id: 'run-guidance-before-executor', issueId: 'GSHIP-2', sessionId: 'session-before-executor',
 			workspacePath: '/project', createdAt: '2026-08-29T00:00:00.000Z',
+			...approvedRunFields('GSHIP-2'),
 			reconciliationGuidance: 'Keep the approved seam.',
 		});
 		beforeStore.transition({ runId: 'run-guidance-before-executor', toState: 'working', kind: 'run.started', createdAt: '2026-08-29T00:00:01.000Z' });
@@ -3910,8 +4054,8 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			executor: { execute: async () => ({ outcome: 'completed' as const }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
-			listBacklog: () => store.listRuns().some((run) => run.state === 'done' && run.issueId === 'GSHIP-2')
-				? [] : [admissibleIssue('GSHIP-2')],
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')]
+				.filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
 			chainReconciler: { reconcile: async () => {
 				attempts += 1;
 				if (attempts === 1) throw new ProviderCallError('claude', 'usage-limit', 'limite', {
@@ -3936,12 +4080,19 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 	test('replays a waiting chain reconciliation after restart', async () => {
 		const dbPath = join(createTestTmpdir('gship-chain-reconcile-restart-'), 'runtime.sqlite');
 		const firstStore = new RunStore(dbPath);
+		let admissionRead = true;
 		const first = new RunRuntime({
 			cwd: '/project', store: firstStore,
 			executor: { execute: async () => ({ outcome: 'completed' as const }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
-			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			listBacklog: () => {
+				if (admissionRead) {
+					admissionRead = false;
+					return [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')];
+				}
+				return [admissibleIssue('GSHIP-2')];
+			},
 			chainReconciler: { reconcile: async () => {
 				throw new ProviderCallError('claude', 'usage-limit', 'limite temporário');
 			} },
@@ -3990,13 +4141,20 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			clear: () => { armed = null; },
 		};
 		let attempts = 0;
+		let admissionRead = true;
 		const firstStore = new RunStore(dbPath);
 		const first = new RunRuntime({
 			cwd: '/project', store: firstStore, now: () => clock, timer,
 			executor: { execute: async () => ({ outcome: 'completed' as const }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
-			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			listBacklog: () => {
+				const backlog = admissionRead
+					? [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')]
+					: [admissibleIssue('GSHIP-2')];
+				admissionRead = false;
+				return backlog;
+			},
 			chainReconciler: { reconcile: async () => {
 				attempts += 1;
 				throw new ProviderCallError('claude', 'usage-limit', 'limite', { retryAt: '2026-08-30T00:50:00.000Z' });
@@ -4288,7 +4446,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 			executor: { execute: async () => ({ outcome: 'completed' as const }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
-			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')],
 			chainReconciler: { reconcile: async () => ({
 				outcome: 'material' as const, justification: 'a especificação mudou',
 				usage: { model: 'm', effort: 'e' },
@@ -4332,12 +4490,19 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 
 	test('aborts and awaits a pending chain reconciliation on stop', async () => {
 		let observedSignal: AbortSignal | undefined;
+		let admissionRead = true;
 		const runtime = new RunRuntime({
 			cwd: '/project', store: new RunStore(':memory:'),
 			executor: { execute: async () => ({ outcome: 'completed' as const }) },
 			verifier: { verify: async () => ({ ok: true }) },
 			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
-			listBacklog: () => [admissibleIssue('GSHIP-2')],
+			listBacklog: () => {
+				const backlog = admissionRead
+					? [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')]
+					: [admissibleIssue('GSHIP-2')];
+				admissionRead = false;
+				return backlog;
+			},
 			chainReconciler: { reconcile: async (input) => {
 				observedSignal = input.signal;
 				await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));

@@ -20,6 +20,7 @@ function input(): RuntimeExecutionInput {
 	return {
 		runId: 'run-review',
 		issueId: 'CAM-1',
+		approvedContract: '{"id":"CAM-1"}',
 		sessionId: 'implementer-session',
 		providerId: 'codex',
 		resume: false,

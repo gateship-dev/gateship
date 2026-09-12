@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { buildWorkPrompt } from '../../src/runtime/claude-cli-executor.ts';
 import {
@@ -19,6 +21,11 @@ import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const FIXTURE = join(import.meta.dir, '..', 'fixtures', 'runtime', 'codex-cli-fixture.ts');
+const CODEX_SPEC = { version: 2 as const, objective: 'Codex runtime test', acceptance: ['Runtime behavior'], verify: ['bun test'] };
+const codexIssue = (id: string): IssueEntry => ({
+	id, title: id, stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '',
+	spec: CODEX_SPEC, approval: { fingerprint: fingerprintSpec(CODEX_SPEC), approvedAt: '' },
+});
 
 async function waitFor(predicate: () => boolean): Promise<void> {
 	const deadline = Date.now() + 2_000;
@@ -108,7 +115,7 @@ describe('Codex CLI runtime executor', () => {
 		let slot: ModelSlot = { model: 'gpt-5-codex', effort: 'high' };
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-24"}',
+			approvedContract: '{"id":"CAM-24"}',
 			// Consulted per spawn, never at construction.
 			resolveModel: () => slot,
 		});
@@ -247,7 +254,7 @@ describe('Codex CLI runtime executor', () => {
 		let providerSession = '';
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-20"}',
+			approvedContract: '{"id":"CAM-20"}',
 		});
 		const result = await executor.execute({
 			runId: 'run-20',
@@ -279,7 +286,6 @@ describe('Codex CLI runtime executor', () => {
 	test('captures a proposal from the shared structured result', async () => {
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-proposal=Cobrir o caminho de erro do shipper'],
-			loadIssue: () => '{"id":"CAM-30"}',
 		});
 		const store = new RunStore(':memory:');
 		const runtime = new RunRuntime({
@@ -289,6 +295,7 @@ describe('Codex CLI runtime executor', () => {
 			newSessionId: () => 'provisional',
 			executor,
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => [codexIssue('CAM-30')],
 		});
 		runtime.startRun('CAM-30');
 		await waitFor(() => runtime.getRun('run-codex-proposal')?.state === 'ready-to-ship');
@@ -318,9 +325,9 @@ describe('Codex CLI runtime executor', () => {
 			newSessionId: () => 'provisional',
 			executor: new CodexCliExecutor({
 				command: ['bun', FIXTURE],
-				loadIssue: () => '{"id":"CAM-20"}',
 			}),
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => [codexIssue('CAM-20')],
 		});
 		runtime.startRun('CAM-20');
 		await waitFor(() => runtime.getRun('run-codex')?.state === 'ready-to-ship');
@@ -339,7 +346,7 @@ describe('Codex CLI runtime executor', () => {
 	test('forwards the run\'s operator decisions into the prompt the real child receives', async () => {
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-37"}',
+			approvedContract: '{"id":"CAM-37"}',
 		});
 		const decisions = ['Keep the smaller seam.', 'Use fetch, not axios.'];
 		const result = await executor.execute({
@@ -364,7 +371,7 @@ describe('Codex CLI runtime executor', () => {
 	test('uses the shared typed internal guidance contract and preserves the approved issue', async () => {
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-mode=waiting-user'],
-			loadIssue: () => '{"id":"GSHIP-768"}',
+			approvedContract: '{"id":"GSHIP-768"}',
 		});
 		const result = await executor.execute({
 			runId: 'run-768-codex',
@@ -392,7 +399,7 @@ describe('Codex CLI runtime executor', () => {
 	test('maps the adapted discriminant to the existing runtime result', async () => {
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-outcome=completed-adapted'],
-			loadIssue: () => '{"id":"CAM-834"}',
+			approvedContract: '{"id":"CAM-834"}',
 		});
 		const result = await executor.execute({
 			runId: 'run-834-codex', issueId: 'GSHIP-834', sessionId: 'session-834-codex',
@@ -405,7 +412,7 @@ describe('Codex CLI runtime executor', () => {
 	test('rejects the invalid completed and contract-change-required combination from GSHIP-831', async () => {
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-mode=invalid-reconciliation'],
-			loadIssue: () => '{"id":"GSHIP-831"}',
+			approvedContract: '{"id":"GSHIP-831"}',
 		});
 		await expect(executor.execute({
 			runId: 'run-invalid-reconciliation-codex',
@@ -423,7 +430,7 @@ describe('Codex CLI runtime executor', () => {
 	test('forwards the CI correction diagnosis guidance into the prompt the real child receives', async () => {
 		const executor = new CodexCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-720"}',
+			approvedContract: '{"id":"CAM-720"}',
 		});
 		const ciFeedback = [
 			'PR: #581',

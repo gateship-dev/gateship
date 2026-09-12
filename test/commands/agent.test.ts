@@ -657,7 +657,7 @@ describe('canonical agent CLI', () => {
 			['issues.abandon', { projectId: PROJECT_ID, issueId: 'GSHIP-1', reason: 'No longer needed.' }, 'POST', `/api/projects/${PROJECT_ID}/issues/GSHIP-1/abandon`],
 			['brief.update', { projectId: PROJECT_ID, objective: 'O', decisions: [], constraints: [], openItems: [], authorization: 'Operator authorizes.' }, 'PUT', `/api/projects/${PROJECT_ID}/brief`],
 			['runs.start', { projectId: PROJECT_ID, issueId: 'GSHIP-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs`],
-			['runs.respond', { projectId: PROJECT_ID, runId: 'run-1', message: 'Proceed.' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/resume`],
+			['runs.respond', { projectId: PROJECT_ID, runId: 'run-1', message: 'Proceed.', authorization: 'Operator explicitly authorizes this response.' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/resume`],
 			['runs.cancel', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/cancel`],
 			['runs.abandon', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/abandon`],
 			['runs.ship', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/ship`],
@@ -680,6 +680,10 @@ describe('canonical agent CLI', () => {
 				expect(JSON.parse(String(captured?.init?.body))).not.toHaveProperty('authorization');
 			}
 			expect(JSON.parse(String(captured?.init?.body))).not.toHaveProperty('projectId');
+			if (operation === 'runs.respond') {
+				expect(JSON.parse(String(captured?.init?.body))).toMatchObject({ authorization: 'Operator explicitly authorizes this response.' });
+				expect(new Headers(captured?.init?.headers).get('x-gateship-operator-authorization')).toBeNull();
+			}
 		}
 	});
 
