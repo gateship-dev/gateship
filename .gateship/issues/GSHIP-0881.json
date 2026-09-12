@@ -1,0 +1,33 @@
+{
+  "id": "GSHIP-881",
+  "title": "Recuperação: repetir verificação falha preservando trabalho e histórico",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-12T13:30:00.928Z",
+  "updatedAt": "2026-09-12T13:30:00.928Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Destravar falhas transitórias de verificação sem refazer implementação: permitir uma tentativa explícita, durável e auditável no worktree preservado, mantendo contrato aprovado e todos os gates. Caso real: GSHIP-869 falhou por timeout; repetição externa passou, mas não vale como gate.",
+    "acceptance": [
+      "Expor runs.retry_verification no agent CLI e API project-scoped: uma chamada explícita repete o verify de run failed cujo último encerramento foi run.verification-failed. Não abrir resume genérico de failed, nem repetir automaticamente.",
+      "Antes de agir, validar run pertencente ao projeto, ausência de outra run ativa/admissão em curso, worktree gerenciado ainda íntegro e contrato aprovado/fingerprint original recuperável. Recusar contrato alterado ou ausência de evidência, done/cancelled e outras causas de falha.",
+      "Executar o verify aprovado inteiro no worktree preservado, sem executor prévio e sem usar resultado externo como aprovação. Se passar, exigir revisão independente fresca, full verify e ship/CI normais. Se falhar novamente, preservar trabalho e falha; não renovar a correção automática.",
+      "Registrar solicitação, origem, motivo, tentativa e resultado duráveis vinculados à run; preservar eventos/contadores anteriores. Expor tentativas e falhas na avaliação existente, com duração e uso reais, sem inventar custo de testes ou redefinir o histórico como sucesso sem falhas.",
+      "Reservar a tentativa e transição atomicamente antes da execução; impedir pedidos concorrentes e respeitar serialização. Após crash, recuperar a tentativa pendente sem duplicar registro ou iniciar executor, refazendo verificação incompleta sem confiar em sucesso não persistido.",
+      "Compatibilidade: permitir a run antiga GSHIP-869 quando os eventos contiverem contrato/fingerprint válidos; nunca aceitar spec atual diferente silenciosamente. Não exigir ter sido criada pela versão nova. Não ampliar retry para falha de evidência, segurança, contexto ou shipping.",
+      "Testar falha->retry->review->full verify, nova falha, contrato divergente/ausente, workspace ausente, concorrência, isolamento de projeto e restart. Asserções de comportamento e métricas, não palavras de prompt. A API tipada é suficiente; não redesenhar UI."
+    ],
+    "boundaries": [
+      "Sem editar .gship diretamente, apagar worktrees, mover main local ou reutilizar estado de outra run. Executor implementa só na própria worktree.",
+      "Não operar a run869 durante implementação: o agente externo fará isso após release verde instalada. Não enfraquecer check:all, CI, review ou contrato.",
+      "Manter Luna medium executor e Sol medium reviewer independente. Sem credenciais, dependências novas, framework de retries ou política automática de orçamento."
+    ],
+    "verify": [
+      "bun test test/runtime/run-state.test.ts test/runtime/run-runtime.test.ts test/runtime/run-review.test.ts test/runtime/run-evaluation.test.ts",
+      "bun test test/web/run-api.test.ts test/web/project-scoped-run-api.test.ts test/commands/agent.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
