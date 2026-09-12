@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-882",
+  "title": "Recuperação: limitar retry por falha após correção, não por run inteira",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-12T16:22:32.612Z",
+  "updatedAt": "2026-09-12T16:22:32.612Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Ajustar o limite da GSHIP-881: permitir uma tentativa explícita de verificação por nova falha após uma correção concluída pelo executor, sem renovar retries falhos ou contadores. Destravar a mesma run GSHIP-869, cujo primeiro retry passou antes de outra correção e nova falha.",
+    "acceptance": [
+      "Manter runs.retry_verification explícito. Primeira falha elegível conserva o comportamento881. Após retry anterior bem-sucedido, admitir nova tentativa somente se ocorreu nova rodada de correção concluída e registrada pelo runtime, seguida de nova run.verification-failed.",
+      "Vincular cada tentativa à falha que recupera usando identidade/ordem durável dos eventos existentes. Recusar segunda solicitação para a mesma falha, retry que falhou e nova falha sem correção concluída intermediária; não confiar em texto do agente nem só incremento manual de estado.",
+      "Reservar atomicamente antes de executar, preservar serialização/admissão e recuperação de crash. Restart retoma a tentativa pendente correta sem duplicar pedido nem confundir resultado antigo com atual, inclusive quando já há mais de uma tentativa na mesma run.",
+      "Preservar validação de projeto, worktree, contrato/fingerprint original, motivo e causas admitidas. Retry executa todo verify aprovado sem executor prévio; sucesso exige nova revisão independente, full verify e ship/CI. Nenhum gate ou orçamento é renovado ou dispensado.",
+      "Acumular tentativas, falhas e durações reais na avaliação existente e preservar eventos/contadores. Usar numeração coerente entre tentativas, sem custo inventado, reset de fixRounds ou alteração retroativa dos eventos antigos.",
+      "Compatibilidade com eventos881: recuperar869 existente com primeiro retry passed, correção posterior run.work-completed e nova falha. Sem migração manual de estado, nova run869, framework de retry, dependência ou mudança na UI.",
+      "Testes comportamentais: retry passed->correção concluída->nova falha->retry permitido; retry failed e duplicatas recusados; ausência de correção recusada; concorrência e restart da segunda tentativa; contrato/worktree inválidos e métricas acumuladas."
+    ],
+    "boundaries": [
+      "Operador aprovou explicitamente este ajuste com 'sim' em12/09 após proposta de uma tentativa por nova falha após correção real, sem renovar contadores.",
+      "Não operar869 nem editar sua worktree; recuperação real pelo agente externo após release verde instalada. Não editar .gship diretamente, mover main local ou apagar trabalho.",
+      "Reutilizar eventos e validações existentes; mudança pontual do limite881 e testes. Luna medium executor, Sol medium reviewer. Sem credenciais, novos serviços ou retry automático."
+    ],
+    "verify": [
+      "bun test test/runtime/run-runtime.test.ts test/runtime/run-state.test.ts test/runtime/run-evaluation.test.ts",
+      "bun test test/web/run-api.test.ts test/web/project-scoped-run-api.test.ts test/commands/agent.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "9666c3bb701c65222acdc94bf6ada15c25a5db4c1cb6d755cd4215542ff729f0",
+    "approvedAt": "2026-09-12T16:22:32.612Z"
+  }
+}
