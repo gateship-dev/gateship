@@ -6,10 +6,13 @@
 // explicit retry and still refuses a second concurrent attempt.
 
 import { describe, expect, test } from 'bun:test';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 
 import {
-	RunRuntime,
+	RunRuntime as BaseRunRuntime,
 	RuntimeUnavailableError,
+	type RunRuntimeOptions,
 	type RuntimeExecutionInput,
 	type RuntimeCycleQuestionResolver,
 	type RuntimeShipInput,
@@ -22,6 +25,22 @@ import { RunStore } from '../../src/runtime/run-store.ts';
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
 
+const TEST_SPEC = { version: 2 as const, objective: 'Shipping test', acceptance: ['Ship the approved change'], verify: ['bun test'] };
+const TEST_ISSUES: IssueEntry[] = ['CAM-583', 'CAM-584', 'GSHIP-649', 'GSHIP-732'].map((id) => ({
+	id, title: id, stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: TEST_SPEC,
+	approval: { fingerprint: fingerprintSpec(TEST_SPEC), approvedAt: '' },
+}));
+const approvedRunFields = (issueId: string) => {
+	const issue = TEST_ISSUES.find((entry) => entry.id === issueId) ?? { ...TEST_ISSUES[0]!, id: issueId, title: issueId };
+	return { specProfile: { version: 'v2' as const, fingerprint: fingerprintSpec(issue.spec!), counts: { acceptance: 1, boundaries: 0, verify: 1, evidence: 0 } }, approvedContract: JSON.stringify(issue) };
+};
+
+class RunRuntime extends BaseRunRuntime {
+	constructor(options: RunRuntimeOptions) {
+		super({ ...options, listBacklog: options.listBacklog ?? (() => TEST_ISSUES) });
+	}
+}
+
 function createRuntime(shipper?: RuntimeShipper): RunRuntime {
 	return new RunRuntime({
 		cwd: '/project',
@@ -30,6 +49,7 @@ function createRuntime(shipper?: RuntimeShipper): RunRuntime {
 		newSessionId: () => 'session-ship',
 		executor: { execute: async () => ({ outcome: 'completed', summary: 'change written' }) },
 		verifier: { verify: async () => ({ ok: true }) },
+		listBacklog: () => TEST_ISSUES,
 		...(shipper === undefined ? {} : { shipper }),
 	});
 }
@@ -94,6 +114,7 @@ function crashedCiRun(runId: string, sessionId: string): RunStore {
 		sessionId,
 		workspacePath: `/workspaces/${runId}`,
 		createdAt: '2026-08-23T10:00:00Z',
+		...approvedRunFields('GSHIP-720'),
 	});
 	for (const toState of ['working', 'verify', 'review', 'full-verify', 'ready-to-ship', 'shipping'] as const) {
 		store.transition({ runId, toState, kind: `run.${toState}`, createdAt: '2026-08-23T10:00:01Z' });
@@ -168,6 +189,7 @@ describe('shipping a run', () => {
 			},
 			executor: { execute: async () => ({ outcome: 'completed' }) },
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => TEST_ISSUES,
 			shipper: { ship: async () => ({ outcome: 'merged', prNumber: 385 }) },
 		});
 
@@ -932,6 +954,7 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			verifier: { verify: async () => ({ ok: true }) },
 			fullVerifier,
 			shipper,
+			listBacklog: () => TEST_ISSUES,
 			...(cycleQuestionResolver === undefined ? {} : { cycleQuestionResolver }),
 		});
 		return { runtime, executions };

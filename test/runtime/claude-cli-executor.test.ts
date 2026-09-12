@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import {
@@ -22,6 +24,8 @@ import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const FIXTURE = join(import.meta.dir, '..', 'fixtures', 'runtime', 'claude-cli-fixture.ts');
+const TEST_SPEC = { version: 2 as const, objective: 'Claude executor test', acceptance: ['Run the fixture'], verify: ['bun test'] };
+const approvedIssue = (id: string): IssueEntry => ({ id, title: id, stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: TEST_SPEC, approval: { fingerprint: fingerprintSpec(TEST_SPEC), approvedAt: '' } });
 
 async function waitFor(predicate: () => boolean): Promise<void> {
 	const deadline = Date.now() + 2_000;
@@ -284,7 +288,7 @@ describe('Claude CLI runtime executor', () => {
 		let slot: ModelSlot = { model: 'opus', effort: 'xhigh' };
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-24"}',
+			approvedContract: '{"id":"CAM-24"}',
 			// Consulted per spawn, never at construction: this is what lets the
 			// operator change the setting without restarting the service.
 			resolveModel: () => slot,
@@ -320,7 +324,7 @@ describe('Claude CLI runtime executor', () => {
 		const events: Array<{ kind: string }> = [];
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-25"}',
+			approvedContract: '{"id":"CAM-25"}',
 			resolveModel: () => ({}),
 		});
 		const result = await executor.execute({
@@ -367,7 +371,7 @@ describe('Claude CLI runtime executor', () => {
 	test('rejects the invalid completed and contract-change-required combination from GSHIP-831', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-mode=invalid-reconciliation'],
-			loadIssue: () => '{"id":"GSHIP-831"}',
+			approvedContract: '{"id":"GSHIP-831"}',
 		});
 		await expect(executor.execute({
 			runId: 'run-invalid-reconciliation-claude',
@@ -436,7 +440,7 @@ describe('Claude CLI runtime executor', () => {
 		);
 		for (const section of [
 			'Decisions the operator has already made in this run',
-			'The operator answered your previous request',
+			'Guidance data (JSON):',
 			'Review findings:',
 			'Full verification output:',
 		]) {
@@ -526,7 +530,7 @@ describe('Claude CLI runtime executor', () => {
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-cost=full'],
-			loadIssue: () => '{"id":"CAM-32"}',
+			approvedContract: '{"id":"CAM-32"}',
 			resolveModel: () => ({ model: 'opus', effort: 'high' }),
 		});
 		await executor.execute({
@@ -569,7 +573,7 @@ describe('Claude CLI runtime executor', () => {
 		const events: Array<{ kind: string }> = [];
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-33"}',
+			approvedContract: '{"id":"CAM-33"}',
 		});
 		await executor.execute({
 			runId: 'run-33',
@@ -588,7 +592,7 @@ describe('Claude CLI runtime executor', () => {
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-20"}',
+			approvedContract: '{"id":"CAM-20"}',
 		});
 		const result = await executor.execute({
 			runId: 'run-20',
@@ -617,7 +621,7 @@ describe('Claude CLI runtime executor', () => {
 	test('carries the dedicated credential to the real executor child, alongside CLAUDE_CONFIG_DIR', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-704"}',
+			approvedContract: '{"id":"CAM-704"}',
 			sourceEnv: { ...process.env, CLAUDE_CONFIG_DIR: '/operator/claude' },
 			resolveClaudeCredential: () => 'sk-ant-oat01-executor-secret',
 		});
@@ -638,7 +642,7 @@ describe('Claude CLI runtime executor', () => {
 	test('an unconfigured credential leaves CLAUDE_CONFIG_DIR reaching the child exactly as before this issue', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-705"}',
+			approvedContract: '{"id":"CAM-705"}',
 			sourceEnv: { ...process.env, CLAUDE_CONFIG_DIR: '/operator/claude' },
 		});
 		const result = await executor.execute({
@@ -661,7 +665,7 @@ describe('Claude CLI runtime executor', () => {
 		const events: Array<{ kind: string; eventClass?: string }> = [];
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-34"}',
+			approvedContract: '{"id":"CAM-34"}',
 		});
 		await executor.execute({
 			runId: 'run-34',
@@ -684,7 +688,7 @@ describe('Claude CLI runtime executor', () => {
 	test('reports a real waiting-user outcome and includes operator guidance on resume', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-mode=waiting-user'],
-			loadIssue: () => '{"id":"CAM-22"}',
+			approvedContract: '{"id":"CAM-22"}',
 		});
 		const result = await executor.execute({
 			runId: 'run-22',
@@ -705,7 +709,7 @@ describe('Claude CLI runtime executor', () => {
 	test('maps the adapted discriminant to the existing runtime result', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-outcome=completed-adapted'],
-			loadIssue: () => '{"id":"CAM-834"}',
+			approvedContract: '{"id":"CAM-834"}',
 		});
 		const result = await executor.execute({
 			runId: 'run-834-claude', issueId: 'GSHIP-834', sessionId: 'session-834-claude',
@@ -718,7 +722,7 @@ describe('Claude CLI runtime executor', () => {
 	test('labels internal orchestrator guidance as binding and non-human', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"GSHIP-768"}',
+			approvedContract: '{"id":"GSHIP-768"}',
 		});
 		const result = await executor.execute({
 			runId: 'run-768-claude',
@@ -750,9 +754,10 @@ describe('Claude CLI runtime executor', () => {
 			newSessionId: () => 'session-claude-proposal',
 			executor: new ClaudeCliExecutor({
 				command: ['bun', FIXTURE, '--fixture-proposal=Extrair o parser de eventos'],
-				loadIssue: () => '{"id":"CAM-31"}',
+				approvedContract: '{"id":"CAM-31"}',
 			}),
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => [approvedIssue('CAM-31')],
 		});
 		runtime.startRun('CAM-31');
 		await waitFor(() => runtime.getRun('run-claude-proposal')?.state === 'ready-to-ship');
@@ -774,7 +779,7 @@ describe('Claude CLI runtime executor', () => {
 		let childPid = 0;
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE, '--fixture-mode=wait'],
-			loadIssue: () => '{"id":"CAM-21"}',
+			approvedContract: '{"id":"CAM-21"}',
 			onSpawn: (pid) => {
 				childPid = pid;
 			},
@@ -786,7 +791,8 @@ describe('Claude CLI runtime executor', () => {
 			newId: () => 'run-cancel-real',
 			newSessionId: () => 'session-cancel-real',
 			executor,
-			verifier: { verify: async () => ({ ok: true }) },
+		verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => [approvedIssue('CAM-21')],
 		});
 		const run = await runtime.startRun('CAM-21');
 		await waitFor(() => childPid > 0 && isProcessAlive(childPid));
@@ -803,7 +809,7 @@ describe('Claude CLI runtime executor', () => {
 	test('forwards the run\'s operator decisions into the prompt the real child receives', async () => {
 		const executor = new ClaudeCliExecutor({
 			command: ['bun', FIXTURE],
-			loadIssue: () => '{"id":"CAM-37"}',
+			approvedContract: '{"id":"CAM-37"}',
 		});
 		const decisions = ['Keep the smaller seam.', 'Use fetch, not axios.'];
 		const result = await executor.execute({
@@ -937,12 +943,12 @@ describe('buildWorkPrompt operator decisions (GSHIP-637)', () => {
 		expect(prompt).toContain('1. Keep the smaller seam.');
 		expect(prompt).toContain('2. Use fetch, not axios.');
 		expect(prompt).toContain(
-			'The operator answered your previous request. Treat this as the decision for the current turn:',
+			'Guidance data (JSON):',
 		);
 		expect(prompt).toContain('Use the smaller migration.');
 		// The history block comes first, then the current turn's own answer.
 		expect(prompt.indexOf('Decisions the operator')).toBeLessThan(
-			prompt.indexOf('The operator answered your previous request'),
+			prompt.indexOf('Guidance data (JSON):'),
 		);
 		expect(prompt.indexOf('2. Use fetch, not axios.')).toBeLessThan(
 			prompt.indexOf('Use the smaller migration.'),

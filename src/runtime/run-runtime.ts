@@ -50,6 +50,37 @@ function commandPayload(payload: Record<string, unknown>, source?: string): Reco
 	return { ...payload, ...(source === undefined ? {} : { source }) };
 }
 
+function isIssueRecordShape(record: Record<string, unknown>, issueId: string): boolean {
+	const stages = ['idea', 'specified', 'planned', 'shipped'];
+	const statuses = ['open', 'abandoned'];
+	return record['id'] === issueId
+		&& typeof record['title'] === 'string'
+		&& stages.includes(String(record['stage']))
+		&& statuses.includes(String(record['status']))
+		&& Array.isArray(record['blockedBy'])
+		&& record['blockedBy'].every((id) => typeof id === 'string')
+		&& typeof record['createdAt'] === 'string'
+		&& typeof record['updatedAt'] === 'string';
+}
+
+function isApprovedIssueRecord(record: Record<string, unknown>, registeredFingerprint?: string): boolean {
+	const approval = record['approval'];
+	if (approval === null || typeof approval !== 'object' || Array.isArray(approval)) return false;
+	const approvalRecord = approval as Record<string, unknown>;
+	const fingerprint = approvalRecord['fingerprint'];
+	if (typeof fingerprint !== 'string' || fingerprint.length === 0 || typeof approvalRecord['approvedAt'] !== 'string') return false;
+	const spec = record['spec'];
+	return validateSpec(spec).ok
+		&& fingerprint === fingerprintSpec(spec as Parameters<typeof fingerprintSpec>[0])
+		&& (registeredFingerprint === undefined || fingerprint === registeredFingerprint);
+}
+
+function isValidApprovedIssueRecord(value: unknown, issueId: string, registeredFingerprint?: string): value is IssueEntry {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+	const record = value as Record<string, unknown>;
+	return isIssueRecordShape(record, issueId) && isApprovedIssueRecord(record, registeredFingerprint);
+}
+
 /** Single `runtime_settings` row holding the executor handoff opt-in (GSHIP-722), beside `chain-runs`. */
 const EXECUTOR_HANDOFF_ENABLED_KEY = 'executor-handoff-enabled';
 
@@ -85,6 +116,9 @@ export interface RuntimeExecutionInput {
 	ciFeedback?: string;
 	/** Explicit response supplied by the operator when resuming a paused run. */
 	operatorGuidance?: string;
+	/** Durable provenance for the latest operator guidance, independent of its text. */
+	operatorGuidanceSource?: string;
+	operatorGuidanceAuthorizationEvidence?: 'explicit' | 'absent' | 'unknown';
 	/** Non-binding guidance produced by the chain reconciler for this first execution. */
 	reconciliationGuidance?: string;
 	/**
@@ -103,6 +137,8 @@ export interface RuntimeExecutionInput {
 	 * is not re-litigated on the next review; empty on a run's first review.
 	 */
 	operatorDecisions?: readonly string[];
+	/** The immutable approved issue record captured when this run was admitted. */
+	approvedContract?: string;
 	/**
 	 * Durable-state-and-diff handoff (GSHIP-722), present only on the one turn
 	 * that opens the alternate provider's brand new native session after the
@@ -822,6 +858,7 @@ export class RunRuntime {
 			createdAt: this.#now(),
 			...(reconciliationGuidance === undefined ? {} : { reconciliationGuidance }),
 			 specProfile,
+			...(admittedIssue === undefined ? {} : { approvedContract: JSON.stringify(admittedIssue) }),
 			...(admittedIssue?.spec !== undefined && 'version' in admittedIssue.spec && admittedIssue.spec.version === 2 && admittedIssue.spec.research !== undefined
 				? { research: admittedIssue.spec.research } : {}),
 		});
@@ -854,11 +891,14 @@ export class RunRuntime {
 		return () => { this.#admissionFences.delete(token); };
 	}
 
-	resumeRun(runId: string, operatorGuidance?: string, source?: string): RunRecord {
+	resumeRun(runId: string, operatorGuidance?: string, source?: string, authorizationEvidence: 'explicit' | 'absent' | 'unknown' = 'unknown'): RunRecord {
 		const guidance = operatorGuidance?.trim();
 		const run = this.#resumableRun(runId, guidance);
 		if (guidance !== undefined && guidance.length > 0) {
-			this.#emit(run.id, 'run.operator-guidance', commandPayload({ text: guidance }, source));
+			this.#emit(run.id, 'run.operator-guidance', commandPayload({
+				text: guidance,
+				authorizationEvidence,
+			}, source));
 		}
 		const recoveredCycle = this.#recoveredCycleAttempt(run);
 		const recoveredVerification = this.#unconsumedVerificationAttempt(run.id);
@@ -2076,7 +2116,7 @@ export class RunRuntime {
 		if (pendingQuestion !== null) {
 			return this.#answerCycleQuestion(
 				run, signal, pendingQuestion.questionId, pendingQuestion.finding,
-				pendingQuestion.origin, executionInput.ciFeedback,
+				pendingQuestion.origin, executionInput.ciFeedback, executionInput.approvedContract,
 			);
 		}
 		const review = await reviewer.review(executionInput);
@@ -2088,7 +2128,7 @@ export class RunRuntime {
 			return this.#enterFullVerify(run, signal, executionInput, 'run.review-clean');
 		}
 		if ((this.#store.getRun(run.id)?.fixRounds ?? 0) >= 1) {
-			return this.#askCycleQuestion(run, signal, review.detail, 'review', executionInput.ciFeedback);
+			return this.#askCycleQuestion(run, signal, review.detail, 'review', executionInput.ciFeedback, executionInput.approvedContract);
 		}
 		this.#transition(run.id, 'working', 'run.review-fix-requested', {
 			payload: { findings: review.detail },
@@ -2377,7 +2417,7 @@ export class RunRuntime {
 		if (pendingQuestion !== null) {
 			return this.#answerCycleQuestion(
 				run, signal, pendingQuestion.questionId, pendingQuestion.finding,
-				pendingQuestion.origin, executionInput.ciFeedback,
+				pendingQuestion.origin, executionInput.ciFeedback, executionInput.approvedContract,
 			);
 		}
 		const result = await fullVerifier.verify(executionInput);
@@ -2391,7 +2431,7 @@ export class RunRuntime {
 		}
 		const detail = result.detail ?? 'Full project verification failed.';
 		if (this.#fullVerifyFixUsed(run.id)) {
-			return this.#askCycleQuestion(run, signal, detail, 'full-verify', executionInput.ciFeedback);
+			return this.#askCycleQuestion(run, signal, detail, 'full-verify', executionInput.ciFeedback, executionInput.approvedContract);
 		}
 		this.#transition(run.id, 'working', 'run.full-verify-fix-requested', {
 			payload: { findings: detail },
@@ -2466,6 +2506,7 @@ export class RunRuntime {
 		const decisionEvents = this.#store.listRunDecisionEvents(run.id);
 		const handoff = selectExecutorHandoff(decisionEvents);
 		const onAlternate = handoff !== null && handoff.outcome !== 'refused';
+		const approvedContract = this.#requireApprovedContract(run.id, run.issueId);
 		return {
 			runId: run.id,
 			issueId: run.issueId,
@@ -2477,6 +2518,7 @@ export class RunRuntime {
 			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
 			setSessionId: (sessionId: string) => this.#setSessionId(run, sessionId),
 			operatorDecisions: selectOperatorDecisions(decisionEvents),
+			...(approvedContract === undefined ? {} : { approvedContract }),
 			...(this.#researchBundle(run) === undefined ? {} : { research: this.#researchBundle(run) }),
 			executorHandoffAllowed: handoff === null && this.#store.getRuntimeSetting(EXECUTOR_HANDOFF_ENABLED_KEY) === 'true',
 			...(onAlternate ? { executorRoute: { providerId: handoff.to, sessionId: handoff.sessionId } } : {}),
@@ -2493,6 +2535,7 @@ export class RunRuntime {
 			...(attempt.operatorGuidance === undefined
 				? {}
 				: { operatorGuidance: attempt.operatorGuidance }),
+			...(this.#latestOperatorGuidance(decisionEvents) ?? {}),
 			...(attempt.reconciliationGuidance === undefined
 				? {}
 				: { reconciliationGuidance: attempt.reconciliationGuidance }),
@@ -2500,6 +2543,58 @@ export class RunRuntime {
 				? {}
 				: { internalGuidance: attempt.internalGuidance }),
 		};
+	}
+
+	#latestOperatorGuidance(events: readonly RunEvent[]): Pick<RuntimeExecutionInput, 'operatorGuidance' | 'operatorGuidanceSource' | 'operatorGuidanceAuthorizationEvidence'> | null {
+		for (let index = events.length - 1; index >= 0; index -= 1) {
+			const event = events[index];
+			if (event?.kind !== 'run.operator-guidance') continue;
+			const text = event.payload['text'];
+			if (typeof text !== 'string' || text.trim().length === 0) continue;
+			const source = event.payload['source'];
+			const authorization = event.payload['authorizationEvidence'];
+			return {
+				operatorGuidance: text,
+				...(typeof source === 'string' ? { operatorGuidanceSource: source } : {}),
+				operatorGuidanceAuthorizationEvidence: authorization === 'explicit' || authorization === 'absent' || authorization === 'unknown'
+					? authorization : 'unknown',
+			};
+		}
+		return null;
+	}
+
+	#approvedContract(runId: string): string | undefined {
+		const created = this.#store.listRunDecisionEvents(runId).find((event) => event.kind === 'run.created');
+		const contract = created?.payload['approvedContract'];
+		if (typeof contract !== 'string' || contract.trim().length === 0) return undefined;
+		return contract;
+	}
+
+	#requireApprovedContract(runId: string, issueId: string): string {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const created = events.find((event) => event.kind === 'run.created');
+		const profile = created?.payload['specProfile'];
+		const fingerprint = profile !== null && typeof profile === 'object' && !Array.isArray(profile)
+			? (profile as Record<string, unknown>)['fingerprint'] : null;
+		const contract = this.#approvedContract(runId);
+		const registeredFingerprint = typeof fingerprint === 'string' && /^[a-f0-9]{64}$/.test(fingerprint)
+			? fingerprint : undefined;
+		if (contract === undefined) {
+			if (registeredFingerprint === undefined) {
+				throw new RuntimeConflictError('approved issue contract is unavailable for this run');
+			}
+			const recovered = this.#findIssue(issueId);
+			if (!isValidApprovedIssueRecord(recovered, issueId, registeredFingerprint)) {
+				throw new RuntimeConflictError('approved issue contract is unavailable for this run');
+			}
+			return JSON.stringify(recovered);
+		}
+		try {
+			if (!isValidApprovedIssueRecord(JSON.parse(contract), issueId, registeredFingerprint)) throw new Error('invalid approved issue record');
+		} catch {
+			throw new RuntimeConflictError('approved issue contract is inconsistent for this run');
+		}
+		return contract;
 	}
 
 	#setSessionId(run: RunRecord, sessionId: string): void {

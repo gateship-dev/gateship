@@ -1,9 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { createRunEventStream, startWebServer } from '../../src/commands/web.ts';
-import { RunRuntime } from '../../src/runtime/run-runtime.ts';
+import { RunRuntime as BaseRunRuntime, type RunRuntimeOptions } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
+
+const HTTP_SPEC = { version: 2 as const, objective: 'HTTP test', acceptance: ['Run HTTP flow'], verify: ['bun test'] };
+const HTTP_ISSUE: IssueEntry = { id: 'GSHIP-12', title: 'GSHIP-12', stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: HTTP_SPEC, approval: { fingerprint: fingerprintSpec(HTTP_SPEC), approvedAt: '' } };
+const WEB_ISSUE = (id: string): IssueEntry => ({ ...HTTP_ISSUE, id, title: id });
+const WEB_BACKLOG = ['CAM-13', 'CAM-14', 'GSHIP-12', 'GSHIP-611', 'GSHIP-685'].map(WEB_ISSUE);
+
+class RunRuntime extends BaseRunRuntime {
+	constructor(options: RunRuntimeOptions) {
+		super({ ...options, listBacklog: options.listBacklog ?? (() => WEB_BACKLOG) });
+	}
+}
 
 async function waitForReady(runtime: RunRuntime, runId: string): Promise<void> {
 	const deadline = Date.now() + 2_000;
@@ -102,6 +115,7 @@ describe('durable web run API', () => {
 				},
 			},
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => [HTTP_ISSUE],
 		});
 		const handle = startWebServer({
 			port: 0,
@@ -334,6 +348,7 @@ describe('durable web run API', () => {
 				},
 			},
 			verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => [WEB_ISSUE('CAM-14')],
 		});
 		const handle = startWebServer({
 			port: 0,
@@ -361,8 +376,9 @@ describe('durable web run API', () => {
 				method: 'POST',
 				headers: {
 					origin,
-					'content-type': 'application/json',
-					'x-gateship-command-source': 'agent-cli',
+				'content-type': 'application/json',
+				'x-gateship-command-source': 'agent-cli',
+				'x-gateship-operator-authorization': 'explicit-operator-authorization',
 				},
 				body: JSON.stringify({ message: 'Use the smaller seam.' }),
 			});
@@ -371,8 +387,9 @@ describe('durable web run API', () => {
 			expect(guidance).toEqual([undefined, 'Use the smaller seam.']);
 			expect(runtime.listRunEvents('run-answer')[3]).toMatchObject({
 				kind: 'run.operator-guidance',
-				payload: { text: 'Use the smaller seam.', source: 'agent-cli' },
+				payload: { text: 'Use the smaller seam.', source: 'agent-cli', authorizationEvidence: 'unknown' },
 			});
+			expect(JSON.stringify(runtime.listRunEvents('run-answer')[3]?.payload)).not.toContain('explicit-operator-authorization');
 		} finally {
 			await handle.stop();
 			runtime.close();

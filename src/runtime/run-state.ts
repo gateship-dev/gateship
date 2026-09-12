@@ -55,7 +55,7 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	// resume: abandoning it is the explicit way out of the provider session.
 	// A crash recovered out of `review` resumes in the reviewer, so the diff
 	// already verified is reviewed again instead of re-executed.
-	interrupted: ['research', 'working', 'review', 'cancelled'],
+	interrupted: ['research', 'working', 'review', 'full-verify', 'failed', 'cancelled'],
 	cancelled: [],
 };
 

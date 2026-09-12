@@ -297,6 +297,8 @@ export interface CreateRunInput {
 	reconciliationGuidance?: string;
 	specProfile?: SpecProfile;
 	research?: ResearchContract;
+	/** Immutable approved issue record captured at admission. */
+	approvedContract?: string;
 }
 
 export interface TransitionRunInput {
@@ -926,6 +928,7 @@ export class RunStore {
 			...(input.reconciliationGuidance === undefined || input.reconciliationGuidance.length === 0
 				? {} : { reconciliationGuidance: input.reconciliationGuidance }),
 			...(input.research === undefined ? {} : { research: input.research }),
+			...(input.approvedContract === undefined ? {} : { approvedContract: input.approvedContract }),
 		};
 		const create = this.#db.transaction(() => {
 			this.#db.query(`

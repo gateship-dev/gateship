@@ -75,6 +75,7 @@ function reviewInput(overrides: Partial<RuntimeExecutionInput> = {}): RuntimeExe
 	return {
 		runId: 'run-review',
 		issueId: 'CAM-577',
+		approvedContract: '{"id":"CAM-577"}',
 		sessionId: 'session-implementer',
 		resume: false,
 		cwd: createTestTmpdir('gship-reviewer-'),

@@ -1,7 +1,5 @@
-import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
-import { getIssueOnMain } from '../commands/issue-get.ts';
 import type { AgentSession } from './agent-session.ts';
 import {
 	buildReviewPrompt,
@@ -20,7 +18,6 @@ import type {
 	RuntimeReviewer,
 	RuntimeReviewResult,
 } from './run-runtime.ts';
-import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 export interface CodexCliReviewerOptions {
 	session?: AgentSession;
@@ -34,14 +31,9 @@ export interface CodexCliReviewerOptions {
 	/** Internal/test seam; production uses the shared ten-minute constant. */
 	activityTimeoutMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
+	approvedContract?: string;
 	runGit?: GitCommandRunner;
 	onSpawn?: (pid: number) => void;
-}
-
-function defaultLoadIssue(cwd: string, issueId: string): string {
-	const issue = getIssueOnMain(cwd, issueId, spawnSync, RUNTIME_SOURCE_REF);
-	if (!issue.ok) throw new Error(`issue not found on ${RUNTIME_SOURCE_REF}: ${issueId}`);
-	return issue.content;
 }
 
 function sessionOptions(options: CodexCliReviewerOptions): Omit<
@@ -74,7 +66,8 @@ export class CodexCliReviewer implements RuntimeReviewer {
 	}
 
 	async review(input: RuntimeExecutionInput): Promise<RuntimeReviewResult> {
-		const issue = (this.#options.loadIssue ?? defaultLoadIssue)(input.cwd, input.issueId);
+		const issue = (input.approvedContract ?? this.#options.approvedContract)?.trim();
+		if (issue === undefined || issue.length === 0) throw new Error('approved issue contract is unavailable for this run');
 		const change = collectChange(this.#options.runGit ?? defaultRunGit, input.cwd);
 		const result = await this.#session.run({
 			sessionId: randomUUID(),
@@ -82,6 +75,7 @@ export class CodexCliReviewer implements RuntimeReviewer {
 			cwd: input.cwd,
 			prompt: buildReviewPrompt(
 				input.issueId, issue, change, input.operatorDecisions ?? [], input.ciFeedback,
+				input.operatorGuidance, input.operatorGuidanceSource, input.operatorGuidanceAuthorizationEvidence,
 			),
 			outputSchema: REVIEW_RESULT_SCHEMA,
 			signal: input.signal,

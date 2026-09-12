@@ -2,12 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { startWebServer } from '../../src/commands/web.ts';
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import type { ProviderAuth, ProviderStatus } from '../../src/runtime/provider-auth.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
+
+const PROVIDER_SPEC = { version: 2 as const, objective: 'Provider auth test', acceptance: ['Provider behavior'], verify: ['bun test'] };
+const PROVIDER_ISSUE: IssueEntry = {
+	id: 'GSHIP-700', title: 'GSHIP-700', stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '',
+	spec: PROVIDER_SPEC, approval: { fingerprint: fingerprintSpec(PROVIDER_SPEC), approvedAt: '' },
+};
 
 const providers: ProviderStatus[] = [
 	{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'external' },
@@ -90,7 +98,8 @@ describe('provider auth web API', () => {
 					);
 				},
 			},
-			verifier: { verify: async () => ({ ok: true }) },
+				verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => [PROVIDER_ISSUE],
 		});
 		runtime.startRun('GSHIP-700');
 		await waitFor(() => runtime.listRuns()[0]?.state === 'waiting-provider');

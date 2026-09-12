@@ -1990,7 +1990,7 @@ async function cancelDurableRun(
 
 async function readOptionalOperatorGuidance(
 	request: Request,
-): Promise<string | Response | undefined> {
+): Promise<{ message: string; authorizationEvidence: 'explicit' | 'unknown' } | Response | undefined> {
 	if (request.headers.get('content-type')?.includes('application/json') !== true) return undefined;
 	let body: unknown;
 	try {
@@ -2002,7 +2002,7 @@ async function readOptionalOperatorGuidance(
 		);
 	}
 	const message = body !== null && typeof body === 'object'
-		? (body as { message?: unknown }).message
+		? (body as { message?: unknown; authorization?: unknown }).message
 		: undefined;
 	if (typeof message !== 'string' || message.trim().length === 0) {
 		return Response.json(
@@ -2010,7 +2010,15 @@ async function readOptionalOperatorGuidance(
 			{ status: 400 },
 		);
 	}
-	return message.trim();
+	const authorization = body !== null && typeof body === 'object'
+		? (body as { authorization?: unknown }).authorization : undefined;
+	if (authorization !== undefined && (typeof authorization !== 'string' || authorization.trim().length === 0)) {
+		return Response.json(
+			{ ok: false, code: 'invalid-request', message: 'Authorization must be non-empty text when provided.' },
+			{ status: 400 },
+		);
+	}
+	return { message: message.trim(), authorizationEvidence: authorization === undefined ? 'unknown' : 'explicit' };
 }
 
 async function resumeDurableRun(
@@ -2026,12 +2034,17 @@ async function resumeDurableRun(
 			{ status: 404 },
 		);
 	}
-	const operatorGuidance = await readOptionalOperatorGuidance(request);
-	if (operatorGuidance instanceof Response) return operatorGuidance;
+	const guidance = await readOptionalOperatorGuidance(request);
+	if (guidance instanceof Response) return guidance;
 	try {
 		admit?.();
 		return Response.json(
-			{ ok: true, run: runtime.resumeRun(runId, operatorGuidance, commandSource(request)) },
+			{ ok: true, run: runtime.resumeRun(
+				runId,
+				guidance?.message,
+				commandSource(request) ?? 'web',
+				guidance?.authorizationEvidence ?? 'unknown',
+			) },
 			{ status: 202 },
 		);
 	} catch (error) {

@@ -7,6 +7,8 @@
 
 import { describe, expect, test } from 'bun:test';
 
+import { fingerprintSpec } from '../../src/issues/spec.ts';
+import type { IssueEntry } from '../../src/issues/types.ts';
 import { createDefaultRunRuntimeOptions, startWebServer } from '../../src/commands/web.ts';
 import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
@@ -15,6 +17,12 @@ import { GitIssueVerifier } from '../../src/runtime/git-runtime.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
+
+const REVIEW_SPEC = { version: 2 as const, objective: 'Web review test', acceptance: ['Review behavior'], verify: ['bun test'] };
+const REVIEW_ISSUE: IssueEntry = {
+	id: 'CAM-577', title: 'CAM-577', stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '',
+	spec: REVIEW_SPEC, approval: { fingerprint: fingerprintSpec(REVIEW_SPEC), approvedAt: '' },
+};
 
 async function readStream(body: ReadableStream<Uint8Array>, until: string): Promise<string> {
 	const reader = body.getReader();
@@ -59,9 +67,10 @@ describe('web composition of the independent reviewer', () => {
 			newSessionId: () => 'session-web-review',
 			executor: { execute: async () => ({ outcome: 'completed', summary: 'change written' }) },
 			verifier: { verify: async () => ({ ok: true }) },
-			reviewer: {
+			 reviewer: {
 				review: async () => ({ verdict: 'findings', detail: 'src/a.ts: unhandled null' }),
 			},
+			listBacklog: () => [REVIEW_ISSUE],
 		});
 		const handle = startWebServer({
 			port: 0,

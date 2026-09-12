@@ -1,11 +1,9 @@
-import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { getIssueOnMain } from '../commands/issue-get.ts';
 import {
 	AgentProcessActivityTimeoutError,
 	type AgentProcessResult,
@@ -39,7 +37,6 @@ import type {
 	RuntimeExecutionResult,
 	RuntimeExecutor,
 } from './run-runtime.ts';
-import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const MAX_ACTIVITY_TEXT = 2_000;
@@ -56,6 +53,7 @@ export interface CodexCliExecutorOptions {
 	/** Internal/test seam; production uses the shared ten-minute constant. */
 	activityTimeoutMs?: number;
 	loadIssue?: (cwd: string, issueId: string) => string;
+	approvedContract?: string;
 	onSpawn?: (pid: number) => void;
 }
 
@@ -402,23 +400,18 @@ export async function probeCodexModel(
 	}
 }
 
-function defaultLoadIssue(cwd: string, issueId: string): string {
-	const issue = getIssueOnMain(cwd, issueId, spawnSync, RUNTIME_SOURCE_REF);
-	if (!issue.ok) throw new Error(`issue not found on ${RUNTIME_SOURCE_REF}: ${issueId}`);
-	return issue.content;
-}
-
 export class CodexCliExecutor implements RuntimeExecutor {
-	readonly #options: CodexCliExecutorOptions;
 	readonly #session: AgentSession;
+	readonly #approvedContract: string | undefined;
 
 	constructor(options: CodexCliExecutorOptions = {}) {
-		this.#options = options;
+		this.#approvedContract = options.approvedContract;
 		this.#session = options.session ?? new CodexAgentSession(options);
 	}
 
 	async execute(input: RuntimeExecutionInput): Promise<RuntimeExecutionResult> {
-		const issue = (this.#options.loadIssue ?? defaultLoadIssue)(input.cwd, input.issueId);
+		const issue = (input.approvedContract ?? this.#approvedContract)?.trim();
+		if (issue === undefined || issue.length === 0) throw new Error('approved issue contract is unavailable for this run');
 		const prompt = buildWorkPrompt(
 			input.issueId,
 			issue,
@@ -433,6 +426,8 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			input.internalGuidance,
 		input.reconciliationGuidance,
 		input.research,
+		input.operatorGuidanceSource,
+		input.operatorGuidanceAuthorizationEvidence,
 		);
 		const result = await this.#session.run({
 			sessionId: input.sessionId,
