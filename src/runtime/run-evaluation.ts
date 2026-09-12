@@ -80,6 +80,12 @@ export interface RunEvaluation {
 		focused: { executed: number; skipped: number };
 		full: { executed: number; skipped: number };
 	};
+	verificationRetries?: {
+		attempts: number;
+		failures: number;
+		durationMs: number | null;
+		usage: readonly Record<string, unknown>[] | null;
+	};
 }
 
 const MODEL_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
@@ -422,5 +428,22 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		resolvedCycleQuestions: events.filter((event) => event.kind === 'run.cycle-response').length,
 		roles: roleConfigurations(run, events),
 		...(verificationCadence === undefined ? {} : { verificationCadence }),
+		...(events.some((event) => event.kind === 'run.verification-retry-requested') ? (() => {
+			const requests = events.filter((event) => event.kind === 'run.verification-retry-requested');
+			const results = events.filter((event) => event.kind === 'run.verification-retry-result');
+			const resultsForRequest = requests.map((request, index) => results.filter((result) => result.seq > request.seq && result.seq < (requests[index + 1]?.seq ?? Infinity)));
+			const completedResults = resultsForRequest.flat();
+			const durations = results.map((event) => event.payload['durationMs']).filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+			const usage = results.flatMap((event) => {
+				const value = event.payload['usage'];
+				return value !== null && typeof value === 'object' && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
+			});
+			return { verificationRetries: {
+				attempts: requests.length,
+				failures: results.filter((event) => event.payload['outcome'] === 'failed').length,
+				durationMs: completedResults.length === requests.length && durations.length === results.length ? durations.reduce((sum, value) => sum + value, 0) : null,
+				usage: usage.length === 0 ? null : usage,
+			} };
+		})() : {}),
 	};
 }

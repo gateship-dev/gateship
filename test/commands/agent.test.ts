@@ -73,7 +73,7 @@ describe('canonical agent CLI', () => {
 			'backlog.list', 'issues.list', 'issues.set_dependencies', 'issues.get',
 			'runs.list', 'runs.get', 'runs.events', 'issues.create', 'issues.create_approved', 'issues.specify', 'issues.approve',
 			'issues.abandon', 'brief.get', 'brief.update', 'runs.start', 'runs.respond',
-			'runs.cancel', 'runs.abandon', 'runs.ship',
+			'runs.retry_verification', 'runs.cancel', 'runs.abandon', 'runs.ship',
 		]);
 		expect(operations.find(({ name }) => name === 'issues.approve')?.input)
 			.toContain('fingerprint');
@@ -658,6 +658,7 @@ describe('canonical agent CLI', () => {
 			['brief.update', { projectId: PROJECT_ID, objective: 'O', decisions: [], constraints: [], openItems: [], authorization: 'Operator authorizes.' }, 'PUT', `/api/projects/${PROJECT_ID}/brief`],
 			['runs.start', { projectId: PROJECT_ID, issueId: 'GSHIP-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs`],
 			['runs.respond', { projectId: PROJECT_ID, runId: 'run-1', message: 'Proceed.' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/resume`],
+			['runs.retry_verification', { projectId: PROJECT_ID, runId: 'run-1', reason: 'Transient timeout.' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/retry-verification`],
 			['runs.cancel', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/cancel`],
 			['runs.abandon', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/abandon`],
 			['runs.ship', { projectId: PROJECT_ID, runId: 'run-1' }, 'POST', `/api/projects/${PROJECT_ID}/runs/run-1/ship`],

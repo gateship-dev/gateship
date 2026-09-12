@@ -1681,6 +1681,16 @@ export class RunStore {
 		return rows.map(decodeRun);
 	}
 
+	listRunsByStates(states: readonly RunState[]): RunRecord[] {
+		if (states.length === 0) return [];
+		const stateParams = Object.fromEntries(states.map((state, index) => [`state${index}`, state]));
+		const placeholders = states.map((_, index) => `$state${index}`).join(', ');
+		const rows = this.#db.query(`
+			SELECT * FROM runs WHERE state IN (${placeholders}) ORDER BY created_at DESC, id DESC
+		`).all(stateParams) as RunRow[];
+		return rows.map(decodeRun);
+	}
+
 	listEvents(afterSeq = 0, limit = 500): RunEvent[] {
 		const rows = this.#db.query(`
 			SELECT * FROM run_events
@@ -1847,7 +1857,7 @@ export class RunStore {
 			'full-verify': { toState: 'interrupted', kind: 'run.recovered-interrupted' },
 			shipping: { toState: 'ready-to-ship', kind: 'run.recovered-shippable' },
 		};
-		return this.listRuns(10_000)
+		return this.listRunsByStates(Object.keys(recovery) as RunState[])
 			.flatMap((run) => {
 				const target = recovery[run.state];
 				if (target === undefined) return [];

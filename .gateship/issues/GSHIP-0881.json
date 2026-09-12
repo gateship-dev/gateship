@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-881",
   "title": "Recuperação: repetir verificação falha preservando trabalho e histórico",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-12T13:30:00.928Z",
-  "updatedAt": "2026-09-12T13:31:18.167Z",
+  "updatedAt": "2026-09-12T14:26:36.252Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
