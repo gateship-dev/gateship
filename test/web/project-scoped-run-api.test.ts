@@ -13,6 +13,7 @@ import { join } from 'node:path';
 
 import { startWebServer } from '../../src/commands/web.ts';
 import { readBacklogFromMain } from '../../src/issues/backlog.ts';
+import { fingerprintSpec, profileSpec } from '../../src/issues/spec.ts';
 import { RUNTIME_SOURCE_REF } from '../../src/runtime/source-ref.ts';
 import { openProjectRegistry } from '../../src/runtime/project-registry.ts';
 import { RunRuntime } from '../../src/runtime/run-runtime.ts';
@@ -25,6 +26,14 @@ function git(cwd: string, args: string[]): string {
 	const stderr = new TextDecoder().decode(result.stderr).trim();
 	if (result.exitCode !== 0) throw new Error(stderr || stdout);
 	return stdout;
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!predicate()) {
+		if (Date.now() >= deadline) throw new Error('timed out waiting for scoped runtime state');
+		await Bun.sleep(5);
+	}
 }
 
 function identify(cwd: string): void {
@@ -92,6 +101,43 @@ function bootRuntimeThatMustNotStart(cwd: string): { runtime: RunRuntime; starts
 }
 
 describe('project-scoped work API', () => {
+	test('retries verification only through the project-scoped route and exposes typed refusals', async () => {
+		const cwd = createTestTmpdir('gship-scoped-verification-retry-');
+		git(cwd, ['init', '-q', '-b', 'main']);
+		identify(cwd);
+		writeFileSync(join(cwd, 'README.md'), '# retry\n');
+		git(cwd, ['add', '.']);
+		git(cwd, ['commit', '-q', '-m', 'seed']);
+		const workspace = createTestTmpdir('gship-scoped-verification-workspace-');
+		const spec = { version: 2 as const, objective: 'Retry.', acceptance: ['Retry.'], verify: ['bun test'] };
+		const issue = { id: 'GSHIP-881-api', title: 'Retry', stage: 'specified' as const, status: 'open' as const, blockedBy: [], createdAt: '2026-09-12T00:00:00Z', updatedAt: '2026-09-12T00:00:00Z', spec, approval: { fingerprint: fingerprintSpec(spec), approvedAt: '2026-09-12T00:00:00Z' } };
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-api-retry', issueId: issue.id, sessionId: 'session', workspacePath: workspace, createdAt: '2026-09-12T00:00:00Z', specProfile: profileSpec(spec) });
+		store.transition({ runId: 'run-api-retry', toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
+		store.transition({ runId: 'run-api-retry', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
+		store.transition({ runId: 'run-api-retry', toState: 'failed', kind: 'run.verification-failed', error: 'timeout', createdAt: '2026-09-12T00:00:03Z' });
+		let executorCalls = 0;
+		const runtime = new RunRuntime({ cwd, store, listBacklog: () => [issue], executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } }, verifier: { verify: async () => ({ ok: true }) }, reviewer: { review: async () => ({ verdict: 'clean' }) }, fullVerifier: { verify: async () => ({ ok: true }) }, workspace: { prepare: async () => workspace, inspect: () => [] } });
+		const handle = startWebServer({ port: 0, cwd, runRuntime: runtime });
+		const origin = `http://${handle.hostname}:${handle.port}`;
+		try {
+			const projects = await fetch(`${origin}/api/projects`).then((response) => response.json()) as { projects: Array<{ id: string; current?: boolean }> };
+			const projectId = projects.projects.find((project) => project.current)?.id ?? projects.projects[0]!.id;
+			const path = `${origin}/api/projects/${encodeURIComponent(projectId)}/runs/run-api-retry/retry-verification`;
+			const invalid = await fetch(path, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ reason: '' }) });
+			expect(invalid.status).toBe(400);
+			const accepted = await fetch(path, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ reason: 'timeout transitório' }) });
+			expect(accepted.status).toBe(202);
+			await waitFor(() => runtime.getRun('run-api-retry')?.state === 'ready-to-ship');
+			expect(executorCalls).toBe(0);
+			const duplicate = await fetch(path, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ reason: 'segunda tentativa' }) });
+			expect(duplicate.status).toBe(409);
+			const foreign = await fetch(`${origin}/api/projects/foreign/runs/run-api-retry/retry-verification`, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ reason: 'isolamento' }) });
+			expect(foreign.status).toBe(404);
+		} finally {
+			await handle.stop(); await runtime.stop(); runtime.close();
+		}
+	});
 	test('keeps status reads responsive while workspace preparation is pending', async () => {
 		let releasePreparation = (): void => {};
 		let preparationStarted = false;
