@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { validateDependencyGraph } from '../issues/graph.ts';
 import { isPlannable } from '../issues/plannable.ts';
-import { profileSpec, type ResearchContract, validateCurrentResearchAtRunStart, validateSpec } from '../issues/spec.ts';
+import { fingerprintSpec, profileSpec, type ResearchContract, validateCurrentResearchAtRunStart, validateSpec } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { type ExecutorHandoffRecord, selectExecutorHandoff } from './agent-executor-router.ts';
 import {
@@ -171,6 +172,8 @@ export interface RuntimeExecutor {
 export interface RuntimeVerificationResult {
 	ok: boolean;
 	detail?: string;
+	/** Optional adapter-reported usage; omitted for local project commands. */
+	usage?: Record<string, unknown>;
 	/**
 	 * Set on an `ok` result the check never actually ran (GSHIP-649), e.g. a
 	 * full verifier finding no `verify` script declared. Lets the caller tell
@@ -495,6 +498,8 @@ function chainDecisionFromPayload(payload: Record<string, unknown>): ChainReconc
  */
 interface RunAttempt {
 	resume: boolean;
+	verificationOnly?: boolean;
+	reviewOnly?: boolean;
 	reviewFeedback?: string;
 	verificationFeedback?: string;
 	fullVerifyFeedback?: string;
@@ -644,11 +649,77 @@ export class RunRuntime {
 		this.#store.recoverUnownedRuns(this.#now());
 		this.#reconcileFinishedWorkspaces();
 		this.#refreshWorkspaceNotices();
+		this.#resumePendingVerificationRetries();
 		// The scheduler starts with the runtime and owns nothing else: a retry
 		// whose instant already passed while this process was down is armed
 		// here at zero delay rather than waiting for the next hold.
 		this.#armProviderRetryForWaitingRun();
 		this.#resumeWaitingChainReconciliation();
+	}
+
+	#resumePendingVerificationRetries(): void {
+		for (const run of this.#store.listRunsByStates(['interrupted'])) this.#resumePendingVerificationRetry(run);
+	}
+
+	#resumePendingVerificationRetry(run: RunRecord): void {
+		if (run.state !== 'interrupted') return;
+		const events = this.#store.listRunDecisionEvents(run.id);
+		const reserved = events.findLast((event) => event.kind === 'run.verification-retry-requested');
+		if (reserved === undefined) return;
+		try { this.#validateVerificationRetry(run); } catch { return; }
+		const result = events.findLast((event) => event.kind === 'run.verification-retry-result' && event.seq > reserved.seq);
+		if (result === undefined) {
+			if (run.state === 'interrupted') {
+				this.#transition(run.id, 'working', 'run.verification-retry-resumed');
+				this.#transition(run.id, 'verify', 'run.verification-retry-started');
+			}
+			const resumed = this.#store.getRun(run.id);
+			if (resumed?.state === 'verify') this.#launch(resumed, { resume: true, verificationOnly: true });
+			return;
+		}
+		if (result.payload['outcome'] === 'failed') {
+			this.#recoverFailedVerificationRetry(run, result.payload['detail']);
+			return;
+		}
+		if (result.payload['outcome'] === 'passed') this.#recoverPassedVerificationRetry(run, result.seq, events);
+	}
+
+	#recoverFailedVerificationRetry(run: RunRecord, detail: unknown): void {
+		if (run.state !== 'interrupted') return;
+		this.#transition(run.id, 'failed', 'run.verification-failed', { error: typeof detail === 'string' ? detail : undefined });
+	}
+
+	#recoverPassedVerificationRetry(run: RunRecord, resultSeq: number, events: readonly RunEvent[]): void {
+		const phaseStarted = events.some((event) => event.seq > resultSeq && (event.kind === 'run.review-started'
+			|| event.kind === 'run.review-fix-requested' || event.kind === 'run.full-verify-fix-requested' || event.kind === 'run.full-verify-started'));
+		if (phaseStarted) {
+			this.#launch(run, { resume: true });
+			return;
+		}
+		if (run.state === 'interrupted') this.#transition(run.id, 'review', 'run.verification-retry-recovered');
+		const recovered = this.#store.getRun(run.id);
+		if (recovered?.state === 'review') this.#launch(recovered, { resume: true, reviewOnly: true });
+	}
+
+	#validateVerificationRetry(run: RunRecord): void {
+		if (this.#executor === undefined || this.#verifier === undefined
+			|| this.#reviewer === undefined || this.#fullVerifier === undefined) {
+			throw new RuntimeConflictError('verification retry requires independent review and full verification');
+		}
+		const issue = this.#listBacklog?.().find((entry) => entry.id === run.issueId);
+		const events = this.#store.listRunDecisionEvents(run.id);
+		const created = events.find((event) => event.kind === 'run.created');
+		const savedProfile = created?.payload['specProfile'];
+		if (issue?.spec === undefined || issue.approval?.fingerprint !== fingerprintSpec(issue.spec)
+			|| !validateSpec(issue.spec).ok || savedProfile === undefined || typeof savedProfile !== 'object'
+			|| (savedProfile as Record<string, unknown>)['fingerprint'] !== issue.approval.fingerprint) {
+			throw new RuntimeConflictError('approved contract is missing or has changed');
+		}
+		if (run.workspacePath.length === 0 || !existsSync(run.workspacePath)) throw new RuntimeConflictError('managed worktree is missing');
+		if (this.#workspace?.inspect === undefined) throw new RuntimeConflictError('managed worktree cannot be validated');
+		const notice = this.#workspace.inspect([{ runId: run.id, issueId: run.issueId, workspacePath: run.workspacePath, state: 'failed' }])
+			.find((item) => item.runId === run.id && item.kind !== 'dirty' && item.kind !== 'failed-run');
+		if (notice !== undefined) throw new RuntimeConflictError(`managed worktree is not intact: ${notice.detail}`);
 	}
 
 	/** The configured publisher is shared with protected-main intake writes. */
@@ -804,6 +875,29 @@ export class RunRuntime {
 				: { operatorGuidance: guidance }),
 		});
 		return run;
+	}
+
+	/** Retry only the approved issue verification on the preserved failed worktree. */
+	retryVerificationRun(runId: string, reason: string, source?: string): RunRecord {
+		if (this.#executor === undefined || this.#verifier === undefined) throw new RuntimeUnavailableError();
+		if (this.#active.size > 0 || this.#preparingWorkspace) {
+			throw new RuntimeConflictError('another run or workspace admission is already active');
+		}
+		const run = this.#store.getRun(runId);
+		if (run === null) throw new Error(`run not found: ${runId}`);
+		if (run.state !== 'failed') throw new Error(`run cannot retry verification from state ${run.state}`);
+		const events = this.#store.listRunDecisionEvents(runId);
+		if (events.some((event) => event.kind === 'run.verification-retry-requested')) throw new Error('verification retry was already used');
+		const ending = events.findLast((event) => event.toState === 'failed' && event.fromState !== 'failed');
+		if (ending?.kind !== 'run.verification-failed') throw new Error('run was not ended by issue verification failure');
+		this.#validateVerificationRetry(run);
+		const normalizedReason = reason.trim();
+		if (normalizedReason.length === 0) throw new Error('retry reason is required');
+		const reserved = this.#transition(run.id, 'verify', 'run.verification-retry-requested', {
+			payload: { source: source ?? 'web', reason: normalizedReason, attempt: 1 },
+		}).run;
+		this.#launch(reserved, { resume: true, verificationOnly: true });
+		return this.#store.getRun(run.id) ?? reserved;
 	}
 
 	/** The run a resume may reopen, or the reason it may not. */
@@ -1261,6 +1355,24 @@ export class RunRuntime {
 		if (executor === undefined || verifier === undefined) {
 			throw new RuntimeUnavailableError();
 		}
+		if (firstAttempt.verificationOnly) {
+			await this.#driveVerificationRetry(verifier, run, signal, firstAttempt);
+			return;
+		}
+		if (firstAttempt.reviewOnly) {
+			await this.#driveReviewOnly(run, signal, firstAttempt, executor, verifier);
+			return;
+		}
+		await this.#driveNormal(run, signal, firstAttempt, executor, verifier);
+	}
+
+	async #driveReviewOnly(run: RunRecord, signal: AbortSignal, attempt: RunAttempt, executor: RuntimeExecutor, verifier: RuntimeVerifier): Promise<void> {
+		const next = await this.#review(run, signal, this.#executionInput(run, signal, attempt));
+		if (next === null) await this.#shipIfReady(run, signal);
+		else await this.#driveImplementation(executor, verifier, run, signal, next);
+	}
+
+	async #driveNormal(run: RunRecord, signal: AbortSignal, firstAttempt: RunAttempt, executor: RuntimeExecutor, verifier: RuntimeVerifier): Promise<void> {
 		const resumePhase = this.#resumePhase(run);
 		// A provider retry names itself; a crash recovery resumes under the same
 		// `run.started` an interrupted run has always resumed with, so its round
@@ -1285,6 +1397,53 @@ export class RunRuntime {
 		} catch (error) {
 			this.#settleDriveFailure(run.id, signal, error);
 		}
+	}
+
+	async #driveVerificationRetry(
+		verifier: RuntimeVerifier,
+		run: RunRecord,
+		signal: AbortSignal,
+		attempt: RunAttempt,
+	): Promise<void> {
+		const startedAt = performance.now();
+		let result: RuntimeVerificationResult;
+		try {
+			result = await verifier.verify(this.#executionInput(run, signal, attempt));
+		} catch (error) {
+			if (signal.aborted) { this.#interrupt(run.id); return; }
+			const detail = error instanceof Error ? error.message : String(error);
+			this.#recordVerificationRetryFailure(run, detail, startedAt);
+			return;
+		}
+		if (signal.aborted) { this.#interrupt(run.id); return; }
+		const retryPayload = {
+			durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+			...(result.usage === undefined ? {} : { usage: result.usage }),
+		};
+		if (!result.ok || result.skipped === true) {
+			const detail = result.detail ?? (result.skipped === true
+				? 'A verificação específica da issue não executou nenhum gate.'
+				: 'A verificação específica da issue falhou novamente.');
+			this.#recordVerificationRetryFailure(run, detail, startedAt, retryPayload);
+			return;
+		}
+		this.#emit(run.id, 'run.verification-retry-result', { outcome: 'passed', ...retryPayload });
+		const input = this.#executionInput(run, signal, attempt);
+		const next = await this.#review(run, signal, input);
+		if (next === null) await this.#shipIfReady(run, signal);
+		else await this.#driveImplementation(this.#executor!, verifier, run, signal, next);
+	}
+
+	#recordVerificationRetryFailure(
+		run: RunRecord,
+		detail: string,
+		startedAt: number,
+		payload?: { durationMs: number; usage?: Record<string, unknown> },
+	): void {
+		const retryPayload = payload ?? { durationMs: Math.max(0, Math.round(performance.now() - startedAt)) };
+		this.#emit(run.id, 'run.verification-retry-result', { outcome: 'failed', detail, ...retryPayload });
+		const failed = this.#transition(run.id, 'failed', 'run.verification-failed', { error: detail }).run;
+		this.#releaseFinishedWorkspace(failed, false);
 	}
 
 	async #runResearch(run: RunRecord, signal: AbortSignal, contract: ResearchContract): Promise<void> {
@@ -1500,6 +1659,7 @@ export class RunRuntime {
 		if (interruption?.fromState === 'research') return 'research';
 		if (interruption?.kind !== 'run.recovered-interrupted') return null;
 		if (interruption.fromState === 'review') return 'review';
+		if (interruption.fromState === 'full-verify') return 'full-verify';
 		return null;
 	}
 
@@ -1887,7 +2047,7 @@ export class RunRuntime {
 		if (reviewer === undefined) {
 			return this.#enterFullVerify(run, signal, executionInput, 'run.verified');
 		}
-		this.#transition(run.id, 'review', startKind);
+		if (run.state !== 'review') this.#transition(run.id, 'review', startKind);
 		const pendingQuestion = this.#pendingCycleQuestion(run.id);
 		if (pendingQuestion !== null) {
 			return this.#answerCycleQuestion(

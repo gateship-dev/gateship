@@ -343,6 +343,19 @@ describe('replayable run evaluation', () => {
 		expect(evaluation.durationReconciliation.reconciles).toBeNull();
 	});
 
+	test('keeps retry duration unknown until a result is recorded', () => {
+		const pending = evaluateRun({ ...RUN, state: 'interrupted' }, [
+			event('run.verification-retry-requested', 'failed', 'verify'),
+		]);
+		expect(pending.verificationRetries).toMatchObject({ attempts: 1, failures: 0, durationMs: null });
+
+		const rejected = evaluateRun({ ...RUN, state: 'failed' }, [
+			event('run.verification-retry-requested', 'failed', 'verify'),
+			{ ...event('run.verification-retry-result', 'verify', 'verify', { outcome: 'failed', durationMs: 17 }), seq: 2 },
+		]);
+		expect(rejected.verificationRetries).toMatchObject({ attempts: 1, failures: 1, durationMs: 17 });
+	});
+
 	test('keeps the prefix unassigned when the first durable event is late', () => {
 		const evaluation = evaluateRun(RUN, [timedEvent('run.review-started', 'working', 'review', '2026-08-20T10:11:00.000Z')]);
 		expect(evaluation.unassignedDuration.durationMs).toBeNull();

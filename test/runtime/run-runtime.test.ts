@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
-import { fingerprintSpec, type ResearchContract, type ResearchReceipt } from '../../src/issues/spec.ts';
+import { fingerprintSpec, profileSpec, type ResearchContract, type ResearchReceipt } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
@@ -30,6 +30,22 @@ async function waitFor(
 		if (Date.now() >= deadline) throw new Error('timed out waiting for runtime state');
 		await Bun.sleep(5);
 	}
+}
+
+function retryIssue(id = 'GSHIP-881'): IssueEntry {
+	const spec = { version: 2 as const, objective: 'Retry verification.', acceptance: ['Retry once.'], verify: ['bun test'] };
+	return {
+		id, title: id, stage: 'specified', status: 'open', blockedBy: [],
+		createdAt: '2026-09-12T00:00:00Z', updatedAt: '2026-09-12T00:00:00Z', spec,
+		approval: { fingerprint: fingerprintSpec(spec), approvedAt: '2026-09-12T00:00:00Z' },
+	};
+}
+
+function seedVerificationFailure(store: RunStore, runId: string, issue: IssueEntry, workspacePath: string): void {
+	store.createRun({ id: runId, issueId: issue.id, sessionId: `${runId}-session`, workspacePath, createdAt: '2026-09-12T00:00:00Z', specProfile: profileSpec(issue.spec) });
+	store.transition({ runId, toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
+	store.transition({ runId, toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
+	store.transition({ runId, toState: 'failed', kind: 'run.verification-failed', error: 'timeout', createdAt: '2026-09-12T00:00:03Z' });
 }
 
 describe('durable run runtime', () => {
@@ -386,6 +402,310 @@ describe('durable run runtime', () => {
 		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.verification-failed')).toHaveLength(1);
 		await runtime.stop();
 		runtime.close();
+	});
+
+	test('retries a failed verification without executing, then requires fresh review and full verify', async () => {
+		const issue = retryIssue();
+		const workspace = createTestTmpdir('gship-verification-retry-');
+		let executorCalls = 0;
+		let verificationCalls = 0;
+		let reviews = 0;
+		let fullVerifications = 0;
+		let releaseRetry = (): void => {};
+		const retryGate = new Promise<void>((resolve) => { releaseRetry = resolve; });
+		const runtime = new RunRuntime({
+			cwd: workspace, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => { verificationCalls += 1; if (verificationCalls === 3) await retryGate; return verificationCalls < 3 ? { ok: false, detail: 'timeout' } : { ok: true, usage: { costUsd: 0.25 } }; } },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } },
+			fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		runtime.retryVerificationRun(run.id, 'retry timeout');
+		await waitFor(() => verificationCalls === 3);
+		expect(() => runtime.retryVerificationRun(run.id, 'concorrente')).toThrow('another run');
+		releaseRetry();
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect({ executorCalls, verificationCalls, reviews, fullVerifications }).toEqual({ executorCalls: 2, verificationCalls: 3, reviews: 1, fullVerifications: 1 });
+		expect(runtime.getRunEvaluation(run.id)?.verificationRetries).toMatchObject({ attempts: 1, failures: 0, durationMs: expect.any(Number), usage: [{ costUsd: 0.25 }] });
+		await runtime.stop(); runtime.close();
+	});
+
+	test('treats a skipped retry verification as failure without advancing or executing', async () => {
+		const issue = retryIssue('GSHIP-881-skipped');
+		const workspace = createTestTmpdir('gship-verification-retry-skipped-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-skipped', issue, workspace);
+		let executorCalls = 0;
+		let reviews = 0;
+		let fullVerifications = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true, skipped: true }) },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } },
+			fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		runtime.retryVerificationRun('run-skipped', 'retry skipped gate');
+		await waitFor(() => runtime.getRun('run-skipped')?.state === 'failed');
+		expect({ executorCalls, reviews, fullVerifications }).toEqual({ executorCalls: 0, reviews: 0, fullVerifications: 0 });
+		expect(runtime.listRunEvents('run-skipped').find((event) => event.kind === 'run.verification-retry-result')?.payload).toMatchObject({ outcome: 'failed' });
+		expect(runtime.getRunEvaluation('run-skipped')?.verificationRetries).toMatchObject({ attempts: 1, failures: 1 });
+		await runtime.stop(); runtime.close();
+	});
+
+	test('records a rejected retry verifier as a measured failure', async () => {
+		const issue = retryIssue('GSHIP-881-rejected');
+		const workspace = createTestTmpdir('gship-verification-retry-rejected-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-rejected', issue, workspace);
+		let executorCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => { throw new Error('verifier crashed'); } },
+			reviewer: { review: async () => ({ verdict: 'clean' }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		runtime.retryVerificationRun('run-rejected', 'retry after crash');
+		await waitFor(() => runtime.getRun('run-rejected')?.state === 'failed');
+		const result = runtime.listRunEvents('run-rejected').find((event) => event.kind === 'run.verification-retry-result');
+		expect(executorCalls).toBe(0);
+		expect(result?.payload).toMatchObject({ outcome: 'failed', detail: 'verifier crashed', durationMs: expect.any(Number) });
+		expect(runtime.getRunEvaluation('run-rejected')?.verificationRetries).toMatchObject({ attempts: 1, failures: 1, durationMs: expect.any(Number) });
+		await runtime.stop(); runtime.close();
+	});
+
+	test('refuses a verification retry when independent review or full verification is unavailable', () => {
+		for (const missing of ['reviewer', 'fullVerifier'] as const) {
+			const issue = retryIssue(`GSHIP-881-no-${missing}`);
+			const workspace = createTestTmpdir(`gship-verification-retry-no-${missing}-`);
+			const store = new RunStore(':memory:');
+			seedVerificationFailure(store, `run-no-${missing}`, issue, workspace);
+			const runtime = new RunRuntime({
+				cwd: workspace, store, listBacklog: () => [issue],
+				executor: { execute: async () => ({ outcome: 'completed' }) },
+				verifier: { verify: async () => ({ ok: true }) },
+				...(missing === 'reviewer' ? { fullVerifier: { verify: async () => ({ ok: true }) } } : { reviewer: { review: async () => ({ verdict: 'clean' as const }) } }),
+			});
+			expect(() => runtime.retryVerificationRun(`run-no-${missing}`, 'retry')).toThrow('independent review and full verification');
+			expect(runtime.getRun(`run-no-${missing}`)?.state).toBe('failed');
+			runtime.close();
+		}
+	});
+
+	test('rejects a second verification retry and preserves a new failure', async () => {
+		const issue = retryIssue('GSHIP-881-failure');
+		const workspace = createTestTmpdir('gship-verification-retry-failure-');
+		const runtime = new RunRuntime({
+			cwd: workspace, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: false, detail: 'still failing' }) },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		runtime.retryVerificationRun(run.id, 'retry once');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed' && runtime.listRunEvents(run.id).some((event) => event.kind === 'run.verification-retry-result'));
+		await expect(Promise.resolve().then(() => runtime.retryVerificationRun(run.id, 'again'))).rejects.toThrow('already used');
+		expect(runtime.getRun(run.id)?.error).toBe('still failing');
+		expect(runtime.getRunEvaluation(run.id)?.verificationRetries).toMatchObject({ attempts: 1, failures: 1 });
+		await runtime.stop(); runtime.close();
+	});
+
+	test('rejects divergent or missing contracts and worktrees before reserving verification', () => {
+		for (const variant of ['divergent', 'missing', 'workspace'] as const) {
+			const issue = retryIssue(`GSHIP-881-${variant}`);
+			if (variant === 'divergent') issue.spec = { ...issue.spec!, verify: ['changed'] };
+			if (variant === 'missing') issue.approval = undefined;
+			const store = new RunStore(':memory:');
+			const workspace = variant === 'workspace' ? join(createTestTmpdir('gship-verification-retry-missing-'), 'gone') : createTestTmpdir('gship-verification-retry-contract-');
+			seedVerificationFailure(store, `run-${variant}`, retryIssue(`GSHIP-881-${variant}`), workspace);
+			const runtime = new RunRuntime({
+				cwd: workspace, store, listBacklog: () => [issue],
+				executor: { execute: async () => ({ outcome: 'completed' }) },
+				verifier: { verify: async () => ({ ok: true }) },
+				reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+				fullVerifier: { verify: async () => ({ ok: true }) },
+			});
+			expect(() => runtime.retryVerificationRun(`run-${variant}`, 'retry')).toThrow(variant === 'workspace' ? 'worktree is missing' : 'approved contract');
+			expect(runtime.getRun(`run-${variant}`)?.state).toBe('failed');
+			runtime.close();
+		}
+	});
+
+	test('recovers a retry after restart without duplicating it or starting the executor', async () => {
+		const issue = retryIssue('GSHIP-881-restart');
+		const workspace = createTestTmpdir('gship-verification-retry-restart-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-restart', issue, workspace);
+		store.transition({ runId: 'run-restart', toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'crash', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+		store.appendEvent({ runId: 'run-restart', kind: 'run.verification-retry-result', payload: { outcome: 'passed', durationMs: 4 }, createdAt: '2026-09-12T00:00:05Z' });
+		let executorCalls = 0;
+		let reviews = 0;
+		let fullVerifications = 0;
+		const runtime = new RunRuntime({ cwd: workspace, store, listBacklog: () => [issue], executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } }, verifier: { verify: async () => ({ ok: true }) }, reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } }, fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } }, workspace: { prepare: async () => workspace, inspect: () => [] } });
+		await waitFor(() => runtime.getRun('run-restart')?.state === 'ready-to-ship');
+		expect(executorCalls).toBe(0);
+		expect({ reviews, fullVerifications }).toEqual({ reviews: 1, fullVerifications: 1 });
+		expect(runtime.listRunEvents('run-restart').filter((event) => event.kind === 'run.verification-retry-result')).toHaveLength(1);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('recovers a reserved retry beyond the recent run limit', async () => {
+		const issue = retryIssue('GSHIP-881-restart-old');
+		const workspace = createTestTmpdir('gship-restart-old-retry-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-restart-old', issue, workspace);
+		store.transition({ runId: 'run-restart-old', toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'crash', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+		store.transition({ runId: 'run-restart-old', toState: 'interrupted', kind: 'run.recovered-interrupted', createdAt: '2026-09-12T00:00:05Z' });
+		for (let index = 0; index < 10_000; index += 1) {
+			const id = `run-recent-${index}`;
+			store.createRun({ id, issueId: `GSHIP-${index}`, sessionId: id, workspacePath: `/workspace/${index}`, createdAt: `2026-09-13T00:00:${String(index % 60).padStart(2, '0')}Z` });
+			store.transition({ runId: id, toState: 'working', kind: 'run.started', createdAt: `2026-09-13T00:00:${String(index % 60).padStart(2, '0')}Z` });
+			store.transition({ runId: id, toState: 'failed', kind: 'run.failed', error: 'fixture', createdAt: `2026-09-13T00:01:${String(index % 60).padStart(2, '0')}Z` });
+		}
+		let executorCalls = 0;
+		let verifierCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => { verifierCalls += 1; return { ok: false, detail: 'retry failed' }; } },
+			reviewer: { review: async () => ({ verdict: 'clean' }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		await waitFor(() => runtime.getRun('run-restart-old')?.state === 'failed');
+		expect({ executorCalls, verifierCalls }).toEqual({ executorCalls: 0, verifierCalls: 1 });
+		expect(runtime.listRunEvents('run-restart-old').filter((event) => event.kind === 'run.verification-retry-requested')).toHaveLength(1);
+		expect(runtime.listRunEvents('run-restart-old').filter((event) => event.kind === 'run.verification-retry-result')).toHaveLength(1);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('does not recover a retry when its contract or worktree is no longer valid', () => {
+		for (const variant of ['divergent', 'missing', 'workspace'] as const) {
+			const issue = retryIssue(`GSHIP-881-restart-${variant}`);
+			const savedIssue = retryIssue(issue.id);
+			if (variant === 'divergent') issue.spec = { ...issue.spec!, verify: ['changed'] };
+			if (variant === 'missing') issue.approval = undefined;
+			const workspace = variant === 'workspace' ? join(createTestTmpdir('gship-restart-missing-'), 'gone') : createTestTmpdir('gship-restart-validation-');
+			const store = new RunStore(':memory:');
+			seedVerificationFailure(store, `run-restart-${variant}`, savedIssue, workspace);
+			store.transition({ runId: `run-restart-${variant}`, toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'crash', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+			let verifierCalls = 0;
+			let executorCalls = 0;
+			const runtime = new RunRuntime({
+				cwd: workspace, store, listBacklog: () => [issue],
+				executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+				verifier: { verify: async () => { verifierCalls += 1; return { ok: true }; } },
+				reviewer: { review: async () => ({ verdict: 'clean' }) },
+				fullVerifier: { verify: async () => ({ ok: true }) },
+				workspace: { prepare: async () => workspace, inspect: () => [] },
+			});
+			expect(runtime.getRun(`run-restart-${variant}`)?.state).toBe('interrupted');
+			expect({ verifierCalls, executorCalls }).toEqual({ verifierCalls: 0, executorCalls: 0 });
+			expect(runtime.listRunEvents(`run-restart-${variant}`).filter((event) => event.kind === 'run.verification-retry-result')).toHaveLength(0);
+			runtime.close();
+		}
+	});
+
+	test('recovers an incomplete retry after restart without starting the executor', async () => {
+		const issue = retryIssue('GSHIP-881-restart-incomplete');
+		const workspace = createTestTmpdir('gship-restart-incomplete-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-restart-incomplete', issue, workspace);
+		store.transition({ runId: 'run-restart-incomplete', toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'crash', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+		let executorCalls = 0;
+		let verifierCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => { verifierCalls += 1; return { ok: true }; } },
+			reviewer: { review: async () => ({ verdict: 'clean' }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		await waitFor(() => runtime.getRun('run-restart-incomplete')?.state === 'ready-to-ship');
+		expect({ executorCalls, verifierCalls }).toEqual({ executorCalls: 0, verifierCalls: 1 });
+		runtime.close();
+	});
+
+	test('keeps an interrupted retry with an invalid managed worktree', () => {
+		const issue = retryIssue('GSHIP-881-restart-invalid-worktree');
+		const workspace = createTestTmpdir('gship-restart-invalid-worktree-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-restart-invalid-worktree', issue, workspace);
+		store.transition({ runId: 'run-restart-invalid-worktree', toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'crash', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+		store.appendEvent({ runId: 'run-restart-invalid-worktree', kind: 'run.verification-retry-result', payload: { outcome: 'passed', durationMs: 4 }, createdAt: '2026-09-12T00:00:05Z' });
+		let verifierCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => { verifierCalls += 1; return { ok: true }; } },
+			reviewer: { review: async () => ({ verdict: 'clean' }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [{ kind: 'orphan', runId: 'run-restart-invalid-worktree', workspacePath: workspace, branch: null, detail: 'invalid worktree' }] },
+		});
+		expect(runtime.getRun('run-restart-invalid-worktree')?.state).toBe('interrupted');
+		expect(verifierCalls).toBe(0);
+		runtime.close();
+	});
+
+	test('does not consume a passed retry result after restart without the required gates', () => {
+		for (const missing of ['reviewer', 'fullVerifier'] as const) {
+			const issue = retryIssue(`GSHIP-881-restart-no-${missing}`);
+			const workspace = createTestTmpdir(`gship-restart-no-${missing}-`);
+			const store = new RunStore(':memory:');
+			seedVerificationFailure(store, `run-restart-no-${missing}`, issue, workspace);
+			store.transition({ runId: `run-restart-no-${missing}`, toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'crash', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+			store.appendEvent({ runId: `run-restart-no-${missing}`, kind: 'run.verification-retry-result', payload: { outcome: 'passed', durationMs: 4 }, createdAt: '2026-09-12T00:00:05Z' });
+			let verifierCalls = 0;
+			let executorCalls = 0;
+			const runtime = new RunRuntime({
+				cwd: workspace, store, listBacklog: () => [issue],
+				executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+				verifier: { verify: async () => { verifierCalls += 1; return { ok: true }; } },
+				...(missing === 'reviewer' ? { fullVerifier: { verify: async () => ({ ok: true }) } } : { reviewer: { review: async () => ({ verdict: 'clean' as const }) } }),
+			});
+			expect(runtime.getRun(`run-restart-no-${missing}`)?.state).toBe('interrupted');
+			expect({ verifierCalls, executorCalls }).toEqual({ verifierCalls: 0, executorCalls: 0 });
+			runtime.close();
+		}
+	});
+
+	test('resumes the normal implementation flow after a retry passed before review requested a fix', async () => {
+		const issue = retryIssue('GSHIP-881-restart-review-fix');
+		const workspace = createTestTmpdir('gship-restart-review-fix-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-restart-review-fix', issue, workspace);
+		store.transition({ runId: 'run-restart-review-fix', toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'crash', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+		store.appendEvent({ runId: 'run-restart-review-fix', kind: 'run.verification-retry-result', payload: { outcome: 'passed', durationMs: 4 }, createdAt: '2026-09-12T00:00:05Z' });
+		store.transition({ runId: 'run-restart-review-fix', toState: 'review', kind: 'run.verification-retry-recovered', createdAt: '2026-09-12T00:00:06Z' });
+		store.appendEvent({ runId: 'run-restart-review-fix', kind: 'run.review-started', createdAt: '2026-09-12T00:00:07Z' });
+		store.transition({ runId: 'run-restart-review-fix', toState: 'working', kind: 'run.review-fix-requested', payload: { findings: 'corrigir após restart' }, createdAt: '2026-09-12T00:00:08Z' });
+		store.transition({ runId: 'run-restart-review-fix', toState: 'interrupted', kind: 'run.recovered-interrupted', createdAt: '2026-09-12T00:00:09Z' });
+		let executorCalls = 0;
+		let verifierCalls = 0;
+		let reviews = 0;
+		let fullVerifications = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => { verifierCalls += 1; return { ok: true }; } },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } },
+			fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		await waitFor(() => runtime.getRun('run-restart-review-fix')?.state === 'ready-to-ship');
+		expect({ executorCalls, verifierCalls, reviews, fullVerifications }).toEqual({ executorCalls: 1, verifierCalls: 1, reviews: 1, fullVerifications: 1 });
+		expect(runtime.listRunEvents('run-restart-review-fix').filter((event) => event.kind === 'run.verification-retry-result')).toHaveLength(1);
+		await runtime.stop(); runtime.close();
 	});
 
 	test('restores unconsumed issue verification feedback after interruption', async () => {

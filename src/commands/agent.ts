@@ -81,6 +81,7 @@ export const AGENT_OPERATIONS: Readonly<Record<string, AgentOperation>> = {
 	'brief.update': { method: 'PUT', path: projectPath('/brief'), input: '{projectId, objective, decisions, constraints, openItems, authorization}' },
 	'runs.start': { method: 'POST', path: projectPath('/runs'), input: '{projectId, issueId}' },
 	'runs.respond': { method: 'POST', path: runPath('/resume'), input: '{projectId, runId, message}' },
+	'runs.retry_verification': { method: 'POST', path: runPath('/retry-verification'), input: '{projectId, runId, reason}' },
 	'runs.cancel': { method: 'POST', path: runPath('/cancel'), input: '{projectId, runId}' },
 	'runs.abandon': { method: 'POST', path: runPath('/abandon'), input: '{projectId, runId}' },
 	'runs.ship': { method: 'POST', path: runPath('/ship'), input: '{projectId, runId}' },
