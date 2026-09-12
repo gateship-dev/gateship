@@ -519,6 +519,56 @@ describe('durable run runtime', () => {
 		await runtime.stop(); runtime.close();
 	});
 
+	test('allows a later verification retry only after a passed retry and a completed correction', async () => {
+		const issue = retryIssue('GSHIP-882-follow-up');
+		const workspace = createTestTmpdir('gship-verification-retry-follow-up-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-follow-up', issue, workspace);
+		store.transition({ runId: 'run-follow-up', toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'first', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+		store.appendEvent({ runId: 'run-follow-up', kind: 'run.verification-retry-result', payload: { outcome: 'passed', durationMs: 4 }, createdAt: '2026-09-12T00:00:05Z' });
+		store.transition({ runId: 'run-follow-up', toState: 'review', kind: 'run.verification-retry-recovered', createdAt: '2026-09-12T00:00:06Z' });
+		store.transition({ runId: 'run-follow-up', toState: 'working', kind: 'run.review-fix-requested', payload: { findings: 'corrigir a causa' }, createdAt: '2026-09-12T00:00:07Z' });
+		store.transition({ runId: 'run-follow-up', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:08Z' });
+		store.transition({ runId: 'run-follow-up', toState: 'failed', kind: 'run.verification-failed', error: 'verification failure after correction', createdAt: '2026-09-12T00:00:09Z' });
+		let verificationCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => { throw new Error('retry must not execute'); } },
+			verifier: { verify: async () => { verificationCalls += 1; return { ok: true }; } },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		runtime.retryVerificationRun('run-follow-up', 'revalidar a nova falha');
+		await waitFor(() => runtime.getRun('run-follow-up')?.state === 'ready-to-ship');
+
+		expect(verificationCalls).toBe(1);
+		expect(runtime.listRunEvents('run-follow-up')
+			.filter((event) => event.kind === 'run.verification-retry-requested')
+			.map((event) => event.payload['attempt'])).toEqual([1, 2]);
+		expect(runtime.getRunEvaluation('run-follow-up')?.verificationRetries).toMatchObject({ attempts: 2, failures: 0 });
+		await runtime.stop(); runtime.close();
+	});
+
+	test('rejects a later verification retry without a correction after the passed retry', async () => {
+		const issue = retryIssue('GSHIP-882-no-correction');
+		const workspace = createTestTmpdir('gship-verification-retry-no-correction-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-no-correction', issue, workspace);
+		store.transition({ runId: 'run-no-correction', toState: 'verify', kind: 'run.verification-retry-requested', payload: { reason: 'first', attempt: 1 }, createdAt: '2026-09-12T00:00:04Z' });
+		store.appendEvent({ runId: 'run-no-correction', kind: 'run.verification-retry-result', payload: { outcome: 'passed', durationMs: 4 }, createdAt: '2026-09-12T00:00:05Z' });
+		store.transition({ runId: 'run-no-correction', toState: 'failed', kind: 'run.verification-failed', error: 'new failure without correction', createdAt: '2026-09-12T00:00:06Z' });
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) }, fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		expect(() => runtime.retryVerificationRun('run-no-correction', 'second')).toThrow('completed correction');
+		expect(runtime.listRunEvents('run-no-correction').filter((event) => event.kind === 'run.verification-retry-requested')).toHaveLength(1);
+		runtime.close();
+	});
+
 	test('rejects divergent or missing contracts and worktrees before reserving verification', () => {
 		for (const variant of ['divergent', 'missing', 'workspace'] as const) {
 			const issue = retryIssue(`GSHIP-881-${variant}`);
