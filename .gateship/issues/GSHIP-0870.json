@@ -7,7 +7,7 @@
     "GSHIP-869"
   ],
   "createdAt": "2026-09-11T12:26:18.709Z",
-  "updatedAt": "2026-09-11T23:34:50.312Z",
+  "updatedAt": "2026-09-12T20:57:10.690Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -30,5 +30,9 @@
       "bun test test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-runtime.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "4c8299566f814a2336836f0695c194ff1cfc67edc9b26aa26f11fe18af012586",
+    "approvedAt": "2026-09-12T20:57:10.690Z"
   }
 }
