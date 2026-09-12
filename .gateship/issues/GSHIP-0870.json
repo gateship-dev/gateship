@@ -1,13 +1,13 @@
 {
   "id": "GSHIP-870",
   "title": "Autonomia: distinguir progresso técnico de repetição de perguntas",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-869"
   ],
   "createdAt": "2026-09-11T12:26:18.709Z",
-  "updatedAt": "2026-09-12T20:57:10.690Z",
+  "updatedAt": "2026-09-12T21:45:20.399Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

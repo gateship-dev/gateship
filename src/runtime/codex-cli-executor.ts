@@ -170,6 +170,23 @@ function parseEventLine(line: string): Record<string, unknown> | null {
 	}
 }
 
+export function projectCodexToolObservation(itemValue: unknown): { tool: string; action: string; result?: string; exitCode?: number } | undefined {
+	const item = recordOf(itemValue);
+	const itemType = item?.['type'];
+	if (itemType !== 'command_execution' && itemType !== 'web_search_call') return undefined;
+	const output = typeof item?.['aggregated_output'] === 'string' ? item['aggregated_output']
+		: typeof item?.['output'] === 'string' ? item['output']
+		: typeof item?.['result'] === 'string' ? item['result'] : undefined;
+	const exitCode = typeof item?.['exit_code'] === 'number' ? item['exit_code'] : undefined;
+	if ((output === undefined || output.trim().length === 0) && exitCode === undefined) return undefined;
+	return {
+		tool: itemType as string,
+		action: 'completed',
+		...(output === undefined ? {} : { result: output.trim().slice(0, MAX_ACTIVITY_TEXT) }),
+		...(exitCode === undefined ? {} : { exitCode }),
+	};
+}
+
 function consumeCompletedItem(
 	itemValue: unknown,
 	input: AgentSessionInput,
@@ -177,6 +194,8 @@ function consumeCompletedItem(
 ): void {
 	const item = recordOf(itemValue);
 	const itemType = item?.['type'];
+	const observation = projectCodexToolObservation(itemValue);
+	if (observation !== undefined) input.emit(input.eventPrefix + '.tool-observation', observation);
 	// This is Codex's own raw provider/review output stream (GSHIP-627), the
 	// equivalent of claude-cli-process.ts's `.activity` -- always declared
 	// activity, never a decision the run made.
