@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-12T13:30:00.928Z",
-  "updatedAt": "2026-09-12T13:30:00.928Z",
+  "updatedAt": "2026-09-12T13:31:18.167Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -29,5 +29,9 @@
       "bun test test/web/run-api.test.ts test/web/project-scoped-run-api.test.ts test/commands/agent.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "6e67e7650788ba280f5291f67c68026bf6a33402c78ff48200e38d3550a47282",
+    "approvedAt": "2026-09-12T13:31:18.167Z"
   }
 }
