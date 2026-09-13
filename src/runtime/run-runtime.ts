@@ -965,6 +965,67 @@ export class RunRuntime {
 		return run;
 	}
 
+	/** Retry one failed resolver call on the preserved worktree and run session. */
+	retryCycleQuestionRun(runId: string, reason: string, source?: string): RunRecord {
+		if (this.#executor === undefined || this.#verifier === undefined) throw new RuntimeUnavailableError();
+		if (this.#active.size > 0 || this.#preparingWorkspace) {
+			throw new RuntimeConflictError('another run or workspace admission is already active');
+		}
+		const admissionBlock = this.#admissionBlockedReason ?? this.#firstAdmissionFenceReason();
+		if (admissionBlock !== null) throw new RuntimeConflictError(admissionBlock);
+		const { pending, failure, normalizedReason } = this.#cycleQuestionRetryAdmission(runId, reason);
+		const events = this.#store.listRunDecisionEvents(runId);
+		const previousRetry = events.findLast((event) => event.kind === 'run.cycle-question-retry-requested');
+		if (previousRetry !== undefined && previousRetry.seq > failure.seq) {
+			throw new Error('cycle question retry was already reserved for this failure');
+		}
+		const reserved = this.#transition(runId, 'working', 'run.cycle-question-retry-requested', {
+			payload: {
+				source: source ?? 'web',
+				reason: normalizedReason,
+				questionId: pending.questionId,
+				origin: pending.origin,
+				attempt: this.#cycleAttempt(runId) + 1,
+				failureSeq: failure.seq,
+			},
+		}).run;
+		this.#launch(reserved, { resume: true });
+		return this.#store.getRun(runId) ?? reserved;
+	}
+
+	#cycleQuestionRetryAdmission(runId: string, reason: string): {
+		pending: { questionId: string; finding: string; origin: RuntimeCycleQuestionOrigin; approvedContract?: string };
+		failure: RunEvent;
+		normalizedReason: string;
+	} {
+		const normalizedReason = reason.trim();
+		if (normalizedReason.length === 0) throw new Error('retry reason is required');
+		const run = this.#store.getRun(runId);
+		if (run === null) throw new Error(`run not found: ${runId}`);
+		if (run.state !== 'failed') throw new Error(`run cannot retry cycle question from state ${run.state}`);
+		const pending = this.#pendingCycleQuestion(runId);
+		const events = this.#store.listRunDecisionEvents(runId);
+		const failure = events.findLast((event) => event.kind === 'run.cycle-question-failed')
+			?? this.#legacyCycleQuestionFailure(events, pending?.questionId);
+		const explicitFailure = failure?.kind === 'run.cycle-question-failed';
+		if (pending === null || failure === undefined || (explicitFailure
+			&& (failure.payload['questionId'] !== pending.questionId || failure.payload['origin'] !== pending.origin))) {
+			throw new Error('run has no failed pending cycle question to retry');
+		}
+		return { pending, failure, normalizedReason };
+	}
+
+	/** GSHIP-871 predates the explicit failure event; admit only a persisted resolver call. */
+	#legacyCycleQuestionFailure(events: readonly RunEvent[], questionId: string | undefined): RunEvent | undefined {
+		if (questionId === undefined) return undefined;
+		const question = events.findLast((event) => event.kind === 'run.cycle-question'
+			&& event.payload['questionId'] === questionId);
+		if (question === undefined) return undefined;
+		const call = events.findLast((event) => event.seq > question.seq
+			&& event.kind.startsWith('cycle-question.'));
+		return call;
+	}
+
 	/** Retry only the approved issue verification on the preserved failed worktree. */
 	retryVerificationRun(runId: string, reason: string, source?: string): RunRecord {
 		if (this.#executor === undefined || this.#verifier === undefined) throw new RuntimeUnavailableError();
@@ -2384,19 +2445,7 @@ export class RunRuntime {
 		const started = performance.now();
 		const priorResponses = this.#cycleResponses(run.id);
 		const observations = this.#cycleObservations(run.id);
-		const unresolved = await resolver.resolve({
-			runId: run.id,
-			issueId: run.issueId,
-			workspace: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
-			finding,
-			origin,
-			...(approvedContract === undefined ? {} : { approvedContract }),
-			priorResponses,
-			observations,
-			providerId: run.providerId,
-			signal,
-			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
-		});
+		const unresolved = await this.#resolveCycleQuestionCall(resolver, run, signal, questionId, finding, origin, approvedContract, priorResponses, observations);
 		if (signal.aborted) {
 			this.#interrupt(run.id);
 			return null;
@@ -2449,6 +2498,40 @@ export class RunRuntime {
 				: { fullVerifyFeedback: this.#cycleReviewFeedback(finding, normalized) }),
 			...(ciFeedback === undefined ? {} : { ciFeedback }),
 		};
+	}
+
+	async #resolveCycleQuestionCall(
+		resolver: RuntimeCycleQuestionResolver,
+		run: RunRecord,
+		signal: AbortSignal,
+		questionId: string,
+		finding: string,
+		origin: RuntimeCycleQuestionOrigin,
+		approvedContract: string | undefined,
+		priorResponses: readonly RuntimeCycleResponse[],
+		observations: readonly CycleObservationReference[],
+	): Promise<RuntimeCycleQuestionResult> {
+		try {
+			return await resolver.resolve({
+				runId: run.id, issueId: run.issueId,
+				workspace: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
+				finding, origin,
+				...(approvedContract === undefined ? {} : { approvedContract }),
+				priorResponses, observations, providerId: run.providerId, signal,
+				emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
+			});
+		} catch (error) {
+			this.#emit(run.id, 'run.cycle-question-failed', {
+				questionId, origin, attempt: this.#cycleAttempt(run.id), cause: errorMessage(error),
+			});
+			throw error;
+		}
+	}
+
+	#cycleAttempt(runId: string): number {
+		return Math.max(1, this.#store.listRunDecisionEvents(runId).filter((event) =>
+			event.kind === 'run.started' || event.kind === 'run.provider-retry-started'
+			|| event.kind === 'run.cycle-question-retry-requested').length);
 	}
 
 	/**

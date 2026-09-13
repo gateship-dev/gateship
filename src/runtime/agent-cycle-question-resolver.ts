@@ -10,13 +10,42 @@ import type {
 } from './run-runtime.ts';
 import { normalizeCycleDiagnostic, type CycleObservationReference } from './cycle-diagnostic.ts';
 
+const CYCLE_DIAGNOSTIC_SCHEMA = {
+	type: ['object', 'null'],
+	properties: {
+			kind: { type: 'string', enum: ['correction', 'human-decision', 'insufficient-evidence', 'technical-failure'] },
+			hypothesis: { type: ['string', 'null'] },
+			action: { type: ['string', 'null'] },
+			expectedObservation: { type: ['string', 'null'] },
+			question: { type: ['string', 'null'] },
+			failure: { type: ['string', 'null'] },
+			missing: { type: ['string', 'null'] },
+			evidence: {
+				type: 'array',
+				items: {
+					type: 'object',
+					properties: {
+						id: { type: 'string' }, runId: { type: 'string' }, attempt: { type: 'integer', minimum: 1 },
+						verifiedVersion: { type: 'string' }, result: { type: 'string' },
+						tool: { type: ['string', 'null'] }, action: { type: ['string', 'null'] }, toolUseId: { type: ['string', 'null'] },
+						exitCode: { type: ['integer', 'null'] }, isError: { type: ['boolean', 'null'] },
+					},
+					required: ['id', 'runId', 'attempt', 'verifiedVersion', 'result', 'tool', 'action', 'toolUseId', 'exitCode', 'isError'],
+					additionalProperties: false,
+				},
+			},
+	},
+	required: ['kind', 'hypothesis', 'action', 'expectedObservation', 'question', 'failure', 'missing', 'evidence'],
+	additionalProperties: false,
+} as const;
+
 export const CYCLE_QUESTION_RESULT_SCHEMA = {
 	type: 'object',
 	properties: {
 		outcome: { type: 'string', enum: ['continue', 'operator'] },
 		guidance: { type: ['string', 'null'] },
 		reason: { type: ['string', 'null'] },
-		diagnostic: { type: ['object', 'null'] },
+		diagnostic: CYCLE_DIAGNOSTIC_SCHEMA,
 	},
 	required: ['outcome', 'guidance', 'reason', 'diagnostic'],
 	additionalProperties: false,
