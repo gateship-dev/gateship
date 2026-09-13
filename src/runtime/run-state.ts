@@ -50,7 +50,9 @@ const ALLOWED_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
 	// Availability is a resting condition, not a terminal outcome. A retry of
 	// executor work returns to working; a reviewer retry returns to review.
 	'waiting-provider': ['working', 'review', 'full-verify', 'interrupted'],
-	failed: ['verify'],
+	// A failed run normally remains terminal; the cycle-question retry is a
+	// narrow, event-admitted recovery that preserves the same run and worktree.
+	failed: ['verify', 'working'],
 	// An interrupted run is the only one the operator can still end instead of
 	// resume: abandoning it is the explicit way out of the provider session.
 	// A crash recovered out of `review` resumes in the reviewer, so the diff

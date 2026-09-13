@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-885",
   "title": "Corrigir schema do resolvedor e recuperar falha técnica na mesma run",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-13T15:06:20.989Z",
-  "updatedAt": "2026-09-13T15:06:20.989Z",
+  "updatedAt": "2026-09-13T15:26:52.845Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

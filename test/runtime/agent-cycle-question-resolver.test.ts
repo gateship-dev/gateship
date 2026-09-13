@@ -15,6 +15,7 @@ import type {
 import {
 	AgentCycleQuestionResolver,
 	buildCycleQuestionPrompt,
+	CYCLE_QUESTION_RESULT_SCHEMA,
 } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import type { RuntimeCycleQuestionInput } from '../../src/runtime/run-runtime.ts';
@@ -53,6 +54,20 @@ function capturingSession(
 }
 
 describe('agent cycle question resolver', () => {
+	test('publishes a closed nullable diagnostic and evidence schema', () => {
+		const diagnostic = CYCLE_QUESTION_RESULT_SCHEMA.properties.diagnostic;
+		expect(diagnostic).toMatchObject({ type: ['object', 'null'], additionalProperties: false });
+		const objectSchema = diagnostic.properties;
+		expect(objectSchema?.evidence).toMatchObject({ type: 'array' });
+		expect(objectSchema?.evidence.items).toMatchObject({ additionalProperties: false });
+		expect(objectSchema?.evidence.items.required).toEqual([
+			'id', 'runId', 'attempt', 'verifiedVersion', 'result', 'tool', 'action', 'toolUseId', 'exitCode', 'isError',
+		]);
+		expect(diagnostic.required).toEqual([
+			'kind', 'hypothesis', 'action', 'expectedObservation', 'question', 'failure', 'missing', 'evidence',
+		]);
+	});
+
 	test('carries the shared operator language contract, with and without prior responses', () => {
 		const contract = OPERATOR_LANGUAGE_CONTRACT.join('\n');
 		expect(buildCycleQuestionPrompt(questionInput())).toContain(contract);

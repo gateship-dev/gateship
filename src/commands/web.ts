@@ -2085,6 +2085,31 @@ async function retryVerificationDurableRun(
 	}
 }
 
+async function retryCycleQuestionDurableRun(
+	request: Request,
+	runtime: RunRuntime,
+	runId: string,
+	admit?: () => void,
+): Promise<Response> {
+	if (!isTrustedCommandOrigin(request)) return forbiddenOriginResponse();
+	let body: unknown;
+	try { body = await request.json(); } catch {
+		return Response.json({ ok: false, code: 'invalid-request', message: 'A JSON retry reason is required.' }, { status: 400 });
+	}
+	const reason = body !== null && typeof body === 'object' ? (body as { reason?: unknown }).reason : undefined;
+	if (typeof reason !== 'string' || reason.trim().length === 0) {
+		return Response.json({ ok: false, code: 'invalid-request', message: 'A non-empty retry reason is required.' }, { status: 400 });
+	}
+	if (runtime.getRun(runId) === null) return Response.json({ ok: false, code: 'run-not-found', message: 'Run not found.' }, { status: 404 });
+	try {
+		admit?.();
+		return Response.json({ ok: true, run: runtime.retryCycleQuestionRun(runId, reason, commandSource(request)) }, { status: 202 });
+	} catch (error) {
+		const unavailable = error instanceof RuntimeUnavailableError;
+		return Response.json({ ok: false, code: unavailable ? 'runtime-unavailable' : 'run-cycle-question-retry-refused', message: error instanceof Error ? error.message : String(error) }, { status: unavailable ? 503 : 409 });
+	}
+}
+
 /**
  * End an interrupted run without resuming its provider session. Only that state
  * admits the action: done, failed and cancelled are terminal and refuse it, and
@@ -3322,6 +3347,13 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				POST: (request) => projectOperation(
 					request.params.projectId,
 					(context) => retryVerificationDurableRun(request, context.runtime, request.params.runId,
+						() => { projectRuntimes.admitResume(request.params.projectId, request.params.runId); }),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId/retry-cycle-question': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => retryCycleQuestionDurableRun(request, context.runtime, request.params.runId,
 						() => { projectRuntimes.admitResume(request.params.projectId, request.params.runId); }),
 				),
 			},
