@@ -16,6 +16,44 @@ import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 const EMPTY_BRIEF = { objective: '', decisions: [], constraints: [], openItems: [] };
 const EMPTY_MODEL_SETTINGS = emptyModelSettings();
 
+type AtomicRecoveryTransition = 'reserve' | 'start' | 'finish' | 'reconcile';
+
+function assertAtomicRecoveryTransition(transition: AtomicRecoveryTransition): void {
+	const dbPath = join(createTestTmpdir(`gship-recovery-atomic-${transition}-`), 'runtime.sqlite');
+	const store = new RunStore(dbPath);
+	store.createRun({ id: 'run-atomic', issueId: 'GSHIP-871', sessionId: 'session', workspacePath: '/workspace', createdAt: '2026-09-12T00:00:00Z' });
+	const seed = {
+		reserve: () => undefined,
+		start: () => store.reserveRecoveryDispatch('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:01Z'),
+		finish: () => {
+			store.reserveRecoveryDispatch('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:01Z');
+			store.markRecoveryDispatchStarted('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:02Z', 'darwin-v1:1:birth');
+		},
+		reconcile: () => {
+			store.reserveRecoveryDispatch('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:01Z');
+			store.markRecoveryDispatchStarted('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:02Z', 'darwin-v1:1:birth');
+		},
+	}[transition];
+	seed();
+	const triggerDb = new Database(dbPath);
+	triggerDb.exec(`CREATE TRIGGER fail_recovery_observation BEFORE INSERT ON run_events
+		WHEN NEW.kind LIKE 'run.recovery-dispatch-%'
+		BEGIN SELECT RAISE(ABORT, 'injected recovery observation failure'); END;`);
+	const operation = {
+		reserve: () => store.reserveRecoveryDispatch('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:01Z'),
+		start: () => store.markRecoveryDispatchStarted('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:02Z', 'darwin-v1:1:birth'),
+		finish: () => store.finishRecoveryDispatch('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:03Z'),
+		reconcile: () => store.reconcileRecoveryDispatch('run-atomic', 'dispatch-atomic', '2026-09-12T00:00:03Z'),
+	}[transition];
+	expect(operation).toThrow();
+	triggerDb.close();
+	store.close();
+	const reopened = new RunStore(dbPath);
+	expect(reopened.listRunDecisionEvents('run-atomic').some((event) => event.kind.startsWith('run.recovery-dispatch-'))).toBe(transition !== 'reserve');
+	expect(reopened.getUnfinishedRecoveryDispatch('run-atomic')?.status).toBe(transition === 'reserve' ? undefined : transition === 'start' ? 'reserved' : 'started');
+	reopened.close();
+}
+
 function storeWithRun(id: string, issueId: string): RunStore {
 	const store = new RunStore(':memory:');
 	store.createRun({
@@ -70,6 +108,41 @@ describe('read-only persisted run status', () => {
 		expect(existsSync(dbPath)).toBe(false);
 	});
 
+});
+
+describe('durable recovery budget', () => {
+	test('rolls back each recovery transition when its observation event fails', () => {
+		for (const transition of ['reserve', 'start', 'finish', 'reconcile'] as const) assertAtomicRecoveryTransition(transition);
+	});
+
+	test('snapshots a versioned policy and reserves each corrective dispatch once', () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-budget', issueId: 'GSHIP-871', sessionId: 'session-budget', workspacePath: '/workspaces/run-budget', createdAt: '2026-09-12T00:00:00Z', recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 } });
+		expect(store.getRun('run-budget')?.recoveryPolicy).toEqual({ version: 1, maxRecoveryDispatches: 2 });
+		expect(store.reserveRecoveryDispatch('run-budget', 'dispatch-1', '2026-09-12T00:00:01Z')).toBe('reserved');
+		expect(store.reserveRecoveryDispatch('run-budget', 'dispatch-1', '2026-09-12T00:00:02Z')).toBe('already-reserved');
+		expect(store.reserveRecoveryDispatch('run-budget', 'dispatch-2', '2026-09-12T00:00:03Z')).toBe('reserved');
+		expect(store.reserveRecoveryDispatch('run-budget', 'dispatch-3', '2026-09-12T00:00:04Z')).toBe('exhausted');
+		store.markRecoveryDispatchStarted('run-budget', 'dispatch-1', '2026-09-12T00:00:05Z', 'claude:session-budget');
+		store.finishRecoveryDispatch('run-budget', 'dispatch-2', '2026-09-12T00:00:05Z');
+		expect(store.getUnfinishedRecoveryDispatch('run-budget')).toEqual({ dispatchId: 'dispatch-1', status: 'started', processIdentity: 'claude:session-budget' });
+		store.finishRecoveryDispatch('run-budget', 'dispatch-1', '2026-09-12T00:00:06Z');
+		store.finishRecoveryDispatch('run-budget', 'dispatch-1', '2026-09-12T00:00:07Z');
+		store.close();
+	});
+
+	test('fails closed when the persisted recovery policy is corrupt', () => {
+		const dbPath = join(createTestTmpdir('gship-recovery-policy-corrupt-'), 'runtime.sqlite');
+		const store = new RunStore(dbPath);
+		store.createRun({ id: 'run-corrupt-policy', issueId: 'GSHIP-871', sessionId: 'session', workspacePath: '/workspace', createdAt: '2026-09-12T00:00:00Z', recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 } });
+		store.close();
+		const db = new Database(dbPath);
+		db.query("UPDATE runs SET recovery_policy_json = '{bad json' WHERE id = 'run-corrupt-policy'").run();
+		db.close();
+		const reopened = new RunStore(dbPath);
+		expect(() => reopened.getRun('run-corrupt-policy')).toThrow();
+		reopened.close();
+	});
 });
 
 describe('run store workspace migration', () => {

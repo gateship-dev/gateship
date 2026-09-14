@@ -1,7 +1,7 @@
 {
   "id": "GSHIP-871",
   "title": "Autonomia: persistir orçamento compartilhado de recuperação por run",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-873",
@@ -9,7 +9,7 @@
     "GSHIP-870"
   ],
   "createdAt": "2026-09-11T12:26:46.082Z",
-  "updatedAt": "2026-09-12T22:00:59.911Z",
+  "updatedAt": "2026-09-14T04:57:39.050Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

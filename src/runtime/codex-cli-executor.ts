@@ -55,6 +55,7 @@ export interface CodexCliExecutorOptions {
 	loadIssue?: (cwd: string, issueId: string) => string;
 	approvedContract?: string;
 	onSpawn?: (pid: number) => void;
+	onExit?: (exitCode: number) => void;
 }
 
 interface CodexInvocation {
@@ -253,6 +254,20 @@ function consumeCodexEvent(
 	if (type === 'item.completed') consumeCompletedItem(event['item'], input, state);
 }
 
+function codexLifecycleCallbacks(
+	input: AgentSessionInput,
+	options: Pick<CodexCliExecutorOptions, 'onSpawn' | 'onExit'>,
+): Pick<Parameters<typeof runAgentProcess>[0], 'onSpawn' | 'onExit'> {
+	return {
+		...(options.onSpawn === undefined && input.onSpawn === undefined ? {} : {
+			onSpawn: (pid: number) => { options.onSpawn?.(pid); input.onSpawn?.(pid); },
+		}),
+		...(options.onExit === undefined && input.onExit === undefined ? {} : {
+			onExit: (exitCode: number) => { options.onExit?.(exitCode); input.onExit?.(exitCode); },
+		}),
+	};
+}
+
 async function runCodexTurn(
 	input: AgentSessionInput,
 	options: Omit<CodexCliExecutorOptions, 'loadIssue' | 'session'>,
@@ -281,7 +296,7 @@ async function runCodexTurn(
 				? {}
 				: { activityTimeoutMs: options.activityTimeoutMs }),
 			onLine: (line) => consumeCodexEvent(line, input, state),
-			...(options.onSpawn === undefined ? {} : { onSpawn: options.onSpawn }),
+			...codexLifecycleCallbacks(input, options),
 		});
 	} catch (error) {
 		if (error instanceof AgentProcessActivityTimeoutError) {
@@ -458,6 +473,8 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			emit: input.emit,
 			eventPrefix: 'provider',
 			...(input.setSessionId === undefined ? {} : { onSessionId: input.setSessionId }),
+			...(input.onExecutorSpawn === undefined ? {} : { onSpawn: input.onExecutorSpawn }),
+			...(input.onExecutorExit === undefined ? {} : { onExit: input.onExecutorExit }),
 		});
 		const parsed = parseExecutionResult(result.structuredOutput);
 		return parsed.outcome === 'waiting-user' ? { ...parsed, approvedContract: issue } : parsed;

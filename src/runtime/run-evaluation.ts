@@ -60,6 +60,7 @@ export interface RunEvaluation {
 	specProfile: SpecProfile;
 	corrections: { verification: number; review: number; fullVerify: number; ci: number; total: number };
 	dispatches?: RunDispatches;
+	recovery?: { policy: { version: 1; maxRecoveryDispatches: number } | null; reserved: number; finished: number };
 	guidance?: RunGuidanceEvidence;
 	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
 	reconciliations: { unchanged: number; adapted: number; 'contract-change-required': number; total: number };
@@ -383,14 +384,50 @@ function roleConfigurations(run: RunRecord, events: readonly RunEvent[]): RunRol
 		}));
 }
 
-export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEvaluation {
-	const duration = durationBreakdown(run, events);
+function correctionCounts(events: readonly RunEvent[]): RunEvaluation['corrections'] {
 	const corrections = {
 		verification: events.filter((event) => event.kind === 'run.verification-fix-requested').length,
 		review: events.filter((event) => event.kind === 'run.review-fix-requested').length,
 		fullVerify: events.filter((event) => event.kind === 'run.full-verify-fix-requested').length,
 		ci: events.filter((event) => event.kind === 'run.ci-fix-requested').length,
 	};
+	return { ...corrections, total: Object.values(corrections).reduce((sum, count) => sum + count, 0) };
+}
+
+function recoveryCounts(events: readonly RunEvent[]): { reserved: number; finished: number } {
+	const reserved = new Set<string>();
+	const finished = new Set<string>();
+	for (const event of events) {
+		const id = event.payload['dispatchId'];
+		if (typeof id !== 'string') continue;
+		if (event.kind === 'run.recovery-dispatch-reserved') reserved.add(id);
+		if (event.kind === 'run.recovery-dispatch-finished' || (event.kind === 'run.recovery-dispatch-reconciled' && event.payload['state'] === 'finished')) finished.add(id);
+	}
+	return { reserved: reserved.size, finished: finished.size };
+}
+
+function verificationRetryMetrics(events: readonly RunEvent[]): RunEvaluation['verificationRetries'] {
+	const requests = events.filter((event) => event.kind === 'run.verification-retry-requested');
+	if (requests.length === 0) return undefined;
+	const results = events.filter((event) => event.kind === 'run.verification-retry-result');
+	const resultsForRequest = requests.map((request, index) => results.filter((result) => result.seq > request.seq && result.seq < (requests[index + 1]?.seq ?? Infinity)));
+	const completedResults = resultsForRequest.flat();
+	const durations = results.map((event) => event.payload['durationMs']).filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+	const usage = results.flatMap((event) => {
+		const value = event.payload['usage'];
+		return value !== null && typeof value === 'object' && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
+	});
+	return {
+		attempts: requests.length,
+		failures: results.filter((event) => event.payload['outcome'] === 'failed').length,
+		durationMs: completedResults.length === requests.length && durations.length === results.length ? durations.reduce((sum, value) => sum + value, 0) : null,
+		usage: usage.length === 0 ? null : usage,
+	};
+}
+
+export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEvaluation {
+	const duration = durationBreakdown(run, events);
+	const corrections = correctionCounts(events);
 	const cycleQuestionOrigins = countByOrigin(events, 'run.cycle-question', 'origin');
 	const cycleQuestions = {
 		executor: cycleQuestionOrigins['executor'] ?? 0,
@@ -409,10 +446,12 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 	const verificationCadence = focusedExecuted + focusedSkipped + fullExecuted + fullSkipped > 0
 		? { focused: { executed: focusedExecuted, skipped: focusedSkipped }, full: { executed: fullExecuted, skipped: fullSkipped } }
 		: undefined;
+	const recoveryCountsValue = recoveryCounts(events);
 	return {
 		specProfile: specProfileOf(events),
-		corrections: { ...corrections, total: Object.values(corrections).reduce((sum, count) => sum + count, 0) },
+		corrections,
 		dispatches: dispatchesOf(events),
+		recovery: { policy: run.recoveryPolicy ?? null, ...recoveryCountsValue },
 		guidance: guidanceEvidence(events),
 		cycleQuestions: { ...cycleQuestions, total: Object.values(cycleQuestions).reduce((sum, count) => sum + count, 0) },
 		reconciliations: { ...reconciliations, total: Object.values(reconciliations).reduce((sum, count) => sum + count, 0) },
@@ -428,22 +467,6 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		resolvedCycleQuestions: events.filter((event) => event.kind === 'run.cycle-response').length,
 		roles: roleConfigurations(run, events),
 		...(verificationCadence === undefined ? {} : { verificationCadence }),
-		...(events.some((event) => event.kind === 'run.verification-retry-requested') ? (() => {
-			const requests = events.filter((event) => event.kind === 'run.verification-retry-requested');
-			const results = events.filter((event) => event.kind === 'run.verification-retry-result');
-			const resultsForRequest = requests.map((request, index) => results.filter((result) => result.seq > request.seq && result.seq < (requests[index + 1]?.seq ?? Infinity)));
-			const completedResults = resultsForRequest.flat();
-			const durations = results.map((event) => event.payload['durationMs']).filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0);
-			const usage = results.flatMap((event) => {
-				const value = event.payload['usage'];
-				return value !== null && typeof value === 'object' && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
-			});
-			return { verificationRetries: {
-				attempts: requests.length,
-				failures: results.filter((event) => event.payload['outcome'] === 'failed').length,
-				durationMs: completedResults.length === requests.length && durations.length === results.length ? durations.reduce((sum, value) => sum + value, 0) : null,
-				usage: usage.length === 0 ? null : usage,
-			} };
-		})() : {}),
+		...(verificationRetryMetrics(events) === undefined ? {} : { verificationRetries: verificationRetryMetrics(events) }),
 	};
 }

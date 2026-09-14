@@ -56,6 +56,7 @@ export interface ClaudeCliExecutorOptions {
 	/** Test seam for a supplied approved snapshot; production receives it per run. */
 	approvedContract?: string;
 	onSpawn?: (pid: number) => void;
+	onExit?: (exitCode: number) => void;
 }
 
 interface ClaudeInvocation {
@@ -444,7 +445,12 @@ export class ClaudeAgentSession implements AgentSession {
 			...(this.#options.activityTimeoutMs === undefined
 				? {}
 				: { activityTimeoutMs: this.#options.activityTimeoutMs }),
-			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
+			...(this.#options.onSpawn === undefined && input.onSpawn === undefined ? {} : {
+				 onSpawn: (pid: number) => { this.#options.onSpawn?.(pid); input.onSpawn?.(pid); },
+			}),
+			...(this.#options.onExit === undefined && input.onExit === undefined ? {} : {
+				onExit: (exitCode: number) => { this.#options.onExit?.(exitCode); input.onExit?.(exitCode); },
+			}),
 		});
 	}
 }
@@ -551,6 +557,8 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			emit: input.emit,
 			eventPrefix: 'provider',
 			...(input.setSessionId === undefined ? {} : { onSessionId: input.setSessionId }),
+			...(input.onExecutorSpawn === undefined ? {} : { onSpawn: input.onExecutorSpawn }),
+			...(input.onExecutorExit === undefined ? {} : { onExit: input.onExecutorExit }),
 		});
 		const parsed = parseExecutionResult(result.structuredOutput);
 		return parsed.outcome === 'waiting-user' ? { ...parsed, approvedContract: issue } : parsed;

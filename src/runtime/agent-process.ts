@@ -23,6 +23,7 @@ export interface AgentProcessInput {
 	/** Internal/test seam only. There is deliberately no operator setting. */
 	activityTimeoutMs?: number;
 	onSpawn?: (pid: number) => void;
+	onExit?: (exitCode: number) => void;
 }
 
 export interface AgentProcessResult {
@@ -102,6 +103,7 @@ export async function runAgentProcess(input: AgentProcessInput): Promise<AgentPr
 			return exitCode;
 		});
 		const [exitCode, stderrText] = await Promise.all([exited, stderr, stdout]);
+		input.onExit?.(exitCode);
 		if (termination !== undefined) await termination;
 		if (input.signal.aborted) throw new DOMException('cancelled', 'AbortError');
 		if (activityTimedOut) throw new AgentProcessActivityTimeoutError(activityTimeoutMs);
