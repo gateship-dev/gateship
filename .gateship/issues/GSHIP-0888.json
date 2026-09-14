@@ -1,0 +1,35 @@
+{
+  "id": "GSHIP-888",
+  "title": "Telemetria T1: capturar uso dos providers por invocação sem perda",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T11:23:41.833Z",
+  "updatedAt": "2026-09-14T11:23:41.833Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Corrigir lacunas provadas na captura de uso dos providers, começando por turn.completed.usage do Codex, sem confundir conversa persistida com métricas estruturadas nem prometer recuperar dados descartados.",
+    "acceptance": [
+      "Mapear os eventos estruturados realmente recebidos e persistidos de Codex/Claude. Corrigir a perda de turn.completed.usage no adapter Codex; testes sintéticos representam os formatos efetivamente suportados.",
+      "Consultar fonte primária atual quando semântica de campo for incerta, registrar limitação em vez de adivinhar.",
+      "Persistir uso disponível nos eventos existentes com provider, papel e identidade estável da invocação/tentativa. Preservar entrada, saída, cache e reasoning quando fornecidos, sem somar subconjuntos ao total de novo. Ausência é desconhecida, não zero.",
+      "Provar delta versus acumulado na retomada do executor: não somar snapshots cumulativos repetidos e não descartar chamadas novas. Revisar Claude separadamente, sem impor semântica de um provider ao outro.",
+      "Capturar uso existente também quando chamada termina em erro, cancelamento ou resposta inválida; nunca inventar valores se provider não os forneceu. Propagar o vínculo de invocação aos consumidores existentes, preparando deduplicação posterior de evento bruto e resposta.",
+      "Testar entrada/saída/cache/reasoning, zero real/ausente, retomada com acumulado e delta, eventos repetidos, erro com uso/sem uso e respostas inválidas nos testes dos adapters existentes. Não abrir coleta de chats externos, credenciais ou arquivo bruto paralelo."
+    ],
+    "boundaries": [
+      "Manter um serviço Bun/SQLite e eventos/projeções existentes, sem dependência ou subsistema novo. Preservar assinatura, credenciais cegas, sandbox, allowlists e modelos/esforços Luna/Sol.",
+      "Não editar SQLite/.gship manualmente, executar providers reais nos testes, alterar estado/aprovação de outras runs nem atribuir consumo de chats/agentes externos à run.",
+      "Implementar apenas este contrato, preservar o trabalho entregue nas issues anteriores e revalidar caminhos existentes. Full check:all pertence ao full-verifier do runtime na fronteira de ship."
+    ],
+    "verify": [
+      "bun test test/runtime/codex-cli-executor.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/claude-stream.test.ts test/runtime/agent-cycle-question-resolver.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "ecae18a789d954d465018ca58648967f3b0c6afc67099c20959f2fdf10953fb3",
+    "approvedAt": "2026-09-14T11:23:41.833Z"
+  }
+}
