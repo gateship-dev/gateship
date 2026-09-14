@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-09-06, against the `v0.435.0` tag.
+> Updated: 2026-09-14, against the `v0.510.0` tag plus GSHIP-884 (PR #745).
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -48,14 +48,41 @@ center and remains navigation context rather than an implicit API scope.
 
 ## Current evidence
 
-By `v0.435.0`, Gateship has delivered project-declared multistack verification
-and a JavaScript/Python proof; the minimum environment for project commands;
-protected-main-compatible intake; merge without an auto-merge dependency;
-global defaults and per-project overrides with per-run telemetry; typed
-diagnostics and a soft ratchet; the redesign and real routes; internal
-resolution of technical questions; navigation-preserved state; removal of the
-internal conversation; a compact operational sidebar; and shared spacing for
-cards, grids, and forms.
+By `v0.510.0`, Gateship has delivered the Spec v2 contract with a conditional
+research contract and receipts (GSHIP-831 to 842); the executor escalation
+contract; focused verification separated from the full verify; per-phase run
+duration and factual consumption cohorts in Insights; the control center on a
+shadcn base with Gateship identity and TanStack tables for Execuções, Agora,
+Filas and Análises (GSHIP-851 to 859); the semantic run timeline with cursor
+pagination; queue dependencies with explicit execution order (GSHIP-875);
+automatic provider CLI updates through Renovate; and CI and release hardening
+(GSHIP-866, 877 to 880).
+
+The autonomy seam is partly delivered: verifiable contract and context in every
+cycle (GSHIP-869), technical progress distinguished from repeated questions
+(GSHIP-870), a persisted shared recovery budget per run (GSHIP-871), recovery
+evaluation and human-attention provenance (GSHIP-873), retry bounded per
+failure after a correction (GSHIP-881, 882), final CI result recorded on merge
+with reconciliation of older runs (GSHIP-883), and same-run recovery of a
+confirmed merge conflict with fresh verification (GSHIP-884, PR #745). The
+activation of the policy before notifying the operator (GSHIP-864) and its
+post-activation validation (GSHIP-874) remain in the approved queue.
+
+Operational state on 2026-09-14: the Codex subscription is exhausted until
+2026-09-19. The gateship project runs on Claude Code with `claude-sonnet-5`
+(high) as executor and `claude-opus-5` (high) as orchestrator and reviewer;
+`chain-runs` and `executor-handoff` are enabled for the project. The executor
+and the reviewer hand off to the alternate provider on a usage limit, but the
+cycle-question resolver does not (GSHIP-892, unapproved proposal), so a run
+born on Codex needs `runs.respond` with the review findings as operator
+guidance at every review with findings. Runs created before GSHIP-871 carry no
+recovery policy; the 884 run took 14 review rounds and 4 fix rounds under manual
+guidance before shipping.
+
+Review statistics over 286 completed runs: 226 runs closed with no review
+finding, mean 1.1 findings per run, median 1 review, p90 7 reviews, 10 runs at
+10 or more findings, all of them in runtime and shipper state-machine work. The
+`maxRecoveryDispatches=10` chosen for GSHIP-864 cuts exactly that tail.
 
 The explicit versioned multistack contract lives in `.gateship/project.json`.
 Project-defined commands run with the shared minimum child-environment
@@ -113,9 +140,21 @@ different roadmap stage requires its own authorization.
 
 ## Next ordered seams
 
-No next seam is approved. Use the current evidence to identify the next bounded
-proposal only when it is justified by observed product need and receives an
-operator-approved specification.
+The approved queue is a linear chain and runs under `chain-runs`:
+GSHIP-888, 889, 890, 891 (telemetry T1 to T4), then GSHIP-872 (observable
+review evidence without wider permissions), GSHIP-864 and GSHIP-874. On
+2026-09-14 the 864 and 874 specifications gained a convergence diagnosis
+(findings per round over the last rounds, and whether the last fix produced a
+new finding) at the recovery limit and in the post-activation report; both need
+re-approval before they become admissible again.
+
+Unapproved proposals filed on 2026-09-14, from a comparison with external
+spec-driven and security-review practice: GSHIP-892 (cycle-question provider
+fallback), GSHIP-893 (mutation sensor as deterministic evidence in full verify),
+GSHIP-894 (per-acceptance verdict with file:line evidence in review), GSHIP-895
+(deterministic test-integrity guard in verify), GSHIP-896 (implicit-requirement
+sweep in the agent guide), and GSHIP-897 (Host validation, security headers and
+body limit on the local web service). They approve nothing by themselves.
 
 ## Product radar
 
