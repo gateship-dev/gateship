@@ -74,6 +74,24 @@ export interface RunRecord {
 	updatedAt: string;
 	summary: string | null;
 	error: string | null;
+	recoveryPolicy?: RecoveryPolicy | null;
+}
+
+/** Versioned, opt-in recovery contract. No policy means legacy behavior. */
+export interface RecoveryPolicy {
+	version: 1;
+	maxRecoveryDispatches: number;
+}
+
+export function validateRecoveryPolicy(value: unknown): RecoveryPolicy | null {
+	if (value === undefined || value === null) return null;
+	if (typeof value !== 'object' || Array.isArray(value)) throw new Error('recovery policy must be an object');
+	const record = value as Record<string, unknown>;
+	if (record['version'] !== 1 || !Number.isInteger(record['maxRecoveryDispatches'])
+		|| (record['maxRecoveryDispatches'] as number) <= 0) {
+		throw new Error('recovery policy requires version 1 and a positive integer maxRecoveryDispatches');
+	}
+	return { version: 1, maxRecoveryDispatches: record['maxRecoveryDispatches'] as number };
 }
 
 export type PersistedRunStatus = Pick<
@@ -299,6 +317,7 @@ export interface CreateRunInput {
 	research?: ResearchContract;
 	/** Immutable approved issue record captured at admission. */
 	approvedContract?: string;
+	recoveryPolicy?: RecoveryPolicy;
 }
 
 export interface TransitionRunInput {
@@ -569,6 +588,7 @@ interface RunRow {
 	updated_at: string;
 	summary: string | null;
 	error: string | null;
+	recovery_policy_json: string | null;
 }
 
 interface EventRow {
@@ -647,7 +667,13 @@ function decodeRun(row: RunRow): RunRecord {
 		updatedAt: row.updated_at,
 		summary: row.summary,
 		error: row.error,
+		recoveryPolicy: decodeRecoveryPolicy(row.recovery_policy_json),
 	};
+}
+
+function decodeRecoveryPolicy(value: string | null): RecoveryPolicy | null {
+	if (value === null) return null;
+	return validateRecoveryPolicy(JSON.parse(value));
 }
 
 function decodePayload(json: string): Record<string, unknown> {
@@ -810,7 +836,8 @@ export class RunStore {
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL,
 				summary TEXT,
-				error TEXT
+				error TEXT,
+				recovery_policy_json TEXT
 			);
 			CREATE TABLE IF NOT EXISTS run_events (
 				seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -892,6 +919,19 @@ export class RunStore {
 		if (!columns.some((column) => column.name === 'provider_id')) {
 			this.#db.exec('ALTER TABLE runs ADD COLUMN provider_id TEXT;');
 		}
+		if (!columns.some((column) => column.name === 'recovery_policy_json')) {
+			this.#db.exec('ALTER TABLE runs ADD COLUMN recovery_policy_json TEXT;');
+		}
+		this.#db.exec(`CREATE TABLE IF NOT EXISTS recovery_dispatches (
+			run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+			dispatch_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			started_at TEXT,
+			process_identity TEXT,
+			finished_at TEXT,
+			PRIMARY KEY (run_id, dispatch_id)
+		);`);
 		this.#db.exec('UPDATE runs SET session_id = id WHERE session_id IS NULL;');
 		this.#db.exec("UPDATE runs SET provider_id = 'claude' WHERE provider_id IS NULL;");
 		// A GSHIP-612 database already carries captured proposals, and its table
@@ -929,12 +969,13 @@ export class RunStore {
 				? {} : { reconciliationGuidance: input.reconciliationGuidance }),
 			...(input.research === undefined ? {} : { research: input.research }),
 			...(input.approvedContract === undefined ? {} : { approvedContract: input.approvedContract }),
+			...(input.recoveryPolicy === undefined ? {} : { recoveryPolicy: input.recoveryPolicy }),
 		};
 		const create = this.#db.transaction(() => {
 			this.#db.query(`
 				INSERT INTO runs (
-					id, issue_id, session_id, provider_id, workspace_path, state, fix_rounds, created_at, updated_at
-				) VALUES ($id, $issueId, $sessionId, $providerId, $workspacePath, 'queued', 0, $createdAt, $createdAt)
+				id, issue_id, session_id, provider_id, workspace_path, state, fix_rounds, created_at, updated_at, recovery_policy_json
+				) VALUES ($id, $issueId, $sessionId, $providerId, $workspacePath, 'queued', 0, $createdAt, $createdAt, $recoveryPolicy)
 			`).run({
 				id: input.id,
 				issueId: input.issueId,
@@ -942,6 +983,7 @@ export class RunStore {
 				providerId: input.providerId ?? 'claude',
 				workspacePath: input.workspacePath,
 				createdAt: input.createdAt,
+				recoveryPolicy: input.recoveryPolicy === undefined ? null : JSON.stringify(input.recoveryPolicy),
 			});
 			const inserted = this.#db.query(`
 				INSERT INTO run_events (
@@ -959,6 +1001,70 @@ export class RunStore {
 		const run = this.getRun(input.id);
 		if (run === null) throw new Error(`created run disappeared: ${input.id}`);
 		return { run, event: decodeEvent(event) };
+	}
+
+	reserveRecoveryDispatch(runId: string, dispatchId: string, createdAt: string): 'reserved' | 'already-reserved' | 'exhausted' | 'legacy' {
+		return this.#db.transaction(() => {
+			const run = this.getRun(runId);
+			if (run === null) throw new Error(`run not found: ${runId}`);
+			const policy = run.recoveryPolicy;
+			const enforceLimit = policy !== undefined && policy !== null;
+			const existing = this.#db.query('SELECT 1 FROM recovery_dispatches WHERE run_id = $runId AND dispatch_id = $dispatchId')
+				.get({ runId, dispatchId });
+			if (existing !== null) return 'already-reserved';
+			const count = this.#db.query("SELECT COUNT(*) AS count FROM recovery_dispatches WHERE run_id = $runId")
+				.get({ runId }) as { count: number };
+			if (enforceLimit && count.count >= policy.maxRecoveryDispatches) return 'exhausted';
+			this.#db.query(`INSERT INTO recovery_dispatches (run_id, dispatch_id, status, created_at) VALUES ($runId, $dispatchId, 'reserved', $createdAt)`)
+				.run({ runId, dispatchId, createdAt });
+			this.#appendEventWithinTransaction({ runId, kind: 'run.recovery-dispatch-reserved', createdAt, payload: { dispatchId } });
+			return 'reserved';
+		})();
+	}
+
+	markRecoveryDispatchStarted(runId: string, dispatchId: string, startedAt: string, processIdentity: string): void {
+		this.#db.transaction(() => {
+			const result = this.#db.query("UPDATE recovery_dispatches SET status = 'started', started_at = COALESCE(started_at, $startedAt), process_identity = COALESCE(process_identity, $processIdentity) WHERE run_id = $runId AND dispatch_id = $dispatchId AND status = 'reserved'")
+				.run({ runId, dispatchId, startedAt, processIdentity });
+			if (result.changes > 0) this.#appendEventWithinTransaction({
+				runId, kind: 'run.recovery-dispatch-started', createdAt: startedAt,
+				payload: { dispatchId, processIdentity },
+			});
+		})();
+	}
+
+	finishRecoveryDispatch(runId: string, dispatchId: string, finishedAt: string, payload: Record<string, unknown> = { dispatchId }): void {
+		this.#db.transaction(() => {
+			const result = this.#db.query("UPDATE recovery_dispatches SET status = 'finished', finished_at = COALESCE(finished_at, $finishedAt) WHERE run_id = $runId AND dispatch_id = $dispatchId AND status != 'finished'")
+				.run({ runId, dispatchId, finishedAt });
+			if (result.changes > 0) this.#appendEventWithinTransaction({
+				runId, kind: 'run.recovery-dispatch-finished', createdAt: finishedAt,
+				payload: { dispatchId, ...payload },
+			});
+		})();
+	}
+
+	reconcileRecoveryDispatch(runId: string, dispatchId: string, finishedAt: string): void {
+		this.#db.transaction(() => {
+			const result = this.#db.query("UPDATE recovery_dispatches SET status = 'finished', finished_at = COALESCE(finished_at, $finishedAt) WHERE run_id = $runId AND dispatch_id = $dispatchId AND status = 'started'")
+				.run({ runId, dispatchId, finishedAt });
+			if (result.changes > 0) this.#appendEventWithinTransaction({
+				runId, kind: 'run.recovery-dispatch-reconciled', createdAt: finishedAt,
+				payload: { dispatchId, state: 'finished' },
+			});
+		})();
+	}
+
+	abandonRecoveryDispatch(runId: string, dispatchId: string, abandonedAt: string): void {
+		this.#db.query("UPDATE recovery_dispatches SET status = 'abandoned', finished_at = COALESCE(finished_at, $abandonedAt) WHERE run_id = $runId AND dispatch_id = $dispatchId AND status = 'reserved'")
+			.run({ runId, dispatchId, abandonedAt });
+	}
+
+	getUnfinishedRecoveryDispatch(runId: string): { dispatchId: string; status: 'reserved' | 'started'; processIdentity?: string } | null {
+		const row = this.#db.query("SELECT dispatch_id, status, process_identity FROM recovery_dispatches WHERE run_id = $runId AND status != 'finished' AND status != 'abandoned' ORDER BY created_at DESC LIMIT 1")
+			.get({ runId }) as { dispatch_id: string; status: string; process_identity: string | null } | null;
+		if (row === null || (row.status !== 'reserved' && row.status !== 'started')) return null;
+		return { dispatchId: row.dispatch_id, status: row.status, ...(row.process_identity === null ? {} : { processIdentity: row.process_identity }) };
 	}
 
 	transition(input: TransitionRunInput): { run: RunRecord; event: RunEvent } {
@@ -1002,7 +1108,7 @@ export class RunStore {
 		return { run, event: decodeEvent(event) };
 	}
 
-	appendEvent(input: AppendRunEventInput): RunEvent {
+	#appendEventWithinTransaction(input: AppendRunEventInput): RunEvent {
 		const current = this.getRun(input.runId);
 		if (current === null) throw new Error(`run not found: ${input.runId}`);
 		const row = this.#db.query(`
@@ -1019,6 +1125,10 @@ export class RunStore {
 			eventClass: input.eventClass ?? 'decision',
 		}) as EventRow;
 		return decodeEvent(row);
+	}
+
+	appendEvent(input: AppendRunEventInput): RunEvent {
+		return this.#db.transaction(() => this.#appendEventWithinTransaction(input))();
 	}
 
 	/**

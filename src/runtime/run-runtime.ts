@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { validateDependencyGraph } from '../issues/graph.ts';
 import { isPlannable } from '../issues/plannable.ts';
 import { fingerprintSpec, profileSpec, type ResearchContract, validateCurrentResearchAtRunStart, validateSpec } from '../issues/spec.ts';
@@ -50,6 +50,8 @@ import {
 	type RunEventPage,
 	type RunRecord,
 	RunStore,
+	type RecoveryPolicy,
+	validateRecoveryPolicy,
 } from './run-store.ts';
 
 function commandPayload(payload: Record<string, unknown>, source?: string): Record<string, unknown> {
@@ -223,6 +225,16 @@ export interface RuntimeExecutionInput {
 	executorRoute?: { providerId: AgentProviderId; sessionId: string };
 	/** Validated, compact research shared by every executor provider. */
 	research?: ResearchBundle;
+	/** Stable id of the reserved corrective dispatch, when policy is enabled. */
+	recoveryDispatchId?: string;
+	/** Called after the executor's provider creates a child process. */
+	onExecutorSpawn?: (pid: number) => void;
+	/** Called after the executor child exits, before adapter result classification. */
+	onExecutorExit?: (exitCode: number) => void;
+	/** Reserves a distinct corrective dispatch for an executor handoff fallback. */
+	onExecutorHandoff?: (providerId: AgentProviderId) => Pick<RuntimeExecutionInput, 'recoveryDispatchId' | 'onExecutorSpawn' | 'onExecutorExit'>;
+	/** Reconnects to the already-live process named by a recovered reservation. */
+	reconnectRecoveryDispatch?: boolean;
 }
 
 /** See `RuntimeExecutionInput.executorHandoff` (GSHIP-722). */
@@ -231,6 +243,13 @@ export interface RuntimeExecutorHandoff {
 	reason: ProviderErrorKind;
 	status: string;
 	diff: string;
+}
+
+export class RecoveryBudgetExhaustedError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'RecoveryBudgetExhaustedError';
+	}
 }
 
 export type RuntimeExecutionResult =
@@ -258,6 +277,110 @@ export interface RuntimeExecutionReconciliation {
 
 export interface RuntimeExecutor {
 	execute: (input: RuntimeExecutionInput) => Promise<RuntimeExecutionResult>;
+	reconnect?: (input: RuntimeExecutionInput) => Promise<RuntimeExecutionResult>;
+}
+
+export type RecoveryProcessObservation =
+	| { status: 'live'; identity: 'same' }
+	| { status: 'live'; identity: 'different' | 'unknown' }
+	| { status: 'exited' }
+	| { status: 'unknown' };
+
+const PROCFS_IDENTITY = /^procfs-v1:([^:]+):(\d+):(\d+)$/;
+const DARWIN_IDENTITY = /^darwin-v1:(\d+):(.+)$/;
+const DARWIN_BIRTH = /^(?:Sun|Mon|Tue|Wed|Thu|Fri|Sat) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) {1,2}\d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/;
+
+function procStarttime(pid: number): string | null | undefined {
+	let stat: string;
+	try {
+		stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+	} catch (error) {
+		if ((error as { code?: string }).code === 'ENOENT') return null;
+		throw error;
+	}
+	const close = stat.lastIndexOf(')');
+	if (close < 0) return undefined;
+	const fields = stat.slice(close + 2).trim().split(/\s+/);
+	const starttime = fields[19];
+	return starttime !== undefined && /^\d+$/.test(starttime) ? starttime : undefined;
+}
+
+export function captureRecoveryProcessIdentity(pid: number): string | undefined {
+	if (process.platform === 'darwin') {
+		const birth = darwinProcessBirth(pid);
+		return birth === undefined || birth === null ? undefined : `darwin-v1:${pid}:${encodeURIComponent(birth)}`;
+	}
+	if (process.platform !== 'linux') return undefined;
+	try {
+		const bootId = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+		const starttime = procStarttime(pid);
+		return bootId.length === 0 || starttime === undefined || starttime === null ? undefined : `procfs-v1:${bootId}:${starttime}:${pid}`;
+	} catch {
+		return undefined;
+	}
+}
+
+function darwinProcessBirth(pid: number): string | null | undefined {
+	try {
+		process.kill(pid, 0);
+	} catch (error) {
+		return classifyDarwinProcessLiveness((error as { code?: string }).code);
+	}
+	try {
+		const result = Bun.spawnSync({ cmd: ['ps', '-p', String(pid), '-o', 'lstart='], stdout: 'pipe', stderr: 'pipe' });
+		return classifyDarwinProcessInspection(
+			result.exitCode,
+			new TextDecoder().decode(result.stdout).trim(),
+		);
+	} catch {
+		return undefined;
+	}
+}
+
+export function classifyDarwinProcessLiveness(errorCode: string | undefined): null | undefined {
+	return errorCode === 'ESRCH' ? null : undefined;
+}
+
+export function classifyDarwinProcessInspection(exitCode: number, stdout: string): string | undefined {
+	if (exitCode !== 0) return undefined;
+	return DARWIN_BIRTH.test(stdout) ? stdout : undefined;
+}
+
+export function observeRecoveryProcessIdentity(identity: string): RecoveryProcessObservation {
+	const darwin = DARWIN_IDENTITY.exec(identity);
+	if (darwin !== null) return observeDarwinRecoveryProcess(darwin);
+	const match = PROCFS_IDENTITY.exec(identity);
+	return match === null ? { status: 'unknown' } : observeLinuxRecoveryProcess(match);
+}
+
+function observeDarwinRecoveryProcess(match: RegExpExecArray): RecoveryProcessObservation {
+	const birth = darwinProcessBirth(Number(match[1]));
+	if (birth === null) return { status: 'exited' };
+	if (birth === undefined) return { status: 'unknown' };
+	return encodeURIComponent(birth) === match[2]
+		? { status: 'live', identity: 'same' }
+		: { status: 'live', identity: 'different' };
+}
+
+function observeLinuxRecoveryProcess(match: RegExpExecArray): RecoveryProcessObservation {
+	const [, bootId, starttime, pidText] = match;
+	let currentBootId: string;
+	try {
+		currentBootId = readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+	} catch {
+		return { status: 'unknown' };
+	}
+	let currentStarttime: string | null | undefined;
+	try {
+		currentStarttime = procStarttime(Number(pidText));
+	} catch (error) {
+		return (error as { code?: string }).code === 'ENOENT' ? { status: 'exited' } : { status: 'unknown' };
+	}
+	if (currentStarttime === null) return { status: 'exited' };
+	if (currentStarttime === undefined || currentBootId.length === 0) return { status: 'unknown' };
+	return currentBootId === bootId && currentStarttime === starttime
+		? { status: 'live', identity: 'same' }
+		: { status: 'live', identity: 'different' };
 }
 
 export interface RuntimeVerificationResult {
@@ -432,6 +555,9 @@ export interface RunRuntimeOptions {
 	listBacklog?: () => IssueEntry[];
 	/** Read fresh at each use so registry settings apply without a restart. */
 	agentDefaults?: () => AgentDefaults;
+	/** Opt-in only; omitted preserves legacy recovery behavior. */
+		recoveryPolicy?: RecoveryPolicy;
+	observeRecoveryProcess?: (processIdentity: string) => RecoveryProcessObservation;
 }
 
 export interface RuntimeChainReconciliationInput {
@@ -598,8 +724,12 @@ interface RunAttempt {
 	fullVerifyFeedback?: string;
 	ciFeedback?: string;
 	operatorGuidance?: string;
+	operatorGuidanceSource?: string;
+	operatorGuidanceAuthorizationEvidence?: 'explicit' | 'absent' | 'unknown';
 	reconciliationGuidance?: string;
 	internalGuidance?: RuntimeInternalGuidance;
+	recoveryDispatchId?: string;
+	reconnectRecoveryDispatchId?: string;
 }
 
 const PROVIDER_AVAILABILITY_FAILURES: readonly ProviderErrorKind[] = [
@@ -686,6 +816,8 @@ export function validateCycleQuestionResult(
 export class RunRuntime {
 	readonly #cwd: string;
 	readonly #store: RunStore;
+	readonly #recoveryPolicy: RecoveryPolicy | undefined;
+	readonly #observeRecoveryProcess: (processIdentity: string) => RecoveryProcessObservation;
 	readonly #workflowRevision: string | undefined;
 	#agentDefaults: () => AgentDefaults;
 	readonly #executor: RuntimeExecutor | undefined;
@@ -699,6 +831,7 @@ export class RunRuntime {
 	readonly #now: () => string;
 	readonly #timer: RuntimeTimer;
 	readonly #newId: () => string;
+	readonly #newRecoveryDispatchId: () => string;
 	readonly #newSessionId: () => string;
 	readonly #researcher: Researcher;
 	readonly #preflight: ((issueId: string) => void) | undefined;
@@ -724,6 +857,8 @@ export class RunRuntime {
 			? undefined
 			: workflowRevision.slice(0, 200);
 		this.#agentDefaults = options.agentDefaults ?? (() => ({}));
+		this.#recoveryPolicy = options.recoveryPolicy === undefined ? undefined : validateRecoveryPolicy(options.recoveryPolicy) ?? undefined;
+		this.#observeRecoveryProcess = options.observeRecoveryProcess ?? observeRecoveryProcessIdentity;
 		this.#executor = options.executor;
 		this.#verifier = options.verifier;
 		this.#reviewer = options.reviewer;
@@ -735,6 +870,7 @@ export class RunRuntime {
 		this.#now = options.now ?? (() => new Date().toISOString());
 		this.#timer = options.timer ?? HOST_TIMER;
 		this.#newId = options.newId ?? randomUUID;
+		this.#newRecoveryDispatchId = randomUUID;
 		this.#newSessionId = options.newSessionId ?? randomUUID;
 		this.#researcher = options.researcher ?? new HttpResearcher();
 		this.#preflight = options.preflight;
@@ -916,7 +1052,8 @@ export class RunRuntime {
 			workspacePath,
 			createdAt: this.#now(),
 			...(reconciliationGuidance === undefined ? {} : { reconciliationGuidance }),
-			 specProfile,
+				 specProfile,
+			...(this.#recoveryPolicy === undefined ? {} : { recoveryPolicy: this.#recoveryPolicy }),
 			...(admittedIssue === undefined ? {} : { approvedContract: JSON.stringify(admittedIssue) }),
 			...(admittedIssue?.spec !== undefined && 'version' in admittedIssue.spec && admittedIssue.spec.version === 2 && admittedIssue.spec.research !== undefined
 				? { research: admittedIssue.spec.research } : {}),
@@ -971,7 +1108,11 @@ export class RunRuntime {
 			...(recoveredReconciliation ?? {}),
 			...(guidance === undefined || guidance.length === 0
 				? {}
-				: { operatorGuidance: guidance }),
+				: {
+					operatorGuidance: guidance,
+					operatorGuidanceSource: source,
+					operatorGuidanceAuthorizationEvidence: authorizationEvidence,
+				}),
 		});
 		return run;
 	}
@@ -1733,7 +1874,7 @@ export class RunRuntime {
 			const failedRun = this.#transition(runId, 'failed', 'run.failed', {
 				error: errorMessage(error),
 			}).run;
-			this.#releaseFinishedWorkspace(failedRun, false);
+			if (!(error instanceof RecoveryBudgetExhaustedError)) this.#releaseFinishedWorkspace(failedRun, false);
 		}
 	}
 
@@ -1755,46 +1896,39 @@ export class RunRuntime {
 		firstAttempt: RunAttempt,
 		resumeAtReview: 'review' | 'full-verify' | null = null,
 	): Promise<void> {
-		let attempt = await this.#resumePendingCycleQuestion(run, signal, firstAttempt);
+		let attempt = await this.#resumeImplementationStage(run, signal, firstAttempt, resumeAtReview);
 		if (attempt === null) return;
-		if (resumeAtReview === 'full-verify') {
-			const next = await this.#enterFullVerify(
-				run, signal, this.#executionInput(run, signal, attempt), 'run.review-clean',
-			);
-			if (next === null) {
-				await this.#shipIfReady(run, signal);
-				return;
-			}
-			attempt = next;
-		} else if (resumeAtReview === 'review') {
-			const next = await this.#review(
-				run,
-				signal,
-				this.#executionInput(run, signal, attempt),
-				resumeAtReview,
-			);
-			if (next === null) {
-				await this.#shipIfReady(run, signal);
-				return;
-			}
-			attempt = next;
-		}
 		for (;;) {
-			const executionInput = this.#executionInput(run, signal, attempt);
-			const verified = await this.#work(executor, verifier, run, signal, executionInput);
-			if (verified === false) return;
-			if (verified !== true) {
-				attempt = verified;
-				continue;
-			}
-			const next = await this.#review(run, signal, executionInput);
-			if (next === null) break;
+			const next = await this.#driveImplementationAttempt(executor, verifier, run, signal, attempt);
+			if (next === false) return;
+			if (next === true) break;
 			attempt = next;
 		}
 		// A run that got here verified, reviewed and fully verified clean ships
 		// under the same ownership: the operator asked for the change, not for a
 		// button.
 		await this.#shipIfReady(run, signal);
+	}
+
+	async #resumeImplementationStage(run: RunRecord, signal: AbortSignal, firstAttempt: RunAttempt, resumeAtReview: 'review' | 'full-verify' | null): Promise<RunAttempt | null> {
+		let attempt = await this.#resumePendingCycleQuestion(run, signal, firstAttempt);
+		if (attempt === null || resumeAtReview === null) return attempt;
+		const input = this.#executionInput(run, signal, attempt);
+		const next = resumeAtReview === 'full-verify'
+			? await this.#enterFullVerify(run, signal, input, 'run.review-clean')
+			: await this.#review(run, signal, input, resumeAtReview);
+		if (next !== null) return next;
+		await this.#shipIfReady(run, signal);
+		return null;
+	}
+
+	async #driveImplementationAttempt(executor: RuntimeExecutor, verifier: RuntimeVerifier, run: RunRecord, signal: AbortSignal, attempt: RunAttempt): Promise<true | false | RunAttempt> {
+		const recovery = this.#reserveRecoveryDispatch(run, attempt, executor);
+		if (recovery !== null) attempt = { ...attempt, recoveryDispatchId: recovery.dispatchId, ...(recovery.reconnect ? { reconnectRecoveryDispatchId: recovery.dispatchId } : {}) };
+		const executionInput = this.#executionInput(run, signal, attempt);
+		const verified = await this.#work(executor, verifier, run, signal, executionInput);
+		if (verified !== true) return verified;
+		return await this.#review(run, signal, executionInput) ?? true;
 	}
 
 	async #resumePendingCycleQuestion(
@@ -1804,10 +1938,42 @@ export class RunRuntime {
 	): Promise<RunAttempt | null> {
 		const pending = this.#pendingCycleQuestion(run.id);
 		if (pending === null) return attempt;
+		if (attempt.operatorGuidance !== undefined) {
+			return this.#applyOperatorCycleGuidance(run, pending, attempt);
+		}
 		return await this.#answerCycleQuestion(
 			run, signal, pending.questionId, pending.finding, pending.origin,
 			attempt.ciFeedback, pending.approvedContract ?? this.#requireApprovedContract(run.id, run.issueId),
 		);
+	}
+
+	#applyOperatorCycleGuidance(
+		run: RunRecord,
+		pending: { questionId: string; finding: string; origin: RuntimeCycleQuestionOrigin; approvedContract?: string },
+		attempt: RunAttempt,
+	): RunAttempt {
+		const guidance = attempt.operatorGuidance;
+		if (guidance === undefined) return attempt;
+		const payload = {
+			questionId: pending.questionId,
+			responder: attempt.operatorGuidanceSource === 'agent-cli' ? 'agent-cli' : 'operator',
+			source: attempt.operatorGuidanceSource ?? 'operator',
+			outcome: 'continue',
+			guidance,
+			findings: pending.finding,
+			origin: pending.origin,
+		};
+		if (this.#store.getRun(run.id)?.state === 'working') this.#emit(run.id, 'run.cycle-response', payload);
+		else this.#transition(run.id, 'working', 'run.cycle-response', { payload });
+		return {
+			...attempt,
+			resume: true,
+			...(pending.origin === 'review'
+				? { reviewFeedback: this.#cycleReviewFeedback(pending.finding, guidance) }
+				: pending.origin === 'full-verify'
+				? { fullVerifyFeedback: this.#cycleReviewFeedback(pending.finding, guidance) }
+				: { internalGuidance: { question: pending.finding, guidance } }),
+		};
 	}
 
 	async #shipIfReady(run: RunRecord, signal: AbortSignal): Promise<void> {
@@ -2134,7 +2300,7 @@ export class RunRuntime {
 		signal: AbortSignal,
 		executionInput: RuntimeExecutionInput,
 	): Promise<true | false | RunAttempt> {
-		const execution = await executor.execute(executionInput);
+		const execution = await this.#executeWork(executor, run, executionInput);
 		if (signal.aborted) {
 			this.#interrupt(run.id);
 			return false;
@@ -2168,7 +2334,7 @@ export class RunRuntime {
 		}
 		if (verification.ok) return true;
 		const detail = verification.detail ?? 'A verificação específica da issue falhou.';
-		if (!this.#verificationFixUsed(run.id)) {
+		if (this.#recoveryPolicyEnabled(run) || !this.#verificationFixUsed(run.id)) {
 			this.#transition(run.id, 'working', 'run.verification-fix-requested', {
 				payload: { findings: detail },
 			});
@@ -2183,6 +2349,49 @@ export class RunRuntime {
 		}).run;
 		this.#releaseFinishedWorkspace(failedRun, false);
 		return false;
+	}
+
+	async #executeWork(executor: RuntimeExecutor, run: RunRecord, executionInput: RuntimeExecutionInput): Promise<RuntimeExecutionResult> {
+		let completed = false;
+		let exited = false;
+		const markSpawned = (pid: number): void => {
+			if (executionInput.recoveryDispatchId === undefined) return;
+			const processIdentity = captureRecoveryProcessIdentity(pid)
+				?? `${executionInput.providerId ?? run.providerId}:${executionInput.sessionId}:pid-${pid}`;
+			this.#store.markRecoveryDispatchStarted(run.id, executionInput.recoveryDispatchId, this.#now(), processIdentity);
+		};
+		const markExited = (exitCode: number): void => {
+			exited = true;
+			if (executionInput.recoveryDispatchId === undefined) return;
+			this.#store.finishRecoveryDispatch(run.id, executionInput.recoveryDispatchId, this.#now(), { exitCode });
+		};
+		const reserveHandoff = (providerId: AgentProviderId): Pick<RuntimeExecutionInput, 'recoveryDispatchId' | 'onExecutorSpawn' | 'onExecutorExit'> => {
+			const dispatchId = this.#newRecoveryDispatchId();
+			const result = this.#store.reserveRecoveryDispatch(run.id, dispatchId, this.#now());
+			if (result === 'exhausted') throw new RecoveryBudgetExhaustedError(`recovery dispatch budget exhausted after ${run.recoveryPolicy?.maxRecoveryDispatches ?? 0} attempts; fallback ${providerId} was not invoked`);
+			return {
+				recoveryDispatchId: dispatchId,
+				onExecutorSpawn: (pid) => {
+					const processIdentity = captureRecoveryProcessIdentity(pid) ?? `${providerId}:${executionInput.sessionId}:pid-${pid}`;
+					this.#store.markRecoveryDispatchStarted(run.id, dispatchId, this.#now(), processIdentity);
+				},
+				onExecutorExit: (exitCode) => this.#store.finishRecoveryDispatch(run.id, dispatchId, this.#now(), { exitCode }),
+			};
+		};
+		const providerInput = executionInput.recoveryDispatchId === undefined
+			? executionInput
+			: { ...executionInput, onExecutorSpawn: markSpawned, onExecutorExit: markExited, onExecutorHandoff: reserveHandoff };
+		try {
+			const execution = executionInput.reconnectRecoveryDispatch === true
+				? await (executor.reconnect?.(providerInput) ?? Promise.reject(new Error('live recovery process cannot be reconnected')))
+				: await executor.execute(providerInput);
+			completed = true;
+			return execution;
+		} finally {
+			if (executionInput.recoveryDispatchId !== undefined && completed && !exited) {
+				this.#store.finishRecoveryDispatch(run.id, executionInput.recoveryDispatchId, this.#now());
+			}
+		}
 	}
 
 	async #handleExecutorQuestion(
@@ -2212,6 +2421,48 @@ export class RunRuntime {
 	#verificationFixUsed(runId: string): boolean {
 		return this.#store.listRunDecisionEvents(runId)
 			.some((event) => event.kind === 'run.verification-fix-requested');
+	}
+
+	#recoveryPolicyEnabled(run: RunRecord): boolean {
+		return run.recoveryPolicy != null;
+	}
+
+	#hasRecoveryDispatchCause(run: RunRecord, attempt: RunAttempt): boolean {
+		return attempt.reviewFeedback !== undefined || attempt.verificationFeedback !== undefined
+			|| attempt.fullVerifyFeedback !== undefined || attempt.ciFeedback !== undefined
+			|| attempt.internalGuidance !== undefined || attempt.operatorGuidance !== undefined
+			|| (attempt.reconciliationGuidance !== undefined
+				&& this.#store.listRunDecisionEvents(run.id).some((event) => event.kind === 'run.work-completed'));
+	}
+
+	#reconcileExistingRecoveryDispatch(run: RunRecord, existing: NonNullable<ReturnType<RunStore['getUnfinishedRecoveryDispatch']>>, executor: RuntimeExecutor): { dispatchId: string; reconnect?: boolean } | null {
+		if (existing.status !== 'started') return null;
+		if (existing.processIdentity === undefined) throw new Error('recovery dispatch process identity or state is uncertain after process interruption');
+		const observation = this.#observeRecoveryProcess(existing.processIdentity);
+		if (observation.status === 'live' && observation.identity === 'same' && executor.reconnect !== undefined) {
+			return { dispatchId: existing.dispatchId, reconnect: true };
+		}
+		if (observation.status !== 'exited') throw new Error('recovery dispatch process identity or state is uncertain after process interruption');
+		this.#store.reconcileRecoveryDispatch(run.id, existing.dispatchId, this.#now());
+		return null;
+	}
+
+	#newRecoveryDispatch(run: RunRecord, attempt: RunAttempt): { dispatchId: string } {
+		const dispatchId = attempt.recoveryDispatchId ?? this.#newRecoveryDispatchId();
+		const result = this.#store.reserveRecoveryDispatch(run.id, dispatchId, this.#now());
+		if (result === 'exhausted') throw new RecoveryBudgetExhaustedError(`recovery dispatch budget exhausted after ${run.recoveryPolicy?.maxRecoveryDispatches ?? 0} attempts; request an explicit budget extension through the authorized proposal flow`);
+		return { dispatchId };
+	}
+
+	#reserveRecoveryDispatch(run: RunRecord, attempt: RunAttempt, executor: RuntimeExecutor): { dispatchId: string; reconnect?: boolean } | null {
+		if (!this.#hasRecoveryDispatchCause(run, attempt)) return null;
+		const existing = this.#store.getUnfinishedRecoveryDispatch(run.id);
+		const reconciled = existing === null ? null : this.#reconcileExistingRecoveryDispatch(run, existing, executor);
+		if (reconciled !== null) return reconciled;
+		if (existing?.status === 'reserved' && attempt.recoveryDispatchId === undefined) {
+			throw new Error('recovery dispatch state is uncertain after process interruption');
+		}
+		return this.#newRecoveryDispatch(run, attempt);
 	}
 
 	/**
@@ -2245,7 +2496,7 @@ export class RunRuntime {
 		if (review.verdict === 'clean') {
 			return this.#enterFullVerify(run, signal, executionInput, 'run.review-clean');
 		}
-		if ((this.#store.getRun(run.id)?.fixRounds ?? 0) >= 1) {
+		if (!this.#recoveryPolicyEnabled(run) && (this.#store.getRun(run.id)?.fixRounds ?? 0) >= 1) {
 			return this.#askCycleQuestion(run, signal, review.detail, 'review', executionInput.ciFeedback, executionInput.approvedContract);
 		}
 		this.#transition(run.id, 'working', 'run.review-fix-requested', {
@@ -2382,10 +2633,8 @@ export class RunRuntime {
 	} | null {
 		const events = this.#store.listRunDecisionEvents(runId);
 		const answered = new Set(this.#cycleResponses(runId).map((response) => response.questionId));
-		let supersededByOperator = false;
 		for (let index = events.length - 1; index >= 0; index -= 1) {
 			const event = events[index];
-			if (event?.kind === 'run.operator-guidance') supersededByOperator = true;
 			if (event?.kind !== 'run.cycle-question') continue;
 			const questionId = event.payload['questionId'];
 			const finding = event.payload['finding'];
@@ -2394,7 +2643,7 @@ export class RunRuntime {
 			const normalizedOrigin = origin === undefined ? 'review' : origin;
 			if (typeof questionId === 'string' && typeof finding === 'string'
 				&& (normalizedOrigin === 'executor' || normalizedOrigin === 'review' || normalizedOrigin === 'full-verify')
-				&& !answered.has(questionId) && !supersededByOperator) {
+				&& !answered.has(questionId)) {
 				return {
 					questionId,
 					finding,
@@ -2581,7 +2830,7 @@ export class RunRuntime {
 			return null;
 		}
 		const detail = result.detail ?? 'Full project verification failed.';
-		if (this.#fullVerifyFixUsed(run.id)) {
+		if (!this.#recoveryPolicyEnabled(run) && this.#fullVerifyFixUsed(run.id)) {
 			return this.#askCycleQuestion(run, signal, detail, 'full-verify', executionInput.ciFeedback, executionInput.approvedContract);
 		}
 		this.#transition(run.id, 'working', 'run.full-verify-fix-requested', {
@@ -2664,35 +2913,43 @@ export class RunRuntime {
 			sessionId: run.sessionId,
 			providerId: run.providerId,
 			resume: attempt.resume,
+			...(attempt.recoveryDispatchId === undefined ? {} : { recoveryDispatchId: attempt.recoveryDispatchId }),
+			...(attempt.reconnectRecoveryDispatchId === undefined ? {} : { reconnectRecoveryDispatch: true }),
 			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
 			signal,
-			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
-			setSessionId: (sessionId: string) => this.#setSessionId(run, sessionId),
+			...this.#executionLifecycleInput(run),
 			operatorDecisions: selectOperatorDecisions(decisionEvents),
 			...(approvedContract === undefined ? {} : { approvedContract }),
 			...(this.#researchBundle(run) === undefined ? {} : { research: this.#researchBundle(run) }),
 			executorHandoffAllowed: handoff === null && this.#store.getRuntimeSetting(EXECUTOR_HANDOFF_ENABLED_KEY) === 'true',
 			...(onAlternate ? { executorRoute: { providerId: handoff.to, sessionId: handoff.sessionId } } : {}),
-			...(attempt.reviewFeedback === undefined
-				? {}
-				: { reviewFeedback: attempt.reviewFeedback }),
-			...(attempt.verificationFeedback === undefined
-				? {}
-				: { verificationFeedback: attempt.verificationFeedback }),
-			...(attempt.fullVerifyFeedback === undefined
-				? {}
-				: { fullVerifyFeedback: attempt.fullVerifyFeedback }),
+			...this.#executionFeedbackInput(attempt),
+			...this.#executionGuidanceInput(attempt, decisionEvents),
+		};
+	}
+
+	#executionFeedbackInput(attempt: RunAttempt): Partial<RuntimeExecutionInput> {
+		return {
+			...(attempt.reviewFeedback === undefined ? {} : { reviewFeedback: attempt.reviewFeedback }),
+			...(attempt.verificationFeedback === undefined ? {} : { verificationFeedback: attempt.verificationFeedback }),
+			...(attempt.fullVerifyFeedback === undefined ? {} : { fullVerifyFeedback: attempt.fullVerifyFeedback }),
 			...(attempt.ciFeedback === undefined ? {} : { ciFeedback: attempt.ciFeedback }),
-			...(attempt.operatorGuidance === undefined
-				? {}
-				: { operatorGuidance: attempt.operatorGuidance }),
+		};
+	}
+
+	#executionGuidanceInput(attempt: RunAttempt, decisionEvents: readonly RunEvent[]): Partial<RuntimeExecutionInput> {
+		return {
+			...(attempt.operatorGuidance === undefined ? {} : { operatorGuidance: attempt.operatorGuidance }),
 			...(this.#latestOperatorGuidance(decisionEvents) ?? {}),
-			...(attempt.reconciliationGuidance === undefined
-				? {}
-				: { reconciliationGuidance: attempt.reconciliationGuidance }),
-			...(attempt.internalGuidance === undefined
-				? {}
-				: { internalGuidance: attempt.internalGuidance }),
+			...(attempt.reconciliationGuidance === undefined ? {} : { reconciliationGuidance: attempt.reconciliationGuidance }),
+			...(attempt.internalGuidance === undefined ? {} : { internalGuidance: attempt.internalGuidance }),
+		};
+	}
+
+	#executionLifecycleInput(run: RunRecord): Pick<RuntimeExecutionInput, 'emit' | 'setSessionId'> {
+		return {
+			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
+			setSessionId: (sessionId: string) => this.#setSessionId(run, sessionId),
 		};
 	}
 

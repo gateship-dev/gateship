@@ -193,8 +193,10 @@ export class AgentExecutorRouter implements RuntimeExecutor {
 	): Promise<RuntimeExecutionResult> {
 		const change = collectChange(this.#runGit, input.cwd);
 		let sessionId = this.#newSessionId();
+		const recovery = input.onExecutorHandoff?.(fallback);
 		const handoffInput: RuntimeExecutionInput = {
 			...input,
+			...(recovery ?? {}),
 			providerId: fallback,
 			sessionId,
 			resume: false,

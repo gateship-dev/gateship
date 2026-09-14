@@ -12,6 +12,11 @@ import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/run
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
 import {
 	RunRuntime as BaseRunRuntime,
+	captureRecoveryProcessIdentity,
+	classifyDarwinProcessLiveness,
+	classifyDarwinProcessInspection,
+	observeRecoveryProcessIdentity,
+	RecoveryBudgetExhaustedError,
 	type RuntimeChainReconciliationInput,
 	type RuntimeCycleQuestionResult,
 	type RuntimeCycleResponse,
@@ -76,6 +81,34 @@ function seedVerificationFailure(store: RunStore, runId: string, issue: IssueEnt
 }
 
 describe('durable run runtime', () => {
+	test.skipIf(process.platform !== 'linux' && process.platform !== 'darwin')('observes native process birth identity across exit and PID mismatch', async () => {
+		const child = Bun.spawn(['sleep', '30'], { stdout: 'ignore', stderr: 'ignore', stdin: 'ignore' });
+		try {
+			const identity = captureRecoveryProcessIdentity(child.pid);
+			expect(identity).toMatch(/^(procfs|darwin)-v1:/);
+			expect(observeRecoveryProcessIdentity(identity ?? '')).toEqual({ status: 'live', identity: 'same' });
+		const reusedPid = identity?.startsWith('procfs-v1:')
+			? identity.replace(/:(\d+):(\d+)$/, ':0:$2')
+			: identity?.replace(/^(darwin-v1:\d+:).+$/, '$1different-birth');
+		expect(observeRecoveryProcessIdentity(reusedPid ?? '')).toEqual({ status: 'live', identity: 'different' });
+			expect(observeRecoveryProcessIdentity('procfs-v1:boot:not-a-starttime:123')).toEqual({ status: 'unknown' });
+			child.kill();
+			await child.exited;
+			expect(observeRecoveryProcessIdentity(identity ?? '')).toEqual({ status: 'exited' });
+		} finally {
+			child.kill();
+			await child.exited.catch(() => undefined);
+		}
+	});
+	test('classifies Darwin process inspection failures conservatively', () => {
+		expect(classifyDarwinProcessLiveness('ESRCH')).toBeNull();
+		expect(classifyDarwinProcessLiveness('EACCES')).toBeUndefined();
+		expect(classifyDarwinProcessLiveness(undefined)).toBeUndefined();
+		expect(classifyDarwinProcessInspection(1, '')).toBeUndefined();
+		expect(classifyDarwinProcessInspection(0, 'invalid output')).toBeUndefined();
+		expect(classifyDarwinProcessInspection(0, 'Mon Sep  7 12:34:56 2026')).toBe('Mon Sep  7 12:34:56 2026');
+		expect(classifyDarwinProcessInspection(0, 'Mon Sep 17 12:34:56 2026')).toBe('Mon Sep 17 12:34:56 2026');
+});
 	test('records an unknown spec profile when no backlog reader is configured', async () => {
 		const runtime = new BaseRunRuntime({
 			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-unknown-profile',
@@ -111,7 +144,7 @@ describe('durable run runtime', () => {
 			spec: { version: 2, objective: 'O', acceptance: ['A'], verify: ['V'], research: null as never },
 		};
 		const runtime = new RunRuntime({
-			cwd: '/project', store: new RunStore(':memory:'),
+			cwd: '/project', store: new RunStore(':memory:'), observeRecoveryProcess: () => ({ status: 'exited' }),
 			executor: { execute: async () => ({ outcome: 'completed' }) }, verifier: { verify: async () => ({ ok: true }) },
 			workspace: { prepare: async () => { prepareCalls += 1; return '/workspace'; } }, listBacklog: () => [issue],
 		});
@@ -386,6 +419,180 @@ describe('durable run runtime', () => {
 		);
 	});
 
+	test('keeps a corrective reservation reserved when execution fails before spawn', async () => {
+		const store = new RunStore(':memory:');
+		let calls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 },
+			executor: { execute: async () => { calls += 1; if (calls === 2) throw new Error('crash before spawn'); return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: false, detail: 'corrigir' }) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		expect(store.getUnfinishedRecoveryDispatch(run.id)).toMatchObject({ status: 'reserved' });
+		expect(runtime.listRunEvents(run.id).some((event) => event.kind === 'run.recovery-dispatch-started')).toBe(false);
+		runtime.close();
+	});
+
+	test('preserves an identity-less pre-spawn reservation as uncertain on restart', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-reserve-restart', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-12T00:00:00Z', recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 }, ...approvedRunFields('GSHIP-756') });
+		store.transition({ runId: 'run-reserve-restart', toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
+		store.transition({ runId: 'run-reserve-restart', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
+		store.transition({ runId: 'run-reserve-restart', toState: 'working', kind: 'run.verification-fix-requested', payload: { findings: 'corrigir' }, createdAt: '2026-09-12T00:00:03Z' });
+		store.reserveRecoveryDispatch('run-reserve-restart', 'dispatch-before-crash', '2026-09-12T00:00:04Z');
+		let calls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => { calls += 1; input.onExecutorSpawn?.(987); return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.resumeRun('run-reserve-restart');
+		await waitFor(() => runtime.getRun('run-reserve-restart')?.state === 'failed');
+		expect(calls).toBe(0);
+			expect(runtime.listRunEvents('run-reserve-restart').filter((event) => event.kind === 'run.recovery-dispatch-reserved').map((event) => event.payload['dispatchId'])).toEqual(['dispatch-before-crash']);
+		runtime.close();
+	});
+
+	test('fails closed for an identity-less reservation in waiting-provider after restart', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-provider-reserve-restart', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-12T00:00:00Z', recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 }, ...approvedRunFields('GSHIP-756') });
+		store.transition({ runId: 'run-provider-reserve-restart', toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
+		store.transition({ runId: 'run-provider-reserve-restart', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
+		store.transition({ runId: 'run-provider-reserve-restart', toState: 'working', kind: 'run.verification-fix-requested', payload: { findings: 'corrigir' }, createdAt: '2026-09-12T00:00:03Z' });
+		store.reserveRecoveryDispatch('run-provider-reserve-restart', 'dispatch-provider-before-crash', '2026-09-12T00:00:04Z');
+		store.transition({ runId: 'run-provider-reserve-restart', toState: 'waiting-provider', kind: 'run.provider-waiting', createdAt: '2026-09-12T00:00:05Z' });
+		let executeCalls = 0;
+		let reconnectCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async () => { executeCalls += 1; return { outcome: 'completed' }; }, reconnect: async () => { reconnectCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.resumeRun('run-provider-reserve-restart');
+		await waitFor(() => runtime.getRun('run-provider-reserve-restart')?.state === 'failed');
+		expect({ executeCalls, reconnectCalls }).toEqual({ executeCalls: 0, reconnectCalls: 0 });
+		expect(store.getUnfinishedRecoveryDispatch('run-provider-reserve-restart')).toMatchObject({ dispatchId: 'dispatch-provider-before-crash', status: 'reserved' });
+		expect(runtime.listRunEvents('run-provider-reserve-restart').some((event) => event.kind === 'run.recovery-dispatch-abandoned')).toBe(false);
+		runtime.close();
+	});
+
+	test('reconnects a live started recovery process without a new reservation', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-live-recovery', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-12T00:00:00Z', recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 }, ...approvedRunFields('GSHIP-756') });
+		store.transition({ runId: 'run-live-recovery', toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
+		store.transition({ runId: 'run-live-recovery', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
+		store.transition({ runId: 'run-live-recovery', toState: 'working', kind: 'run.verification-fix-requested', payload: { findings: 'corrigir' }, createdAt: '2026-09-12T00:00:03Z' });
+		store.reserveRecoveryDispatch('run-live-recovery', 'dispatch-live', '2026-09-12T00:00:04Z');
+		store.markRecoveryDispatchStarted('run-live-recovery', 'dispatch-live', '2026-09-12T00:00:05Z', 'claude:session:pid-42');
+		let reconnects = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, observeRecoveryProcess: () => ({ status: 'live', identity: 'same' }),
+			executor: { execute: async () => { throw new Error('must reconnect'); }, reconnect: async () => { reconnects += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.resumeRun('run-live-recovery');
+		await waitFor(() => runtime.getRun('run-live-recovery')?.state === 'ready-to-ship');
+		expect(reconnects).toBe(1);
+		expect(runtime.listRunEvents('run-live-recovery').filter((event) => event.kind === 'run.recovery-dispatch-reserved')).toHaveLength(1);
+		runtime.close();
+	});
+
+	test('reinvokes after a started process is confirmed ended with a new reservation', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-ended-recovery', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-12T00:00:00Z', recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 }, ...approvedRunFields('GSHIP-756') });
+		store.transition({ runId: 'run-ended-recovery', toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
+		store.transition({ runId: 'run-ended-recovery', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
+		store.transition({ runId: 'run-ended-recovery', toState: 'working', kind: 'run.verification-fix-requested', payload: { findings: 'corrigir' }, createdAt: '2026-09-12T00:00:03Z' });
+		store.reserveRecoveryDispatch('run-ended-recovery', 'dispatch-ended', '2026-09-12T00:00:04Z');
+		store.markRecoveryDispatchStarted('run-ended-recovery', 'dispatch-ended', '2026-09-12T00:00:05Z', 'claude:session:pid-43');
+		let calls = 0;
+		const runtime = new RunRuntime({ cwd: '/project', store, observeRecoveryProcess: () => ({ status: 'exited' }),
+			executor: { execute: async (input) => { calls += 1; input.onExecutorSpawn?.(44); return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) } });
+		runtime.resumeRun('run-ended-recovery');
+		await waitFor(() => runtime.getRun('run-ended-recovery')?.state === 'ready-to-ship');
+		expect(calls).toBe(1);
+		expect(runtime.listRunEvents('run-ended-recovery').filter((event) => event.kind === 'run.recovery-dispatch-reserved')).toHaveLength(2);
+		runtime.close();
+	});
+
+	test('projects confirmed recovery reconciliation once across replayed finish events', () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-recovery-projection', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-12T00:00:00Z', ...approvedRunFields('GSHIP-756') });
+		store.appendEvent({ runId: 'run-recovery-projection', kind: 'run.recovery-dispatch-reserved', payload: { dispatchId: 'dispatch-projection' }, createdAt: '2026-09-12T00:00:01Z' });
+		store.appendEvent({ runId: 'run-recovery-projection', kind: 'run.recovery-dispatch-reconciled', payload: { dispatchId: 'dispatch-projection', state: 'started' }, createdAt: '2026-09-12T00:00:02Z' });
+		store.appendEvent({ runId: 'run-recovery-projection', kind: 'run.recovery-dispatch-reconciled', payload: { dispatchId: 'dispatch-projection', state: 'finished' }, createdAt: '2026-09-12T00:00:03Z' });
+		store.appendEvent({ runId: 'run-recovery-projection', kind: 'run.recovery-dispatch-finished', payload: { dispatchId: 'dispatch-projection' }, createdAt: '2026-09-12T00:00:04Z' });
+		store.appendEvent({ runId: 'run-recovery-projection', kind: 'run.recovery-dispatch-reconciled', payload: { dispatchId: 'dispatch-projection', state: 'finished' }, createdAt: '2026-09-12T00:00:05Z' });
+		const runtime = new RunRuntime({ cwd: '/project', store });
+		expect(runtime.getRunEvaluation('run-recovery-projection')?.recovery).toMatchObject({ policy: null, reserved: 1, finished: 1 });
+		runtime.close();
+	});
+
+	test('preserves a started reservation when reconnect fails for a live process', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-failed-reconnect', issueId: 'GSHIP-756', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-12T00:00:00Z', recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 }, ...approvedRunFields('GSHIP-756') });
+		store.transition({ runId: 'run-failed-reconnect', toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
+		store.transition({ runId: 'run-failed-reconnect', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
+		store.transition({ runId: 'run-failed-reconnect', toState: 'working', kind: 'run.verification-fix-requested', payload: { findings: 'corrigir' }, createdAt: '2026-09-12T00:00:03Z' });
+		store.reserveRecoveryDispatch('run-failed-reconnect', 'dispatch-live-failure', '2026-09-12T00:00:04Z');
+		store.markRecoveryDispatchStarted('run-failed-reconnect', 'dispatch-live-failure', '2026-09-12T00:00:05Z', 'claude:session:pid-44');
+		let executeCalls = 0;
+		let reconnectCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, observeRecoveryProcess: () => ({ status: 'live', identity: 'same' }),
+			executor: { execute: async () => { executeCalls += 1; return { outcome: 'completed' }; }, reconnect: async () => { reconnectCalls += 1; throw new Error('reconnect failed'); } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		runtime.resumeRun('run-failed-reconnect');
+		await waitFor(() => runtime.getRun('run-failed-reconnect')?.state === 'failed');
+		expect({ executeCalls, reconnectCalls }).toEqual({ executeCalls: 0, reconnectCalls: 1 });
+		expect(store.getUnfinishedRecoveryDispatch('run-failed-reconnect')).toMatchObject({ dispatchId: 'dispatch-live-failure', status: 'started', processIdentity: 'claude:session:pid-44' });
+		expect(runtime.listRunEvents('run-failed-reconnect').some((event) => event.kind === 'run.recovery-dispatch-finished')).toBe(false);
+		runtime.close();
+	});
+
+	test('preserves a corrective reservation after a crash following spawn', async () => {
+		const store = new RunStore(':memory:');
+		let calls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 },
+			executor: { execute: async (input) => { calls += 1; if (calls === 2) { input.onExecutorSpawn?.(321); throw new Error('crash after spawn'); } return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: false, detail: 'corrigir' }) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		const recovery = store.getUnfinishedRecoveryDispatch(run.id);
+		expect(recovery).toMatchObject({ status: 'started' });
+		expect(recovery?.processIdentity).toContain(':pid-321');
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-finished')).toHaveLength(0);
+		runtime.close();
+	});
+
+	test('records a spawned corrective dispatch exactly once when cancelled', async () => {
+		const store = new RunStore(':memory:');
+		let calls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store, recoveryPolicy: { version: 1, maxRecoveryDispatches: 1 },
+			executor: { execute: async (input) => {
+				calls += 1;
+				if (calls === 2) {
+					input.onExecutorSpawn?.(654);
+					await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
+				}
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: false, detail: 'corrigir' }) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => calls === 2);
+		await runtime.cancelRun(run.id, 'test');
+		expect(store.getUnfinishedRecoveryDispatch(run.id)).toBeNull();
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-finished')).toHaveLength(1);
+		runtime.close();
+	});
+
 	test('corrects the first issue verification failure, then verifies, reviews and runs full verification before shipping', async () => {
 		const executions: Array<{ resume: boolean; verificationFeedback?: string }> = [];
 		let verificationCalls = 0;
@@ -409,6 +616,7 @@ describe('durable run runtime', () => {
 		]);
 		expect({ verificationCalls, reviews, fullVerifications }).toEqual({ verificationCalls: 2, reviews: 1, fullVerifications: 1 });
 		expect(runtime.getRun(run.id)?.fixRounds).toBe(1);
+		expect(runtime.getRunEvaluation(run.id)?.recovery).toMatchObject({ policy: null, reserved: 1, finished: 1 });
 		expect(runtime.getRunRoundOrigins(run.id)).toEqual({ executor: 1, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
 		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toContain('run.verification-fix-requested');
 		await runtime.stop();
@@ -809,11 +1017,11 @@ describe('durable run runtime', () => {
 		const feedback: Array<string | undefined> = [];
 		let executions = 0;
 		const runtime = new RunRuntime({
-			cwd: '/project', store: new RunStore(':memory:'),
+			cwd: '/project', store: new RunStore(':memory:'), observeRecoveryProcess: () => ({ status: 'exited' }),
 			executor: { execute: async (input) => {
 				executions += 1;
 				feedback.push(input.verificationFeedback);
-				if (executions === 2) throw new ProviderCallError('claude', 'usage-limit', 'limite atingido');
+				if (executions === 2) { input.onExecutorSpawn?.(123); throw new ProviderCallError('claude', 'usage-limit', 'limite atingido'); }
 				return { outcome: 'completed' };
 			} },
 			verifier: { verify: async () => ({ ok: executions > 1, detail: 'falha aprovada' }) },
@@ -1361,6 +1569,8 @@ describe('durable run runtime', () => {
 			'run.waiting-user',
 			'run.operator-guidance',
 			'run.started',
+			'run.recovery-dispatch-reserved',
+			'run.recovery-dispatch-finished',
 			'run.work-completed',
 			'run.verified',
 		]);
@@ -1368,6 +1578,23 @@ describe('durable run runtime', () => {
 			text: 'Use the smaller seam.', authorizationEvidence: 'unknown',
 		});
 		await runtime.stop();
+		runtime.close();
+	});
+
+	test('preserves the workspace when recovery budget exhaustion is technical', async () => {
+		const releases: string[] = [];
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-budget-exhausted',
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 1 },
+			workspace: { prepare: async () => '/project', release: ({ runId }) => { releases.push(runId); return { outcome: 'released', branch: 'gship/run-budget-exhausted' }; } },
+			executor: { execute: async () => { executions += 1; if (executions > 1) throw new RecoveryBudgetExhaustedError('budget exhausted'); return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: false, detail: 'retry' }) },
+		});
+		const run = await runtime.startRun('GSHIP-675');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		expect(releases).toEqual([]);
+		expect(runtime.getRunEvaluation(run.id)?.recovery).toMatchObject({ reserved: 1 });
 		runtime.close();
 	});
 });
@@ -1508,6 +1735,51 @@ describe('executor handoff between providers (GSHIP-722)', () => {
 		expect(runtime.getRunEvaluation(run.id)?.roles.map((role) => role.role)).not.toContain('reviewer');
 		await runtime.stop();
 		runtime.close();
+	});
+
+	test('counts the corrective handoff fallback as a separate recovery dispatch', async () => {
+		for (const maxRecoveryDispatches of [1, 2] as const) {
+			let claudeCalls = 0;
+			let codexCalls = 0;
+			let verificationCalls = 0;
+			const store = new RunStore(':memory:');
+			const runtime = new RunRuntime({
+				cwd: '/project', store, newId: () => `run-handoff-budget-${maxRecoveryDispatches}`,
+				recoveryPolicy: { version: 1, maxRecoveryDispatches },
+				executor: new AgentExecutorRouter({
+					executors: {
+					claude: { execute: async (input) => {
+						claudeCalls += 1;
+						if (claudeCalls === 1) return { outcome: 'completed' };
+						input.onExecutorSpawn?.(101);
+						input.onExecutorExit?.(1);
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.');
+					} },
+					codex: { execute: async (input) => {
+						codexCalls += 1;
+						input.onExecutorSpawn?.(102);
+						input.onExecutorExit?.(0);
+						return { outcome: 'completed' };
+					} },
+				}, newSessionId: () => 'session-fallback', runGit: NO_CHANGE,
+				}),
+				verifier: { verify: async () => {
+					verificationCalls += 1;
+					return verificationCalls === 1 ? { ok: false, detail: 'corrigir' } : { ok: true };
+				} },
+			});
+			runtime.setExecutorHandoffEnabled(true);
+			const run = await runtime.startRun('GSHIP-722');
+			await waitFor(() => runtime.getRun(run.id)?.state === (maxRecoveryDispatches === 1 ? 'failed' : 'ready-to-ship'));
+			const recoveryEvents = runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-finished');
+			expect({ claudeCalls, codexCalls, recoveryEvents: recoveryEvents.length }).toEqual(maxRecoveryDispatches === 1
+				? { claudeCalls: 2, codexCalls: 0, recoveryEvents: 1 }
+				: { claudeCalls: 2, codexCalls: 1, recoveryEvents: 2 });
+			if (maxRecoveryDispatches === 2) {
+				expect(new Set(recoveryEvents.map((event) => event.payload['dispatchId'])).size).toBe(2);
+			}
+			runtime.close();
+		}
 	});
 
 	test('keeps the Claude executor hold when the Codex handoff is refused, and never retries the handoff', async () => {
@@ -2652,6 +2924,8 @@ describe('releasing a failed run workspace', () => {
 			'run.started',
 			'run.work-completed',
 			'run.verification-fix-requested',
+			'run.recovery-dispatch-reserved',
+			'run.recovery-dispatch-finished',
 			'run.work-completed',
 			'run.verification-failed',
 			'run.chain-paused',
@@ -4005,13 +4279,14 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 	// prompt, both ratifications must actually reach the reviewer, in order.
 	test('each review sees every operator decision made so far, accumulating in chronological order', async () => {
 		const store = new RunStore(':memory:');
+		const ids = ['run-decisions', 'question-1', 'question-2'];
 		let executorCalls = 0;
 		let reviewCalls = 0;
 		const reviewDecisions: Array<readonly string[] | undefined> = [];
 		const runtime = new RunRuntime({
 			cwd: '/project',
 			store,
-			newId: () => 'run-decisions',
+			newId: () => ids.shift() ?? 'unexpected-id',
 			newSessionId: () => 'session-decisions',
 			executor: {
 				execute: async ({ resume }) => {
@@ -4038,7 +4313,7 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 		const run = await runtime.startRun('CAM-90');
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
-		runtime.resumeRun(run.id, 'Ratify the smaller seam.');
+		runtime.resumeRun(run.id, 'Ratify the smaller seam.', 'agent-cli', 'explicit');
 		await waitFor(() => reviewCalls >= 2);
 		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 
@@ -4056,9 +4331,42 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 			'Ratify the smaller seam.',
 			'Ratify it again.',
 		]);
+		const cycleResponses = runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-response');
+		expect(cycleResponses[0]?.payload).toMatchObject({ responder: 'operator', source: 'operator', guidance: 'Ratify it again.' });
 
 		await runtime.stop();
 		runtime.close();
+	});
+
+	test('applies agent guidance once through the executor after review and full-verify crashes', async () => {
+		for (const phase of ['review', 'full-verify'] as const) {
+			const store = new RunStore(':memory:');
+			const runId = `run-guidance-${phase}`;
+			store.createRun({ id: runId, issueId: 'GSHIP-732', sessionId: `session-${phase}`, workspacePath: '/project', createdAt: '2026-08-21T12:00:00.000Z', ...approvedRunFields('GSHIP-732') });
+			store.transition({ runId, toState: 'working', kind: 'run.started', createdAt: '2026-08-21T12:00:01.000Z' });
+			store.transition({ runId, toState: 'verify', kind: 'run.work-completed', createdAt: '2026-08-21T12:00:02.000Z' });
+			store.transition({ runId, toState: 'review', kind: 'run.review-started', createdAt: '2026-08-21T12:00:03.000Z' });
+			if (phase === 'full-verify') store.transition({ runId, toState: 'full-verify', kind: 'run.review-clean', createdAt: '2026-08-21T12:00:04.000Z' });
+			store.appendEvent({ runId, kind: 'run.cycle-question', payload: { questionId: `question-${phase}`, finding: `${phase} finding`, origin: phase }, createdAt: '2026-08-21T12:00:05.000Z' });
+			store.transition({ runId, toState: 'interrupted', kind: 'run.recovered-interrupted', createdAt: '2026-08-21T12:00:06.000Z' });
+			let executions = 0;
+			let fullVerifications = 0;
+			const runtime = new RunRuntime({
+				cwd: '/project', store,
+				executor: { execute: async (input) => { executions += 1; expect(input.operatorGuidance).toBe('Apply the approved correction.'); return { outcome: 'completed' }; } },
+				verifier: { verify: async () => ({ ok: true }) },
+				fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } },
+			});
+			runtime.resumeRun(runId, 'Apply the approved correction.', 'agent-cli', 'explicit');
+			await waitFor(() => runtime.getRun(runId)?.state === 'ready-to-ship');
+			expect({ executions, fullVerifications }).toEqual({ executions: 1, fullVerifications: 1 });
+			expect(runtime.listRunEvents(runId).filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+			expect(runtime.listRunEvents(runId).find((event) => event.kind === 'run.cycle-response')?.payload)
+				.toMatchObject({ responder: 'agent-cli', source: 'agent-cli', guidance: 'Apply the approved correction.' });
+			expect(runtime.listRunEvents(runId).find((event) => event.kind === 'run.operator-guidance')?.payload)
+				.toMatchObject({ text: 'Apply the approved correction.', authorizationEvidence: 'explicit' });
+			runtime.close();
+		}
 	});
 });
 

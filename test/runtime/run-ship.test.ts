@@ -416,7 +416,7 @@ describe('shipping a run', () => {
 			newSessionId: () => 'session-ci-provider',
 			executor: { execute: async (input) => {
 				executions += 1;
-				if (executions === 2) throw new ProviderCallError('claude', 'usage-limit', 'limit reached');
+				if (executions === 2) { input.onExecutorSpawn?.(701); input.onExecutorExit?.(1); throw new ProviderCallError('claude', 'usage-limit', 'limit reached'); }
 				if (executions === 3) resumedEvidence = input.ciFeedback ?? '';
 				return { outcome: 'completed' };
 			} },
@@ -498,13 +498,15 @@ describe('shipping a run', () => {
 		const runtime = new RunRuntime({
 			cwd: '/project',
 			store: new RunStore(':memory:'),
+			observeRecoveryProcess: () => ({ status: 'exited' }),
 			newId: () => 'run-ci-ship-retry',
 			newSessionId: () => 'session-ci-ship-retry',
 			now: () => clock,
 			timer: fake.timer,
-			executor: { execute: async () => {
+			executor: { execute: async (input) => {
 				executions += 1;
 				if (executions === 2) {
+					input.onExecutorSpawn?.(702);
 					throw new ProviderCallError('claude', 'usage-limit', 'limit reached', {
 						retryAt: '2026-08-23T10:10:00.000Z',
 					});
@@ -1012,6 +1014,8 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			'run.work-completed',
 			'run.verified',
 			'run.full-verify-fix-requested',
+			'run.recovery-dispatch-reserved',
+			'run.recovery-dispatch-finished',
 			'run.work-completed',
 			'run.verified',
 			'run.full-verify-clean',
@@ -1053,6 +1057,8 @@ describe('the full-project verification gate (GSHIP-649)', () => {
 			'run.work-completed',
 			'run.verified',
 			'run.full-verify-fix-requested',
+			'run.recovery-dispatch-reserved',
+			'run.recovery-dispatch-finished',
 			'run.work-completed',
 			'run.verified',
 			'run.cycle-question',

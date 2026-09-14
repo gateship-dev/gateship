@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
-import { ProviderCallError } from '../../src/runtime/agent-session.ts';
+import { ProviderCallError, type AgentSession } from '../../src/runtime/agent-session.ts';
 import { buildWorkPrompt } from '../../src/runtime/claude-cli-executor.ts';
 import {
 	buildCodexCliArgv,
@@ -164,6 +164,21 @@ describe('Codex CLI runtime executor', () => {
 			kind: 'provider.model',
 			payload: { model: 'provider-default', effort: 'provider-default', provider: 'codex' },
 		});
+	});
+
+	test('forwards the runtime spawn callback with the provider PID', async () => {
+		let receivedPid = 0;
+		const session: AgentSession = {
+			provider: 'codex',
+			run: async (input) => { input.onSpawn?.(2468); return { summary: 'done', structuredOutput: { outcome: 'completed-adapted', proposals: [], reconciliation: { summary: 'forwarded' }, summary: 'done' } }; },
+		};
+		const executor = new CodexCliExecutor({ session, approvedContract: '{"id":"CAM-24"}' });
+		await executor.execute({
+			runId: 'run-codex-spawn', issueId: 'CAM-24', sessionId: 'session', resume: true,
+			cwd: createTestTmpdir('gship-codex-spawn-forward-'), signal: new AbortController().signal,
+			emit: () => {}, onExecutorSpawn: (pid) => { receivedPid = pid; },
+		});
+		expect(receivedPid).toBe(2468);
 	});
 
 	test('allows only runtime paths and the operator Codex home', () => {

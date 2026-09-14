@@ -49,6 +49,7 @@ export interface ClaudeCliRunInput {
 	terminationGraceMs?: number;
 	activityTimeoutMs?: number;
 	onSpawn?: (pid: number) => void;
+	onExit?: (exitCode: number) => void;
 }
 
 export interface ClaudeCliResult {
@@ -362,6 +363,7 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 				? {}
 				: { activityTimeoutMs: input.activityTimeoutMs }),
 			...(input.onSpawn === undefined ? {} : { onSpawn: input.onSpawn }),
+			...(input.onExit === undefined ? {} : { onExit: input.onExit }),
 			onLine: (line) => consumeClaudeLine(line, input, state),
 		});
 	} catch (error) {

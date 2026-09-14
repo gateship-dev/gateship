@@ -17,6 +17,10 @@ export interface AgentSessionInput {
 	eventPrefix: string;
 	/** Persist a provider-assigned id as soon as the stream reveals it. */
 	onSessionId?: (sessionId: string) => void;
+	/** Called only after the provider has created its child process. */
+	onSpawn?: (pid: number) => void;
+	/** Called after the provider child has exited and its exit code is known. */
+	onExit?: (exitCode: number) => void;
 }
 
 export interface AgentSessionResult {

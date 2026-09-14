@@ -73,6 +73,7 @@ describe('replayable run evaluation', () => {
 			corrections: { verification: 0, review: 0, fullVerify: 0, ci: 0, total: 0 },
 			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
 			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
+			recovery: { policy: null, reserved: 0, finished: 0 },
 			dispatches: { total: 4, executor: 3, reviewer: 1, orchestrator: 0 },
 			guidance: { channels: { web: 0, 'agent-cli': 0, other: 0, unknown: 2 }, authorization: { observed: 0, absent: 0, unknown: 2 } },
 			workflowRevision: 'revision-b',
