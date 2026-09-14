@@ -10,7 +10,7 @@
     "GSHIP-859"
   ],
   "createdAt": "2026-09-11T12:27:36.697Z",
-  "updatedAt": "2026-09-11T23:34:50.312Z",
+  "updatedAt": "2026-09-14T11:21:22.997Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -35,5 +35,9 @@
       "bun test test/runtime/project-verification.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "e2ccc0c99430fcebe627d8af04eefee83fbfc402934cc878214b9f057ea04640",
+    "approvedAt": "2026-09-14T11:21:22.997Z"
   }
 }
