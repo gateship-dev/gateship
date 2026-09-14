@@ -12,13 +12,13 @@
     "GSHIP-872"
   ],
   "createdAt": "2026-09-11T02:41:26.459Z",
-  "updatedAt": "2026-09-11T23:34:50.312Z",
+  "updatedAt": "2026-09-14T11:27:36.919Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
     "objective": "Ativar recuperação técnica baseada em evidências e orçamento aprovado antes de notificar o operador, distinguindo autorização faltante, estagnação diagnosticada e falhas técnicas.",
     "acceptance": [
-      "Antes de aprovar esta issue, inserir aqui maxRecoveryDispatches finito e justificativa do baseline GSHIP-873/proposta GSHIP-871. Sem essa escolha, esta spec não está pronta para aprovação: Luna não deve inventar teto nem habilitar recuperação ilimitada.",
+      "Política inicial: maxRecoveryDispatches=10, escolhido pelo operador em14/09 após pergunta explícita. É limite finito provisório, não ótimo estatístico; baseline873 tem limitações de telemetria corrigidas888-891. Registrar justificativa e validar depois em874, sem recalibrar automaticamente.",
       "Após pré-requisitos, ativar GSHIP-870/871 apenas para novas runs com política explícita. Cobrir executor, verify, review, full-verify, CI repetida/sem diff; remover cortes locais incompatíveis somente nesses caminhos. Runs legadas mantêm comportamento.",
       "Recuperável segue diagnóstico read-only -> Luna -> verificação e revisão aplicáveis, sem waiting-user transitório. Repetição sinaliza diagnóstico, não parada automática. Toda reinvocação corretiva debita saldo; modelo não declara check passado ou merge concluído.",
       "Decisão humana exige pergunta específica. Exaustão e ausência de ação autorizada viável permitem waiting-user com motivo técnico e próximo passo; contrato ausente, resposta inválida e erro de diagnóstico são falhas técnicas, nunca consentimento implícito. Preservar waiting-provider.",
