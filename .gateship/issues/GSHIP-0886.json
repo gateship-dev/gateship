@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-886",
   "title": "Resolver pergunta pendente antes de qualquer executor na retomada",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-14T01:17:10.092Z",
-  "updatedAt": "2026-09-14T01:17:10.092Z",
+  "updatedAt": "2026-09-14T01:29:00.000Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

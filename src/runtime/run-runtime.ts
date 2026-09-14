@@ -1744,7 +1744,7 @@ export class RunRuntime {
 		firstAttempt: RunAttempt,
 		resumeAtReview: 'review' | 'full-verify' | null = null,
 	): Promise<void> {
-		let attempt = await this.#resumePendingExecutorQuestion(run, signal, firstAttempt);
+		let attempt = await this.#resumePendingCycleQuestion(run, signal, firstAttempt);
 		if (attempt === null) return;
 		if (resumeAtReview === 'full-verify') {
 			const next = await this.#enterFullVerify(
@@ -1786,21 +1786,16 @@ export class RunRuntime {
 		await this.#shipIfReady(run, signal);
 	}
 
-	async #resumePendingExecutorQuestion(
+	async #resumePendingCycleQuestion(
 		run: RunRecord,
 		signal: AbortSignal,
 		attempt: RunAttempt,
 	): Promise<RunAttempt | null> {
 		const pending = this.#pendingCycleQuestion(run.id);
-		if (pending?.origin !== 'executor') return attempt;
+		if (pending === null) return attempt;
 		return await this.#answerCycleQuestion(
-			run,
-			signal,
-			pending.questionId,
-			pending.finding,
-			pending.origin,
-			attempt.ciFeedback,
-			pending.approvedContract,
+			run, signal, pending.questionId, pending.finding, pending.origin,
+			attempt.ciFeedback, pending.approvedContract ?? this.#requireApprovedContract(run.id, run.issueId),
 		);
 	}
 
@@ -1825,6 +1820,9 @@ export class RunRuntime {
 	 * guidance on the resume, carries the state forward and never names a phase.
 	 */
 	#resumePhase(run: RunRecord): 'research' | 'working' | 'review' | 'full-verify' | null {
+		// Resolve a pending question before repeating work or any gate. Returning
+		// to working also allows a resumed resolver to wait for the operator/provider.
+		if (this.#pendingCycleQuestion(run.id) !== null) return 'working';
 		if (run.state === 'waiting-provider') return this.#providerWaitPhase(run.id);
 		if (run.state !== 'interrupted') return null;
 		const interruption = this.#store.listRunDecisionEvents(run.id)
@@ -2487,7 +2485,7 @@ export class RunRuntime {
 			return null;
 		}
 		const payload = { ...responsePayload, findings: finding, origin };
-		if (origin === 'executor') this.#emit(run.id, 'run.cycle-response', payload);
+		if (this.#store.getRun(run.id)?.state === 'working') this.#emit(run.id, 'run.cycle-response', payload);
 		else this.#transition(run.id, 'working', 'run.cycle-response', { payload });
 		return {
 			resume: true,
