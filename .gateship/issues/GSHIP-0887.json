@@ -1,0 +1,34 @@
+{
+  "id": "GSHIP-887",
+  "title": "Corrigir proveniência e validação das evidências do resolvedor",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T03:53:32.278Z",
+  "updatedAt": "2026-09-14T04:02:28.000Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Eliminar o falso bloqueio observado na GSHIP-871: registrar a versão real do código verificado e aceitar referências válidas no formato nullable do provider, preservando evidência e autoridade.",
+    "acceptance": [
+      "Verificações focadas e completas registram uma identidade do conteúdo real do worktree antes/depois do comando; alterações durante a verificação ou falhas na captura não afirmam versão verificada.",
+      "O resolvedor projeta a versão persistida do comando, nunca workflowRevision; eventos históricos sem versão ficam explicitamente desconhecidos, sem reescrever histórico.",
+      "Referências retornadas pelo provider com campos opcionais null são normalizadas e validadas contra os eventos disponíveis; IDs, run, tentativa, versão, resultado e metadados adulterados continuam rejeitados.",
+      "Testes cobrem dois conteúdos com o mesmo workflowRevision, arquivo novo, alteração durante comando, captura desconhecida, full verify, evidência nullable válida e falsificação.",
+      "Preservar run 871, contrato, orçamento, worktree e decisões; hotfix externo isolado com revisão independente, check:all, CI e release antes da retomada."
+    ],
+    "boundaries": [
+      "Não implementar demais propostas T1-T5, 883 ou 884 nem ativar orçamento 864.",
+      "Não editar SQLite, eventos históricos, worktree gerenciado ou main local; nenhuma mudança de credenciais.",
+      "Hash de conteúdo não prova melhoria ou correção. Ausência de evidência não vira sucesso."
+    ],
+    "verify": [
+      "bun test test/runtime/cycle-evidence.test.ts test/runtime/agent-cycle-question-resolver.test.ts test/runtime/git-runtime.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "fdcf3f5499ff24944059cedfd0ff9abffae67b32e8edf880e978c3586aa8e3a3",
+    "approvedAt": "2026-09-14T03:53:32.278Z"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "GSHIP-885",
+  "title": "Corrigir schema do resolvedor e recuperar falha técnica na mesma run",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-13T15:06:20.989Z",
+  "updatedAt": "2026-09-13T15:26:52.845Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Corrigir invalid_json_schema do diagnóstico da GSHIP-870 e permitir retomar uma pergunta de ciclo cuja chamada falhou, preservando a run GSHIP-871 e seus achados, histórico, trabalho e verificações.",
+    "acceptance": [
+      "Definir schema estrito completo de diagnostic e evidências: todos os objetos fechados, propriedades requeridas e opcionais anuláveis compatíveis com Codex. Normalizar null sem invalidar observações legítimas; preservar campos e validação sem aceitar evidência inventada.",
+      "Registrar falha da chamada do resolvedor com questionId, origem, tentativa e causa técnica; não registrar continue ou resolução inexistente. Preservar uso quando já disponível, nunca inventar zeros. Sem retry automático cego nem troca de provider.",
+      "Expor runs.retry_cycle_question no agent CLI e API project-scoped com razão obrigatória. Admitir somente failed com pergunta pendente e falha comprovada do resolvedor; reconhecer legado por eventos da chamada, não regex de mensagem. Rejeitar outras falhas e estados.",
+      "Reservar tentativa duravelmente antes da chamada e impedir duplicatas concorrentes/replay por falha. Respeitar fences, projeto idle, contrato aprovado e worktree gerenciada existente. Falha repetida não autoriza loop automático; preservar tentativas e causa.",
+      "Retomar pergunta original via resolvedor fresco read-only na mesma run/worktree/session; manter fixRounds, respostas, histórico e orçamento. Não executar correção antes de resposta válida. Correções subsequentes passam por verify, review independente, full verify e CI existentes.",
+      "Testar schema recursivo e payload realista com null/evidências, erro inicial e recorrente, admissão legado, pergunta respondida, concorrência/replay e falha sem pergunta. Provar mesma identidade, contadores preservados e verificação/review após correção.",
+      "Não executar recuperação real no implementer. Após release instalada, operador externo retoma 871 por operação tipada. Não incorporar mudanças da worktree871 nem ativar orçamento864; preservar API retry_verification com admissão estrita."
+    ],
+    "boundaries": [
+      "Um runtime, eventos e controle de processo existentes; sem novo subsistema, daemon, dependência ou UI de recuperação.",
+      "Preservar Luna executor e Sol reviewer/resolvedor, esforços atuais, assinatura, allowlists e reviewer read-only.",
+      "Não tocar Reporter, main local, credenciais ou arquivos .gship diretamente. Trabalho falho da871 fica intacto.",
+      "Não enfraquecer checks ou inventar aprovação. Não iniciar/cancelar outras runs nem publicar manualmente; runtime detém shipping."
+    ],
+    "verify": [
+      "bun test test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-runtime.test.ts test/runtime/run-state.test.ts test/web/run-api.test.ts test/web/project-scoped-run-api.test.ts test/commands/agent.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "6f12099bec1370b04e7472482fe9f87af6294d6da5bfc4cd2fcb3b145022d894",
+    "approvedAt": "2026-09-13T15:06:20.989Z"
+  }
+}

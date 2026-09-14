@@ -1,0 +1,33 @@
+{
+  "id": "GSHIP-886",
+  "title": "Resolver pergunta pendente antes de qualquer executor na retomada",
+  "stage": "shipped",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T01:17:10.092Z",
+  "updatedAt": "2026-09-14T01:29:00.000Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Corrigir a retomada de perguntas pendentes de executor, review e full verify no mesmo runtime, inclusive a GSHIP-871 interrompida após retry defeituoso da v0.506.0.",
+    "acceptance": [
+      "Toda retomada com pergunta pendente consulta o resolvedor antes de executor, nova revisão ou full verify, preservando origem, questionId, finding, contrato e identidade da run.",
+      "Resposta continue entrega orientação no campo da origem correta ao executor; só depois seguem verify focado, revisão independente, full verify e ship. Não repetir fases antes da correção.",
+      "Erro, resposta inválida ou pedido ao operador não iniciam executor; interrupção e falhas preservam pergunta e trabalho sem resposta fictícia, retry cego ou reset de contadores.",
+      "Testes reproduzem retry failed e resume interrupted para todas as origens, incluindo review legado; verificam ordem, espera real pela resposta, identidade, contagem, falha e todos os gates.",
+      "Entregar hotfix isolado fora do ciclo bloqueado por autorização excepcional do operador, com revisão read-only, check:all e CI. Instalar release verificada e retomar mesma871 sem mensagem que suprima pergunta."
+    ],
+    "boundaries": [
+      "Sem editar SQLite, worktree871, main local, credenciais, Reporter, ou liberar admissão concorrente no produto.",
+      "Sem novo estado, comando, dependência, orçamento ou workflow; corrigir pequeno caminho de retomada existente."
+    ],
+    "verify": [
+      "bun test test/runtime/cycle-question-recovery.test.ts test/runtime/run-runtime.test.ts test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-state.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "c2b7910347696595995d28ad3cd4f00c3fce5efdfccb7355dd29648ec4c9cbb8",
+    "approvedAt": "2026-09-14T01:17:10.092Z"
+  }
+}

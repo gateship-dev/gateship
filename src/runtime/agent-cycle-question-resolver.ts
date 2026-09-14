@@ -10,13 +10,42 @@ import type {
 } from './run-runtime.ts';
 import { normalizeCycleDiagnostic, type CycleObservationReference } from './cycle-diagnostic.ts';
 
+const CYCLE_DIAGNOSTIC_SCHEMA = {
+	type: ['object', 'null'],
+	properties: {
+			kind: { type: 'string', enum: ['correction', 'human-decision', 'insufficient-evidence', 'technical-failure'] },
+			hypothesis: { type: ['string', 'null'] },
+			action: { type: ['string', 'null'] },
+			expectedObservation: { type: ['string', 'null'] },
+			question: { type: ['string', 'null'] },
+			failure: { type: ['string', 'null'] },
+			missing: { type: ['string', 'null'] },
+			evidence: {
+				type: 'array',
+				items: {
+					type: 'object',
+					properties: {
+						id: { type: 'string' }, runId: { type: 'string' }, attempt: { type: 'integer', minimum: 1 },
+						verifiedVersion: { type: 'string' }, result: { type: 'string' },
+						tool: { type: ['string', 'null'] }, action: { type: ['string', 'null'] }, toolUseId: { type: ['string', 'null'] },
+						exitCode: { type: ['integer', 'null'] }, isError: { type: ['boolean', 'null'] },
+					},
+					required: ['id', 'runId', 'attempt', 'verifiedVersion', 'result', 'tool', 'action', 'toolUseId', 'exitCode', 'isError'],
+					additionalProperties: false,
+				},
+			},
+	},
+	required: ['kind', 'hypothesis', 'action', 'expectedObservation', 'question', 'failure', 'missing', 'evidence'],
+	additionalProperties: false,
+} as const;
+
 export const CYCLE_QUESTION_RESULT_SCHEMA = {
 	type: 'object',
 	properties: {
 		outcome: { type: 'string', enum: ['continue', 'operator'] },
 		guidance: { type: ['string', 'null'] },
 		reason: { type: ['string', 'null'] },
-		diagnostic: { type: ['object', 'null'] },
+		diagnostic: CYCLE_DIAGNOSTIC_SCHEMA,
 	},
 	required: ['outcome', 'guidance', 'reason', 'diagnostic'],
 	additionalProperties: false,
@@ -97,6 +126,7 @@ export function buildCycleQuestionPrompt(input: RuntimeCycleQuestionInput): stri
 		'Classify the outcome in diagnostic. A correction must state hypothesis, concrete action and expected observation. Cite only observation IDs listed below. A new sentence, timestamp, diff or claimed advance is not an observation. Invalid or absent evidence means insufficient-evidence. Repetition alone, or two cycles without progress, does not determine the outcome. When the same executor question returns after concrete internal guidance and without a new recorded progress observation, preserve the legacy stall behavior and return operator with that stall as the public reason. Otherwise, treat repetition as a possible loop for re-evaluation by the existing orchestrator: choose a distinct justified action, request recorded evidence, or identify a concrete impossibility within the contract. Return operator only for that legacy stall or a concrete missing decision, authority or human data.',
 		'',
 		'Recorded tool observations:',
+		'For command observations, verifiedVersion identifies tracked and non-ignored worktree content only, not workflowRevision, dependencies or external services. unknown means no reliable version was recorded, including legacy events; it does not mean unchanged code or lack of progress. A different content hash does not itself prove improvement. Compare the recorded results and current finding; do not treat earlier narrative conclusions about a fixed workflow revision as code evidence. A review or full-verify finding is not a repeated executor question. Use null only for absent optional evidence fields; copy existing evidence values exactly.',
 		JSON.stringify(input.observations ?? []),
 	].join('\n');
 }

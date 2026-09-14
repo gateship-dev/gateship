@@ -3555,6 +3555,70 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		expect(events.filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
 	});
 
+	test('records initial and recurring resolver failures before continuing through verify and review', async () => {
+		const question = 'A falha técnica exige uma nova tentativa?';
+		const sessions: string[] = [];
+		let executions = 0;
+		let resolutions = 0;
+		let verifications = 0;
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: (() => {
+				const ids = ['run-cycle-failure', 'question-cycle-failure'];
+				return () => ids.shift() ?? 'unexpected';
+			})(), newSessionId: () => 'session-cycle-failure',
+			executor: { execute: async (input) => {
+				executions += 1;
+				sessions.push(input.sessionId);
+				if (executions === 1) return { outcome: 'waiting-user', summary: question, approvedContract: '{"id":"GSHIP-768"}' };
+				return { outcome: 'completed', summary: 'corrigido' };
+			} },
+			verifier: { verify: async () => { verifications += 1; return { ok: true }; } },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' }; } },
+			cycleQuestionResolver: { resolve: async () => {
+				resolutions += 1;
+				if (resolutions < 3) throw new Error(resolutions === 1 ? 'invalid_json_schema' : 'resolver transport failed again');
+				return { outcome: 'continue', guidance: 'Retome dentro do contrato.', usage: CYCLE_AUDIT_USAGE };
+			} },
+		});
+		const run = await runtime.startRun('GSHIP-768');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		const failedEvents = runtime.listRunDecisionEvents(run.id);
+		expect(failedEvents.find((event) => event.kind === 'run.cycle-question-failed')?.payload)
+			.toMatchObject({ questionId: 'question-cycle-failure', origin: 'executor', attempt: 1, cause: 'invalid_json_schema' });
+		const retried = runtime.retryCycleQuestionRun(run.id, 'A chamada falhou tecnicamente.');
+		expect(retried.id).toBe(run.id);
+		expect(() => runtime.retryCycleQuestionRun(run.id, 'Replay concorrente.')).toThrow('already active');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-question-failed').at(-1)?.payload)
+			.toMatchObject({ questionId: 'question-cycle-failure', attempt: 2, cause: 'resolver transport failed again' });
+		runtime.retryCycleQuestionRun(run.id, 'Repetir a chamada após a segunda falha técnica.');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect({ executions, resolutions, verifications, reviews, sessions }).toEqual({
+			executions: 2, resolutions: 3, verifications: 1, reviews: 1,
+			sessions: ['session-cycle-failure', 'session-cycle-failure'],
+		});
+		expect(runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
+	});
+
+	test('admits a legacy failed resolver call from its persisted call events', async () => {
+		const store = new RunStore(':memory:');
+		store.createRun({ id: 'run-legacy-cycle-failure', issueId: 'GSHIP-768', sessionId: 'session-legacy', workspacePath: '/project', createdAt: '2026-09-13T00:00:00Z', ...approvedRunFields('GSHIP-768') });
+		store.transition({ runId: 'run-legacy-cycle-failure', toState: 'working', kind: 'run.started', createdAt: '2026-09-13T00:00:01Z' });
+		store.appendEvent({ runId: 'run-legacy-cycle-failure', kind: 'run.cycle-question', payload: { questionId: 'legacy-question', finding: 'legacy', origin: 'executor' }, createdAt: '2026-09-13T00:00:02Z' });
+		store.appendEvent({ runId: 'run-legacy-cycle-failure', kind: 'cycle-question.model', payload: { model: 'opus' }, createdAt: '2026-09-13T00:00:03Z' });
+		store.transition({ runId: 'run-legacy-cycle-failure', toState: 'failed', kind: 'run.failed', error: 'invalid_json_schema', createdAt: '2026-09-13T00:00:04Z' });
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'legacy recovered' }) },
+			verifier: { verify: async () => ({ ok: true }) }, reviewer: { review: async () => ({ verdict: 'clean' }) },
+			cycleQuestionResolver: { resolve: async () => ({ outcome: 'continue', guidance: 'Retome.', usage: CYCLE_AUDIT_USAGE }) },
+		});
+		runtime.retryCycleQuestionRun('run-legacy-cycle-failure', 'Falha antiga comprovada pelos eventos.');
+		await waitFor(() => runtime.getRun('run-legacy-cycle-failure')?.state === 'ready-to-ship');
+		expect(runtime.listRunDecisionEvents('run-legacy-cycle-failure').filter((event) => event.kind === 'run.cycle-question')).toHaveLength(1);
+	});
+
 	test('replays durable executor guidance once after restart before work completion', async () => {
 		const dbPath = join(createTestTmpdir('gship-executor-question-restart-'), 'runtime.sqlite');
 		const store = new RunStore(dbPath);

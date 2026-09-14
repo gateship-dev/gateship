@@ -63,7 +63,10 @@ function validObservationSet(
 	const byId = new Map(available.map((observation) => [observation.id, observation]));
 	const result: CycleObservationReference[] = [];
 	for (const item of value) {
-		const reference = recordOf(item);
+		const raw = recordOf(item);
+		// Strict provider schemas require optional fields to be present as null.
+		const reference = raw === null ? null : Object.fromEntries(Object.entries(raw)
+			.filter(([key, value]) => value !== null || !['tool', 'action', 'toolUseId', 'exitCode', 'isError'].includes(key)));
 		const observed = reference === null ? undefined : byId.get(text(reference['id']));
 		if (observed === undefined || !validObservation(reference)
 			|| reference['runId'] !== observed.runId
@@ -71,7 +74,8 @@ function validObservationSet(
 			|| reference['verifiedVersion'] !== observed.verifiedVersion
 			|| reference['result'] !== observed.result) return null;
 		if (reference['tool'] !== observed.tool || reference['action'] !== observed.action
-			|| reference['toolUseId'] !== observed.toolUseId) return null;
+			|| reference['toolUseId'] !== observed.toolUseId
+			|| reference['exitCode'] !== observed.exitCode || reference['isError'] !== observed.isError) return null;
 		if (!result.some((candidate) => candidate.id === observed.id)) result.push(observed);
 	}
 	return result;
