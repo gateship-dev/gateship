@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-895",
+  "title": "Verify: guarda deterministica de integridade dos testes",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T18:56:26.924Z",
+  "updatedAt": "2026-09-14T18:56:26.924Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Impedir que uma run passe na verify apagando, pulando ou enfraquecendo testes: o runtime compara contagem de testes e de skips entre a base da run e o head apos cada verify e falha a etapa quando testes sumiram ou skips novos apareceram sem justificativa na spec.",
+    "acceptance": [
+      "Antes do primeiro executor, o runtime registra baseline da suite na worktree limpa: total de testes e de skips por comando de verify que expoe contagem (bun test emite pass, fail, skip). Baseline gravado em evento run.test-baseline.",
+      "Apos cada verify que passa, comparar: total menor que o baseline ou skips maiores gera run.test-integrity-failed com os numeros e devolve a run ao executor como correcao dentro dos fix rounds existentes.",
+      "Comando de verify sem contagem parseavel gera run.test-integrity-unknown com motivo; a etapa nao bloqueia e a ausencia fica visivel, nunca silenciosa.",
+      "Remocao legitima de teste exige mencao explicita em boundaries ou acceptance da spec aprovada; o runtime so aceita a queda quando a spec cita o arquivo de teste removido.",
+      "Testes com Git temporario: queda de contagem bloqueia, skip novo bloqueia, saida sem contagem fica unknown, remocao citada na spec passa."
+    ],
+    "boundaries": [
+      "Nao interpretar semantica de assercao; so contagens observaveis na saida dos comandos.",
+      "Nao alterar os comandos de verify aprovados."
+    ],
+    "verify": [
+      "bun test test/runtime/project-verification.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
