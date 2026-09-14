@@ -1,0 +1,30 @@
+{
+  "id": "GSHIP-893",
+  "title": "Full verify: sensor de mutacao como evidencia deterministica",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T18:56:19.072Z",
+  "updatedAt": "2026-09-14T18:56:19.072Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Provar que os testes da run detectam regressao: em worktree scratch derivada do head da run, injetar 1 a 3 falhas de comportamento no codigo novo e exigir que os comandos de verify aprovados falhem. Mutante sobrevivente bloqueia ready-to-ship e volta como achado ao executor.",
+    "acceptance": [
+      "Etapa dentro de full-verify, apos o verify aprovado passar: o runtime cria worktree temporaria do head da run, aplica uma mutacao, roda os comandos de verify da issue, registra killed ou survived e remove a worktree. O worktree real nunca e tocado; git status --porcelain igual antes e depois.",
+      "Mutacoes escolhidas por um passo read-only do reviewer sobre o diff da run (arquivo, linha, patch minimo, tipo: condicao invertida, retorno alterado, off-by-one, side effect removido). Limite de 3 por run. O runtime aplica o patch; o modelo nunca escreve na worktree real.",
+      "Cada tentativa gera evento duravel run.mutation-sensor com arquivo, linha, tipo, comando, outcome (killed, survived, inconclusive) e duracao. Diff sem alvo executavel gera run.mutation-sensor-skipped com motivo, distinguivel de omissao.",
+      "Mutante sobrevivente impede ready-to-ship e retorna ao executor como achado de origem full-verify dentro do orcamento de fix rounds existente; nao cria novo teto nem novo loop.",
+      "Evidencia tipada como deterministic check no historico da run e na UI de execucao, ao lado de verify e review, sem score composto.",
+      "Cobertura com Git temporario: mutante morto, mutante sobrevivente, diff sem alvo, falha ao criar worktree (inconclusive, run segue com evento) e limpeza garantida apos abort."
+    ],
+    "boundaries": [
+      "Nao adotar ferramenta externa de mutacao nem alterar os comandos de verify aprovados.",
+      "Nao dar acesso de escrita ao reviewer; o patch e aplicado pelo runtime em worktree scratch."
+    ],
+    "verify": [
+      "bun test test/runtime/git-runtime.test.ts test/runtime/run-runtime.test.ts test/runtime/claude-cli-reviewer.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
