@@ -7,7 +7,7 @@
     "GSHIP-889"
   ],
   "createdAt": "2026-09-14T11:24:06.763Z",
-  "updatedAt": "2026-09-14T11:25:56.570Z",
+  "updatedAt": "2026-09-14T11:28:31.776Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -28,5 +28,9 @@
       "bun test test/runtime/run-evaluation.test.ts test/runtime/run-runtime.test.ts test/runtime/cycle-evidence.test.ts test/web/ui-client.test.tsx",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "0e60ef81de4366eeb109052d455db0e359a6f092fab4947ebe09227a04795f0b",
+    "approvedAt": "2026-09-14T11:28:31.776Z"
   }
 }
