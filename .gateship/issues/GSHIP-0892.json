@@ -1,0 +1,30 @@
+{
+  "id": "GSHIP-892",
+  "title": "Cycle question: fallback de provider em limite de uso, como review e executor",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T18:36:33.271Z",
+  "updatedAt": "2026-09-14T18:36:33.271Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Responder uma cycle question no provider alternativo quando o provider de origem da run devolve usage-limit ou rate-limited, uma tentativa por pergunta, para que a run nao fique presa em waiting-provider quando executor e reviewer ja foram roteados ao alternativo.",
+    "acceptance": [
+      "AgentCycleQuestionResolver roteia como AgentReviewerRouter (GSHIP-709/721): tenta o provider da run; em ProviderCallError do proprio provider com kind usage-limit ou rate-limited, sem sinal abortado, faz uma unica tentativa no alternativo (claude<->codex), em sessao fresca read-only.",
+      "Um evento duravel por tentativa (run.cycle-question-fallback) com from, to, reason, message, retryAt quando houver e outcome (continue, operator ou refused), escrito apos a tentativa se resolver.",
+      "Fallback recusado restaura o erro do provider de origem: a run segue em waiting-provider pelo provider que de fato a segura, e as duas direcoes nunca devolvem a pergunta uma a outra.",
+      "Caso real (run 8b868e4d, GSHIP-884, 14/09/2026) coberto por teste: providerId codex, executor em handoff para claude e reviewer em fallback para claude; a cycle question de origem review resolve no claude e a run segue para working sem operador.",
+      "Nenhuma mutacao do registro da run, da selecao de provider, da sessao do executor ou do worktree. Modelo e esforco continuam os definidos pelo operador por (provider, role); usa o slot orchestrator do alternativo.",
+      "O evento cycle-question.usage do alternativo continua alimentando custo e uso por role como hoje; ausencia segue desconhecida."
+    ],
+    "boundaries": [
+      "Nao alterar a politica de handoff do executor nem a de fallback da review; nao criar segundo mecanismo de retry, daemon ou catalogo de modelos.",
+      "Nao editar SQLite/.gship, credenciais ou gates de verificacao."
+    ],
+    "verify": [
+      "bun test test/runtime/agent-cycle-question-resolver.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}

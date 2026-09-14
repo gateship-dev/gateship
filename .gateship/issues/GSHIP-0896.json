@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-896",
+  "title": "Agent guide: varredura de dimensoes implicitas ao especificar",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T18:56:47.734Z",
+  "updatedAt": "2026-09-14T18:56:47.734Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "O guia do gship agent instrui o agente externo a varrer nove dimensoes implicitas ao escrever spec (bounds de entrada, falha parcial, idempotencia, auth, concorrencia, ciclo de vida de dados, observabilidade, dependencia externa, transicao de estado): cada uma vira acceptance ou N/A com motivo.",
+    "acceptance": [
+      "GUIDE em src/commands/agent.ts ganha linhas que listam as nove dimensoes e exigem, em issues.create e issues.specify, que cada dimensao vire item de acceptance ou seja descartada com N/A e motivo dentro de boundaries.",
+      "A varredura e proporcional: obrigatoria quando a issue toca persistencia, estado, chamada externa, auth ou transicao de estado; opcional em mudanca de doc ou UI pura. O guia diz isso em uma linha.",
+      "O guia reforca: facts you look up, decisions you ask; nao inventar requisito fora da fronteira da issue para preencher a lista.",
+      "Teste em test/commands/agent.test.ts confirma que gship agent guide contem as nove dimensoes e a regra de N/A com motivo.",
+      "Docs que descrevem o fluxo do agent CLI sao atualizados no mesmo commit."
+    ],
+    "boundaries": [
+      "Nao adicionar validacao no runtime nem campo novo na spec; e orientacao ao agente externo.",
+      "Nao mudar limites de tamanho de acceptance ou boundaries."
+    ],
+    "verify": [
+      "bun test test/commands/agent.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}

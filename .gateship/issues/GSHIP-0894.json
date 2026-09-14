@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-894",
+  "title": "Review: veredito por criterio de aceitacao com evidencia file:line",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T18:56:23.036Z",
+  "updatedAt": "2026-09-14T18:56:23.036Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "O reviewer devolve, alem de findings, um mapa por item de acceptance da spec aprovada: coberto (file:line e assercao que mira o valor definido na spec), nao coberto, ou spec-precision gap quando a spec nao define valor observavel. Sem citacao, conta como nao coberto.",
+    "acceptance": [
+      "Schema estruturado da review ganha coverage: lista com index do item de acceptance, status (covered, uncovered, spec-precision-gap), evidence (file:line) e assertion (texto), para claude e codex. Verdict continua CLEAN ou FINDINGS.",
+      "Prompt da review instrui evidence-or-zero: item so e covered com file:line existente no workspace e assercao que mira o valor da spec. O runtime valida que o file:line citado existe; citacao inexistente rebaixa o item para uncovered.",
+      "Item uncovered vira finding automatico com o texto do criterio; o fluxo de cycle question e fix rounds nao muda. Item spec-precision-gap nao bloqueia, mas fica visivel na UI e no evento run.review-coverage.",
+      "Evento duravel run.review-coverage por review com a lista completa; a UI da run mostra o mapa por criterio ao lado dos findings, sem score composto.",
+      "Testes: review CLEAN com todos covered; item uncovered gera finding; citacao inexistente e rebaixada; spec-precision-gap registrado sem bloquear; schema aceito por ambos os providers."
+    ],
+    "boundaries": [
+      "Nao ampliar permissoes do reviewer; segue mecanicamente read-only.",
+      "Nao mudar limites da spec nem o formato dos itens de acceptance."
+    ],
+    "verify": [
+      "bun test test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}

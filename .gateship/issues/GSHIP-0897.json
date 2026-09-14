@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-897",
+  "title": "Web: validar Host, headers de seguranca e limite de body",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-14T18:56:51.474Z",
+  "updatedAt": "2026-09-14T18:56:51.474Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Fechar leitura por DNS rebinding e endurecer a resposta HTTP do servico local: toda requisicao exige Host em localhost ou 127.0.0.1 na porta do servico, toda resposta leva CSP, nosniff e frame-ancestors, e Bun.serve recebe limite explicito de body.",
+    "acceptance": [
+      "Requisicao com Host diferente de localhost ou 127.0.0.1 (com a porta do servico) recebe 421 sem corpo de dados, em todas as rotas, inclusive GET de snapshot, runs e eventos, e no handler de arquivos estaticos da UI.",
+      "Toda resposta inclui Content-Security-Policy com default-src 'self' e script-src 'self' (mais o que a UI construida exigir, listado no teste), X-Content-Type-Options nosniff, frame-ancestors 'none' e Referrer-Policy no-referrer. A UI continua funcional em dark e light.",
+      "Bun.serve recebe maxRequestBodySize explicito, dimensionado pelo maior payload legitimo (issue spec com research) mais margem; requisicao acima retorna 413.",
+      "isTrustedCommandOrigin permanece como esta para mutacoes; a checagem de Host e anterior e independente.",
+      "Testes em test/web cobrem Host invalido em GET e POST, Host valido com e sem porta, headers presentes em rota de API e em asset estatico, e 413 acima do limite."
+    ],
+    "boundaries": [
+      "Nao adicionar autenticacao, TLS, HSTS nem cookie.",
+      "Nao alterar a checagem de Origin existente."
+    ],
+    "verify": [
+      "bun test test/web/launch.test.ts test/web/project-status-api.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
