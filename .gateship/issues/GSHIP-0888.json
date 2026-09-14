@@ -7,7 +7,7 @@
     "GSHIP-884"
   ],
   "createdAt": "2026-09-14T11:23:41.833Z",
-  "updatedAt": "2026-09-14T11:25:56.570Z",
+  "updatedAt": "2026-09-14T11:28:07.259Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -29,5 +29,9 @@
       "bun test test/runtime/codex-cli-executor.test.ts test/runtime/claude-cli-executor.test.ts test/runtime/claude-stream.test.ts test/runtime/agent-cycle-question-resolver.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "ecae18a789d954d465018ca58648967f3b0c6afc67099c20959f2fdf10953fb3",
+    "approvedAt": "2026-09-14T11:28:07.259Z"
   }
 }
