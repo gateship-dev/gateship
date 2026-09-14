@@ -1,0 +1,36 @@
+{
+  "id": "GSHIP-891",
+  "title": "Telemetria T4: reavaliar histórico persistido de forma idempotente",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [
+    "GSHIP-890"
+  ],
+  "createdAt": "2026-09-14T11:24:18.367Z",
+  "updatedAt": "2026-09-14T11:28:35.762Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Aplicar as projeções corrigidas ao histórico disponível por caminhos tipados do Gateship, sem inventar dados, reabrir runs ou reescrever evidência original.",
+    "acceptance": [
+      "Usar exclusivamente eventos já persistidos e parsers/projeções de T1-T3. Identificar o que pode ser recalculado e o que foi descartado definitivamente; ausência de tokens originais permanece ausência, nunca reconstrução a partir do texto por estimativa.",
+      "Reusar leitura/projeção sob demanda quando suficiente; só acrescentar operação explícita project-scoped se houver estado derivado persistido que exija atualização. Nesse caso ser idempotente e registrar metodologia/proveniência sem alterar eventos originais.",
+      "Preservar estado terminal, contadores871, aprovações, duração, sessões e reservas. Não iniciar agentes, despachos, notificações ou runs; não criar orçamento para outras funções. Chamadas repetidas e reinício mantêm o mesmo resultado.",
+      "Produzir relatório comparativo de amostra histórica existente com cobertura antes/depois e lacunas não recuperáveis. Modelo/esforço solicitados não provam valores efetivos; versãoCLI só quando já disponível a baixo custo, sem serviço/cache de descoberta.",
+      "Testar replay repetido, bruto+resposta, versões legadas, preço ausente, terminalidade, isolamento entre projetos e campos descartados. Usar fixtures sintéticas nos testes e leitura tipada para validação real após entrega; nenhuma edição manual do banco."
+    ],
+    "boundaries": [
+      "Manter um serviço Bun/SQLite e eventos/projeções existentes, sem dependência ou subsistema novo. Preservar assinatura, credenciais cegas, sandbox, allowlists e modelos/esforços Luna/Sol.",
+      "Não editar SQLite/.gship manualmente, executar providers reais nos testes, alterar estado/aprovação de outras runs nem atribuir consumo de chats/agentes externos à run.",
+      "Implementar apenas este contrato, preservar o trabalho entregue nas issues anteriores e revalidar caminhos existentes. Full check:all pertence ao full-verifier do runtime na fronteira de ship."
+    ],
+    "verify": [
+      "bun test test/runtime/run-evaluation.test.ts test/runtime/run-store.test.ts test/commands/agent.test.ts",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "47083758774a188a10203d4ecf6f5f212495a700a6237e0ead3fd1fe61c63e93",
+    "approvedAt": "2026-09-14T11:28:35.762Z"
+  }
+}

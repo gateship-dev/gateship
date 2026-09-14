@@ -12,19 +12,19 @@
     "GSHIP-872"
   ],
   "createdAt": "2026-09-11T13:10:33.901Z",
-  "updatedAt": "2026-09-11T23:34:50.312Z",
+  "updatedAt": "2026-09-14T11:25:22.988Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
     "objective": "Validar a recuperação integrada e preparar comparação com baseline sem confundir testes da máquina de estados com evidência de melhoria do Luna.",
     "acceptance": [
-      "Pré-requisitos entregues: GSHIP-873, GSHIP-869, GSHIP-870, GSHIP-871, GSHIP-864 e GSHIP-872. Ler política aprovada efetiva; testes parametrizam o teto dessa política, sem recriar 3/6 tentativas, 60 minutos corridos ou parada fixa por dois ciclos.",
-      "Matriz integrada: pergunta igual com evidência nova, frase nova sem observação, diagnóstico que refuta hipótese sem passar teste, ação repetida, autoridade faltante, contexto ausente, CI sem diff, falha do resolver e cancelamento.",
-      "Cobrir reinício/reserva pendente, processo ainda vivo, novo spawn debitado, saldo esgotado e troca de fase sem renovação. Cada caso confere estado, eventos, despachos e notificações por canal; nenhum envio externo ou provider real.",
-      "Reproduzir em fixture sintética Tooltip/Menu compartilhando data-popup-open: observar menu fechado e atributo ainda presente. Corrigir diagnóstico com evidência de interação/DOM, sem remover teste obrigatório ou alegar que screenshot basta.",
-      "Comparar dados disponíveis com baseline da GSHIP-873, preservando workflow/modelo/esforço e exposição de falhas/intervenções. Ausência de novas runs é dado indisponível, não zero falhas nem justificativa para criar runs automaticamente.",
-      "Simulações com saídas de provedor mockadas demonstram comportamento do runtime, não inteligência do Luna. Documentar experimento pareado futuro com mesmo modelo/esforço, commit, tarefa, ferramentas, orçamento e múltiplas repetições.",
-      "Relatório separa correção final, defeitos, tempo ativo/espera, custo conhecido e atenção por origem; registra regressões e limitações. Comparação é consultiva, não score composto, gate de aprovação ou troca automática de configuração."
+      "Executar por último após873/869/870/871/864/872/883/884 e888-891. Ler política aprovada efetiva e parametrizar testes com seu teto; não recriar3/6,60min ou parada por dois ciclos. Baseline anterior com metodologia diferente não é diretamente comparável.",
+      "Matriz: evidência nova vs frase nova, hipótese refutada sem teste aprovado, repetição, autoridade/contexto ausentes,CI sem diff,falha do resolver,cancelamento,crash/reserva/processo vivo/novo spawn/saldo. Conferir estado,eventos,débitos e notificações,sem rede real.",
+      "Reproduzir Tooltip/Menu compartilhando data-popup-open em fixture sintética: menu fechado com atributo presente. Corrigir diagnóstico por interação/DOM sem retirar verificação obrigatória nem alegar que screenshot basta; preservar baseline deliberada.",
+      "Comparar evidência disponível com873 preservando workflow/modelo/esforço,exposição a falhas e origem da atenção. Ausência de amostra nova é indisponível,não zero nem autorização para criar runs. Documentar limitações de comparabilidade e evitar causalidade não demonstrada.",
+      "Mocks provam runtime,não inteligência do Luna. Documentar experimento pareado futuro com mesmo modelo/esforço,commit,tarefa,ferramentas,orçamento e repetições; não executar benchmark pago. Replay não chama providers; amostra natural existente valida coleta nova.",
+      "T5: corpus compartilhado T1-T4 com preço ausente,uso parcial,erro/cancelamento,retomada,eventos repetidos e bruto+resposta. Conferir tokens esperados,cobertura e soma idempotente com valores exatos,preservando duração,terminalidade e isolamento por projeto.",
+      "Conferir rótulos/denominadores da UI e relatório separando correção,defeitos,tempo ativo/espera,custo conhecido,atenção por origem,cobertura e regressões. Medidas consultivas,sem score composto,gate de aprovação ou troca automática de configuração."
     ],
     "boundaries": [
       "Manter Luna e modelos/esforços configurados, sandbox, allowlists, autenticação por assinatura, worktree isolada e reviewer independente read-only.",
@@ -35,7 +35,12 @@
     "verify": [
       "bun test test/runtime/run-evaluation.test.ts test/runtime/run-runtime.test.ts test/runtime/run-review.test.ts test/runtime/run-ship.test.ts",
       "bun test test/runtime/remote-notifier.test.ts test/web/notifications.test.ts",
-      "bun run typecheck"
+      "bun run typecheck",
+      "bun test test/web/ui-client.test.tsx"
     ]
+  },
+  "approval": {
+    "fingerprint": "524835ce1f6c46b4686bcd24bc877fec8e6eae9ccecff47564ff33cc1b121e94",
+    "approvedAt": "2026-09-14T11:25:22.988Z"
   }
 }

@@ -1,0 +1,36 @@
+{
+  "id": "GSHIP-889",
+  "title": "Telemetria T2: projetar tokens, custo conhecido e cobertura sem duplicação",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [
+    "GSHIP-888"
+  ],
+  "createdAt": "2026-09-14T11:23:54.973Z",
+  "updatedAt": "2026-09-14T11:28:27.811Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Exibir e agregar uso observado mesmo sem preço conhecido, abrangendo todas as funções e evitando contagem duplicada entre eventos da mesma invocação.",
+    "acceptance": [
+      "Consumir o vínculo de invocação entregue por T1. Incluir executor, revisor, resolvedor e reconciliador, inclusive falhas/respostas inválidas com uso persistido. Não deduplicar apenas por eventId: uso bruto e cópia em resposta podem ter IDs diferentes.",
+      "Tokens sem preço devem aparecer; custo ausente nunca vira zero. Separar custo equivalente à API de cobrança da assinatura. Preservar total nativo e detalhamento por modelo sem somá-los entre si; preço sem fonte aplicável fica desconhecido.",
+      "Exibir subtotal conhecido junto com cobertura completa/parcial/desconhecida nos totais, listas e detalhes já existentes. Legado ambíguo fica explícito; não supor cobertura integral porque alguma chamada teve tokens.",
+      "Preservar contadores nativos e diferenças de semântica por provider. Testar snapshots cumulativos, deltas, retomada, duplicata bruto+resposta, múltiplas funções/modelos, erro com uso, preço ausente e zero real com valores esperados exatos.",
+      "Manter agregação project-scoped, paginação e filtros coerentes, sem redesign, nota composta ou inventar consumo da assinatura a partir do equivalente API. Seguir contrato visual/i18n existente quando ajustar rótulos."
+    ],
+    "boundaries": [
+      "Manter um serviço Bun/SQLite e eventos/projeções existentes, sem dependência ou subsistema novo. Preservar assinatura, credenciais cegas, sandbox, allowlists e modelos/esforços Luna/Sol.",
+      "Não editar SQLite/.gship manualmente, executar providers reais nos testes, alterar estado/aprovação de outras runs nem atribuir consumo de chats/agentes externos à run.",
+      "Implementar apenas este contrato, preservar o trabalho entregue nas issues anteriores e revalidar caminhos existentes. Full check:all pertence ao full-verifier do runtime na fronteira de ship."
+    ],
+    "verify": [
+      "bun test test/runtime/run-evaluation.test.ts test/runtime/run-runtime.test.ts test/web/ui-client.test.tsx",
+      "bun run typecheck"
+    ]
+  },
+  "approval": {
+    "fingerprint": "acd1c120cb3a26add240f6228584056eca52d16b53dc4538cb277718348942d0",
+    "approvedAt": "2026-09-14T11:28:27.811Z"
+  }
+}
