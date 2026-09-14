@@ -171,6 +171,8 @@ export interface RuntimeExecutionInput {
 	fullVerifyFeedback?: string;
 	/** Sanitized evidence from the one automatic correction of a failed required CI check. */
 	ciFeedback?: string;
+	/** Confirmed GitHub merge conflict for the current PR head. */
+	conflictFeedback?: string;
 	/** Explicit response supplied by the operator when resuming a paused run. */
 	operatorGuidance?: string;
 	/** Durable provenance for the latest operator guidance, independent of its text. */
@@ -481,6 +483,16 @@ export interface RuntimeShipInput {
 		workflowRevision: string | null;
 		review: 'passed' | 'not-applicable';
 		fullVerification: 'passed' | 'not-applicable';
+		/**
+		 * Absent leaves a pending local base merge (MERGE_HEAD) untouched as
+		 * unknown work. Present, this run claims it confirmed and reserved a
+		 * merge-conflict recovery (#ownedMergeConflict) merging in `baseSha` --
+		 * verifiable proof the shipper cross-checks against `git rev-parse
+		 * MERGE_HEAD` itself before trusting it, rather than a bare say-so: a
+		 * second, later merge conflict within the same run can satisfy "this run
+		 * has a claimed recovery" without being the specific merge now pending.
+		 */
+		mergeConflictRecovery?: { baseSha: string };
 	};
 	initialCiStatus: PullRequestCiStatus;
 }
@@ -492,7 +504,16 @@ export interface RuntimeShipInput {
 export type RuntimeShipResult =
 	| { outcome: 'merged'; prNumber: number }
 	| { outcome: 'ci-failed'; evidence: RuntimeCiFailureEvidence }
+	| { outcome: 'merge-conflict'; evidence: RuntimeMergeConflictEvidence }
 	| { outcome: 'failed'; detail: string };
+
+export interface RuntimeMergeConflictEvidence {
+	prNumber: number;
+	headSha: string;
+	baseSha: string;
+	branch: string;
+	resolution: 'conflict' | 'base-advanced';
+}
 
 export interface RuntimeCiFailureEvidence {
 	prNumber: number;
@@ -723,6 +744,7 @@ interface RunAttempt {
 	verificationFeedback?: string;
 	fullVerifyFeedback?: string;
 	ciFeedback?: string;
+	conflictFeedback?: string;
 	operatorGuidance?: string;
 	operatorGuidanceSource?: string;
 	operatorGuidanceAuthorizationEvidence?: 'explicit' | 'absent' | 'unknown';
@@ -1099,12 +1121,14 @@ export class RunRuntime {
 		const recoveredCycle = this.#recoveredCycleAttempt(run);
 		const recoveredVerification = this.#unconsumedVerificationAttempt(run.id);
 		const recoveredCi = this.#unconsumedCiAttempt(run.id);
+		const recoveredMergeConflict = this.#unconsumedMergeConflictAttempt(run.id);
 		const recoveredReconciliation = this.#reconciliationGuidanceAttempt(run);
 		this.#launch(run, {
 			resume: true,
 			...(recoveredCycle ?? {}),
 			...(recoveredVerification ?? {}),
 			...(recoveredCi ?? {}),
+			...(recoveredMergeConflict ?? {}),
 			...(recoveredReconciliation ?? {}),
 			...(guidance === undefined || guidance.length === 0
 				? {}
@@ -1739,6 +1763,7 @@ export class RunRuntime {
 				firstAttempt,
 				resumePhase === 'review' || resumePhase === 'full-verify' ? resumePhase : null,
 			);
+			this.#recordMergeConflictRecoveryResult(run.id);
 		} catch (error) {
 			this.#settleDriveFailure(run.id, signal, error);
 		}
@@ -1896,6 +1921,16 @@ export class RunRuntime {
 			}).run;
 			if (!(error instanceof RecoveryBudgetExhaustedError)) this.#releaseFinishedWorkspace(failedRun, false);
 		}
+	}
+
+	#recordMergeConflictRecoveryResult(runId: string): void {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const request = events.findLast((event) => event.kind === 'run.merge-conflict-fix-requested');
+		if (request === undefined || events.some((event) => event.kind === 'run.merge-conflict-recovery-result' && event.seq > request.seq)) return;
+		if (!events.some((event) => event.kind === 'run.work-completed' && event.seq > request.seq)) return;
+		const evidence = request.payload['evidence'];
+		if (!this.#isMergeConflictEvidence(evidence)) return;
+		this.#emit(runId, 'run.merge-conflict-recovery-result', { outcome: 'completed', evidence });
 	}
 
 	/**
@@ -2159,10 +2194,29 @@ export class RunRuntime {
 	): Promise<void> {
 		this.#transition(run.id, 'shipping', 'run.ship-started');
 		try {
+			// A crash between the local base merge `#prepareMergeConflict`
+			// prepares and the `run.merge-conflict-fix-requested` that reserves
+			// its recovery leaves the workspace already merged or conflicted.
+			// Re-shipping here would ask GitHub again and find that same
+			// preparation reported back as unknown workspace changes, so this
+			// reuses the confirmed evidence and resumes the same recovery
+			// instead of asking GitHub or pushing again.
+			const dangling = this.#danglingMergeConflictConfirmation(run.id);
+			if (dangling !== null) {
+				await this.#handleMergeConflict(run, signal, dangling);
+				return;
+			}
 			const decisions = this.#store.listRunDecisionEvents(run.id);
 			const created = decisions.find((event) => event.kind === 'run.created');
 			const workflowRevision = created?.payload['workflowRevision'];
 			const delivery = selectPullRequestDelivery(decisions);
+			// The merge-conflict recovery this run owns (GSHIP-884), if any: passed
+			// on as verifiable proof, not a bare say-so, because this event log
+			// alone cannot tell "this run has a claimed recovery" (true again for
+			// a second, later conflict after the first's recovery already
+			// completed) from "the merge now actually pending is that recovery" --
+			// only the shipper, checking `baseSha` against real git, can.
+			const ownedMergeConflict = this.#ownedMergeConflict(run.id);
 			const result = await shipper.ship({
 				runId: run.id,
 				issueId: run.issueId,
@@ -2175,6 +2229,7 @@ export class RunRuntime {
 						? 'passed' : 'not-applicable',
 					fullVerification: decisions.some((event) => event.kind === 'run.full-verify-clean')
 						? 'passed' : 'not-applicable',
+					...(ownedMergeConflict === null ? {} : { mergeConflictRecovery: { baseSha: ownedMergeConflict.baseSha } }),
 				},
 				initialCiStatus: delivery?.ciStatus ?? 'not-reported',
 			});
@@ -2191,6 +2246,10 @@ export class RunRuntime {
 			}
 			if (result.outcome === 'ci-failed') {
 				await this.#handleCiFailure(run, signal, result.evidence);
+				return;
+			}
+			if (result.outcome === 'merge-conflict') {
+				await this.#handleMergeConflict(run, signal, result.evidence);
 				return;
 			}
 			this.#transition(run.id, 'ready-to-ship', 'run.ship-failed', {
@@ -2245,6 +2304,89 @@ export class RunRuntime {
 		await this.#driveImplementation(executor, verifier, run, signal, {
 			resume: true,
 			ciFeedback: this.#ciFeedback(evidence),
+		});
+	}
+
+	async #handleMergeConflict(
+		run: RunRecord,
+		signal: AbortSignal,
+		evidence: RuntimeMergeConflictEvidence,
+	): Promise<void> {
+		const events = this.#store.listRunDecisionEvents(run.id);
+		const prior = events.findLast((event) => event.kind === 'run.merge-conflict-fix-requested');
+		const recoveryResult = prior === undefined ? undefined : events.findLast((event) =>
+			event.kind === 'run.merge-conflict-recovery-result' && event.seq > prior.seq);
+		const recoveryCompleted = prior !== undefined && events.some((event) =>
+			event.kind === 'run.work-completed' && event.seq > prior.seq);
+		const recoveryEvidence = this.#ownedMergeConflict(run.id) ?? evidence;
+		if (recoveryResult !== undefined || recoveryCompleted) {
+			this.#limitMergeConflict(run.id, prior, evidence, recoveryEvidence, recoveryResult);
+			return;
+		}
+		const reserved = prior !== undefined;
+		const feedback = this.#mergeConflictFeedback(recoveryEvidence);
+		// The baseline for "did this recovery's own work complete" has to be the
+		// seq of the request that reserved it, not the last one in history: a
+		// first conflict has no `prior`, and falling back to 0 would let any
+		// earlier `run.work-completed` from before the conflict -- one every run
+		// that reached shipping already has -- satisfy the check below even when
+		// this recovery itself ends in waiting-user, failed or cancelled.
+		const requestSeq = reserved
+			? prior.seq
+			: this.#transition(run.id, 'working', 'run.merge-conflict-fix-requested', {
+				payload: { evidence },
+			}).event.seq;
+		if (reserved && this.#store.getRun(run.id)?.state !== 'working') {
+			this.#transition(run.id, 'working', 'run.merge-conflict-recovery-resumed');
+		}
+		const executor = this.#executor;
+		const verifier = this.#verifier;
+		if (executor === undefined || verifier === undefined) throw new RuntimeUnavailableError();
+		await this.#driveImplementation(executor, verifier, run, signal, {
+			resume: true,
+			conflictFeedback: feedback,
+		});
+		const after = this.#store.listRunDecisionEvents(run.id);
+		if (after.some((event) => event.kind === 'run.work-completed' && event.seq > requestSeq)
+			&& !after.some((event) => event.kind === 'run.merge-conflict-recovery-result' && event.seq > requestSeq)) {
+			this.#emit(run.id, 'run.merge-conflict-recovery-result', {
+				outcome: 'completed',
+				evidence,
+			});
+		}
+	}
+
+	/**
+	 * The reserved recovery already ran and gave up: record its own result if
+	 * nothing has yet, then hand the still-blocking conflict to the operator.
+	 * The result this reports as completed is the one `prior` reserved, not
+	 * whatever #ownedMergeConflict now owns: a second conflict detected inside
+	 * this same recovery's own nested ship (#driveImplementation ->
+	 * #shipIfReady -> #driveShip) is already confirmed and unclaimed by the
+	 * time this runs, which would make #ownedMergeConflict return that second
+	 * conflict's evidence here -- the wrong one, corrupting the first
+	 * recovery's own result with the second conflict's head and base.
+	 * #recordMergeConflictRecoveryResult reads the same request's own stored
+	 * evidence for exactly this reason; this mirrors it instead of a second,
+	 * diverging source.
+	 */
+	#limitMergeConflict(
+		runId: string,
+		prior: RunEvent | undefined,
+		evidence: RuntimeMergeConflictEvidence,
+		recoveryEvidence: RuntimeMergeConflictEvidence,
+		recoveryResult: RunEvent | undefined,
+	): void {
+		if (recoveryResult === undefined) {
+			const priorEvidence = prior?.payload['evidence'];
+			this.#emit(runId, 'run.merge-conflict-recovery-result', {
+				outcome: 'completed',
+				evidence: this.#isMergeConflictEvidence(priorEvidence) ? priorEvidence : recoveryEvidence,
+			});
+		}
+		this.#transition(runId, 'waiting-user', 'run.merge-conflict-limit', {
+			summary: 'O conflito de merge persistiu após uma recuperação concluída.',
+			payload: { evidence, previousEvidence: prior?.payload['evidence'] },
 		});
 	}
 
@@ -2450,6 +2592,7 @@ export class RunRuntime {
 	#hasRecoveryDispatchCause(run: RunRecord, attempt: RunAttempt): boolean {
 		return attempt.reviewFeedback !== undefined || attempt.verificationFeedback !== undefined
 			|| attempt.fullVerifyFeedback !== undefined || attempt.ciFeedback !== undefined
+			|| attempt.conflictFeedback !== undefined
 			|| attempt.internalGuidance !== undefined || attempt.operatorGuidance !== undefined
 			|| (attempt.reconciliationGuidance !== undefined
 				&& this.#store.listRunDecisionEvents(run.id).some((event) => event.kind === 'run.work-completed'));
@@ -2583,6 +2726,76 @@ export class RunRuntime {
 		}
 		const finding = events[requestIndex]?.payload['findings'];
 		return typeof finding === 'string' ? { verificationFeedback: finding } : null;
+	}
+
+	#unconsumedMergeConflictAttempt(runId: string): Pick<RunAttempt, 'conflictFeedback'> | null {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const request = events.findLast((event) => event.kind === 'run.merge-conflict-fix-requested');
+		if (request === undefined) return null;
+		if (events.some((event) => event.kind === 'run.merge-conflict-recovery-result' && event.seq > request.seq)) return null;
+		const evidence = request.payload['evidence'];
+		if (!this.#isMergeConflictEvidence(evidence)) return null;
+		return { conflictFeedback: this.#mergeConflictFeedback(evidence) };
+	}
+
+	/**
+	 * The confirmed local base merge this run currently owns (GSHIP-884): the
+	 * latest `ship.merge-conflict-confirmed` claimed by a
+	 * `run.merge-conflict-fix-requested` -- the reservation is a same-tick
+	 * follow-up to the confirmation with no await in between, so it is
+	 * otherwise never absent -- or by a `run.merge-conflict-limit`, the other
+	 * way a confirmation gets claimed: the one recovery attempt it reserved
+	 * already ran and gave up, handing it to the operator instead of leaving
+	 * it dangling. Null covers both "no conflict was ever confirmed" and "the
+	 * latest confirmation is still unclaimed" -- #danglingMergeConflictConfirmation's
+	 * own case to resume, not this run's tracked work yet.
+	 *
+	 * The single source both `#driveShip` (what it may tell the shipper) and
+	 * `#danglingMergeConflictConfirmation` (what still needs claiming) read,
+	 * so the two stay the same predicate instead of two derivations that could
+	 * drift. Confirmed-but-unclaimed evidence never validates through
+	 * `#isMergeConflictEvidence` either: the confirmation `#prepareMergeConflict`
+	 * emits before its own local merge has no `resolution` yet, so an
+	 * unclaimed one is never mistaken for owned, claimed work.
+	 */
+	#ownedMergeConflict(runId: string): RuntimeMergeConflictEvidence | null {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const confirmed = events.findLast((event) => event.kind === 'ship.merge-conflict-confirmed');
+		if (confirmed === undefined) return null;
+		const claimed = events.some((event) => (event.kind === 'run.merge-conflict-fix-requested'
+			|| event.kind === 'run.merge-conflict-limit') && event.seq > confirmed.seq);
+		if (!claimed) return null;
+		return this.#isMergeConflictEvidence(confirmed.payload) ? confirmed.payload : null;
+	}
+
+	#danglingMergeConflictConfirmation(runId: string): RuntimeMergeConflictEvidence | null {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const confirmed = events.findLast((event) => event.kind === 'ship.merge-conflict-confirmed');
+		if (confirmed === undefined) return null;
+		if (this.#ownedMergeConflict(runId) !== null) return null;
+		return this.#isMergeConflictEvidence(confirmed.payload) ? confirmed.payload : null;
+	}
+
+	#isMergeConflictEvidence(value: unknown): value is RuntimeMergeConflictEvidence {
+		if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+		const evidence = value as Record<string, unknown>;
+		return typeof evidence['prNumber'] === 'number'
+			&& typeof evidence['headSha'] === 'string'
+			&& typeof evidence['baseSha'] === 'string'
+			&& typeof evidence['branch'] === 'string'
+			&& (evidence['resolution'] === 'conflict' || evidence['resolution'] === 'base-advanced');
+	}
+
+	#mergeConflictFeedback(evidence: RuntimeMergeConflictEvidence): string {
+		return [
+			`PR: #${evidence.prNumber}`,
+			`Head: ${evidence.headSha}`,
+			`Base: ${evidence.baseSha}`,
+			`Branch: ${evidence.branch}`,
+			evidence.resolution === 'conflict'
+				? 'A resolução foi preparada no worktree. Resolva somente o conflito dentro do contrato aprovado, preservando as mudanças da base. Se o conflito exigir alterar objetivo, risco, verificação ou autoridade, pare e peça reaprovação em vez de escolher ours/theirs.'
+				: 'A base avançou sem conflito textual e a árvore foi atualizada no worktree. Preserve o contrato aprovado e faça a nova verificação antes de publicar novamente.',
+		].join('\n');
 	}
 
 	/**
@@ -2954,6 +3167,7 @@ export class RunRuntime {
 			...(attempt.verificationFeedback === undefined ? {} : { verificationFeedback: attempt.verificationFeedback }),
 			...(attempt.fullVerifyFeedback === undefined ? {} : { fullVerifyFeedback: attempt.fullVerifyFeedback }),
 			...(attempt.ciFeedback === undefined ? {} : { ciFeedback: attempt.ciFeedback }),
+			...(attempt.conflictFeedback === undefined ? {} : { conflictFeedback: attempt.conflictFeedback }),
 		};
 	}
 

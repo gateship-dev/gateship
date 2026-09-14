@@ -409,7 +409,9 @@ async function publishProtectedEntry(
 		'Could not merge the protected intake pull request',
 		merged.outcome === 'ci-failed'
 			? `required check failed: ${merged.evidence.check.name}`
-			: merged.detail,
+			: merged.outcome === 'merge-conflict'
+				? `pull request #${merged.evidence.prNumber} has a merge conflict at base ${merged.evidence.baseSha}`
+				: merged.detail,
 	);
 }
 

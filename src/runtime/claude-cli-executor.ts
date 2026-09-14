@@ -201,6 +201,7 @@ export function buildWorkPrompt(
 	handoff: RuntimeExecutorHandoff | undefined = undefined,
 	/** The failed human-approved issue verification, for one mechanical correction only. */
 	verificationFeedback: string | undefined = undefined,
+	conflictFeedback: string | undefined = undefined,
 	/** Internal orchestrator answer to the executor's own prior question. */
 	internalGuidance: RuntimeInternalGuidance | undefined = undefined,
 	/** Non-binding execution context produced by the chain reconciler. */
@@ -226,6 +227,14 @@ export function buildWorkPrompt(
 		'',
 		'Issue verification failure:',
 		verificationFeedback,
+	];
+	const conflictSection = conflictFeedback === undefined ? [] : [
+		'',
+		'GitHub confirmed a merge conflict on the current pull request head, and the worktree contains the prepared base merge.',
+		'Resolve only this conflict within the approved issue contract. Preserve the base changes. If resolving it would change the objective, risk, verification, or authority, stop and ask for reapproval; never choose ours/theirs automatically.',
+		'',
+		'Merge conflict evidence:',
+		conflictFeedback,
 	];
 	// The full-project verification's own single automatic fix round
 	// (GSHIP-649): a rejection here is the project's whole manifest, not the
@@ -328,6 +337,7 @@ export function buildWorkPrompt(
 		...reconciliationGuidancePrompt(reconciliationGuidance),
 		...reviewSection,
 		...verificationSection,
+		...conflictSection,
 		...fullVerifySection,
 		...ciSection,
 		...researchSection,
@@ -541,6 +551,7 @@ export class ClaudeCliExecutor implements RuntimeExecutor {
 			input.ciFeedback,
 			input.executorHandoff,
 			input.verificationFeedback,
+			input.conflictFeedback,
 			input.internalGuidance,
 			input.reconciliationGuidance,
 			input.research,
