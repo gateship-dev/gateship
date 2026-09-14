@@ -10,6 +10,7 @@ import { terminateProcessGroup } from './process-group.ts';
 import { readProjectVerificationManifest } from './project-verification.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 import { buildAllowlistedEnv } from './child-env.ts';
+import { verificationVersion } from './verification-version.ts';
 import type {
 	RuntimeEvidenceCheck,
 	RuntimeExecutionInput,
@@ -489,6 +490,13 @@ export class GitEvidenceChecker implements RuntimeEvidenceCheck {
 	}
 }
 
+async function runVersionedVerification(runCommand: VerificationCommandRunner, runGit: GitCommandRunner, input: VerificationCommandInput) {
+	const before = verificationVersion(input.cwd, runGit);
+	const result = await runCommand(input);
+	const after = verificationVersion(input.cwd, runGit);
+	return { result, verifiedVersion: before !== null && before === after ? before : 'unknown' };
+}
+
 export class GitIssueVerifier implements RuntimeVerifier {
 	readonly #options: GitRuntimeOptions;
 	readonly #runGit: GitCommandRunner;
@@ -525,8 +533,9 @@ export class GitIssueVerifier implements RuntimeVerifier {
 			executed += 1;
 			if (executed === 1) input.emit('verify.started');
 			input.emit('verify.command.started', { commandIndex: commandIndex + 1 });
-			const result = await this.#runCommand({ cwd: input.cwd, command, signal: input.signal });
-			input.emit('verify.command.completed', { commandIndex: commandIndex + 1, exitCode: result.exitCode });
+			const { result, verifiedVersion } = await runVersionedVerification(this.#runCommand, this.#runGit, { cwd: input.cwd, command, signal: input.signal });
+			input.emit('verify.command.completed', { commandIndex: commandIndex + 1, exitCode: result.exitCode,
+				verifiedVersion });
 			if (result.exitCode !== 0) return { ok: false, detail: `verification command ${commandIndex + 1} exited ${result.exitCode}: ${outputTail(result)}` };
 		}
 		if (executed === 0) {
@@ -660,11 +669,12 @@ export class GitFullVerifier implements RuntimeVerifier {
 				commandIndex: commandIndex + 1,
 				origin: this.#origin,
 			});
-			const result = await this.#runCommand({ cwd: input.cwd, command, signal: input.signal });
+			const { result, verifiedVersion } = await runVersionedVerification(this.#runCommand, this.#options.runGit ?? defaultRunGit, { cwd: input.cwd, command, signal: input.signal });
 			input.emit('full-verify.command.completed', {
 				commandIndex: commandIndex + 1,
 				exitCode: result.exitCode,
 				origin: this.#origin,
+				verifiedVersion,
 			});
 			if (result.exitCode !== 0) {
 				return { ok: false, detail: `full verification failed: ${outputTail(result)}` };

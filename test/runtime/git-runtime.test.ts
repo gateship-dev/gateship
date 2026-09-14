@@ -582,7 +582,7 @@ describe('GitFullVerifier', () => {
 		expect(commands).toEqual([{ cwd: dir, command: 'bun run verify', timeoutMs: undefined }]);
 		expect(events).toEqual([
 			{ kind: 'full-verify.command.started', payload: { commandIndex: 1, origin: 'package.json' } },
-			{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, exitCode: 0, origin: 'package.json' } },
+			{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, exitCode: 0, origin: 'package.json', verifiedVersion: 'unknown' } },
 		]);
 	});
 
