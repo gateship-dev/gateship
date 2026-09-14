@@ -231,6 +231,8 @@ export interface RuntimeExecutionInput {
 	onExecutorSpawn?: (pid: number) => void;
 	/** Called after the executor child exits, before adapter result classification. */
 	onExecutorExit?: (exitCode: number) => void;
+	/** Reserves a distinct corrective dispatch for an executor handoff fallback. */
+	onExecutorHandoff?: (providerId: AgentProviderId) => Pick<RuntimeExecutionInput, 'recoveryDispatchId' | 'onExecutorSpawn' | 'onExecutorExit'>;
 	/** Reconnects to the already-live process named by a recovered reservation. */
 	reconnectRecoveryDispatch?: boolean;
 }
@@ -241,6 +243,13 @@ export interface RuntimeExecutorHandoff {
 	reason: ProviderErrorKind;
 	status: string;
 	diff: string;
+}
+
+export class RecoveryBudgetExhaustedError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'RecoveryBudgetExhaustedError';
+	}
 }
 
 export type RuntimeExecutionResult =
@@ -715,6 +724,8 @@ interface RunAttempt {
 	fullVerifyFeedback?: string;
 	ciFeedback?: string;
 	operatorGuidance?: string;
+	operatorGuidanceSource?: string;
+	operatorGuidanceAuthorizationEvidence?: 'explicit' | 'absent' | 'unknown';
 	reconciliationGuidance?: string;
 	internalGuidance?: RuntimeInternalGuidance;
 	recoveryDispatchId?: string;
@@ -1097,7 +1108,11 @@ export class RunRuntime {
 			...(recoveredReconciliation ?? {}),
 			...(guidance === undefined || guidance.length === 0
 				? {}
-				: { operatorGuidance: guidance }),
+				: {
+					operatorGuidance: guidance,
+					operatorGuidanceSource: source,
+					operatorGuidanceAuthorizationEvidence: authorizationEvidence,
+				}),
 		});
 		return run;
 	}
@@ -1859,7 +1874,7 @@ export class RunRuntime {
 			const failedRun = this.#transition(runId, 'failed', 'run.failed', {
 				error: errorMessage(error),
 			}).run;
-			this.#releaseFinishedWorkspace(failedRun, false);
+			if (!(error instanceof RecoveryBudgetExhaustedError)) this.#releaseFinishedWorkspace(failedRun, false);
 		}
 	}
 
@@ -1923,10 +1938,42 @@ export class RunRuntime {
 	): Promise<RunAttempt | null> {
 		const pending = this.#pendingCycleQuestion(run.id);
 		if (pending === null) return attempt;
+		if (attempt.operatorGuidance !== undefined) {
+			return this.#applyOperatorCycleGuidance(run, pending, attempt);
+		}
 		return await this.#answerCycleQuestion(
 			run, signal, pending.questionId, pending.finding, pending.origin,
 			attempt.ciFeedback, pending.approvedContract ?? this.#requireApprovedContract(run.id, run.issueId),
 		);
+	}
+
+	#applyOperatorCycleGuidance(
+		run: RunRecord,
+		pending: { questionId: string; finding: string; origin: RuntimeCycleQuestionOrigin; approvedContract?: string },
+		attempt: RunAttempt,
+	): RunAttempt {
+		const guidance = attempt.operatorGuidance;
+		if (guidance === undefined) return attempt;
+		const payload = {
+			questionId: pending.questionId,
+			responder: attempt.operatorGuidanceSource === 'agent-cli' ? 'agent-cli' : 'operator',
+			source: attempt.operatorGuidanceSource ?? 'operator',
+			outcome: 'continue',
+			guidance,
+			findings: pending.finding,
+			origin: pending.origin,
+		};
+		if (this.#store.getRun(run.id)?.state === 'working') this.#emit(run.id, 'run.cycle-response', payload);
+		else this.#transition(run.id, 'working', 'run.cycle-response', { payload });
+		return {
+			...attempt,
+			resume: true,
+			...(pending.origin === 'review'
+				? { reviewFeedback: this.#cycleReviewFeedback(pending.finding, guidance) }
+				: pending.origin === 'full-verify'
+				? { fullVerifyFeedback: this.#cycleReviewFeedback(pending.finding, guidance) }
+				: { internalGuidance: { question: pending.finding, guidance } }),
+		};
 	}
 
 	async #shipIfReady(run: RunRecord, signal: AbortSignal): Promise<void> {
@@ -2318,9 +2365,22 @@ export class RunRuntime {
 			if (executionInput.recoveryDispatchId === undefined) return;
 			this.#store.finishRecoveryDispatch(run.id, executionInput.recoveryDispatchId, this.#now(), { exitCode });
 		};
+		const reserveHandoff = (providerId: AgentProviderId): Pick<RuntimeExecutionInput, 'recoveryDispatchId' | 'onExecutorSpawn' | 'onExecutorExit'> => {
+			const dispatchId = this.#newRecoveryDispatchId();
+			const result = this.#store.reserveRecoveryDispatch(run.id, dispatchId, this.#now());
+			if (result === 'exhausted') throw new RecoveryBudgetExhaustedError(`recovery dispatch budget exhausted after ${run.recoveryPolicy?.maxRecoveryDispatches ?? 0} attempts; fallback ${providerId} was not invoked`);
+			return {
+				recoveryDispatchId: dispatchId,
+				onExecutorSpawn: (pid) => {
+					const processIdentity = captureRecoveryProcessIdentity(pid) ?? `${providerId}:${executionInput.sessionId}:pid-${pid}`;
+					this.#store.markRecoveryDispatchStarted(run.id, dispatchId, this.#now(), processIdentity);
+				},
+				onExecutorExit: (exitCode) => this.#store.finishRecoveryDispatch(run.id, dispatchId, this.#now(), { exitCode }),
+			};
+		};
 		const providerInput = executionInput.recoveryDispatchId === undefined
 			? executionInput
-			: { ...executionInput, onExecutorSpawn: markSpawned, onExecutorExit: markExited };
+			: { ...executionInput, onExecutorSpawn: markSpawned, onExecutorExit: markExited, onExecutorHandoff: reserveHandoff };
 		try {
 			const execution = executionInput.reconnectRecoveryDispatch === true
 				? await (executor.reconnect?.(providerInput) ?? Promise.reject(new Error('live recovery process cannot be reconnected')))
@@ -2390,7 +2450,7 @@ export class RunRuntime {
 	#newRecoveryDispatch(run: RunRecord, attempt: RunAttempt): { dispatchId: string } {
 		const dispatchId = attempt.recoveryDispatchId ?? this.#newRecoveryDispatchId();
 		const result = this.#store.reserveRecoveryDispatch(run.id, dispatchId, this.#now());
-		if (result === 'exhausted') throw new Error(`recovery dispatch budget exhausted after ${run.recoveryPolicy?.maxRecoveryDispatches ?? 0} attempts; request an explicit budget extension through the authorized proposal flow`);
+		if (result === 'exhausted') throw new RecoveryBudgetExhaustedError(`recovery dispatch budget exhausted after ${run.recoveryPolicy?.maxRecoveryDispatches ?? 0} attempts; request an explicit budget extension through the authorized proposal flow`);
 		return { dispatchId };
 	}
 
@@ -2573,10 +2633,8 @@ export class RunRuntime {
 	} | null {
 		const events = this.#store.listRunDecisionEvents(runId);
 		const answered = new Set(this.#cycleResponses(runId).map((response) => response.questionId));
-		let supersededByOperator = false;
 		for (let index = events.length - 1; index >= 0; index -= 1) {
 			const event = events[index];
-			if (event?.kind === 'run.operator-guidance') supersededByOperator = true;
 			if (event?.kind !== 'run.cycle-question') continue;
 			const questionId = event.payload['questionId'];
 			const finding = event.payload['finding'];
@@ -2585,7 +2643,7 @@ export class RunRuntime {
 			const normalizedOrigin = origin === undefined ? 'review' : origin;
 			if (typeof questionId === 'string' && typeof finding === 'string'
 				&& (normalizedOrigin === 'executor' || normalizedOrigin === 'review' || normalizedOrigin === 'full-verify')
-				&& !answered.has(questionId) && !supersededByOperator) {
+				&& !answered.has(questionId)) {
 				return {
 					questionId,
 					finding,

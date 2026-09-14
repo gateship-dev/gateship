@@ -65,7 +65,13 @@ export async function runAgentProcess(input: AgentProcessInput): Promise<AgentPr
 		stdout: 'pipe',
 		stderr: 'pipe',
 	});
-	input.onSpawn?.(child.pid);
+	try {
+		input.onSpawn?.(child.pid);
+	} catch (error) {
+		const termination = terminateProcessGroup(child, input.terminationGraceMs);
+		await Promise.allSettled([child.exited, termination]);
+		throw error;
+	}
 	child.stdin.write(input.stdin);
 	child.stdin.end();
 

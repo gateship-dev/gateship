@@ -176,7 +176,8 @@ for (const direction of DIRECTIONS) {
 			const executionInput = input(events, {
 				providerId: direction.from,
 				sessionId: 'origin-session',
-				executorHandoffAllowed: true,
+			executorHandoffAllowed: true,
+			onExecutorHandoff: () => ({ recoveryDispatchId: 'fallback-dispatch-1' }),
 			});
 			expect(await router.execute(executionInput)).toEqual({
 				outcome: 'completed',
@@ -193,6 +194,7 @@ for (const direction of DIRECTIONS) {
 				sessionId: 'guessed-session',
 				resume: false,
 				executorHandoffAllowed: false,
+				recoveryDispatchId: 'fallback-dispatch-1',
 			});
 			expect(alt?.executorHandoff).toEqual({
 				fromProvider: direction.from,

@@ -24,6 +24,19 @@ describe('agent process activity deadline', () => {
 		expect(DEFAULT_AGENT_ACTIVITY_TIMEOUT_MS).toBe(600_000);
 	});
 
+	test('terminates and awaits the child when spawn initialization fails', async () => {
+		let childPid = 0;
+		await expect(runAgentProcess({
+			argv: ['bun', FIXTURE, '--mode=progress'],
+			cwd: createTestTmpdir('gship-agent-spawn-callback-'),
+			env: { PATH: process.env.PATH },
+			stdin: '', signal: new AbortController().signal, onLine: () => {}, terminationGraceMs: 100,
+			onSpawn: (pid) => { childPid = pid; throw new Error('mark started failed'); },
+		})).rejects.toThrow('mark started failed');
+		expect(childPid).toBeGreaterThan(0);
+		expect(isProcessAlive(childPid)).toBe(false);
+	});
+
 	test('each stdout protocol line rearms the deadline', async () => {
 		const lines: string[] = [];
 		const result = await runAgentProcess({
