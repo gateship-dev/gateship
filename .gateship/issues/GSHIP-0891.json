@@ -7,7 +7,7 @@
     "GSHIP-890"
   ],
   "createdAt": "2026-09-14T11:24:18.367Z",
-  "updatedAt": "2026-09-14T11:25:56.570Z",
+  "updatedAt": "2026-09-14T11:28:35.762Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -28,5 +28,9 @@
       "bun test test/runtime/run-evaluation.test.ts test/runtime/run-store.test.ts test/commands/agent.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "47083758774a188a10203d4ecf6f5f212495a700a6237e0ead3fd1fe61c63e93",
+    "approvedAt": "2026-09-14T11:28:35.762Z"
   }
 }
