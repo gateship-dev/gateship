@@ -132,6 +132,75 @@ function errorText(value: unknown): string | undefined {
 	return typeof record?.['message'] === 'string' ? record['message'] : undefined;
 }
 
+function numberField(record: Record<string, unknown>, key: string): number | undefined {
+	const value = record[key];
+	return typeof value === 'number' ? value : undefined;
+}
+
+function compact(record: object): Record<string, unknown> {
+	return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+}
+
+/**
+ * Codex's `turn.completed.usage` (GSHIP-888), confirmed against the pinned
+ * CLI's own primary source -- the TypeScript SDK's event types (`Usage` in
+ * `sdk/typescript/src/events.ts`, openai/codex tag `rust-v0.153.4`, matching
+ * the `codex-cli 0.153.4` binary available while implementing this):
+ * `input_tokens`, `cached_input_tokens`, `cache_write_input_tokens`,
+ * `output_tokens` and `reasoning_output_tokens`, each documented as "during a
+ * turn" -- per-turn, never a running total across a resumed thread, unlike
+ * Claude's `modelUsage`/`total_cost_usd`. So nothing here computes a delta;
+ * each `turn.completed` already reports only its own turn.
+ *
+ * Mapped onto the same input/output/cache/reasoning vocabulary GSHIP-623
+ * already established for Claude (`cached_input_tokens` as a cache read,
+ * `cache_write_input_tokens` as a cache creation, `reasoning_output_tokens`
+ * as thinking) so an existing consumer reading that vocabulary is not blind
+ * to Codex. Limitation on record: the SDK's own doc comments do not state
+ * whether `cached_input_tokens` is included inside `input_tokens` or
+ * additional to it -- unlike Anthropic's `cache_read_input_tokens`, which is
+ * documented as additional -- so each field is reported exactly as received
+ * and never combined into a derived total here.
+ */
+function parseCodexTurnUsage(event: Record<string, unknown>): Record<string, unknown> {
+	const usage = recordOf(event['usage']) ?? {};
+	return compact({
+		inputTokens: numberField(usage, 'input_tokens'),
+		outputTokens: numberField(usage, 'output_tokens'),
+		cacheCreationInputTokens: numberField(usage, 'cache_write_input_tokens'),
+		cacheReadInputTokens: numberField(usage, 'cached_input_tokens'),
+		thinkingTokens: numberField(usage, 'reasoning_output_tokens'),
+	});
+}
+
+/**
+ * One durable event per Codex turn carrying what `turn.completed` reported
+ * (GSHIP-888), mirroring the Claude `.usage` event GSHIP-623 established:
+ * the resolved model/effort pair, tagged with `provider` and the one-call
+ * `invocationId`. Omitted entirely when nothing measurable was reported --
+ * never emitted with a fabricated zero, which would read as "this call was
+ * free". Fires as soon as the line is parsed, so a later `protocol-invalid`
+ * failure on the same call (a missing agent message) does not erase usage
+ * already reported for it.
+ */
+function emitCodexUsage(
+	emit: (kind: string, payload?: Record<string, unknown>) => void,
+	eventPrefix: string,
+	slot: ModelSlot,
+	invocationId: string,
+	event: Record<string, unknown>,
+): void {
+	const usage = parseCodexTurnUsage(event);
+	if (Object.keys(usage).length === 0) return;
+	emit(`${eventPrefix}.usage`, {
+		provider: 'codex',
+		invocationId,
+		...(slot.model === undefined ? {} : { model: slot.model }),
+		...(slot.effort === undefined ? {} : { effort: slot.effort }),
+		usage,
+	});
+}
+
 interface CodexStreamState {
 	terminal: boolean;
 	/** A clean protocol-reported turn failure, classified from its own detail. */
@@ -222,6 +291,8 @@ function consumeCodexEvent(
 	line: string,
 	input: AgentSessionInput,
 	state: CodexStreamState,
+	slot: ModelSlot,
+	invocationId: string,
 ): void {
 	const event = parseEventLine(line);
 	if (event === null) return;
@@ -249,6 +320,7 @@ function consumeCodexEvent(
 	}
 	if (type === 'turn.completed') {
 		state.terminal = true;
+		emitCodexUsage(input.emit, input.eventPrefix, slot, invocationId, event);
 		return;
 	}
 	if (type === 'item.completed') consumeCompletedItem(event['item'], input, state);
@@ -283,6 +355,9 @@ async function runCodexTurn(
 	};
 	const slot = resolveModelSlot(options);
 	emitModelSelection(input.emit, input.eventPrefix, slot, 'codex');
+	// Minted fresh for this one call (GSHIP-888): stable within it, distinct
+	// from any other call sharing the same `sessionId` on resume or retry.
+	const invocationId = randomUUID();
 	let result: AgentProcessResult;
 	try {
 		result = await runAgentProcess({
@@ -295,7 +370,7 @@ async function runCodexTurn(
 			...(options.activityTimeoutMs === undefined
 				? {}
 				: { activityTimeoutMs: options.activityTimeoutMs }),
-			onLine: (line) => consumeCodexEvent(line, input, state),
+			onLine: (line) => consumeCodexEvent(line, input, state, slot, invocationId),
 			...codexLifecycleCallbacks(input, options),
 		});
 	} catch (error) {

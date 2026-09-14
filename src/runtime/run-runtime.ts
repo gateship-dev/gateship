@@ -427,6 +427,10 @@ export interface RuntimeReviewer {
 export interface RuntimeCycleResponseUsage {
 	model: string;
 	effort: string;
+	/** Which provider reported this usage (GSHIP-888), carried alongside the counts so a consumer never has to guess it from event ordering. */
+	provider?: AgentProviderId;
+	/** The one call that produced this usage (GSHIP-888): stable for that call, distinct from any other sharing the same session on resume or retry. */
+	invocationId?: string;
 	totalCostUsd?: number;
 	inputTokens?: number;
 	outputTokens?: number;
@@ -798,6 +802,8 @@ function cycleUsageEventPayload(usage: RuntimeCycleResponseUsage): Record<string
 	return compactDefined({
 		model: usage.model,
 		effort: usage.effort,
+		provider: usage.provider,
+		invocationId: usage.invocationId,
 		totalCostUsd: usage.totalCostUsd,
 		modelUsage: usage.modelUsage ?? synthesizedModelUsage,
 		usage: Object.keys(invocationUsage).length === 0 ? undefined : invocationUsage,

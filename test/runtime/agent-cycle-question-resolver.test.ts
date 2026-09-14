@@ -168,4 +168,37 @@ describe('agent cycle question resolver', () => {
 			expect(turn.resume).toBe(false);
 		}
 	});
+
+	// GSHIP-888: the resolver is an existing consumer of the adapters' `.usage`
+	// event; it must propagate the provider tag and the invocation link the
+	// adapters now attach, not just the token counts it already read.
+	test('propagates the provider tag, invocation id and token counts from the underlying usage event', async () => {
+		const session: AgentSession = {
+			provider: 'codex',
+			run: async (input) => {
+				input.emit('cycle-question.model', { model: 'gpt-5-codex', effort: 'high', provider: 'codex' });
+				input.emit('cycle-question.usage', {
+					provider: 'codex',
+					invocationId: 'invocation-888',
+					model: 'gpt-5-codex',
+					effort: 'high',
+					usage: { inputTokens: 40, outputTokens: 10, cacheCreationInputTokens: 2, cacheReadInputTokens: 3, thinkingTokens: 5 },
+				});
+				return { summary: '', structuredOutput: { outcome: 'continue', guidance: 'Prossiga.', reason: null } };
+			},
+		};
+		const resolver = new AgentCycleQuestionResolver({ claude: session, codex: session });
+		const result = await resolver.resolve(questionInput({ providerId: 'codex' }));
+		expect(result.usage).toMatchObject({
+			provider: 'codex',
+			invocationId: 'invocation-888',
+			model: 'gpt-5-codex',
+			effort: 'high',
+			inputTokens: 40,
+			outputTokens: 10,
+			cacheCreationInputTokens: 2,
+			cacheReadInputTokens: 3,
+			thinkingTokens: 5,
+		});
+	});
 });
