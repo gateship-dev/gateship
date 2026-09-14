@@ -255,7 +255,22 @@ export interface GithubPullRequestInput {
 /** Minimal seam used by intake; the production implementation is GithubShipper. */
 export interface GithubPullRequestMerger {
 	mergePullRequest: (input: GithubPullRequestInput) => Promise<RuntimeShipResult>;
+	reconcileCi?: (input: GithubCiReconciliationInput) => Promise<GithubCiReconciliationResult>;
 }
+
+export interface GithubCiReconciliationInput {
+	runId: string;
+	cwd: string;
+	prNumber: number;
+	expectedHeadSha: string;
+	currentCiStatus: CiAggregate['status'];
+	signal: AbortSignal;
+	emit: RuntimeShipInput['emit'];
+}
+
+export type GithubCiReconciliationResult =
+	| { outcome: 'reconciled'; status: CiAggregate['status'] }
+	| { outcome: 'failed'; detail: string };
 
 interface WorkspaceIssue {
 	title: string;
@@ -280,6 +295,7 @@ interface ExistingPullRequest {
 	state: string;
 	headRefOid: string;
 	url: string;
+	statusCheckRollup: unknown[];
 }
 
 interface FailedCheck {
@@ -375,7 +391,7 @@ function parseExistingPullRequest(json: string): ExistingPullRequest | null {
 		throw new Error(`gh pr list returned invalid JSON: ${json.slice(0, 200)}`);
 	}
 	if (!Array.isArray(parsed) || parsed.length === 0) return null;
-	const first = parsed[0] as { number?: unknown; state?: unknown; headRefOid?: unknown; url?: unknown };
+	const first = parsed[0] as { number?: unknown; state?: unknown; headRefOid?: unknown; url?: unknown; statusCheckRollup?: unknown };
 	if (typeof first?.number !== 'number') return null;
 	if (typeof first.url !== 'string' || first.url.length === 0) {
 		throw new Error('gh pr list did not report the pull request URL');
@@ -385,6 +401,7 @@ function parseExistingPullRequest(json: string): ExistingPullRequest | null {
 		state: typeof first.state === 'string' ? first.state : 'UNKNOWN',
 		headRefOid: typeof first.headRefOid === 'string' ? first.headRefOid : '',
 		url: first.url,
+		statusCheckRollup: Array.isArray(first.statusCheckRollup) ? first.statusCheckRollup : [],
 	};
 }
 
@@ -463,6 +480,22 @@ function ciAggregate(rollup: readonly unknown[]): CiAggregate {
 	const failedChecks = rollup.flatMap((candidate) => failedCheck(candidate) ?? []);
 	if (failedChecks.length > 0) return { status: 'failed', failedChecks };
 	return { status: rollup.some(checkPending) ? 'pending' : 'passed', failedChecks: [] };
+}
+
+function emitCiStatus(
+	input: Pick<RuntimeShipInput, 'emit'>,
+	prNumber: number,
+	view: PullRequestView,
+	ci: CiAggregate,
+	previousStatus: CiAggregate['status'],
+	): void {
+	if (ci.status === previousStatus) return;
+	input.emit('ship.ci-status', {
+		prNumber,
+		url: view.url,
+		status: ci.status,
+		...(ci.status === 'failed' ? { failedChecks: ci.failedChecks } : {}),
+	});
 }
 
 /**
@@ -564,6 +597,36 @@ export class GithubShipper implements RuntimeShipper {
 			return await this.#completePullRequest(input);
 		} catch (error) {
 			if (input.signal.aborted) throw error;
+			return { outcome: 'failed', detail: errorMessage(error) };
+		}
+	}
+
+	async reconcileCi(input: GithubCiReconciliationInput): Promise<GithubCiReconciliationResult> {
+		const runtimeInput = {
+			...input,
+			runId: input.runId,
+			issueId: 'ci-reconciliation',
+			emit: input.emit,
+			evidence: { workflowRevision: null, review: 'not-applicable' as const, fullVerification: 'not-applicable' as const },
+			initialCiStatus: input.currentCiStatus,
+		};
+		try {
+			const view = await this.#pullRequestView(runtimeInput, input.prNumber);
+			if (view.state !== 'MERGED') return { outcome: 'failed', detail: `pull request #${input.prNumber} is ${view.state}, not MERGED` };
+			if (view.headRefOid !== input.expectedHeadSha) {
+				return { outcome: 'failed', detail: `pull request #${input.prNumber} merged ${view.headRefOid || 'an unreported head'}, not ${input.expectedHeadSha}` };
+			}
+			const ci = ciAggregate(view.statusCheckRollup);
+			if (ci.status !== input.currentCiStatus) {
+				input.emit('ship.ci-status', {
+					prNumber: input.prNumber,
+					url: view.url,
+					status: ci.status,
+					...(ci.status === 'failed' ? { failedChecks: ci.failedChecks } : {}),
+				});
+			}
+			return { outcome: 'reconciled', status: ci.status };
+		} catch (error) {
 			return { outcome: 'failed', detail: errorMessage(error) };
 		}
 	}
@@ -670,7 +733,16 @@ export class GithubShipper implements RuntimeShipper {
 					true,
 				);
 			}
-			return await this.#merged(input, pullRequest.number);
+			const ci = ciAggregate(pullRequest.statusCheckRollup);
+			if (ci.status !== input.initialCiStatus) {
+				input.emit('ship.ci-status', {
+					prNumber: pullRequest.number,
+					url: pullRequest.url,
+					status: ci.status,
+					...(ci.status === 'failed' ? { failedChecks: ci.failedChecks } : {}),
+				});
+			}
+			return await this.#merged(input, pullRequest.number, headSha);
 		}
 		if (pullRequest.state === 'CLOSED') {
 			// GSHIP-641: a previous ship attempt may have left auto-merge armed on
@@ -760,7 +832,7 @@ export class GithubShipper implements RuntimeShipper {
 	 * recognises its own merged pull request and duplicates neither commit nor
 	 * pull request.
 	 */
-	async #merged(input: RuntimeShipInput, prNumber: number): Promise<RuntimeShipResult> {
+	async #merged(input: RuntimeShipInput, prNumber: number, headSha: string): Promise<RuntimeShipResult> {
 		const fetched = await this.#run(input, 'git', runtimeSourceFetchArgs());
 		if (fetched.exitCode !== 0) {
 			return {
@@ -769,7 +841,7 @@ export class GithubShipper implements RuntimeShipper {
 			};
 		}
 		input.emit('ship.source-synced', { prNumber, ref: RUNTIME_SOURCE_REF });
-		input.emit('ship.merged', { prNumber });
+		input.emit('ship.merged', { prNumber, headSha });
 		return { outcome: 'merged', prNumber };
 	}
 
@@ -814,7 +886,7 @@ export class GithubShipper implements RuntimeShipper {
 			'pr', 'list',
 			'--head', branch,
 			'--state', 'all',
-			'--json', 'number,state,headRefOid,url',
+			'--json', 'number,state,headRefOid,url,statusCheckRollup',
 			'--limit', '1',
 		], { retryIdempotent: true });
 		const existing = parseExistingPullRequest(listed);
@@ -843,7 +915,7 @@ export class GithubShipper implements RuntimeShipper {
 			throw new Error(`gh pr create did not report a pull request number: ${created}`);
 		}
 		input.emit('ship.pr-opened', { prNumber: opened.number, url: opened.url, branch });
-		return { number: opened.number, url: opened.url, state: 'OPEN', headRefOid: headSha };
+		return { number: opened.number, url: opened.url, state: 'OPEN', headRefOid: headSha, statusCheckRollup: [] };
 	}
 
 	/**
@@ -945,18 +1017,11 @@ export class GithubShipper implements RuntimeShipper {
 			throw error;
 		}
 		const ci = ciAggregate(view.statusCheckRollup);
+		if (view.headRefOid === headSha) emitCiStatus(input, prNumber, view, ci, lastCiStatus);
 		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
 		if (verdict !== null) return { result: verdict };
 		if (input.protectedBaseSha !== undefined && view.baseRefOid !== input.protectedBaseSha) {
 			return { result: { outcome: 'failed', detail: `protected intake base changed from ${input.protectedBaseSha} to ${view.baseRefOid || 'unknown'} before merge` } };
-		}
-		if (ci.status !== lastCiStatus) {
-			input.emit('ship.ci-status', {
-				prNumber,
-				url: view.url,
-				status: ci.status,
-				...(ci.status === 'failed' ? { failedChecks: ci.failedChecks } : {}),
-			});
 		}
 		const behind = input.protectedBaseSha === undefined
 			? await this.#pollBehind(input, prNumber, branch, headSha, branchUpdates, view)
@@ -1280,7 +1345,7 @@ export class GithubShipper implements RuntimeShipper {
 	): Promise<RuntimeShipResult | null> {
 		if (view.state === 'MERGED') {
 			return view.headRefOid === headSha
-				? await this.#merged(input, prNumber)
+				? await this.#merged(input, prNumber, headSha)
 				: await this.#headDiverged(input, prNumber, headSha, view.headRefOid, true);
 		}
 		if (view.state === 'CLOSED') {

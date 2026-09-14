@@ -1,13 +1,13 @@
 {
   "id": "GSHIP-883",
   "title": "CI: registrar resultado final no merge e reconciliar runs antigas",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-871"
   ],
   "createdAt": "2026-09-12T20:01:08.533Z",
-  "updatedAt": "2026-09-14T11:27:58.442Z",
+  "updatedAt": "2026-09-14T12:19:28.808Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

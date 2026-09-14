@@ -206,6 +206,7 @@ function ghList(repo: FakeRepo): CommandResult {
 		state: repo.prState,
 		headRefOid: repo.prHeadRefOid,
 		url: PR_URL.trim(),
+		statusCheckRollup: repo.statusCheckRollups.at(-1) ?? [],
 	}];
 	return result(0, JSON.stringify(existing));
 }
@@ -952,6 +953,40 @@ describe('the GitHub shipper', () => {
 		// No second arming, and no poll: the merge already happened.
 		expect(findCall(calls, 'gh', 'pr', 'merge')).toHaveLength(1);
 		expect(repo.views).toBe(1);
+	});
+
+	test('reconciles a merged PR only when its head matches, without fabricating CI on divergence or outage', async () => {
+		const cwd = createWorkspace();
+		const events: string[] = [];
+		const repo = createRepo({ prNumber: 385, prState: 'MERGED', statusCheckRollups: [[{ name: 'verify', status: 'COMPLETED', conclusion: 'SUCCESS' }]] });
+		const shipper = new GithubShipper({ runCommand: createRunner(repo, []), unavailableRetryDelaysMs: [0, 0, 0] });
+		const emit = (kind: string): void => { events.push(kind); };
+
+		await expect(shipper.reconcileCi({
+			runId: 'run-reconcile', cwd, prNumber: 385, expectedHeadSha: HEAD_SHA,
+			currentCiStatus: 'pending', signal: new AbortController().signal, emit,
+		})).resolves.toEqual({ outcome: 'reconciled', status: 'passed' });
+		expect(events).toEqual(['ship.ci-status']);
+		expect(await shipper.reconcileCi({
+			runId: 'run-reconcile', cwd, prNumber: 385, expectedHeadSha: HEAD_SHA,
+			currentCiStatus: 'passed', signal: new AbortController().signal, emit,
+		})).toEqual({ outcome: 'reconciled', status: 'passed' });
+		expect(events).toEqual(['ship.ci-status']);
+
+		repo.prHeadRefOid = FOREIGN_SHA;
+		expect(await shipper.reconcileCi({
+			runId: 'run-reconcile', cwd, prNumber: 385, expectedHeadSha: HEAD_SHA,
+			currentCiStatus: 'passed', signal: new AbortController().signal, emit,
+		})).toMatchObject({ outcome: 'failed' });
+		expect(events).toEqual(['ship.ci-status']);
+
+		repo.prHeadRefOid = HEAD_SHA;
+		repo.viewUnavailableAlways = true;
+		expect(await shipper.reconcileCi({
+			runId: 'run-reconcile', cwd, prNumber: 385, expectedHeadSha: HEAD_SHA,
+			currentCiStatus: 'passed', signal: new AbortController().signal, emit,
+		})).toMatchObject({ outcome: 'failed' });
+		expect(events.filter((kind) => kind === 'ship.ci-status')).toEqual(['ship.ci-status']);
 	});
 
 	test('a pull request closed without merging fails instead of reopening one, and disarms a leftover auto-merge (GSHIP-641)', async () => {

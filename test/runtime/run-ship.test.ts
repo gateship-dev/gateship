@@ -6,6 +6,7 @@
 // explicit retry and still refuses a second concurrent attempt.
 
 import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import { fingerprintSpec } from '../../src/issues/spec.ts';
 import type { IssueEntry } from '../../src/issues/types.ts';
 
@@ -21,9 +22,11 @@ import {
 	type RuntimeTimer,
 	type RuntimeVerifier,
 } from '../../src/runtime/run-runtime.ts';
+import type { GithubCiReconciliationInput, GithubCiReconciliationResult } from '../../src/runtime/github-shipper.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import { waitForCondition } from '../helpers/wait-for-condition.ts';
+import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const TEST_SPEC = { version: 2 as const, objective: 'Shipping test', acceptance: ['Ship the approved change'], verify: ['bun test'] };
 const TEST_ISSUES: IssueEntry[] = ['CAM-583', 'CAM-584', 'GSHIP-649', 'GSHIP-732'].map((id) => ({
@@ -136,6 +139,49 @@ function crashedCiRun(runId: string, sessionId: string): RunStore {
 }
 
 describe('shipping a run', () => {
+	test('reconciles terminal CI durably, survives restart, and emits no duplicate evidence', async () => {
+		const dbPath = join(createTestTmpdir('gship-ci-reconcile-'), 'runtime.sqlite');
+		let reconcileCalls = 0;
+		const makeShipper = (): RuntimeShipper & { reconcileCi: (input: GithubCiReconciliationInput) => Promise<GithubCiReconciliationResult> } => ({
+			ship: async (input) => {
+				input.emit('ship.pr-opened', { prNumber: 385, url: 'https://github.com/acme/repo/pull/385' });
+				input.emit('ship.pushed', { headSha: 'head-reconcile' });
+				input.emit('ship.ci-status', { prNumber: 385, status: 'pending', url: 'https://github.com/acme/repo/pull/385' });
+				return { outcome: 'merged', prNumber: 385 };
+			},
+			reconcileCi: async (input) => {
+				reconcileCalls += 1;
+				if (input.currentCiStatus !== 'passed') input.emit('ship.ci-status', { prNumber: 385, status: 'passed', url: 'https://github.com/acme/repo/pull/385' });
+				return { outcome: 'reconciled', status: 'passed' };
+			},
+		});
+		const first = new RunRuntime({
+			cwd: '/project', store: new RunStore(dbPath), newId: () => 'run-reconcile', newSessionId: () => 'session-reconcile',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'change written' }) }, verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => TEST_ISSUES, shipper: makeShipper(),
+		});
+		const run = await first.startRun('CAM-583');
+		await waitForCondition(() => first.getRun(run.id)?.state === 'done');
+		const reconciled = await first.reconcileRunCi(run.id);
+		expect(reconciled.run.state).toBe('done');
+		expect(first.getPullRequestDelivery(run.id)?.ciStatus).toBe('passed');
+		expect(first.listEvents().filter((event) => event.kind === 'ship.ci-status')).toHaveLength(2);
+		await first.reconcileRunCi(run.id);
+		expect(first.listEvents().filter((event) => event.kind === 'ship.ci-status')).toHaveLength(2);
+		first.close();
+
+		const restarted = new RunRuntime({
+			cwd: '/project', store: new RunStore(dbPath), newId: () => 'unused', newSessionId: () => 'unused',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'unused' }) }, verifier: { verify: async () => ({ ok: true }) },
+			listBacklog: () => TEST_ISSUES, shipper: makeShipper(),
+		});
+		await restarted.reconcileRunCi(run.id);
+		expect(restarted.getRun(run.id)?.state).toBe('done');
+		expect(restarted.getPullRequestDelivery(run.id)?.ciStatus).toBe('passed');
+		expect(reconcileCalls).toBe(3);
+		restarted.close();
+	});
+
 	test('a verified run ships itself, and every step is durable', async () => {
 		const runtime = createRuntime({
 			ship: async (input: RuntimeShipInput): Promise<RuntimeShipResult> => {

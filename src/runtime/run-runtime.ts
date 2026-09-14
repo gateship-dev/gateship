@@ -22,7 +22,7 @@ import type {
 	WorkspaceNotice,
 	WorkspaceRunReference,
 } from './git-workspace.ts';
-import type { GithubPullRequestMerger } from './github-shipper.ts';
+import type { GithubCiReconciliationResult, GithubPullRequestMerger } from './github-shipper.ts';
 import {
 	type AgentDefaults,
 	type AgentSettingSource,
@@ -1393,6 +1393,26 @@ export class RunRuntime {
 	/** GitHub delivery state projected from the complete durable decision log. */
 	getPullRequestDelivery(runId: string): PullRequestDelivery | null {
 		return selectPullRequestDelivery(this.#store.listRunDecisionEvents(runId));
+	}
+
+	async reconcileRunCi(runId: string): Promise<{ run: RunRecord; result: GithubCiReconciliationResult }> {
+		const run = this.#store.getRun(runId);
+		if (run === null) throw new Error(`run not found: ${runId}`);
+		if (!isTerminalRunState(run.state)) throw new Error(`run is not terminal: ${run.state}`);
+		const delivery = this.getPullRequestDelivery(runId);
+		if (delivery === null || delivery.headSha === undefined) throw new Error('run has no durable pull request head evidence');
+		const shipper = this.#shipper as GithubPullRequestMerger | undefined;
+		if (shipper === undefined || typeof shipper.reconcileCi !== 'function') throw new RuntimeUnavailableError('No CI reconciliation is configured yet.');
+		const result = await shipper.reconcileCi({
+			runId,
+			cwd: this.#cwd,
+			prNumber: delivery.prNumber,
+			expectedHeadSha: delivery.headSha,
+			currentCiStatus: delivery.ciStatus,
+			signal: new AbortController().signal,
+			emit: (kind, payload, eventClass) => this.#emit(runId, kind, payload, eventClass),
+		});
+		return { run: this.#store.getRun(runId) ?? run, result };
 	}
 
 	/**

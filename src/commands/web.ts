@@ -2227,6 +2227,15 @@ async function shipDurableRun(
 	}
 }
 
+async function reconcileRunCi(runtime: RunRuntime, runId: string): Promise<Response> {
+	try {
+		const result = await runtime.reconcileRunCi(runId);
+		return Response.json({ ok: true, ...result });
+	} catch (error) {
+		return Response.json({ ok: false, code: 'ci-reconciliation-failed', message: error instanceof Error ? error.message : String(error) }, { status: 409 });
+	}
+}
+
 /** Reject cross-origin browser writes to the localhost control endpoint. */
 export function isTrustedCommandOrigin(request: Request): boolean {
 	const rawOrigin = request.headers.get('origin');
@@ -3361,6 +3370,12 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 				POST: (request) => projectOperation(
 					request.params.projectId,
 					(context) => shipDurableRun(request, context.runtime, request.params.runId),
+				),
+			},
+			'/api/projects/:projectId/runs/:runId/reconcile-ci': {
+				POST: (request) => projectOperation(
+					request.params.projectId,
+					(context) => reconcileRunCi(context.runtime, request.params.runId),
 				),
 			},
 			// The browser's subscription for a selected project (GSHIP-707). The

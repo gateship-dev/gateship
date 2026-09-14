@@ -11,6 +11,7 @@ export interface FailedPullRequestCheck {
 export interface PullRequestDelivery {
 	prNumber: number;
 	url: string;
+	headSha?: string;
 	ciStatus: PullRequestCiStatus;
 	failedChecks: FailedPullRequestCheck[];
 }
@@ -42,14 +43,31 @@ function selectFailedChecks(value: unknown): FailedPullRequestCheck[] {
  */
 export function selectPullRequestDelivery(events: readonly RunEvent[]): PullRequestDelivery | null {
 	let delivery: PullRequestDelivery | null = null;
+	let knownHeadSha: string | undefined;
 	for (const event of events) {
+		const headSha = deliveryHeadSha(event);
+		if (headSha !== null) {
+			knownHeadSha = headSha;
+			if (delivery !== null) delivery = { ...delivery, headSha };
+		}
 		if (event.kind === 'ship.pr-opened' || event.kind === 'ship.pr-reused') {
 			delivery = selectPullRequest(event, delivery);
+			delivery = attachKnownHead(delivery, knownHeadSha);
 			continue;
 		}
 		if (event.kind === 'ship.ci-status') delivery = selectCiStatus(event, delivery);
 	}
 	return delivery;
+}
+
+function deliveryHeadSha(event: RunEvent): string | null {
+	if (event.kind !== 'ship.pushed' && event.kind !== 'ship.branch-updated' && event.kind !== 'ship.merged') return null;
+	const headSha = event.payload['headSha'];
+	return typeof headSha === 'string' && headSha.length > 0 ? headSha : null;
+}
+
+function attachKnownHead(delivery: PullRequestDelivery | null, headSha: string | undefined): PullRequestDelivery | null {
+	return delivery === null || headSha === undefined ? delivery : { ...delivery, headSha };
 }
 
 function selectPullRequest(event: RunEvent, previous: PullRequestDelivery | null): PullRequestDelivery | null {
