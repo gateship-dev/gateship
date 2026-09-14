@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-12T20:01:08.533Z",
-  "updatedAt": "2026-09-12T20:01:08.533Z",
+  "updatedAt": "2026-09-14T11:21:27.188Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -26,5 +26,9 @@
       "bun test test/runtime/github-shipper.test.ts test/runtime/github-shipper-source-sync.test.ts test/runtime/run-ship.test.ts test/web/run-ship.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "a9bbf95a86c9d4f4706491d6b4c84b3ffaf04fe7b868fdce4983feb482099798",
+    "approvedAt": "2026-09-14T11:21:27.188Z"
   }
 }
