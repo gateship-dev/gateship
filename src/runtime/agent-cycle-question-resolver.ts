@@ -76,6 +76,15 @@ function reportedNumbers(record: Record<string, unknown> | null): Partial<Runtim
 	}));
 }
 
+/** GSHIP-888: whichever provider the raw `.usage`/`.model` events themselves reported, never guessed from `input.providerId` -- a mismatch would misreport, not just misroute. */
+function providerOf(
+	payload: Record<string, unknown> | undefined,
+	modelPayload: Record<string, unknown> | undefined,
+): AgentProviderId | undefined {
+	const value = payload?.['provider'] ?? modelPayload?.['provider'];
+	return value === 'codex' || value === 'claude' ? value : undefined;
+}
+
 function usageOf(
 	payload: Record<string, unknown> | undefined,
 	modelPayload: Record<string, unknown> | undefined,
@@ -89,9 +98,13 @@ function usageOf(
 		?? 'provider-default';
 	const effort = firstText(payload?.['effort'], modelPayload?.['effort']) ?? 'provider-default';
 	const totalCostUsd = numberOf(payload, 'totalCostUsd');
+	const provider = providerOf(payload, modelPayload);
+	const invocationId = firstText(payload?.['invocationId']);
 	const usage: RuntimeCycleResponseUsage = {
 		model,
 		effort,
+		...(provider === undefined ? {} : { provider }),
+		...(invocationId === undefined ? {} : { invocationId }),
 		...(totalCostUsd === undefined ? {} : { totalCostUsd }),
 		...reportedNumbers(invocation),
 		...(modelUsage === undefined ? {} : { modelUsage }),

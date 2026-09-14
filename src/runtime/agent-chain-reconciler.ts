@@ -24,10 +24,20 @@ function recordOf(value: unknown): Record<string, unknown> | null {
 	return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
+/** GSHIP-888: whichever provider the raw `.usage`/`.model` events themselves reported, never guessed from `input.providerId` -- a mismatch would misreport, not just misroute. */
+function providerOf(payload: Record<string, unknown> | undefined, modelPayload: Record<string, unknown> | undefined): AgentProviderId | undefined {
+	const value = payload?.['provider'] ?? modelPayload?.['provider'];
+	return value === 'codex' || value === 'claude' ? value : undefined;
+}
+
 function usageOf(payload: Record<string, unknown> | undefined, modelPayload: Record<string, unknown> | undefined): RuntimeCycleResponseUsage {
+	const provider = providerOf(payload, modelPayload);
+	const invocationId = typeof payload?.['invocationId'] === 'string' ? payload['invocationId'] : undefined;
 	return {
 		model: typeof payload?.['model'] === 'string' ? payload['model'] : typeof modelPayload?.['model'] === 'string' ? modelPayload['model'] : 'provider-default',
 		effort: typeof payload?.['effort'] === 'string' ? payload['effort'] : typeof modelPayload?.['effort'] === 'string' ? modelPayload['effort'] : 'provider-default',
+		...(provider === undefined ? {} : { provider }),
+		...(invocationId === undefined ? {} : { invocationId }),
 		...(typeof payload?.['totalCostUsd'] === 'number' ? { totalCostUsd: payload['totalCostUsd'] } : {}),
 	};
 }

@@ -46,6 +46,13 @@ export interface ClaudeCliRunInput {
 	 * slot, not an absent field, when neither is configured.
 	 */
 	slot: ModelSlot;
+	/**
+	 * A fresh id minted once per `AgentSession.run()` call (GSHIP-888), so the
+	 * usage event below can be tied back to the one invocation that produced
+	 * it -- stable for this call, distinct from any other resumed or repeated
+	 * call sharing the same `sessionId`.
+	 */
+	invocationId: string;
 	terminationGraceMs?: number;
 	activityTimeoutMs?: number;
 	onSpawn?: (pid: number) => void;
@@ -297,7 +304,7 @@ function consumeClaudeResult(
 	if (typeof event.raw.result === 'string') state.summary = event.raw.result;
 	state.structuredOutput = event.raw['structured_output'];
 	input.emit(`${input.eventPrefix}.result`);
-	emitUsage(input.emit, input.eventPrefix, input.slot, {
+	emitUsage(input.emit, input.eventPrefix, input.slot, input.invocationId, {
 		totalCostUsd: event.totalCostUsd, usage: event.usage, modelUsage: event.modelUsage,
 	});
 }
@@ -308,11 +315,20 @@ function consumeClaudeResult(
  * token counts, so a run's total is derivable by summing this event's kind
  * alone. Omitted entirely when the CLI reported nothing measurable -- never
  * emitted with a fabricated zero, which would read as "this call was free".
+ * `provider` and `invocationId` (GSHIP-888) tag which provider and which
+ * single call produced this report, so a consumer never has to guess by
+ * event ordering alone -- preparing later deduplication of a raw event
+ * against its parsed response without changing what is counted today.
+ * A duplicated `result` line within one call (a protocol repeat, never
+ * observed but not ruled out) emits its own usage event rather than being
+ * merged into a running total: nothing here sums across calls, so a repeat
+ * is captured, not silently dropped or double-counted.
  */
 function emitUsage(
 	emit: (kind: string, payload?: Record<string, unknown>) => void,
 	eventPrefix: string,
 	slot: ModelSlot,
+	invocationId: string,
 	result: {
 		totalCostUsd: number | undefined;
 		usage: ClaudeResultUsage | undefined;
@@ -323,6 +339,8 @@ function emitUsage(
 		return;
 	}
 	emit(`${eventPrefix}.usage`, {
+		provider: 'claude',
+		invocationId,
 		...(slot.model === undefined ? {} : { model: slot.model }),
 		...(slot.effort === undefined ? {} : { effort: slot.effort }),
 		...(result.totalCostUsd === undefined ? {} : { totalCostUsd: result.totalCostUsd }),

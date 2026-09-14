@@ -334,6 +334,9 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 			emit: input.emit,
 			eventPrefix: 'review',
 			slot,
+			// Minted fresh for this one call (GSHIP-888): stable within it, distinct
+			// from any other call sharing the same `sessionId` on resume or retry.
+			invocationId: randomUUID(),
 			...(this.#options.terminationGraceMs === undefined
 				? {}
 				: { terminationGraceMs: this.#options.terminationGraceMs }),

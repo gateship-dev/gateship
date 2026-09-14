@@ -38,6 +38,16 @@ if (mode === 'wait') {
 	})}\n`);
 	process.stdout.write(`${JSON.stringify({ type: 'result', is_error: true, result: '' })}\n`);
 	process.exitCode = 1;
+} else if (mode === 'error-with-usage') {
+	// GSHIP-888: an is_error result that still carries usage -- the CLI reports
+	// what the failed call consumed even though it never reached a clean turn.
+	process.stdout.write(`${JSON.stringify({
+		type: 'result',
+		is_error: true,
+		result: 'fixture provider error',
+		total_cost_usd: 0.02,
+		usage: { input_tokens: 300, output_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+	})}\n`);
 } else if (mode === 'review') {
 	const verdict = fixtureArgument('verdict') ?? 'CLEAN';
 	process.stdout.write(`${JSON.stringify({ type: 'assistant', message: { content: [] } })}\n`);
@@ -127,29 +137,55 @@ if (mode === 'wait') {
 			proposals: proposal === undefined ? [] : [{ title: proposal, evidence: 'fixture evidence' }],
 			reconciliation: { summary: 'fixture reconciliation' },
 		};
+	// GSHIP-888: --fixture-cost=<full|zero|repeated> controls the reported
+	// result usage/cost; absent keeps the pre-existing no-cost result, so every
+	// test that predates this flag is unaffected.
+	const fullCost = {
+		total_cost_usd: 0.1234,
+		usage: {
+			input_tokens: 1000,
+			output_tokens: 200,
+			cache_creation_input_tokens: 50,
+			cache_read_input_tokens: 25,
+			output_tokens_details: { thinking_tokens: 40 },
+		},
+		modelUsage: {
+			'claude-opus-4-6': {
+				inputTokens: 1000,
+				outputTokens: 200,
+				cacheReadInputTokens: 25,
+				cacheCreationInputTokens: 50,
+				costUSD: 0.1234,
+			},
+		},
+	};
+	const zeroCost = {
+		total_cost_usd: 0,
+		usage: {
+			input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0,
+			cache_read_input_tokens: 0, output_tokens_details: { thinking_tokens: 0 },
+		},
+	};
+	const costFields = cost === 'full' || cost === 'repeated' ? fullCost
+		: cost === 'zero' ? zeroCost
+		: {};
 	process.stdout.write(`${JSON.stringify({
 		type: 'result',
 		is_error: false,
 		result: summary,
 		structured_output: structuredOutput,
-		...(cost === 'full' ? {
-			total_cost_usd: 0.1234,
-			usage: {
-				input_tokens: 1000,
-				output_tokens: 200,
-				cache_creation_input_tokens: 50,
-				cache_read_input_tokens: 25,
-				output_tokens_details: { thinking_tokens: 40 },
-			},
-			modelUsage: {
-				'claude-opus-4-6': {
-					inputTokens: 1000,
-					outputTokens: 200,
-					cacheReadInputTokens: 25,
-					cacheCreationInputTokens: 50,
-					costUSD: 0.1234,
-				},
-			},
-		} : {}),
+		...costFields,
 	})}\n`);
+	if (cost === 'repeated') {
+		// A second, distinct result within the same call: proves a repeated
+		// protocol event is captured on its own, not merged or dropped.
+		process.stdout.write(`${JSON.stringify({
+			type: 'result',
+			is_error: false,
+			result: summary,
+			structured_output: structuredOutput,
+			total_cost_usd: 0.01,
+			usage: { input_tokens: 5, output_tokens: 2 },
+		})}\n`);
+	}
 }

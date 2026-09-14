@@ -282,6 +282,116 @@ describe('Codex CLI runtime executor', () => {
 		expect(failure).toMatchObject({ provider: 'codex', kind: 'unknown' });
 	});
 
+	// GSHIP-888: turn.completed.usage was previously discarded entirely; this
+	// section proves it is now captured, tagged, and never fabricated or summed.
+	describe('turn.completed usage', () => {
+		function runSession(
+			args: string[],
+			overrides: Partial<Parameters<CodexAgentSession['run']>[0]> = {},
+		): { events: Array<{ kind: string; payload?: Record<string, unknown> }>; run: () => ReturnType<CodexAgentSession['run']> } {
+			const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+			const session = new CodexAgentSession({ command: ['bun', FIXTURE, ...args] });
+			return {
+				events,
+				run: () => session.run({
+					sessionId: 'codex-session-usage',
+					resume: false,
+					cwd: createTestTmpdir('gship-codex-usage-'),
+					prompt: 'continue',
+					signal: new AbortController().signal,
+					emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+					eventPrefix: 'provider',
+					...overrides,
+				}),
+			};
+		}
+
+		test('captures input, output, cache and reasoning tokens, tagged with provider and a stable invocation id', async () => {
+			const { events, run } = runSession(['--fixture-usage=full']);
+			await run();
+			const usageEvent = events.find((event) => event.kind === 'provider.usage');
+			expect(typeof usageEvent?.payload?.['invocationId']).toBe('string');
+			expect((usageEvent?.payload?.['invocationId'] as string).length).toBeGreaterThan(0);
+			expect(usageEvent).toMatchObject({
+				kind: 'provider.usage',
+				payload: {
+					provider: 'codex',
+					usage: {
+						inputTokens: 1000,
+						outputTokens: 300,
+						cacheCreationInputTokens: 50,
+						cacheReadInputTokens: 200,
+						thinkingTokens: 75,
+					},
+				},
+			});
+		});
+
+		test('treats a real zero as reported and an omitted field as unknown, never as zero', async () => {
+			const zero = runSession(['--fixture-usage=zero']);
+			await zero.run();
+			expect(zero.events.find((event) => event.kind === 'provider.usage')).toMatchObject({
+				kind: 'provider.usage',
+				payload: {
+					usage: {
+						inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0,
+						cacheReadInputTokens: 0, thinkingTokens: 0,
+					},
+				},
+			});
+
+			// No --fixture-usage flag: the fixture's turn.completed carries `usage: {}`,
+			// nothing measurable, so the whole event is omitted -- never a fabricated zero.
+			const absent = runSession([]);
+			await absent.run();
+			expect(absent.events.map((event) => event.kind)).not.toContain('provider.usage');
+		});
+
+		test('emits a separate usage event per invocation on resume, without summing or dropping either call', async () => {
+			const first = runSession(['--fixture-usage=full']);
+			await first.run();
+			const second = runSession(['--fixture-usage=full'], { resume: true });
+			await second.run();
+
+			const firstUsage = first.events.find((event) => event.kind === 'provider.usage');
+			const secondUsage = second.events.find((event) => event.kind === 'provider.usage');
+			expect(firstUsage?.payload?.['usage']).toEqual({
+				inputTokens: 1000, outputTokens: 300, cacheCreationInputTokens: 50,
+				cacheReadInputTokens: 200, thinkingTokens: 75,
+			});
+			// The resumed call reports exactly its own turn, not a running total
+			// carried over from the first -- the fixture reports the same figures
+			// again, and this asserts they arrive unchanged, never doubled.
+			expect(secondUsage?.payload?.['usage']).toEqual(firstUsage?.payload?.['usage']);
+			expect(secondUsage?.payload?.['invocationId']).not.toBe(firstUsage?.payload?.['invocationId']);
+		});
+
+		test('captures a repeated turn.completed report as its own event instead of merging it', async () => {
+			const { events, run } = runSession(['--fixture-usage=repeated']);
+			await run();
+			const usageEvents = events.filter((event) => event.kind === 'provider.usage');
+			expect(usageEvents).toHaveLength(2);
+			expect(usageEvents[0]?.payload?.['usage']).toMatchObject({ inputTokens: 1000 });
+			expect(usageEvents[1]?.payload?.['usage']).toMatchObject({ inputTokens: 5 });
+		});
+
+		test('captures usage already reported before a protocol-invalid failure', async () => {
+			const { events, run } = runSession(['--fixture-mode=usage-then-invalid']);
+			await expect(run()).rejects.toThrow('without an agent message');
+			const usageEvent = events.find((event) => event.kind === 'provider.usage');
+			expect(usageEvent).toMatchObject({
+				kind: 'provider.usage',
+				payload: { usage: { inputTokens: 400, outputTokens: 80, cacheCreationInputTokens: 10, cacheReadInputTokens: 40, thinkingTokens: 20 } },
+			});
+		});
+
+		test('reports no usage on a clean turn failure that carries none', async () => {
+			const { events, run } = runSession(['--fixture-mode=failed']);
+			await expect(run()).rejects.toThrow();
+			expect(events.map((event) => event.kind)).not.toContain('provider.usage');
+		});
+	});
+
 	test('binds the provider thread, projects activity, and removes the temporary schema', async () => {
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		let providerSession = '';

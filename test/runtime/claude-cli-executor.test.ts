@@ -571,9 +571,15 @@ describe('Claude CLI runtime executor', () => {
 			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
 		});
 
-		expect(events).toContainEqual({
+		// GSHIP-888: `provider` and `invocationId` (a fresh id per call) now tag
+		// every usage event, so the one call that produced it is never ambiguous.
+		const usageEvent = events.find((event) => event.kind === 'provider.usage');
+		expect(typeof usageEvent?.payload?.['invocationId']).toBe('string');
+		expect((usageEvent?.payload?.['invocationId'] as string).length).toBeGreaterThan(0);
+		expect(usageEvent).toMatchObject({
 			kind: 'provider.usage',
 			payload: {
+				provider: 'claude',
 				model: 'opus',
 				effort: 'high',
 				totalCostUsd: 0.1234,
@@ -614,6 +620,99 @@ describe('Claude CLI runtime executor', () => {
 		});
 
 		expect(events.map((event) => event.kind)).not.toContain('provider.usage');
+	});
+
+	// GSHIP-888: reviewed separately from Codex -- Claude's own usage is
+	// per-call already (a resumed CLI spawn "starts fresh"), so nothing here
+	// sums or carries a running total across invocations.
+	describe('provider.usage delta, repeats and error capture', () => {
+		function runSession(
+			args: string[],
+			overrides: Partial<Parameters<ClaudeAgentSession['run']>[0]> = {},
+		): { events: Array<{ kind: string; payload?: Record<string, unknown> }>; run: () => ReturnType<ClaudeAgentSession['run']> } {
+			const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+			const session = new ClaudeAgentSession({ command: ['bun', FIXTURE, ...args] });
+			return {
+				events,
+				run: () => session.run({
+					sessionId: 'session-usage-delta',
+					resume: false,
+					cwd: createTestTmpdir('gship-claude-usage-delta-'),
+					prompt: 'continue',
+					signal: new AbortController().signal,
+					emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+					eventPrefix: 'provider',
+					...overrides,
+				}),
+			};
+		}
+
+		test('treats a real zero as reported, never as absent', async () => {
+			const { events, run } = runSession(['--fixture-cost=zero']);
+			await run();
+			expect(events.find((event) => event.kind === 'provider.usage')).toMatchObject({
+				kind: 'provider.usage',
+				payload: {
+					totalCostUsd: 0,
+					usage: { inputTokens: 0, outputTokens: 0, cacheCreationInputTokens: 0, cacheReadInputTokens: 0, thinkingTokens: 0 },
+				},
+			});
+		});
+
+		test('emits a separate usage event per invocation on resume, without summing or dropping either call', async () => {
+			const first = runSession(['--fixture-cost=full']);
+			await first.run();
+			const second = runSession(['--fixture-cost=full'], { resume: true });
+			await second.run();
+
+			const firstUsage = first.events.find((event) => event.kind === 'provider.usage');
+			const secondUsage = second.events.find((event) => event.kind === 'provider.usage');
+			expect(firstUsage?.payload?.['totalCostUsd']).toBe(0.1234);
+			// Claude's own primary source: a resumed session's usage/cost "starts
+			// fresh" per call, so the resumed invocation reports its own figures
+			// again here, unchanged -- never doubled by a carried-over total.
+			expect(secondUsage?.payload?.['totalCostUsd']).toBe(0.1234);
+			expect(secondUsage?.payload?.['invocationId']).not.toBe(firstUsage?.payload?.['invocationId']);
+		});
+
+		test('captures a repeated result report as its own event instead of merging it', async () => {
+			const { events, run } = runSession(['--fixture-cost=repeated']);
+			await run();
+			const usageEvents = events.filter((event) => event.kind === 'provider.usage');
+			expect(usageEvents).toHaveLength(2);
+			expect(usageEvents[0]?.payload?.['totalCostUsd']).toBe(0.1234);
+			expect(usageEvents[1]?.payload?.['totalCostUsd']).toBe(0.01);
+		});
+
+		test('captures usage reported alongside an error result', async () => {
+			const { events, run } = runSession(['--fixture-mode=error-with-usage']);
+			await expect(run()).rejects.toThrow('fixture provider error');
+			expect(events.find((event) => event.kind === 'provider.usage')).toMatchObject({
+				kind: 'provider.usage',
+				payload: { totalCostUsd: 0.02, usage: { inputTokens: 300, outputTokens: 10 } },
+			});
+		});
+	});
+
+	test('captures usage already reported before an invalid structured response', async () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const executor = new ClaudeCliExecutor({
+			command: ['bun', FIXTURE, '--fixture-mode=invalid-reconciliation', '--fixture-cost=full'],
+			approvedContract: '{"id":"CAM-888"}',
+		});
+		await expect(executor.execute({
+			runId: 'run-888-invalid',
+			issueId: 'CAM-888',
+			sessionId: 'session-888-invalid',
+			resume: false,
+			cwd: createTestTmpdir('gship-claude-usage-invalid-'),
+			signal: new AbortController().signal,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		})).rejects.toThrow('invalid structured run status');
+		expect(events.find((event) => event.kind === 'provider.usage')).toMatchObject({
+			kind: 'provider.usage',
+			payload: { totalCostUsd: 0.1234 },
+		});
 	});
 
 	test('consumes the provider result without a sentinel or report file', async () => {

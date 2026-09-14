@@ -17,6 +17,11 @@ export type HeadlessStreamMalformedReason = 'invalid-json' | 'not-an-object' | '
  * snake_case on the wire, decoded here into the five counts Gateship measures.
  * A field the CLI omitted stays `undefined` -- never coerced to zero, which
  * would read as "free" -- so a consumer can tell "not reported" from "zero".
+ * `thinkingTokens` (GSHIP-888): the Agent SDK's own `BetaOutputTokensDetails`
+ * documents this as already counted inside `output_tokens` ("Always ≤
+ * output_tokens"), not an additional count -- so no consumer may add it to
+ * `outputTokens` to derive a total; it is reported here purely for its own
+ * breakdown value.
  */
 export interface ClaudeResultUsage {
 	inputTokens: number | undefined;
