@@ -117,7 +117,7 @@ import { issueFilePath } from '../issues/backlog.ts';
 import { buildGithubCliEnv } from './child-env.ts';
 import { type CommandResult, runOwnedCommand } from './git-runtime.ts';
 import type { GitIdentityResult } from './git-identity.ts';
-import type { RuntimeShipInput, RuntimeShipper, RuntimeShipResult } from './run-runtime.ts';
+import type { RuntimeMergeConflictEvidence, RuntimeShipInput, RuntimeShipper, RuntimeShipResult } from './run-runtime.ts';
 import { RUNTIME_SOURCE_REF, runtimeSourceFetchArgs } from './source-ref.ts';
 
 /** How often the merge monitor asks GitHub whether the pull request landed. */
@@ -637,6 +637,28 @@ export class GithubShipper implements RuntimeShipper {
 			return { outcome: 'failed', detail: `run workspace is not on a ship branch: ${branch}` };
 		}
 
+		// GSHIP-884: any MERGE_HEAD found here is either this run's own confirmed
+		// recovery (#prepareMergeConflict always confirms durably before it ever
+		// writes one) or unknown work -- a merge left orphaned by a cancellation,
+		// or another process's. Trusting a caller-supplied flag alone cannot
+		// tell those apart: two different confirmed merges within the same run
+		// (a second conflict after the first's recovery already completed) both
+		// satisfy "this run has a claimed recovery" without either proving which
+		// merge is actually pending right now. Checked against real git instead:
+		// MERGE_HEAD is the commit merged in, so it equals the confirmed and
+		// claimed evidence's own `baseSha` only when it is that exact merge.
+		const pendingMerge = await this.#run(input, 'git', ['rev-parse', '-q', '--verify', 'MERGE_HEAD']);
+		if (pendingMerge.exitCode === 0) {
+			const owned = input.evidence.mergeConflictRecovery !== undefined
+				&& pendingMerge.stdout.trim() === input.evidence.mergeConflictRecovery.baseSha;
+			if (!owned) {
+				return {
+					outcome: 'failed',
+					detail: 'a local merge is already pending in the workspace; preserving it instead of committing over it',
+				};
+			}
+		}
+
 		const issue = closeIssueInWorkspace(input.cwd, input.issueId);
 		if (issue.closed) input.emit('ship.issue-closed', { issueId: input.issueId });
 
@@ -1018,7 +1040,14 @@ export class GithubShipper implements RuntimeShipper {
 		}
 		const ci = ciAggregate(view.statusCheckRollup);
 		if (view.headRefOid === headSha) emitCiStatus(input, prNumber, view, ci, lastCiStatus);
-		const verdict = await this.#pollVerdict(input, prNumber, headSha, view);
+		const verdict = await this.#pollVerdict(
+			input,
+			prNumber,
+			branch,
+			headSha,
+			view,
+			input.protectedBaseSha,
+		);
 		if (verdict !== null) return { result: verdict };
 		if (input.protectedBaseSha !== undefined && view.baseRefOid !== input.protectedBaseSha) {
 			return { result: { outcome: 'failed', detail: `protected intake base changed from ${input.protectedBaseSha} to ${view.baseRefOid || 'unknown'} before merge` } };
@@ -1049,6 +1078,74 @@ export class GithubShipper implements RuntimeShipper {
 			ciStatus: ci.status,
 			directMergeRequested,
 		};
+	}
+
+	async #prepareMergeConflict(
+		input: RuntimeShipInput,
+		prNumber: number,
+		branch: string,
+		headSha: string,
+		baseSha: string,
+	): Promise<RuntimeShipResult> {
+		await this.#disarmAutoMerge(input, prNumber);
+		const confirmed = await this.#pullRequestView(input, prNumber);
+		if (confirmed.state !== 'OPEN' || confirmed.headRefOid !== headSha || confirmed.baseRefOid !== baseSha) {
+			return {
+				outcome: 'failed',
+				detail: `pull request #${prNumber} changed while preparing conflict recovery; preserving the workspace`,
+			};
+		}
+		const fetched = await this.#run(input, 'git', runtimeSourceFetchArgs());
+		if (fetched.exitCode !== 0) throw new Error(`cannot refresh ${RUNTIME_SOURCE_REF} before resolving pull request #${prNumber}: ${failureDetail(fetched)}`);
+		const localHead = await this.#run(input, 'git', ['rev-parse', 'HEAD']);
+		const localBase = await this.#run(input, 'git', ['rev-parse', RUNTIME_SOURCE_REF]);
+		if (localHead.exitCode !== 0 || localBase.exitCode !== 0) {
+			throw new Error(`cannot revalidate the workspace before resolving pull request #${prNumber}`);
+		}
+		if (localHead.stdout.trim() !== headSha || localBase.stdout.trim() !== baseSha) {
+			return {
+				outcome: 'failed',
+				detail: `pull request #${prNumber} workspace head or base changed while preparing conflict recovery; preserving the workspace`,
+			};
+		}
+		const status = await this.#run(input, 'git', ['status', '--porcelain', '--untracked-files=all']);
+		if (status.exitCode !== 0) throw new Error(`cannot inspect the workspace before resolving pull request #${prNumber}: ${failureDetail(status)}`);
+		if (status.stdout.trim().length > 0) {
+			return {
+				outcome: 'failed',
+				detail: `pull request #${prNumber} has a confirmed merge conflict, but the workspace contains unknown changes; preserving the workspace instead of merging main`,
+			};
+		}
+		// GSHIP-884: confirmed durably before the local merge below ever writes
+		// MERGE_HEAD, not after. A cancellation between the merge and the
+		// confirmation it used to wait on (the `git diff --diff-filter=U` await)
+		// left MERGE_HEAD orphaned with nothing recording it; every revalidation
+		// above has already passed at this point, so this is the last moment
+		// before that write where "no confirmation yet" is still true. The
+		// merge's own result (conflict or base-advanced) is added by a second,
+		// later event of the same kind once it is known.
+		input.emit('ship.merge-conflict-confirmed', { prNumber, headSha, baseSha, branch, attempt: 1 });
+		const merged = await this.#run(input, 'git', ['merge', '--no-commit', '--no-ff', RUNTIME_SOURCE_REF]);
+		if (merged.exitCode !== 0) {
+			const unresolved = await this.#run(input, 'git', ['diff', '--name-only', '--diff-filter=U']);
+			if (unresolved.exitCode !== 0 || unresolved.stdout.trim().length === 0) {
+				throw new Error(`local base merge failed without a confirmed conflict for pull request #${prNumber}: ${failureDetail(merged)}`);
+			}
+		}
+		const evidence: RuntimeMergeConflictEvidence = {
+			prNumber,
+			headSha,
+			baseSha,
+			branch,
+			resolution: merged.exitCode === 0 ? 'base-advanced' : 'conflict',
+		};
+		input.emit('ship.merge-conflict-confirmed', {
+			...evidence,
+			attempt: 1,
+			result: merged.exitCode === 0 ? 'base-updated' : 'workspace-prepared',
+			reason: failureDetail(merged),
+		});
+		return { outcome: 'merge-conflict', evidence };
 	}
 
 	async #requestDirectMerge(
@@ -1117,7 +1214,7 @@ export class GithubShipper implements RuntimeShipper {
 		// normal merged exit instead of being turned into a retryable failure.
 		try {
 			const beforeUpdate = await this.#pullRequestView(input, prNumber);
-			const settledBeforeUpdate = await this.#pollVerdict(input, prNumber, headSha, beforeUpdate);
+			const settledBeforeUpdate = await this.#pollVerdict(input, prNumber, branch, headSha, beforeUpdate, undefined);
 			if (settledBeforeUpdate !== null) return { result: settledBeforeUpdate };
 			const updated = await this.#updateBranch(input, prNumber, branch, headSha);
 			return { headSha: updated, branchUpdates: branchUpdates + 1, pending: null };
@@ -1130,8 +1227,10 @@ export class GithubShipper implements RuntimeShipper {
 				const settledAfterMissingHead = await this.#pollVerdict(
 					input,
 					prNumber,
+					branch,
 					headSha,
 					afterMissingHead,
+					undefined,
 				);
 				if (settledAfterMissingHead !== null) return { result: settledAfterMissingHead };
 			}
@@ -1340,8 +1439,10 @@ export class GithubShipper implements RuntimeShipper {
 	async #pollVerdict(
 		input: RuntimeShipInput,
 		prNumber: number,
+		branch: string,
 		headSha: string,
 		view: PullRequestView,
+		protectedBaseSha: string | undefined,
 	): Promise<RuntimeShipResult | null> {
 		if (view.state === 'MERGED') {
 			return view.headRefOid === headSha
@@ -1357,6 +1458,30 @@ export class GithubShipper implements RuntimeShipper {
 				outcome: 'failed',
 				detail: `pull request #${prNumber} was closed without merging`,
 			};
+		}
+		if (view.mergeStateStatus === 'DIRTY' && view.headRefOid === headSha) {
+			// A protected intake's base is pinned: DIRTY on it usually means the
+			// base has already moved past the sha this publish approved, not a
+			// genuine content conflict. #pollOnce's own base check reports that
+			// race as the retryable `protected intake base changed` it is, so
+			// this defers to it here instead of misreporting it as a merge
+			// conflict; only a DIRTY against the still-pinned base is one.
+			if (protectedBaseSha !== undefined && view.baseRefOid !== protectedBaseSha) return null;
+			if (protectedBaseSha === undefined) return await this.#prepareMergeConflict(input, prNumber, branch, headSha, view.baseRefOid);
+			const evidence: RuntimeMergeConflictEvidence = {
+				prNumber,
+				headSha,
+				baseSha: view.baseRefOid,
+				branch,
+				resolution: 'conflict',
+			};
+			input.emit('ship.merge-conflict-confirmed', {
+				...evidence,
+				attempt: 1,
+				result: 'remote-only',
+				reason: 'protected intake does not own an executor recovery',
+			});
+			return { outcome: 'merge-conflict', evidence };
 		}
 		if (view.headRefOid !== headSha) {
 			return await this.#headDiverged(input, prNumber, headSha, view.headRefOid, false);

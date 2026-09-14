@@ -457,6 +457,7 @@ export class CodexCliExecutor implements RuntimeExecutor {
 			input.ciFeedback,
 			input.executorHandoff,
 			input.verificationFeedback,
+			input.conflictFeedback,
 			input.internalGuidance,
 		input.reconciliationGuidance,
 		input.research,

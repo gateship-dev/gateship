@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { fingerprintSpec, profileSpec, type ResearchContract, type ResearchReceipt } from '../../src/issues/spec.ts';
@@ -7,7 +9,8 @@ import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-questi
 import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
 import { type AgentSessionInput, ProviderCallError } from '../../src/runtime/agent-session.ts';
-import { GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
+import { type CommandResult, GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
+import { GithubShipper, type ShipCommandRunner } from '../../src/runtime/github-shipper.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
 import {
@@ -33,7 +36,7 @@ import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const SYNTHETIC_SPEC = { version: 2 as const, objective: 'Test objective', acceptance: ['Test acceptance'], verify: ['bun test'] };
 const SYNTHETIC_FINGERPRINT = fingerprintSpec(SYNTHETIC_SPEC);
-const SYNTHETIC_IDS = ['CAM-1', 'CAM-2', 'CAM-10', 'CAM-11', 'CAM-13', 'CAM-14', 'CAM-15', 'CAM-20', 'CAM-21', 'CAM-22', 'CAM-23', 'CAM-30', 'CAM-31', 'CAM-32', 'CAM-33', 'CAM-34', 'CAM-35', 'CAM-40', 'CAM-41', 'CAM-42', 'CAM-43', 'CAM-44', 'CAM-45', 'CAM-70', 'CAM-71', 'CAM-80', 'CAM-90', 'CAM-875', 'GSHIP-0', 'GSHIP-1', 'GSHIP-2', 'GSHIP-3', 'GSHIP-611', 'GSHIP-612', 'GSHIP-621', 'GSHIP-623', 'GSHIP-627', 'GSHIP-629', 'GSHIP-630', 'GSHIP-638', 'GSHIP-650', 'GSHIP-658', 'GSHIP-659', 'GSHIP-675', 'GSHIP-685', 'GSHIP-700', 'GSHIP-701', 'GSHIP-702', 'GSHIP-708', 'GSHIP-709', 'GSHIP-710', 'GSHIP-711', 'GSHIP-712', 'GSHIP-713', 'GSHIP-722', 'GSHIP-732', 'GSHIP-751', 'GSHIP-756', 'GSHIP-768', 'GSHIP-833', 'GSHIP-840', 'GSHIP-841', 'GSHIP-869', 'GSHIP-875', 'GSHIP-9'];
+const SYNTHETIC_IDS = ['CAM-1', 'CAM-2', 'CAM-10', 'CAM-11', 'CAM-13', 'CAM-14', 'CAM-15', 'CAM-20', 'CAM-21', 'CAM-22', 'CAM-23', 'CAM-30', 'CAM-31', 'CAM-32', 'CAM-33', 'CAM-34', 'CAM-35', 'CAM-40', 'CAM-41', 'CAM-42', 'CAM-43', 'CAM-44', 'CAM-45', 'CAM-70', 'CAM-71', 'CAM-80', 'CAM-90', 'CAM-875', 'GSHIP-0', 'GSHIP-1', 'GSHIP-2', 'GSHIP-3', 'GSHIP-611', 'GSHIP-612', 'GSHIP-621', 'GSHIP-623', 'GSHIP-627', 'GSHIP-629', 'GSHIP-630', 'GSHIP-638', 'GSHIP-650', 'GSHIP-658', 'GSHIP-659', 'GSHIP-675', 'GSHIP-685', 'GSHIP-700', 'GSHIP-701', 'GSHIP-702', 'GSHIP-708', 'GSHIP-709', 'GSHIP-710', 'GSHIP-711', 'GSHIP-712', 'GSHIP-713', 'GSHIP-722', 'GSHIP-732', 'GSHIP-751', 'GSHIP-756', 'GSHIP-768', 'GSHIP-833', 'GSHIP-840', 'GSHIP-841', 'GSHIP-869', 'GSHIP-875', 'GSHIP-884', 'GSHIP-9'];
 const SYNTHETIC_BACKLOG: IssueEntry[] = SYNTHETIC_IDS.map((id) => ({
 	id, title: id, stage: 'specified', status: 'open', blockedBy: [], createdAt: '', updatedAt: '', spec: SYNTHETIC_SPEC,
 	approval: { fingerprint: SYNTHETIC_FINGERPRINT, approvedAt: '' },
@@ -1011,6 +1014,469 @@ describe('durable run runtime', () => {
 		expect(feedback).toBe('falha durável');
 		await runtime.stop();
 		runtime.close();
+	});
+
+	test('resumes a reserved merge-conflict recovery after restart without duplicating the request', async () => {
+		const store = new RunStore(':memory:');
+		const evidence = { prNumber: 884, headSha: 'head-884', baseSha: 'base-884', branch: 'gship/884', resolution: 'conflict' as const };
+		store.createRun({ id: 'run-merge-conflict-restart', issueId: 'GSHIP-884', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-01T00:00:00Z', ...approvedRunFields('GSHIP-884') });
+		store.transition({ runId: 'run-merge-conflict-restart', toState: 'working', kind: 'run.started', createdAt: '2026-09-01T00:00:01Z' });
+		store.transition({ runId: 'run-merge-conflict-restart', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-01T00:00:02Z' });
+		store.transition({ runId: 'run-merge-conflict-restart', toState: 'ready-to-ship', kind: 'run.verified', createdAt: '2026-09-01T00:00:03Z' });
+		store.transition({ runId: 'run-merge-conflict-restart', toState: 'shipping', kind: 'run.ship-started', createdAt: '2026-09-01T00:00:04Z' });
+		store.transition({ runId: 'run-merge-conflict-restart', toState: 'working', kind: 'run.merge-conflict-fix-requested', payload: { evidence }, createdAt: '2026-09-01T00:00:05Z' });
+		let feedback: string | undefined;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => { feedback = input.conflictFeedback; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+		});
+		expect(runtime.getRun('run-merge-conflict-restart')?.state).toBe('interrupted');
+		runtime.resumeRun('run-merge-conflict-restart');
+		await waitFor(() => runtime.getRun('run-merge-conflict-restart')?.state === 'ready-to-ship');
+		expect(feedback).toContain('PR: #884');
+		expect(runtime.listRunEvents('run-merge-conflict-restart').filter((event) => event.kind === 'run.merge-conflict-fix-requested')).toHaveLength(1);
+		expect(runtime.listRunEvents('run-merge-conflict-restart').filter((event) => event.kind === 'run.merge-conflict-recovery-result')).toHaveLength(1);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('resumes a merge conflict confirmed but not yet requested when the process died in between', async () => {
+		const store = new RunStore(':memory:');
+		const evidence = { prNumber: 884, headSha: 'head-884', baseSha: 'base-884', branch: 'gship/884', resolution: 'conflict' as const };
+		store.createRun({ id: 'run-merge-conflict-dangling', issueId: 'GSHIP-884', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-01T00:00:00Z', ...approvedRunFields('GSHIP-884') });
+		store.transition({ runId: 'run-merge-conflict-dangling', toState: 'working', kind: 'run.started', createdAt: '2026-09-01T00:00:01Z' });
+		store.transition({ runId: 'run-merge-conflict-dangling', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-01T00:00:02Z' });
+		store.transition({ runId: 'run-merge-conflict-dangling', toState: 'ready-to-ship', kind: 'run.verified', createdAt: '2026-09-01T00:00:03Z' });
+		store.transition({ runId: 'run-merge-conflict-dangling', toState: 'shipping', kind: 'run.ship-started', createdAt: '2026-09-01T00:00:04Z' });
+		// The worktree already carries the local base merge `#prepareMergeConflict` left, but the
+		// process died before `run.merge-conflict-fix-requested` reserved its recovery.
+		store.appendEvent({ runId: 'run-merge-conflict-dangling', kind: 'ship.merge-conflict-confirmed', payload: { ...evidence, attempt: 1, result: 'workspace-prepared', reason: 'CONFLICT (content): Merge conflict' }, createdAt: '2026-09-01T00:00:05Z' });
+		let feedback: string | undefined;
+		let shipAttempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => { feedback = input.conflictFeedback; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => { shipAttempts += 1; return { outcome: 'merged' as const, prNumber: 1 }; } },
+		});
+		// `shipping` recovers to `ready-to-ship` on startup, not `interrupted`: an armed auto-merge
+		// can land while nobody watches, so a bare crash recovery must not race a real merge.
+		expect(runtime.getRun('run-merge-conflict-dangling')?.state).toBe('ready-to-ship');
+		runtime.shipRun('run-merge-conflict-dangling');
+		await waitFor(() => runtime.getRun('run-merge-conflict-dangling')?.state === 'done');
+		expect(feedback).toContain('PR: #884');
+		expect(feedback).toContain('Resolva somente o conflito');
+		// The dangling confirmation resumes the same recovery instead of asking GitHub again; only
+		// the fresh re-ship after the recovery completes actually dispatches.
+		expect(shipAttempts).toBe(1);
+		expect(runtime.listRunEvents('run-merge-conflict-dangling').filter((event) => event.kind === 'run.merge-conflict-fix-requested')).toHaveLength(1);
+		expect(runtime.listRunEvents('run-merge-conflict-dangling').filter((event) => event.kind === 'run.merge-conflict-recovery-result')).toHaveLength(1);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('resumes a dangling confirmation whose base advanced without a textual conflict', async () => {
+		const store = new RunStore(':memory:');
+		const evidence = { prNumber: 884, headSha: 'head-884', baseSha: 'base-884', branch: 'gship/884', resolution: 'base-advanced' as const };
+		store.createRun({ id: 'run-merge-conflict-dangling-clean', issueId: 'GSHIP-884', sessionId: 'session', workspacePath: '/project', createdAt: '2026-09-01T00:00:00Z', ...approvedRunFields('GSHIP-884') });
+		store.transition({ runId: 'run-merge-conflict-dangling-clean', toState: 'working', kind: 'run.started', createdAt: '2026-09-01T00:00:01Z' });
+		store.transition({ runId: 'run-merge-conflict-dangling-clean', toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-01T00:00:02Z' });
+		store.transition({ runId: 'run-merge-conflict-dangling-clean', toState: 'ready-to-ship', kind: 'run.verified', createdAt: '2026-09-01T00:00:03Z' });
+		store.transition({ runId: 'run-merge-conflict-dangling-clean', toState: 'shipping', kind: 'run.ship-started', createdAt: '2026-09-01T00:00:04Z' });
+		store.appendEvent({ runId: 'run-merge-conflict-dangling-clean', kind: 'ship.merge-conflict-confirmed', payload: { ...evidence, attempt: 1, result: 'base-updated', reason: '' }, createdAt: '2026-09-01T00:00:05Z' });
+		let feedback: string | undefined;
+		let shipAttempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async (input) => { feedback = input.conflictFeedback; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => { shipAttempts += 1; return { outcome: 'merged' as const, prNumber: 1 }; } },
+		});
+		expect(runtime.getRun('run-merge-conflict-dangling-clean')?.state).toBe('ready-to-ship');
+		runtime.shipRun('run-merge-conflict-dangling-clean');
+		await waitFor(() => runtime.getRun('run-merge-conflict-dangling-clean')?.state === 'done');
+		expect(feedback).toContain('base avançou');
+		expect(shipAttempts).toBe(1);
+		expect(runtime.listRunEvents('run-merge-conflict-dangling-clean').filter((event) => event.kind === 'run.merge-conflict-fix-requested')).toHaveLength(1);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('limits a persistent merge conflict only after the recovery completed', async () => {
+		const evidence = { prNumber: 884, headSha: 'head-884', baseSha: 'base-884', branch: 'gship/884', resolution: 'conflict' as const };
+		let shipAttempts = 0;
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-merge-conflict-repeat',
+			executor: { execute: async () => { executions += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => {
+				shipAttempts += 1;
+				return { outcome: 'merge-conflict' as const, evidence };
+			} },
+		});
+		const run = await runtime.startRun('GSHIP-884');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect({ shipAttempts, executions }).toEqual({ shipAttempts: 2, executions: 2 });
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind).filter((kind) => kind.startsWith('run.merge-conflict'))).toEqual([
+			'run.merge-conflict-fix-requested',
+			'run.merge-conflict-recovery-result',
+			'run.merge-conflict-limit',
+		]);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('records the newly observed evidence, not a repeat of the first, when a merge conflict hits its limit', async () => {
+		const firstEvidence = { prNumber: 884, headSha: 'head-884-a', baseSha: 'base-884-a', branch: 'gship/884', resolution: 'conflict' as const };
+		const secondEvidence = { prNumber: 884, headSha: 'head-884-b', baseSha: 'base-884-b', branch: 'gship/884', resolution: 'conflict' as const };
+		let shipAttempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-merge-conflict-limit-payload',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => {
+				shipAttempts += 1;
+				return { outcome: 'merge-conflict' as const, evidence: shipAttempts === 1 ? firstEvidence : secondEvidence };
+			} },
+		});
+		const run = await runtime.startRun('GSHIP-884');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(shipAttempts).toBe(2);
+		const limit = runtime.listRunEvents(run.id).findLast((event) => event.kind === 'run.merge-conflict-limit');
+		// `evidence` is the conflict that is still blocking the merge (this second,
+		// post-recovery ship), and `previousEvidence` is the one the reserved
+		// recovery started from -- the same precedent `run.ci-fix-limit` follows.
+		expect(limit?.payload).toEqual({ evidence: secondEvidence, previousEvidence: firstEvidence });
+		await runtime.stop(); runtime.close();
+	});
+
+	test('the first recovery\'s own result records the first conflict\'s evidence, not a second one already confirmed inside it', async () => {
+		const firstEvidence = { prNumber: 884, headSha: 'head-884-a', baseSha: 'base-884-a', branch: 'gship/884', resolution: 'conflict' as const };
+		const secondEvidence = { prNumber: 884, headSha: 'head-884-b', baseSha: 'base-884-b', branch: 'gship/884', resolution: 'conflict' as const };
+		let shipAttempts = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-merge-conflict-nested-second',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			// A real shipper records ship.merge-conflict-confirmed before returning
+			// the merge-conflict outcome, for the second conflict too: the second
+			// ship, nested inside the first recovery's own #driveImplementation,
+			// confirms it durably before this reaches the limit branch below.
+			shipper: { ship: async (input) => {
+				shipAttempts += 1;
+				const evidence = shipAttempts === 1 ? firstEvidence : secondEvidence;
+				input.emit('ship.merge-conflict-confirmed', {
+					...evidence, attempt: shipAttempts, result: 'workspace-prepared', reason: 'CONFLICT (content): Merge conflict',
+				});
+				return { outcome: 'merge-conflict' as const, evidence };
+			} },
+		});
+		const run = await runtime.startRun('GSHIP-884');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(shipAttempts).toBe(2);
+		const result = runtime.listRunEvents(run.id).findLast((event) => event.kind === 'run.merge-conflict-recovery-result');
+		// The recovery that actually completed is the first's. The second
+		// conflict is already durably confirmed but not yet claimed at this
+		// point, so #ownedMergeConflict would return its evidence instead --
+		// the wrong one for a result describing what the first recovery did.
+		expect(result?.payload).toEqual({ outcome: 'completed', evidence: firstEvidence });
+		await runtime.stop(); runtime.close();
+	});
+
+	// GSHIP-884: real git, doubled gh, driving a full RunRuntime run -- proving
+	// that a second conflict, confirmed after the first recovery already ran,
+	// still ships once the operator resumes it resolved. A fake shipper cannot
+	// prove this: the bug lived in whether #driveShip tells a real GithubShipper
+	// the pending local merge is this run's own tracked work, and only a ship()
+	// that actually inspects the worktree can catch it getting that wrong.
+	function gitReal(cwd: string, args: string[]): string {
+		const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+		if ((result.status ?? 1) !== 0) throw new Error(result.stderr || result.stdout);
+		return result.stdout.trim();
+	}
+
+	function mergeInProgressReal(cwd: string): boolean {
+		const result = spawnSync('git', ['-C', cwd, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'], { encoding: 'utf8' });
+		return (result.status ?? 1) === 0;
+	}
+
+	function identifyReal(cwd: string): void {
+		gitReal(cwd, ['config', 'user.name', 'Gateship Test']);
+		gitReal(cwd, ['config', 'user.email', 'test@example.invalid']);
+	}
+
+	interface MergeConflictFixture {
+		root: string;
+		remote: string;
+		local: string;
+	}
+
+	const MERGE_CONFLICT_BRANCH = 'gship/run-884-git-limit';
+
+	function seedMergeConflictFixture(): MergeConflictFixture {
+		const root = createTestTmpdir('gship-run-merge-conflict-');
+		const seed = join(root, 'seed');
+		mkdirSync(seed, { recursive: true });
+		gitReal(seed, ['init', '-q', '-b', 'main']);
+		identifyReal(seed);
+		writeFileSync(join(seed, '.gitignore'), '.gship/\n');
+		writeFileSync(join(seed, 'SHARED.md'), 'one\ntwo\nthree\n');
+		mkdirSync(join(seed, '.gateship', 'issues'), { recursive: true });
+		writeFileSync(
+			join(seed, '.gateship', 'issues', 'GSHIP-0884.json'),
+			`${JSON.stringify({ id: 'GSHIP-884', title: 'GSHIP-884', stage: 'specified', status: 'open' }, null, 2)}\n`,
+		);
+		gitReal(seed, ['add', '.']);
+		gitReal(seed, ['commit', '-q', '-m', 'base SHARED.md']);
+
+		const remote = join(root, 'remote');
+		gitReal(root, ['clone', '-q', '--bare', seed, remote]);
+		const local = join(root, 'local');
+		gitReal(root, ['clone', '-q', remote, local]);
+		identifyReal(local);
+		gitReal(local, ['checkout', '-q', '-b', MERGE_CONFLICT_BRANCH, 'origin/main']);
+		writeFileSync(join(local, 'SHARED.md'), 'one\nBRANCH\nthree\n');
+
+		return { root, remote, local };
+	}
+
+	/** Advances the bare remote's own main from a separate clone, the way another merge on GitHub would. */
+	function advanceMergeConflictRemoteMain(fixture: MergeConflictFixture, content: string, message: string): void {
+		const scratch = join(fixture.root, `scratch-${Math.random().toString(36).slice(2)}`);
+		gitReal(fixture.root, ['clone', '-q', fixture.remote, scratch]);
+		identifyReal(scratch);
+		writeFileSync(join(scratch, 'SHARED.md'), content);
+		gitReal(scratch, ['add', '.']);
+		gitReal(scratch, ['commit', '-q', '-m', message]);
+		gitReal(scratch, ['push', '-q', 'origin', 'HEAD:main']);
+	}
+
+	interface MergeConflictHub {
+		pr: { number: number; state: string; url: string } | null;
+		creates: number;
+		views: number;
+		arms: number;
+		disarms: number;
+		/** On this view (1-based), push a second, independent conflicting commit to remote main before answering -- the race that produces a genuinely second conflict. */
+		advanceOnView?: number;
+		/** Once true, the next view reports the PR merged, landing the pushed head on remote main. */
+		resolved?: boolean;
+	}
+
+	function runMergeConflictGit(cwd: string, args: string[]): CommandResult {
+		const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+		return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' } satisfies CommandResult;
+	}
+
+	function ghMergeConflictList(hub: MergeConflictHub): CommandResult {
+		return { exitCode: 0, stdout: JSON.stringify(hub.pr === null ? [] : [hub.pr]), stderr: '' };
+	}
+
+	function ghMergeConflictCreate(hub: MergeConflictHub): CommandResult {
+		hub.creates += 1;
+		hub.pr = { number: 884, state: 'OPEN', url: 'https://github.com/x/y/pull/884' };
+		return { exitCode: 0, stdout: 'https://github.com/x/y/pull/884\n', stderr: '' };
+	}
+
+	function ghMergeConflictMerge(hub: MergeConflictHub, args: string[]): CommandResult {
+		if (args.includes('--disable-auto')) { hub.disarms += 1; return { exitCode: 0, stdout: '', stderr: '' }; }
+		if (args.includes('--auto')) { hub.arms += 1; return { exitCode: 0, stdout: '', stderr: '' }; }
+		return { exitCode: 0, stdout: '', stderr: '' };
+	}
+
+	function ghMergeConflictView(fixture: MergeConflictFixture, hub: MergeConflictHub): CommandResult {
+		hub.views += 1;
+		if (hub.pr === null) throw new Error('no pull request open');
+		if (hub.advanceOnView === hub.views) {
+			advanceMergeConflictRemoteMain(fixture, 'one\nREMOTE-2\nthree\n', 'a second, independent change on main');
+		}
+		if (hub.resolved === true) {
+			gitReal(fixture.remote, ['update-ref', 'refs/heads/main', `refs/heads/${MERGE_CONFLICT_BRANCH}`]);
+			hub.pr.state = 'MERGED';
+			return {
+				exitCode: 0,
+				stdout: JSON.stringify({
+					state: 'MERGED', mergeStateStatus: 'CLEAN',
+					headRefOid: gitReal(fixture.remote, ['rev-parse', `refs/heads/${MERGE_CONFLICT_BRANCH}`]),
+					baseRefOid: gitReal(fixture.remote, ['rev-parse', 'refs/heads/main']),
+					url: hub.pr.url, statusCheckRollup: [],
+				}),
+				stderr: '',
+			};
+		}
+		return {
+			exitCode: 0,
+			stdout: JSON.stringify({
+				state: hub.pr.state, mergeStateStatus: 'DIRTY',
+				headRefOid: gitReal(fixture.remote, ['rev-parse', `refs/heads/${MERGE_CONFLICT_BRANCH}`]),
+				baseRefOid: gitReal(fixture.remote, ['rev-parse', 'refs/heads/main']),
+				url: hub.pr.url, statusCheckRollup: [],
+			}),
+			stderr: '',
+		};
+	}
+
+	function runGhMergeConflict(fixture: MergeConflictFixture, hub: MergeConflictHub, args: string[]): CommandResult | undefined {
+		if (args[1] === 'list') return ghMergeConflictList(hub);
+		if (args[1] === 'create') return ghMergeConflictCreate(hub);
+		if (args[1] === 'merge') return ghMergeConflictMerge(hub, args);
+		if (args[1] === 'view') return ghMergeConflictView(fixture, hub);
+		return undefined;
+	}
+
+	function createMergeConflictRunner(fixture: MergeConflictFixture, hub: MergeConflictHub): ShipCommandRunner {
+		return async ({ cwd, command, args }) => {
+			if (command === 'git') return runMergeConflictGit(cwd, args);
+			const response = command === 'gh' ? runGhMergeConflict(fixture, hub, args) : undefined;
+			if (response !== undefined) return response;
+			throw new Error(`unscripted command: ${command} ${args.join(' ')}`);
+		};
+	}
+
+	test('a second conflict past the merge-conflict limit still ships to the same pull request once the operator resumes it resolved', async () => {
+		const fixture = seedMergeConflictFixture();
+		advanceMergeConflictRemoteMain(fixture, 'one\nREMOTE-1\nthree\n', 'a first conflicting change on main');
+		const hub: MergeConflictHub = { pr: null, creates: 0, views: 0, arms: 0, disarms: 0 };
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: fixture.local, store: new RunStore(':memory:'), newId: () => 'run-merge-conflict-git-limit',
+			executor: { execute: async () => {
+				executions += 1;
+				if (executions === 2) {
+					// Round 2: resolve the first conflict inside the pending merge and
+					// stage it -- never commit, the ship's own commit finishes it.
+					writeFileSync(join(fixture.local, 'SHARED.md'), 'one\nRESOLVED-1\nthree\n');
+					gitReal(fixture.local, ['add', 'SHARED.md']);
+					// A second, independent conflict lands on main on the very next
+					// poll after this ship -- a competing PR landing while this one
+					// resolves would cause the same race.
+					hub.advanceOnView = hub.views + 1;
+				} else if (executions === 3) {
+					// Round 3, after the limit and the operator's resume: resolve the
+					// second conflict and finish it -- this is the round that must
+					// still be able to ship.
+					writeFileSync(join(fixture.local, 'SHARED.md'), 'one\nRESOLVED-FINAL\nthree\n');
+					gitReal(fixture.local, ['add', 'SHARED.md']);
+					hub.resolved = true;
+				}
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: new GithubShipper({ runCommand: createMergeConflictRunner(fixture, hub), pollIntervalMs: 0, mergeTimeoutMs: 0 }),
+		});
+
+		const run = await runtime.startRun('GSHIP-884');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user', 10_000);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind).filter((kind) => kind === 'run.merge-conflict-limit')).toHaveLength(1);
+		// The second conflict really is pending in the worktree, unresolved.
+		expect(mergeInProgressReal(fixture.local)).toBe(true);
+
+		// The operator resumes with the conflict resolved inside the run. Without
+		// the fix, this pending merge -- confirmed by this run, just past the
+		// limit -- looks orphaned to the ship's own guard and every attempt
+		// refuses it forever instead of committing and publishing it.
+		runtime.resumeRun(run.id, 'conflito resolvido, tente novamente');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'done', 10_000);
+
+		expect(hub.creates).toBe(1);
+		expect(mergeInProgressReal(fixture.local)).toBe(false);
+		expect(readFileSync(join(fixture.local, 'SHARED.md'), 'utf8')).toBe('one\nRESOLVED-FINAL\nthree\n');
+		expect(gitReal(fixture.remote, ['show', 'refs/heads/main:SHARED.md'])).toContain('RESOLVED-FINAL');
+		await runtime.stop(); runtime.close();
+	});
+
+	test('an exhausted recovery budget stops a merge-conflict recovery before it dispatches the executor', async () => {
+		const evidence = { prNumber: 884, headSha: 'head-884', baseSha: 'base-884', branch: 'gship/884', resolution: 'conflict' as const };
+		let executions = 0;
+		let verifications = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-merge-conflict-budget',
+			// One dispatch total: spent below by a verification retry before the
+			// conflict, so the merge-conflict recovery finds none left.
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 1 },
+			executor: { execute: async () => { executions += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => {
+				verifications += 1;
+				return verifications === 1 ? { ok: false, detail: 'retry' } : { ok: true };
+			} },
+			shipper: { ship: async (input) => {
+				input.emit('ship.merge-conflict-confirmed', {
+					...evidence, attempt: 1, result: 'workspace-prepared', reason: 'CONFLICT (content): Merge conflict',
+				});
+				return { outcome: 'merge-conflict' as const, evidence };
+			} },
+		});
+		const run = await runtime.startRun('GSHIP-884');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		// Round 1: no recovery-dispatch cause, runs free. Round 2: the failed
+		// verification is a cause, spends the one dispatch the policy allows.
+		// Round 3, the one the merge-conflict recovery would dispatch, has its
+		// own cause (conflictFeedback) and must respect the now-exhausted
+		// budget instead of calling the executor again for free.
+		expect(executions).toBe(2);
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-reserved')).toHaveLength(1);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('does not record a completed merge-conflict recovery that ends in waiting-user', async () => {
+		const evidence = { prNumber: 884, headSha: 'head-884', baseSha: 'base-884', branch: 'gship/884', resolution: 'conflict' as const };
+		let shipAttempts = 0;
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-merge-conflict-question',
+			executor: { execute: async () => {
+				executions += 1;
+				// The first, pre-conflict work round completes normally; the round
+				// the reserved recovery drives asks a question instead, the path the
+				// spec requires when the resolution needs reapproval.
+				if (executions === 1) return { outcome: 'completed' };
+				return { outcome: 'waiting-user', summary: 'Conflito exige mudança fora do contrato aprovado.' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async (input) => {
+				shipAttempts += 1;
+				input.emit('ship.merge-conflict-confirmed', {
+					...evidence, attempt: 1, result: 'workspace-prepared', reason: 'CONFLICT (content): Merge conflict',
+				});
+				return { outcome: 'merge-conflict' as const, evidence };
+			} },
+		});
+		const run = await runtime.startRun('GSHIP-884');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect({ shipAttempts, executions }).toEqual({ shipAttempts: 1, executions: 2 });
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.merge-conflict-fix-requested')).toHaveLength(1);
+		// The recovery reserved by the fix-requested above never reached a completed
+		// work round of its own -- it stopped at the executor's own question -- so
+		// no `run.merge-conflict-recovery-result` may claim it completed.
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.merge-conflict-recovery-result')).toHaveLength(0);
+		await runtime.stop(); runtime.close();
+	});
+
+	test('cancelling a reserved merge-conflict recovery leaves it resumable', async () => {
+		const evidence = { prNumber: 884, headSha: 'head-884', baseSha: 'base-884', branch: 'gship/884', resolution: 'conflict' as const };
+		let executions = 0;
+		let releaseRecovery: (() => void) | undefined;
+		const recoveryStarted = new Promise<void>((resolve) => { releaseRecovery = resolve; });
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-merge-conflict-cancel',
+			executor: { execute: async (input) => {
+				executions += 1;
+				if (executions === 2) {
+					releaseRecovery?.();
+					await new Promise<void>((resolve) => input.signal.addEventListener('abort', () => resolve(), { once: true }));
+				}
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merge-conflict' as const, evidence }) },
+		});
+		const run = await runtime.startRun('GSHIP-884');
+		await recoveryStarted;
+		await runtime.cancelRun(run.id);
+		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.merge-conflict-fix-requested')).toHaveLength(1);
+		expect(executions).toBe(3);
+		await runtime.stop(); runtime.close();
 	});
 
 	test('keeps issue verification feedback through a provider hold during its correction', async () => {
@@ -3324,6 +3790,19 @@ describe('selectRunRoundOrigins', () => {
 			roundEvent(4, 'run.full-verify-fix-requested', 'full-verify'),
 		];
 		expect(selectRunRoundOrigins(events)).toEqual({ executor: 2, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
+	});
+
+	// GSHIP-884: a merge-conflict recovery round is raised by the runtime
+	// itself after a confirmed conflict, with no operator turn in between --
+	// the same "always executor" shape as a review or full-verify fix round --
+	// and must be counted, not silently dropped from every category.
+	test('a round born of a merge-conflict fix request counts as executor', () => {
+		const events = [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			roundEvent(3, 'run.merge-conflict-fix-requested', 'shipping'),
+		];
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 1, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 });
 	});
 
 	test('a round that starts right after operator guidance counts as decision', () => {

@@ -120,6 +120,8 @@ interface FakeRepo {
 	/** Times `gh pr checks --required` has been called. */
 	requiredChecksCalls: number;
 	statusCheckRollups: unknown[][];
+	/** Whether `git rev-parse --verify MERGE_HEAD` reports a merge pending in the workspace (GSHIP-884). */
+	pendingMerge: boolean;
 }
 
 function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
@@ -163,6 +165,7 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		requiredChecksUnavailableRemaining: 0,
 		requiredChecksCalls: 0,
 		statusCheckRollups: [[]],
+		pendingMerge: false,
 		...overrides,
 	};
 }
@@ -189,14 +192,38 @@ function runGitPush(repo: FakeRepo): CommandResult {
 	return result(0);
 }
 
+function runGitRevParse(repo: FakeRepo, args: string[]): CommandResult {
+	if (args[1] === '--abbrev-ref') return result(0, `${repo.branch}\n`);
+	// The ship's own pending-merge guard (GSHIP-884): `--verify` reports
+	// MERGE_HEAD present or absent exactly as `repo.pendingMerge` says, so a
+	// scenario can put the fixture in either state instead of the guard
+	// always seeing the same fixed answer regardless of what it is testing.
+	if (args.includes('MERGE_HEAD')) {
+		return repo.pendingMerge ? result(0, `${HEAD_SHA}\n`) : result(1, '', 'fatal: Needed a single revision');
+	}
+	// `gh pr view` always reports PROTECTED_BASE_SHA as the base (ghView,
+	// below): a mocked `origin/main` has to agree, or #prepareMergeConflict's
+	// own "workspace head or base changed" guard fires on every DIRTY ship
+	// before it ever reaches `git status`/`git merge`, which would prove
+	// nothing about the DIRTY handling those scenarios exist to cover.
+	if (args[1] === 'origin/main') return result(0, `${PROTECTED_BASE_SHA}\n`);
+	return result(0, `${HEAD_SHA}\n`);
+}
+
 function runGitCommand(repo: FakeRepo, args: string[]): CommandResult | undefined {
-	if (args[0] === 'rev-parse') return result(0, `${args[1] === '--abbrev-ref' ? repo.branch : HEAD_SHA}\n`);
+	if (args[0] === 'rev-parse') return runGitRevParse(repo, args);
 	if (args[0] === 'add') return result(0);
 	if (args[0] === 'diff') return runGitDiff(repo, args);
 	if (args[0] === 'commit') return runGitCommit(repo);
 	if (args[0] === 'push') return runGitPush(repo);
 	if (args[0] === 'fetch') { repo.fetches += 1; return result(0); }
 	if (args[0] === 'reset') { repo.resets += 1; return result(0); }
+	// A DIRTY ship's own recovery preparation (#prepareMergeConflict): the
+	// workspace is clean and the local base merge always lands without a
+	// textual conflict here -- a real conflict is exercised against real git
+	// in github-shipper-source-sync.test.ts, not against this argv double.
+	if (args[0] === 'status') return result(0, '');
+	if (args[0] === 'merge') return result(0);
 	return undefined;
 }
 
@@ -467,6 +494,50 @@ describe('the GitHub shipper', () => {
 		expect((result as { detail: string }).detail).toContain('protected intake base changed');
 		expect(repo.directMergeAttempts).toBe(0);
 		expect(repo.armAttempts).toBe(0);
+	});
+
+	// GSHIP-884: a pinned protected base going DIRTY almost always means the
+	// base advanced past the sha this publish approved, not a genuine content
+	// conflict. That must stay the retryable `protected intake base changed`
+	// failure, not a merge-conflict outcome that reclassifies a retryable
+	// backlog race as an unavailability.
+	test('protected PR reports a divergent base instead of a merge conflict when DIRTY follows it', async () => {
+		const repo = createRepo({ openMergeState: 'DIRTY', mergedOnView: Number.MAX_SAFE_INTEGER });
+		const calls: RecordedCall[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const result = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.mergePullRequest({
+				...protectedPullRequestInput(createWorkspace(), 'different-base'),
+				emit: (kind, payload) => payloads.set(kind, payload),
+			});
+		expect(result).toMatchObject({ outcome: 'failed' });
+		expect((result as { detail: string }).detail).toContain('protected intake base changed');
+		expect(repo.directMergeAttempts).toBe(0);
+		expect(repo.armAttempts).toBe(0);
+		expect(payloads.has('ship.merge-conflict-confirmed')).toBe(false);
+	});
+
+	// GSHIP-884: the protected intake publish has no executor to hand a
+	// conflict recovery to, so a confirmed conflict must only be reported,
+	// never prepared locally the way a run ship's own recovery does.
+	test('protected PR reports a merge conflict without touching the worktree', async () => {
+		const repo = createRepo({ openMergeState: 'DIRTY', mergedOnView: Number.MAX_SAFE_INTEGER });
+		const calls: RecordedCall[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const result = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.mergePullRequest({
+				...protectedPullRequestInput(createWorkspace()),
+				emit: (kind, payload) => payloads.set(kind, payload),
+			});
+		expect(result).toMatchObject({
+			outcome: 'merge-conflict',
+			evidence: { prNumber: 385, headSha: HEAD_SHA, baseSha: PROTECTED_BASE_SHA, branch: BRANCH, resolution: 'conflict' },
+		});
+		expect(findCall(calls, 'git', 'merge')).toHaveLength(0);
+		expect(findCall(calls, 'git', 'status')).toHaveLength(0);
+		expect(repo.disarms).toBe(0);
+		expect(repo.fetches).toBe(0);
+		expect(payloads.get('ship.merge-conflict-confirmed')).toMatchObject({ result: 'remote-only' });
 	});
 
 	test('monitors an intake control PR through the same pinned-head lifecycle and deletes it after merge', async () => {
@@ -816,7 +887,10 @@ describe('the GitHub shipper', () => {
 		}> = [
 			{ name: 'BLOCKED', repo: { openMergeState: 'BLOCKED' } },
 			{ name: 'BEHIND', repo: { behindWhileUpdatesBelow: Number.MAX_SAFE_INTEGER }, options: { maxBranchUpdates: 0 } },
-			{ name: 'DIRTY', repo: { openMergeState: 'DIRTY' } },
+			// DIRTY has its own dedicated assertion below: unlike the other
+			// scenarios here, it hands the PR to the merge-conflict recovery
+			// instead of just waiting, and that outcome shape is worth pinning
+			// on its own.
 			{ name: 'UNKNOWN', repo: { openMergeState: 'UNKNOWN' } },
 			{
 				name: 'CI pending',
@@ -848,6 +922,83 @@ describe('the GitHub shipper', () => {
 			expect(shipped.outcome, scenario.name).not.toBe('merged');
 			expect(repo.directMergeAttempts, scenario.name).toBe(0);
 		}
+	});
+
+	// GSHIP-884: a non-protected ship's own DIRTY hands the PR to the
+	// merge-conflict recovery -- it must never directly merge -- and this
+	// pins that outcome against the local base merge #prepareMergeConflict
+	// actually runs, not just against an incidental earlier guard.
+	test('a DIRTY ship enters the merge-conflict recovery instead of merging', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({ openMergeState: 'DIRTY', mergedOnView: Number.MAX_SAFE_INTEGER });
+		const calls: RecordedCall[] = [];
+		const shipped = await new GithubShipper({
+			runCommand: createRunner(repo, calls),
+			pollIntervalMs: 0,
+			mergeTimeoutMs: 0,
+		}).ship(createShipInput(cwd, [], new AbortController().signal));
+
+		expect(shipped).toMatchObject({
+			outcome: 'merge-conflict',
+			evidence: { prNumber: 385, headSha: HEAD_SHA, resolution: 'base-advanced' },
+		});
+		expect(repo.directMergeAttempts).toBe(0);
+		expect(findCall(calls, 'git', 'status')).not.toHaveLength(0);
+		expect(findCall(calls, 'git', 'merge')).not.toHaveLength(0);
+	});
+
+	// GSHIP-884: a pending local merge with no evidence that this run's own
+	// recovery resolved it is unknown work -- orphaned by a cancellation, for
+	// instance -- and must be preserved, not committed and pushed over.
+	test('refuses to ship a pending local merge this run has not confirmed resolved', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({ pendingMerge: true });
+		const calls: RecordedCall[] = [];
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, [], new AbortController().signal));
+
+		expect(shipped).toMatchObject({ outcome: 'failed', detail: expect.stringContaining('already pending') });
+		expect(findCall(calls, 'git', 'add')).toHaveLength(0);
+		expect(findCall(calls, 'git', 'commit')).toHaveLength(0);
+		expect(repo.commits).toBe(0);
+		expect(repo.pushes).toBe(0);
+	});
+
+	// GSHIP-884: the same pending local merge, but this ship's own evidence
+	// says the merge-conflict recovery this run reserved already resolved it
+	// -- so it is this run's own resolution, not unknown work, and the ship
+	// commits and publishes it like any other change. Checked against real
+	// git, not a bare say-so: the claimed `baseSha` really is what MERGE_HEAD
+	// reports.
+	test('commits and ships a pending local merge once this run confirms its recovery resolved it', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({ pendingMerge: true });
+		const calls: RecordedCall[] = [];
+		const input = createShipInput(cwd, [], new AbortController().signal);
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship({ ...input, evidence: { ...input.evidence, mergeConflictRecovery: { baseSha: HEAD_SHA } } });
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		expect(repo.commits).toBe(1);
+		expect(repo.pushes).toBe(1);
+	});
+
+	// GSHIP-884: the claimed evidence has to match the merge actually pending,
+	// not just exist -- a stale or unrelated baseSha is exactly as unowned as
+	// no evidence at all.
+	test('refuses a pending local merge when the claimed evidence names a different merge', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({ pendingMerge: true });
+		const calls: RecordedCall[] = [];
+		const input = createShipInput(cwd, [], new AbortController().signal);
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+			.ship({ ...input, evidence: { ...input.evidence, mergeConflictRecovery: { baseSha: 'a-different-merge-entirely' } } });
+
+		expect(shipped).toMatchObject({ outcome: 'failed', detail: expect.stringContaining('already pending') });
+		expect(findCall(calls, 'git', 'add')).toHaveLength(0);
+		expect(findCall(calls, 'git', 'commit')).toHaveLength(0);
+		expect(repo.commits).toBe(0);
+		expect(repo.pushes).toBe(0);
 	});
 
 	test('direct fallback merges a clean PR with no reported checks and preserves branch deletion', async () => {

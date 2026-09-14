@@ -3,9 +3,9 @@ import type { RunEvent } from './run-store.ts';
 /**
  * Every event kind that opens a new pass through the executor -- i.e. a
  * transition into `working` (GSHIP-659). `run.started` fires both for a run's
- * own launch and for every resume; `run.review-fix-requested` and
- * `run.full-verify-fix-requested` fire only for the runtime's own automatic
- * fix rounds.
+ * own launch and for every resume; `run.review-fix-requested`,
+ * `run.full-verify-fix-requested` and `run.merge-conflict-fix-requested`
+ * (GSHIP-884) fire only for the runtime's own automatic fix rounds.
  */
 const ROUND_START_KINDS: ReadonlySet<string> = new Set([
 	'run.started',
@@ -13,6 +13,7 @@ const ROUND_START_KINDS: ReadonlySet<string> = new Set([
 	'run.verification-fix-requested',
 	'run.full-verify-fix-requested',
 	'run.ci-fix-requested',
+	'run.merge-conflict-fix-requested',
 ]);
 
 /**
@@ -58,9 +59,10 @@ function recordRound(
  * because the runtime records its transitions as decisions by construction.
  *
  * The run's own first entry into `working` is the launch, not a correction,
- * so it is never counted. `run.review-fix-requested` and
- * `run.full-verify-fix-requested` are raised by the runtime itself, mid-run,
- * with no operator turn possible in between -- always `executor`. Every other
+ * so it is never counted. `run.review-fix-requested`,
+ * `run.full-verify-fix-requested` and `run.merge-conflict-fix-requested` are
+ * raised by the runtime itself, mid-run, with no operator turn possible in
+ * between -- always `executor`. Every other
  * round starts at `run.started`, which fires both for that first launch and
  * for every later resume; a resume is `decision` only when the event
  * immediately before it is `run.operator-guidance` -- exactly what
