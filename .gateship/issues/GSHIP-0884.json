@@ -7,7 +7,7 @@
     "GSHIP-883"
   ],
   "createdAt": "2026-09-12T20:34:46.498Z",
-  "updatedAt": "2026-09-14T11:25:56.570Z",
+  "updatedAt": "2026-09-14T11:28:02.702Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -29,5 +29,9 @@
       "bun test test/runtime/github-shipper.test.ts test/runtime/github-shipper-source-sync.test.ts test/runtime/run-runtime.test.ts test/runtime/run-state.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "a6d9d7ea377bd7f19094948a4f969bff983c0f8f21425cee4326ee9b5571ee1d",
+    "approvedAt": "2026-09-14T11:28:02.702Z"
   }
 }
