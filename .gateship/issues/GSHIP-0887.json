@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-887",
   "title": "Corrigir proveniência e validação das evidências do resolvedor",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-14T03:53:32.278Z",
-  "updatedAt": "2026-09-14T03:53:32.278Z",
+  "updatedAt": "2026-09-14T04:02:28.000Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

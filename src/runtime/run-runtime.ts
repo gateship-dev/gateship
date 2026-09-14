@@ -95,7 +95,6 @@ const AUTHORIZED_TOOL_OBSERVATIONS = new Set([
 
 function projectCycleObservation(
 	runId: string,
-	version: string,
 	attempt: number,
 	event: RunEvent,
 ): CycleObservationReference | null {
@@ -106,6 +105,9 @@ function projectCycleObservation(
 	if (isToolObservation && !AUTHORIZED_TOOL_OBSERVATIONS.has(tool + '/' + action)) return null;
 	const result = cycleObservationResult(event.payload);
 	if (result.length === 0) return null;
+	// Provider tool payloads and old events do not establish a worktree version.
+	const version = !isToolObservation && typeof event.payload['verifiedVersion'] === 'string'
+		? event.payload['verifiedVersion'] : 'unknown';
 	return cycleObservation(runId, Math.max(1, attempt), version, event.seq, result, {
 		...(isToolObservation ? { tool, action } : {}),
 		...(typeof event.payload['toolUseId'] === 'string' ? { toolUseId: event.payload['toolUseId'] } : {}),
@@ -115,9 +117,18 @@ function projectCycleObservation(
 }
 
 function isCycleObservationEvent(kind: string): boolean {
-	return kind === 'verify.command.completed' || kind === 'verify.command.finished'
+	return kind === 'verify.command.completed' || kind === 'verify.command.finished' || kind === 'full-verify.command.completed'
 		|| kind === 'run.verification-retry-result'
 		|| kind === 'provider.tool-observation' || kind === 'review.tool-observation';
+}
+
+export function projectCycleObservations(runId: string, events: readonly RunEvent[]): CycleObservationReference[] {
+	let attempt = 0;
+	return events.flatMap((event) => {
+		if (event.kind === 'run.started' || event.kind === 'run.provider-retry-started') attempt += 1;
+		const observation = projectCycleObservation(runId, attempt, event);
+		return observation === null ? [] : [observation];
+	});
 }
 
 function cycleObservationResult(payload: Record<string, unknown>): string {
@@ -2271,16 +2282,7 @@ export class RunRuntime {
 	}
 
 	#cycleObservations(runId: string): CycleObservationReference[] {
-		const events = this.#store.listRunDecisionEvents(runId);
-		const created = events.find((event) => event.kind === 'run.created');
-		const version = created?.payload['workflowRevision'];
-		if (typeof version !== 'string' || version.trim().length === 0) return [];
-		let attempt = 0;
-		return events.flatMap((event) => {
-			if (event.kind === 'run.started' || event.kind === 'run.provider-retry-started') attempt += 1;
-			const observation = projectCycleObservation(runId, version, attempt, event);
-			return observation === null ? [] : [observation];
-		});
+		return projectCycleObservations(runId, this.#store.listRunDecisionEvents(runId));
 	}
 
 	#recoveredCycleAttempt(

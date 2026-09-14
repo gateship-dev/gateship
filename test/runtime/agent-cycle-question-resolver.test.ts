@@ -54,6 +54,20 @@ function capturingSession(
 }
 
 describe('agent cycle question resolver', () => {
+	test('accepts provider-schema nulls through the production adapter for both providers', async () => {
+		const observation = { id: 'run-observation-102121', runId: 'run-703', attempt: 4, verifiedVersion: 'worktree-sha256:current', result: 'exit 0', exitCode: 0 };
+		const session = (provider: AgentProviderId): AgentSession => ({ provider, run: async () => ({
+			summary: '', structuredOutput: { outcome: 'continue', guidance: 'Corrija o defeito atual.', reason: null,
+				diagnostic: { kind: 'correction', hypothesis: 'Defeito delimitado.', action: 'Corrigir observação.', expectedObservation: 'Teste passa.', question: null, failure: null, missing: null,
+					evidence: [{ ...observation, tool: null, action: null, toolUseId: null, isError: null }] } },
+		}) });
+		const resolver = new AgentCycleQuestionResolver({ claude: session('claude'), codex: session('codex') });
+		for (const providerId of ['claude', 'codex'] as const) {
+			const result = await resolver.resolve(questionInput({ providerId, observations: [observation] }));
+			expect(result.diagnostic).toMatchObject({ kind: 'correction', evidence: [observation] });
+		}
+	});
+
 	test('publishes a closed nullable diagnostic and evidence schema', () => {
 		const diagnostic = CYCLE_QUESTION_RESULT_SCHEMA.properties.diagnostic;
 		expect(diagnostic).toMatchObject({ type: ['object', 'null'], additionalProperties: false });
