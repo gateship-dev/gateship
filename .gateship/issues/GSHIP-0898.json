@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-898",
+  "title": "Chain: reconciliar em worktree fresca de origin/main, nao no checkout local",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-15T00:00:12.743Z",
+  "updatedAt": "2026-09-15T00:00:12.743Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "A reconciliacao entre runs le o checkout local do projeto, que pode estar atras de origin/main; a sessao read-only nao tem git e devolve material por nao conseguir ler a entrega anterior, pausando a cadeia sem divergencia real. Reconciliar numa worktree temporaria de origin/main.",
+    "acceptance": [
+      "Antes de invocar o reconciliador, o runtime cria worktree temporaria detached em origin/main (mesma fonte que uma run nova), passa esse caminho como workspace da sessao read-only e a remove ao terminar, inclusive em abort ou erro. O checkout local do operador nao e lido nem movido.",
+      "O evento run.chain-reconciliation registra o sha de origin/main lido e o caminho da worktree usada; run.chain-reconciliation-waiting e chain-paused continuam com o mesmo formato.",
+      "Falha ao criar a worktree (git indisponivel, fetch falhou) gera chain-paused com motivo chain-start-failed e o erro, nunca material; material continua reservado a divergencia real de objetivo, risco, verificacao ou autoridade.",
+      "Caso real coberto: checkout local em commit antigo (sem os arquivos de issue e sem o codigo da entrega anterior), origin/main a frente; a reconciliacao le a entrega em origin/main e devolve unchanged. Regressao do chain-paused material da run dfe189d9 (GSHIP-888 para 889, 14/09/2026).",
+      "Testes com Git temporario cobrem criacao e remocao da worktree, remocao apos abort, falha de fetch e a nao-leitura do checkout local."
+    ],
+    "boundaries": [
+      "Nao mover nem fazer checkout da main local do operador.",
+      "Nao dar git nem escrita a sessao do reconciliador; ela continua read-only sobre a worktree."
+    ],
+    "verify": [
+      "bun test test/runtime/run-runtime.test.ts test/runtime/git-workspace.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
