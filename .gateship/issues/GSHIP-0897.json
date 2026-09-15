@@ -1,13 +1,13 @@
 {
   "id": "GSHIP-897",
   "title": "Web: validar Host, headers de seguranca e limite de body",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-893"
   ],
   "createdAt": "2026-09-14T18:56:51.474Z",
-  "updatedAt": "2026-09-15T12:21:05.902Z",
+  "updatedAt": "2026-09-15T19:32:55.067Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

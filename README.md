@@ -406,6 +406,15 @@ interface -- a bare `docker run -p 7777:7777` without pinning it to
 unauthenticated read route to the network. Adding authentication is a
 separate, deliberate decision, not a byproduct of this packaging.
 
+Every request must also present a `Host` naming `127.0.0.1` or `localhost`,
+on no port, this process's own bind port, or the port declared through
+`GATESHIP_PUBLISHED_PORT`; anything else gets 421 before any route runs. This
+closes DNS rebinding (a page served from an attacker's own hostname, resolved
+by DNS to 127.0.0.1) and is independent of the same-origin check above --
+`compose.yaml` sets `GATESHIP_PUBLISHED_PORT` to the same value as
+`GATESHIP_PORT` so this check keeps working when the container's fixed
+internal 7777 is published on a different host port.
+
 The implementer is intentionally write-capable inside the isolated worktree.
 In native mode, the selected Claude Code or Codex process therefore has the
 filesystem authority of the user running Gateship. In container mode, its host

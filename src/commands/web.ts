@@ -10,7 +10,7 @@ import { join, resolve } from 'node:path';
 import process from 'node:process';
 import { readBacklogFromMain } from '../issues/backlog.ts';
 import { type BacklogJsonView, deriveBacklogJson } from '../issues/list.ts';
-import { fingerprintSpec } from '../issues/spec.ts';
+import { EVIDENCE_LIMITS, fingerprintSpec, SPEC_V2_LIMITS } from '../issues/spec.ts';
 import type { IssueEntry } from '../issues/types.ts';
 import { printError } from '../logging/color.ts';
 import { AgentCycleQuestionResolver } from '../runtime/agent-cycle-question-resolver.ts';
@@ -2258,6 +2258,119 @@ export function isTrustedCommandOrigin(request: Request): boolean {
 }
 
 /**
+ * Docker's published-port mapping (`compose.yaml`: `127.0.0.1:${GATESHIP_PORT:-7777}:7777`)
+ * puts a different port in front of this process than the one it actually
+ * binds -- the container always binds 7777, and NAT keeps `GATESHIP_PORT`
+ * from ever reaching this process, so `server.port` alone cannot describe
+ * "the port the operator reaches this service on" there. `compose.yaml`
+ * declares that published port explicitly through this variable instead of
+ * leaving it implicit; native (non-container) use never sets it, since there
+ * `server.port` already is the port the operator reaches. This is distinct
+ * from `GATESHIP_PORT`, which `src/commands/doctor.ts` reads on the host to
+ * test connectivity into the container and which never reaches this process.
+ */
+export const PUBLISHED_PORT_ENV_VAR = 'GATESHIP_PUBLISHED_PORT';
+
+function resolvePublishedPort(env: Record<string, string | undefined> = process.env): number | undefined {
+	const raw = env[PUBLISHED_PORT_ENV_VAR]?.trim();
+	if (raw === undefined || raw.length === 0) return undefined;
+	const parsed = Number(raw);
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+/**
+ * Closes DNS rebinding: an attacker's page, loaded over the attacker's own
+ * hostname, can be resolved to 127.0.0.1 by DNS and still reach this
+ * loopback-only service, but the browser keeps sending that attacker
+ * hostname as `Host` regardless of what DNS resolved. This check runs ahead
+ * of and independent of `isTrustedCommandOrigin` -- it has no Origin header
+ * to depend on -- and accepts only `127.0.0.1` or `localhost`, on the
+ * service's own port: no port at all, `port` (this process's resolved bind
+ * port, which also covers the Dockerfile and compose healthchecks that both
+ * hit `127.0.0.1:7777` directly), or the explicitly declared
+ * `GATESHIP_PUBLISHED_PORT` (see `resolvePublishedPort` above). A `Host`
+ * naming any other hostname, or any other port, is refused.
+ */
+export function isTrustedServiceHost(request: Request, port: number): boolean {
+	const rawHost = request.headers.get('host');
+	if (rawHost === null) return false;
+	const separatorIndex = rawHost.lastIndexOf(':');
+	const hostname = separatorIndex === -1 ? rawHost : rawHost.slice(0, separatorIndex);
+	if (hostname !== WEB_HOSTNAME && hostname !== 'localhost') return false;
+	const portPart = separatorIndex === -1 ? undefined : rawHost.slice(separatorIndex + 1);
+	if (portPart === undefined) return true;
+	const numericPort = Number(portPart);
+	if (numericPort === port) return true;
+	const publishedPort = resolvePublishedPort();
+	return publishedPort !== undefined && numericPort === publishedPort;
+}
+
+function invalidHostResponse(): Response {
+	return withSecurityHeaders(new Response(null, { status: 421 }));
+}
+
+/**
+ * Fixed for every response this service sends: the UI is a single first-party
+ * bundle (no inline scripts or styles, no third-party requests -- confirmed
+ * against `webui/dist`), so `'self'` is enough and there is nothing further
+ * for the built UI to require.
+ */
+const SECURITY_HEADERS: ReadonlyArray<readonly [string, string]> = [
+	['content-security-policy', "default-src 'self'; script-src 'self'; frame-ancestors 'none'"],
+	['x-content-type-options', 'nosniff'],
+	['referrer-policy', 'no-referrer'],
+];
+
+/**
+ * Stamps the fixed header set onto any response. Copies into a fresh
+ * `Headers` and a fresh `Response` rather than mutating in place: a
+ * `Response.redirect(...)` carries an immutable header list, and this runs
+ * over every response `guard` below produces, redirects included.
+ */
+function withSecurityHeaders(response: Response): Response {
+	const headers = new Headers(response.headers);
+	for (const [name, value] of SECURITY_HEADERS) headers.set(name, value);
+	return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+/**
+ * Wraps one route handler so the Host guard above runs before it, and its
+ * response -- success, refusal or redirect -- always carries the security
+ * headers above. Applied to every entry in the route table below, so no
+ * route (including static UI assets) can end up serving without either.
+ */
+function guard<Req extends Request, S extends Bun.Server<unknown>, Res extends Response>(
+	handler: (request: Req, server: S) => MaybePromise<Res>,
+): (request: Req, server: S) => Promise<Response> {
+	return async (request, server) => {
+		if (!isTrustedServiceHost(request, server.port ?? 0)) return invalidHostResponse();
+		return withSecurityHeaders(await handler(request, server));
+	};
+}
+
+/**
+ * The largest legitimate request body today: an issue spec submitted with a
+ * full research contract, every bounded field (objective, acceptance,
+ * boundaries, evidence, research questions and receipts) at its maximum
+ * length from `SPEC_V2_LIMITS` and `EVIDENCE_LIMITS`. In characters this
+ * totals well under 64 KiB; `MAX_REQUEST_BODY_BYTES` below keeps well over an
+ * order of magnitude of margin above that for UTF-8 multi-byte characters,
+ * JSON structure and the few request fields those limits don't bound.
+ */
+const MAX_LEGITIMATE_SPEC_BYTES = SPEC_V2_LIMITS.objective
+	+ SPEC_V2_LIMITS.acceptance * SPEC_V2_LIMITS.maxAcceptance
+	+ SPEC_V2_LIMITS.boundary * SPEC_V2_LIMITS.maxBoundaries
+	+ EVIDENCE_LIMITS.maxItems * (EVIDENCE_LIMITS.command + EVIDENCE_LIMITS.output)
+	+ SPEC_V2_LIMITS.researchQuestion * SPEC_V2_LIMITS.maxResearchQuestions
+	+ SPEC_V2_LIMITS.maxResearchReceipts * (
+		SPEC_V2_LIMITS.researchUrl + SPEC_V2_LIMITS.researchHash
+		+ SPEC_V2_LIMITS.researchClaim + SPEC_V2_LIMITS.researchApplicability
+	);
+
+/** Bun's own default is 128 MiB, unbounded for a loopback-only service. */
+export const MAX_REQUEST_BODY_BYTES = Math.max(1024 * 1024, MAX_LEGITIMATE_SPEC_BYTES * 8);
+
+/**
  * Derive the idle backlog from the runtime source ref, the same ref a new run
  * is admitted against: an issue a merge already shipped stops being plannable
  * here even while the local `main` is deliberately behind.
@@ -2990,33 +3103,34 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 	const server = Bun.serve({
 		hostname: resolveBindHostname(),
 		port: options.port,
+		maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
 		routes: {
 			// The canonical tree is URL-selected by project. Legacy paths only
 			// redirect, so there is one navigable location for every surface.
-			'/': redirect('/overview'),
-			'/overview': () => serveWebAsset(assets.indexHtml),
-			'/overview/runs': () => serveWebAsset(assets.indexHtml),
-			'/overview/queues': () => serveWebAsset(assets.indexHtml),
-			'/overview/insights': () => serveWebAsset(assets.indexHtml),
-			'/projects': () => serveWebAsset(assets.indexHtml),
-			'/runs': redirect(`${projectPath}/runs`),
-			'/work': redirect(`${projectPath}/work`),
-			'/settings': () => serveWebAsset(assets.indexHtml),
-			'/projects/:projectId': () => serveWebAsset(assets.indexHtml),
-			'/projects/:projectId/runs': () => serveWebAsset(assets.indexHtml),
-			'/projects/:projectId/runs/:runId': () => serveWebAsset(assets.indexHtml),
-			'/projects/:projectId/work': () => serveWebAsset(assets.indexHtml),
-			'/projects/:projectId/settings': () => serveWebAsset(assets.indexHtml),
-			'/app.js': () => serveWebAsset(assets.appJs),
-			'/app.css': () => serveWebAsset(assets.appCss),
-			'/favicon.svg': () => serveWebAsset(assets.favicon),
-			'/apple-touch-icon.png': () => serveWebAsset(assets.appleTouchIcon),
-			'/icon-192.png': () => serveWebAsset(assets.icon192),
-			'/icon-512.png': () => serveWebAsset(assets.icon512),
-			'/manifest.webmanifest': () => serveWebAsset(assets.manifest),
-			'/api/snapshot': readSnapshot,
-			'/api/project': () => Response.json({ project: inspectProject(projectRoot) }),
-			'/api/project/onboarding': (request) => {
+			'/': guard(redirect('/overview')),
+			'/overview': guard(() => serveWebAsset(assets.indexHtml)),
+			'/overview/runs': guard(() => serveWebAsset(assets.indexHtml)),
+			'/overview/queues': guard(() => serveWebAsset(assets.indexHtml)),
+			'/overview/insights': guard(() => serveWebAsset(assets.indexHtml)),
+			'/projects': guard(() => serveWebAsset(assets.indexHtml)),
+			'/runs': guard(redirect(`${projectPath}/runs`)),
+			'/work': guard(redirect(`${projectPath}/work`)),
+			'/settings': guard(() => serveWebAsset(assets.indexHtml)),
+			'/projects/:projectId': guard(() => serveWebAsset(assets.indexHtml)),
+			'/projects/:projectId/runs': guard(() => serveWebAsset(assets.indexHtml)),
+			'/projects/:projectId/runs/:runId': guard(() => serveWebAsset(assets.indexHtml)),
+			'/projects/:projectId/work': guard(() => serveWebAsset(assets.indexHtml)),
+			'/projects/:projectId/settings': guard(() => serveWebAsset(assets.indexHtml)),
+			'/app.js': guard(() => serveWebAsset(assets.appJs)),
+			'/app.css': guard(() => serveWebAsset(assets.appCss)),
+			'/favicon.svg': guard(() => serveWebAsset(assets.favicon)),
+			'/apple-touch-icon.png': guard(() => serveWebAsset(assets.appleTouchIcon)),
+			'/icon-192.png': guard(() => serveWebAsset(assets.icon192)),
+			'/icon-512.png': guard(() => serveWebAsset(assets.icon512)),
+			'/manifest.webmanifest': guard(() => serveWebAsset(assets.manifest)),
+			'/api/snapshot': guard(readSnapshot),
+			'/api/project': guard(() => Response.json({ project: inspectProject(projectRoot) })),
+			'/api/project/onboarding': guard((request) => {
 				const params = new URL(request.url).searchParams;
 				const operation = params.get('operation');
 				const target = params.get('target')?.trim() || undefined;
@@ -3024,9 +3138,9 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					return Response.json({ ok: false, code: 'invalid-operation', message: 'operation must be register, import, or create.' }, { status: 400 });
 				}
 				return Response.json(inspectProjectOnboarding(operation === 'register' || operation === null ? (target ?? projectRoot) : null, operation === 'import' || operation === 'create' ? target : undefined));
-			},
+			}),
 			// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: query validation keeps the public overview contract explicit
-			'/api/overview': (request) => {
+			'/api/overview': guard((request) => {
 				const params = new URL(request.url).searchParams;
 				const rawWindow = params.get('window') ?? '7d';
 				if (rawWindow !== '7d' && rawWindow !== '30d' && rawWindow !== 'all') {
@@ -3062,16 +3176,16 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					projectRegistry.list(projectRoot).filter((project) => filters.projectId === undefined || project.id === filters.projectId), undefined, undefined, rawWindow as OverviewWindow, new Date(), filters,
 					{ cohortLimit: parsePageNumber('cohortLimit'), cohortOffset: parsePageNumber('cohortOffset'), cohortSortBy: cohortSortBy as HistoricalOverviewFilters['cohortSortBy'], cohortSortDirection: cohortSortDirection as HistoricalOverviewFilters['cohortSortDirection'] },
 				));
-			},
-			'/api/overview/queues': () => {
+			}),
+			'/api/overview/queues': guard(() => {
 				const contexts = new Map(
 					projectRuntimes.listQueueContexts()
 						.filter((entry): entry is { project: RegisteredProject; context: ProjectCycleContext } => entry.project.readiness === 'ready' && entry.context !== undefined)
 						.map((entry) => [entry.project.id, entry.context.runtime]),
 				);
 				return Response.json(readQueueOverview(projectRegistry.list(projectRoot), undefined, contexts));
-			},
-			'/api/overview/runs': (request) => {
+			}),
+			'/api/overview/runs': guard((request) => {
 				try {
 					return Response.json(readRunOverview(
 						projectRegistry.list(projectRoot),
@@ -3084,23 +3198,23 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						message: error instanceof Error ? error.message : 'Invalid query.',
 					}, { status: 400 });
 				}
-			},
+			}),
 			'/api/projects': {
-				GET: () => Response.json({ projects: projectRegistry.list(projectRoot) }),
-				POST: (request) => registerProjectFromOperator(request, projectRegistry, projectRoot),
+				GET: guard(() => Response.json({ projects: projectRegistry.list(projectRoot) })),
+				POST: guard((request) => registerProjectFromOperator(request, projectRegistry, projectRoot)),
 			},
 			'/api/projects/import': {
-				POST: (request, requestServer) => importProjectFromOperator(
+				POST: guard((request, requestServer) => importProjectFromOperator(
 					request,
 					projectRegistry,
 					projectRoot,
 					gateshipHome,
 					options.projectImportClone,
 					requestServer,
-				),
+				)),
 			},
 			'/api/projects/create': {
-				POST: (request, requestServer) => createProjectFromOperator(
+				POST: guard((request, requestServer) => createProjectFromOperator(
 					request,
 					projectRegistry,
 					projectRoot,
@@ -3108,29 +3222,29 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					options.projectCreateCommand,
 					options.projectCreateEnsureIdentity,
 					requestServer,
-				),
+				)),
 			},
 			'/api/projects/:projectId': {
-				DELETE: (request) => unregisterProjectFromOperator(
+				DELETE: guard((request) => unregisterProjectFromOperator(
 					request,
 					request.params.projectId,
 					projectRegistry,
 					projectRoot,
-				),
+				)),
 			},
 			// Product-wide agent defaults live only in projects.sqlite. Unlike the
 			// project routes below, this must not materialize or consult a runtime.
 			'/api/agent-defaults': {
-				GET: () => Response.json({ defaults: projectRegistry.getAgentDefaults() }),
-				PUT: (request) => writeAgentDefaults(
+				GET: guard(() => Response.json({ defaults: projectRegistry.getAgentDefaults() })),
+				PUT: guard((request) => writeAgentDefaults(
 					request,
 					projectRegistry,
 					providerAuth,
 					modelProber,
 					projectRoot,
-				),
+				)),
 			},
-			'/api/projects/:projectId/status': (request) => {
+			'/api/projects/:projectId/status': guard((request) => {
 				const project = projectRegistry.get(request.params.projectId, projectRoot);
 				if (project === null) {
 					return Response.json(
@@ -3139,20 +3253,20 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 					);
 				}
 				return Response.json(readProjectOperationalStatus(project));
-			},
+			}),
 			'/api/projects/:projectId/cohort-regression-proposal': {
-				POST: (request) => projectOperation(request.params.projectId, async () => {
+				POST: guard((request) => projectOperation(request.params.projectId, async () => {
 					const proposalInput = parseCohortRegressionProposalInput(await request.json());
 					const overview = readProjectHistoricalOverview(projectRegistry.get(request.params.projectId, projectRoot)!, 'all', new Date(), readPersistedRunHistory, undefined, null).overview;
 					return cohortRegressionProposalResponse(overview, proposalInput);
-				}),
+				})),
 			},
-			'/api/projects/:projectId/providers': (request) => projectOperation(
+			'/api/projects/:projectId/providers': guard((request) => projectOperation(
 				request.params.projectId,
 				(context) => listProviders(providerAuth, context.runtime, bootClaudeEnv),
-			),
+			)),
 			'/api/projects/:projectId/providers/:providerId/select': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => selectProvider(
 						request,
@@ -3160,113 +3274,113 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						providerAuth,
 						context.runtime,
 					),
-				),
-				DELETE: (request) => projectOperation(
+				)),
+				DELETE: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => clearSelectedProvider(request, context.runtime),
-				),
+				)),
 			},
 			'/api/projects/:projectId/model-settings': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => Response.json({
 						settings: context.runtime.getModelSettings(),
 						source: context.runtime.getModelSettingsSource(),
 					}),
-				),
-				PUT: (request) => projectOperation(
+				)),
+				PUT: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => writeModelSettings(request, context.runtime, modelProber, context.root),
-				),
-				DELETE: (request) => projectOperation(
+				)),
+				DELETE: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => clearModelSettings(request, context.runtime),
-				),
+				)),
 			},
 			'/api/projects/:projectId/chain-runs': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => Response.json(chainRunsSnapshot(context.runtime)),
-				),
-				PUT: (request) => projectOperation(
+				)),
+				PUT: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => writeChainRuns(request, context.runtime),
-				),
+				)),
 			},
 			'/api/projects/:projectId/executor-handoff': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => Response.json(executorHandoffSnapshot(context.runtime)),
-				),
-				PUT: (request) => projectOperation(
+				)),
+				PUT: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => writeExecutorHandoff(request, context.runtime),
-				),
+				)),
 			},
 			// Agent-facing lifecycle routes are project-explicit. The registry
 			// guard runs before the current runtime or any of its collaborators.
-			'/api/projects/:projectId/snapshot': (request) => projectOperation(
+			'/api/projects/:projectId/snapshot': guard((request) => projectOperation(
 				request.params.projectId,
 				readProjectSnapshot,
-			),
-			'/api/projects/:projectId/backlog': (request) => projectOperation(
+			)),
+			'/api/projects/:projectId/backlog': guard((request) => projectOperation(
 				request.params.projectId,
 				(context) => Response.json(readIdleSnapshotState(context.root)),
-			),
+			)),
 			'/api/projects/:projectId/runs': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => Response.json({ runs: listRunsWithInsights(context.runtime) }),
-				),
-				POST: (request) => projectOperation(
+				)),
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => startDurableRun(
 						request,
 						context.runtime,
 						() => { projectRuntimes.admitStart(request.params.projectId); },
 					),
-				),
+				)),
 			},
 			'/api/projects/:projectId/brief': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => Response.json({ brief: context.projectBrief.get() }),
-				),
-				PUT: (request) => projectOperation(
+				)),
+				PUT: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => writeProjectBrief(request, context.projectBrief),
-				),
+				)),
 			},
 			'/api/projects/:projectId/issues': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => listPublishedIssues(context.root),
-				),
-				POST: (request) => projectOperation(
+				)),
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => createIssueFromOperator(request, context.issueIntake),
-				),
+				)),
 			},
 			'/api/projects/:projectId/issues/dependencies': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => setDependenciesFromOperator(request, request.params.projectId, context.runtime, context.setDependencies),
-				),
+				)),
 			},
 			'/api/projects/:projectId/issues/create-approved': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => createApprovedIssueFromOperator(request, context.issueIntake),
-				),
+				)),
 			},
 			'/api/projects/:projectId/issues/:issueId': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => readPublishedIssueResponse(context.issueReader, request.params.issueId, context.root),
-				),
+				)),
 			},
 			'/api/projects/:projectId/issues/:issueId/spec': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => specifyIssueFromOperator(
 						request,
@@ -3274,10 +3388,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						context.runtime,
 						context.issueSpecifier,
 					),
-				),
+				)),
 			},
 			'/api/projects/:projectId/issues/:issueId/approve': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => approveIssueFromOperator(
 						request,
@@ -3286,10 +3400,10 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						context.approveIssue,
 						context.issueReader,
 					),
-				),
+				)),
 			},
 			'/api/projects/:projectId/issues/:issueId/abandon': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => abandonIssueFromOperator(
 						request,
@@ -3297,31 +3411,31 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						context.runtime,
 						context.issueAbandoner,
 					),
-				),
+				)),
 			},
 			'/api/projects/:projectId/proposals': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => Response.json({ proposals: context.runtime.listPendingProposals() }),
-				),
+				)),
 			},
 			'/api/projects/:projectId/proposals/resolved': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => {
 						const { proposals, omittedCount } = context.runtime.listResolvedProposals();
 						return Response.json({ proposals, omittedCount });
 					},
-				),
+				)),
 			},
 			'/api/projects/:projectId/proposals/:proposalId/dismiss': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => dismissProposalFromOperator(request, context.runtime, request.params.proposalId),
-				),
+				)),
 			},
 			'/api/projects/:projectId/proposals/:proposalId/promote': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => promoteProposalFromOperator(
 						request,
@@ -3329,34 +3443,34 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						request.params.proposalId,
 						context.issueIntake,
 					),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/cancel': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => cancelDurableRun(request, context.runtime, request.params.runId),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => readRun(context.runtime, request.params.runId),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/abandon': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => abandonDurableRun(request, context.runtime, request.params.runId),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/events': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => readRunEvents(context.runtime, request.params.runId, request),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/resume': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => resumeDurableRun(
 						request,
@@ -3364,73 +3478,73 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						request.params.runId,
 						() => { projectRuntimes.admitResume(request.params.projectId, request.params.runId); },
 					),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/retry-verification': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => retryVerificationDurableRun(request, context.runtime, request.params.runId,
 						() => { projectRuntimes.admitResume(request.params.projectId, request.params.runId); }),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/retry-cycle-question': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => retryCycleQuestionDurableRun(request, context.runtime, request.params.runId,
 						() => { projectRuntimes.admitResume(request.params.projectId, request.params.runId); }),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/ship': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => shipDurableRun(request, context.runtime, request.params.runId),
-				),
+				)),
 			},
 			'/api/projects/:projectId/runs/:runId/reconcile-ci': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => reconcileRunCi(context.runtime, request.params.runId),
-				),
+				)),
 			},
 			// The browser's subscription for a selected project (GSHIP-707). The
 			// registry guard runs first, so an unknown or not-ready project gets
 			// the same typed refusal as every other scoped route and no stream is
 			// opened at all; a stream that does open is bound to that project's
 			// own RunRuntime and unsubscribes from it when the connection closes.
-			'/api/projects/:projectId/events': (request, requestServer) => projectOperation(
+			'/api/projects/:projectId/events': guard((request, requestServer) => projectOperation(
 				request.params.projectId,
 				(context) => createRunEventStream(context.runtime, request, requestServer),
-			),
+			)),
 			'/api/projects/:projectId/diagnostics': {
-				GET: (request) => projectOperation(
+				GET: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => Response.json(context.diagnostics.snapshot()),
-				),
-				POST: (request) => projectOperation(
+				)),
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => startDiagnosticFromOperator(request, context.diagnostics),
-				),
+				)),
 			},
 			'/api/projects/:projectId/diagnostics/schedule': {
-				PUT: (request) => projectOperation(
+				PUT: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => writeDiagnosticSchedule(request, context.diagnostics),
-				),
+				)),
 			},
 			'/api/projects/:projectId/diagnostics/:scanId/cancel': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => cancelDiagnosticFromOperator(request, context.diagnostics, request.params.scanId),
-				),
+				)),
 			},
 			'/api/projects/:projectId/diagnostic-findings/:findingId/dismiss': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => dismissDiagnosticFindingFromOperator(request, context.diagnostics, request.params.findingId),
-				),
+				)),
 			},
 			'/api/projects/:projectId/diagnostic-findings/:findingId/promote': {
-				POST: (request) => projectOperation(
+				POST: guard((request) => projectOperation(
 					request.params.projectId,
 					(context) => promoteDiagnosticFindingFromOperator(
 						request,
@@ -3438,55 +3552,55 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 						request.params.findingId,
 						context.issueIntake,
 					),
-				),
+				)),
 			},
-			'/api/backlog': () => Response.json(readIdleSnapshotState(projectRoot)),
+			'/api/backlog': guard(() => Response.json(readIdleSnapshotState(projectRoot))),
 			'/api/update': {
-				GET: () => readSelfUpdate(selfUpdate),
-				PUT: (request) => updateSelfUpdate(request, selfUpdate),
+				GET: guard(() => readSelfUpdate(selfUpdate)),
+				PUT: guard((request) => updateSelfUpdate(request, selfUpdate)),
 			},
 			'/api/operator-profile': {
-				GET: () => Response.json({ profile: projectRegistry.getOperatorProfile() }),
-				PUT: (request) => writeOperatorProfile(request, projectRegistry),
+				GET: guard(() => Response.json({ profile: projectRegistry.getOperatorProfile() })),
+				PUT: guard((request) => writeOperatorProfile(request, projectRegistry)),
 			},
 			'/api/diagnostics': {
-				GET: () => Response.json(diagnostics.snapshot()),
-				POST: (request) => startDiagnosticFromOperator(request, diagnostics),
+				GET: guard(() => Response.json(diagnostics.snapshot())),
+				POST: guard((request) => startDiagnosticFromOperator(request, diagnostics)),
 			},
 			'/api/diagnostics/schedule': {
-				PUT: (request) => writeDiagnosticSchedule(request, diagnostics),
+				PUT: guard((request) => writeDiagnosticSchedule(request, diagnostics)),
 			},
 			'/api/diagnostics/:scanId/cancel': {
-				POST: (request) => cancelDiagnosticFromOperator(
+				POST: guard((request) => cancelDiagnosticFromOperator(
 					request,
 					diagnostics,
 					request.params.scanId,
-				),
+				)),
 			},
 			'/api/diagnostic-findings/:findingId/dismiss': {
-				POST: (request) => dismissDiagnosticFindingFromOperator(
+				POST: guard((request) => dismissDiagnosticFindingFromOperator(
 					request,
 					diagnostics,
 					request.params.findingId,
-				),
+				)),
 			},
 			'/api/diagnostic-findings/:findingId/promote': {
-				POST: (request) => promoteDiagnosticFindingFromOperator(
+				POST: guard((request) => promoteDiagnosticFindingFromOperator(
 					request,
 					diagnostics,
 					request.params.findingId,
 					issueIntake,
-				),
+				)),
 			},
 			'/api/runs': {
-				GET: () => Response.json({ runs: listRunsWithInsights(runRuntime) }),
-				POST: (request) => startDurableRun(
+				GET: guard(() => Response.json({ runs: listRunsWithInsights(runRuntime) })),
+				POST: guard((request) => startDurableRun(
 					request,
 					runRuntime,
 					() => { projectRuntimes.admitStart(currentProject.id); },
-				),
+				)),
 			},
-			'/api/providers': () => listProviders(providerAuth, runRuntime, bootClaudeEnv),
+			'/api/providers': guard(() => listProviders(providerAuth, runRuntime, bootClaudeEnv)),
 			// The read stays unguarded like every other GET: a same-origin browser
 			// read sends no Origin header, and the bind address is the read
 			// boundary -- WEB_HOSTNAME (127.0.0.1) by default. GATESHIP_BIND_HOST
@@ -3497,33 +3611,33 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// A route published on any other interface is unauthenticated.
 			//
 			'/api/brief': {
-				GET: () => Response.json({ brief: projectBrief.get() }),
-				PUT: (request) => writeProjectBrief(request, projectBrief),
+				GET: guard(() => Response.json({ brief: projectBrief.get() })),
+				PUT: guard((request) => writeProjectBrief(request, projectBrief)),
 			},
 			// The per-role model and effort choice. The read is unguarded like every
 			// other GET; the write is same-origin, and an empty slot means the CLI
 			// default keeps deciding.
 			'/api/model-settings': {
-				GET: () => Response.json({
+				GET: guard(() => Response.json({
 					settings: runRuntime.getModelSettings(), source: runRuntime.getModelSettingsSource(),
-				}),
-				PUT: (request) => writeModelSettings(request, runRuntime, modelProber, projectRoot),
-				DELETE: (request) => clearModelSettings(request, runRuntime),
+				})),
+				PUT: guard((request) => writeModelSettings(request, runRuntime, modelProber, projectRoot)),
+				DELETE: guard((request) => clearModelSettings(request, runRuntime)),
 			},
 			// The chain switch (GSHIP-638), stored beside the provider and the model
 			// slots. The read is unguarded like every other GET; the write is
 			// same-origin, and it starts nothing itself -- it only flips the switch
 			// the next terminal transition reads.
 			'/api/chain-runs': {
-				GET: () => Response.json(chainRunsSnapshot(runRuntime)),
-				PUT: (request) => writeChainRuns(request, runRuntime),
+				GET: guard(() => Response.json(chainRunsSnapshot(runRuntime))),
+				PUT: guard((request) => writeChainRuns(request, runRuntime)),
 			},
 			// The executor handoff opt-in (GSHIP-722), stored beside the chain
 			// switch: off by default, and it only flips the gate the run's own
 			// executor router reads on its next qualifying failure.
 			'/api/executor-handoff': {
-				GET: () => Response.json(executorHandoffSnapshot(runRuntime)),
-				PUT: (request) => writeExecutorHandoff(request, runRuntime),
+				GET: guard(() => Response.json(executorHandoffSnapshot(runRuntime))),
+				PUT: guard((request) => writeExecutorHandoff(request, runRuntime)),
 			},
 			// The remote notification channels (GSHIP-652, GSHIP-653): the read is
 			// unguarded like every other GET and returns a boolean plus any named
@@ -3532,132 +3646,150 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			// reads. Resend's dedicated same-origin routes accept a write-only key
 			// and non-secret sender/recipient settings without involving SQLite.
 			'/api/notifications': {
-				GET: () => Response.json({ channels: notificationChannelsSnapshot(projectRoot, globalNotificationStateDir, stateDir) }),
+				GET: guard(() => Response.json({ channels: notificationChannelsSnapshot(projectRoot, globalNotificationStateDir, stateDir) })),
 			},
 			'/api/notifications/resend': {
-				PUT: (request) => writeResendConfiguration(request, projectRoot, globalNotificationStateDir, stateDir),
+				PUT: guard((request) => writeResendConfiguration(request, projectRoot, globalNotificationStateDir, stateDir)),
 			},
 			'/api/notifications/resend/credential': {
-				DELETE: (request) => removeResendCredential(request, projectRoot, globalNotificationStateDir, stateDir),
+				DELETE: guard((request) => removeResendCredential(request, projectRoot, globalNotificationStateDir, stateDir)),
 			},
 			'/api/notifications/:channelId/test': {
-				POST: (request) => sendNotificationChannelTest(
+				POST: guard((request) => sendNotificationChannelTest(
 					request,
 					projectRoot,
 					globalNotificationStateDir,
 					stateDir,
 					request.params.channelId,
-				),
+				)),
 			},
 			'/api/providers/:providerId/select': {
-				POST: (request) => selectProvider(
+				POST: guard((request) => selectProvider(
 					request,
 					request.params.providerId,
 					providerAuth,
 					runRuntime,
-				),
-				DELETE: (request) => clearSelectedProvider(request, runRuntime),
+				)),
+				DELETE: guard((request) => clearSelectedProvider(request, runRuntime)),
 			},
 			'/api/providers/codex/login': {
-				POST: (request) => startCodexLogin(request, providerAuth),
+				POST: guard((request) => startCodexLogin(request, providerAuth)),
 			},
 			// Connect, reconnect and rotate the dedicated Claude credential
 			// (GSHIP-704) all share this write-only PUT; DELETE is the explicit
 			// disconnect. Both are same-origin like every other mutating route.
 			'/api/providers/claude/credential': {
-				PUT: (request, requestServer) =>
-					connectClaudeCredential(request, providerAuth, gateshipHome, bootClaudeEnv, requestServer),
-				DELETE: (request) => disconnectClaudeCredential(request, gateshipHome, bootClaudeEnv),
+				PUT: guard((request, requestServer) =>
+					connectClaudeCredential(request, providerAuth, gateshipHome, bootClaudeEnv, requestServer)),
+				DELETE: guard((request) => disconnectClaudeCredential(request, gateshipHome, bootClaudeEnv)),
 			},
 			'/api/issues': {
-				GET: () => listPublishedIssues(projectRoot),
-				POST: (request) => createIssueFromOperator(request, issueIntake),
+				GET: guard(() => listPublishedIssues(projectRoot)),
+				POST: guard((request) => createIssueFromOperator(request, issueIntake)),
 			},
 			'/api/issues/create-approved': {
-				POST: (request) => createApprovedIssueFromOperator(request, issueIntake),
+				POST: guard((request) => createApprovedIssueFromOperator(request, issueIntake)),
 			},
 			'/api/issues/:issueId': {
-				GET: (request) => readPublishedIssueResponse(issueReader, request.params.issueId),
+				GET: guard((request) => readPublishedIssueResponse(issueReader, request.params.issueId)),
 			},
 			'/api/issues/:issueId/spec': {
-				POST: (request) => specifyIssueFromOperator(
+				POST: guard((request) => specifyIssueFromOperator(
 					request,
 					request.params.issueId,
 					runRuntime,
 					issueSpecifier,
-				),
+				)),
 			},
 			'/api/issues/:issueId/approve': {
-				POST: (request) => approveIssueFromOperator(
+				POST: guard((request) => approveIssueFromOperator(
 					request,
 					request.params.issueId,
 					runRuntime,
 					bootContext.approveIssue,
 					issueReader,
-				),
+				)),
 			},
 			'/api/issues/:issueId/abandon': {
-				POST: (request) => abandonIssueFromOperator(
+				POST: guard((request) => abandonIssueFromOperator(
 					request,
 					request.params.issueId,
 					runRuntime,
 					issueAbandoner,
-				),
+				)),
 			},
 			// The inbox is the pending proposals alone: a settled one stays durable
 			// in the store and leaves the list the operator is deciding on.
 			'/api/proposals': {
-				GET: () => Response.json({ proposals: runRuntime.listPendingProposals() }),
+				GET: guard(() => Response.json({ proposals: runRuntime.listPendingProposals() })),
 			},
 			// Read-only history of settled proposals, distinct from the pending
 			// inbox above: a dismissed one and a promoted one, the latter carrying
 			// the issue it became (GSHIP-643).
 			'/api/proposals/resolved': {
-				GET: () => {
+				GET: guard(() => {
 					const { proposals, omittedCount } = runRuntime.listResolvedProposals();
 					return Response.json({ proposals, omittedCount });
-				},
+				}),
 			},
 			'/api/proposals/:proposalId/dismiss': {
-				POST: (request) => dismissProposalFromOperator(
+				POST: guard((request) => dismissProposalFromOperator(
 					request,
 					runRuntime,
 					request.params.proposalId,
-				),
+				)),
 			},
 			'/api/proposals/:proposalId/promote': {
-				POST: (request) => promoteProposalFromOperator(
+				POST: guard((request) => promoteProposalFromOperator(
 					request,
 					runRuntime,
 					request.params.proposalId,
 					issueIntake,
-				),
+				)),
 			},
 			'/api/runs/:runId/cancel': {
-				POST: (request) => cancelDurableRun(request, runRuntime, request.params.runId),
+				POST: guard((request) => cancelDurableRun(request, runRuntime, request.params.runId)),
 			},
 			'/api/runs/:runId': {
-				GET: (request) => readRun(runRuntime, request.params.runId),
+				GET: guard((request) => readRun(runRuntime, request.params.runId)),
 			},
 			'/api/runs/:runId/abandon': {
-				POST: (request) => abandonDurableRun(request, runRuntime, request.params.runId),
+				POST: guard((request) => abandonDurableRun(request, runRuntime, request.params.runId)),
 			},
 			'/api/runs/:runId/events': {
-				GET: (request) => readRunEvents(runRuntime, request.params.runId, request),
+				GET: guard((request) => readRunEvents(runRuntime, request.params.runId, request)),
 			},
 			'/api/runs/:runId/resume': {
-				POST: (request) => resumeDurableRun(
+				POST: guard((request) => resumeDurableRun(
 					request,
 					runRuntime,
 					request.params.runId,
 					() => { projectRuntimes.admitResume(currentProject.id, request.params.runId); },
-				),
+				)),
 			},
 			'/api/runs/:runId/ship': {
-				POST: (request) => shipDurableRun(request, runRuntime, request.params.runId),
+				POST: guard((request) => shipDurableRun(request, runRuntime, request.params.runId)),
 			},
-			'/api/events': (request, requestServer) =>
-				createRunEventStream(runRuntime, request, requestServer),
+			'/api/events': guard((request, requestServer) =>
+				createRunEventStream(runRuntime, request, requestServer)),
+		},
+		// `routes` only dispatches paths and methods it declares; every other
+		// path, and every undeclared method on a declared path, falls through to
+		// here instead of leaving Bun's own unguarded default response. The Host
+		// guard and security headers apply here exactly like they do inside
+		// `guard` above, so nothing this service answers skips either one.
+		fetch(request, requestServer) {
+			if (!isTrustedServiceHost(request, requestServer.port ?? 0)) return invalidHostResponse();
+			return withSecurityHeaders(new Response(null, { status: 404 }));
+		},
+		// A route handler that throws reaches here instead of Bun's own
+		// development error page, which would otherwise skip the security
+		// headers and could echo the thrown error's detail back to the browser.
+		error() {
+			return withSecurityHeaders(Response.json(
+				{ ok: false, code: 'internal-error', message: 'Internal Server Error.' },
+				{ status: 500 },
+			));
 		},
 	});
 
