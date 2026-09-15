@@ -14,7 +14,7 @@ import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts'
 import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
 import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { GitIssueVerifier } from '../../src/runtime/git-runtime.ts';
-import { RunRuntime } from '../../src/runtime/run-runtime.ts';
+import { DEFAULT_RECOVERY_POLICY, RunRuntime } from '../../src/runtime/run-runtime.ts';
 import { RunStore } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
@@ -54,6 +54,9 @@ describe('web composition of the independent reviewer', () => {
 			expect(options.reviewer).toBeInstanceOf(AgentReviewerRouter);
 			expect(options.cycleQuestionResolver).toBeInstanceOf(AgentCycleQuestionResolver);
 			expect(options.workflowRevision).toBe('revision-production');
+			// GSHIP-864: the activated policy reaches every run this composition
+			// creates from here on; runs already in flight keep their own snapshot.
+			expect(options.recoveryPolicy).toEqual(DEFAULT_RECOVERY_POLICY);
 		} finally {
 			options.store.close();
 		}

@@ -37,6 +37,7 @@ import {
 	type PullRequestDelivery,
 	selectPullRequestDelivery,
 } from './pull-request-delivery.ts';
+import { recoveryConvergenceDiagnosis } from './recovery-convergence.ts';
 import { HttpResearcher, type ResearchBundle, type ResearchExcerpt, type Researcher, ResearchFailure, validateResearchBundle } from './research.ts';
 import { type RunRoundOrigins, selectRunRoundOrigins } from './round-origin.ts';
 import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
@@ -388,6 +389,18 @@ export class RecoveryBudgetExhaustedError extends Error {
 		this.name = 'RecoveryBudgetExhaustedError';
 	}
 }
+
+/**
+ * The operator-chosen initial policy for every newly created run (GSHIP-864):
+ * a provisional finite ceiling picked after an explicit question on 2026-09-14
+ * from the GSHIP-873 baseline (286 runs, p90 7 reviews, a 10-plus-finding tail
+ * confined to runtime/shipper state-machine work) -- not a statistically
+ * optimal number, and not recalibrated automatically. `createDefaultRunRuntimeOptions`
+ * (src/commands/web.ts) is the only production caller; a run already created
+ * keeps its own persisted policy (GSHIP-871's snapshot-per-run contract), so
+ * this default only ever reaches runs started after activation.
+ */
+export const DEFAULT_RECOVERY_POLICY: RecoveryPolicy = { version: 1, maxRecoveryDispatches: 10 };
 
 export type RuntimeExecutionResult =
 	/** `proposals` are ideas found outside the issue, never work done for it. */
@@ -1342,6 +1355,19 @@ export class RunRuntime {
 	resumeRun(runId: string, operatorGuidance?: string, source?: string, authorizationEvidence: 'explicit' | 'absent' | 'unknown' = 'unknown'): RunRecord {
 		const guidance = operatorGuidance?.trim();
 		const run = this.#resumableRun(runId, guidance);
+		// A resume from a recovery-limit stop -- waiting-user, or interrupted
+		// after cancelRun -- always carries a recovery-dispatch cause of its own
+		// (the guidance it requires, or a restored finding); with the budget
+		// still exactly as spent as when it stopped, launching would only
+		// reserve, fail and land back on waiting-user with a fresh alert
+		// (GSHIP-864). Refuse outright, before any event or notification,
+		// rather than loop silently: this delivery has no way to extend the
+		// budget, so the only real next step is ending the run.
+		if (this.#recoveryLimitUnresolved(run)) {
+			throw new RuntimeConflictError(
+				'recovery budget is exhausted; this run cannot resume within the approved budget -- cancel it with cancelRun, then abandonRun (a dirty worktree is preserved), and start a new run for the issue if needed',
+			);
+		}
 		if (guidance !== undefined && guidance.length > 0) {
 			this.#emit(run.id, 'run.operator-guidance', commandPayload({
 				text: guidance,
@@ -1350,6 +1376,8 @@ export class RunRuntime {
 		}
 		const recoveredCycle = this.#recoveredCycleAttempt(run);
 		const recoveredVerification = this.#unconsumedVerificationAttempt(run.id);
+		const recoveredReview = this.#unconsumedReviewAttempt(run);
+		const recoveredFullVerify = this.#unconsumedFullVerifyAttempt(run);
 		const recoveredCi = this.#unconsumedCiAttempt(run.id);
 		const recoveredMergeConflict = this.#unconsumedMergeConflictAttempt(run.id);
 		const recoveredReconciliation = this.#reconciliationGuidanceAttempt(run);
@@ -1357,6 +1385,8 @@ export class RunRuntime {
 			resume: true,
 			...(recoveredCycle ?? {}),
 			...(recoveredVerification ?? {}),
+			...(recoveredReview ?? {}),
+			...(recoveredFullVerify ?? {}),
 			...(recoveredCi ?? {}),
 			...(recoveredMergeConflict ?? {}),
 			...(recoveredReconciliation ?? {}),
@@ -2142,7 +2172,9 @@ export class RunRuntime {
 
 	/**
 	 * How a cycle pass that threw comes to rest: cancelled first, then a
-	 * provider hold that can still be retried, and only otherwise `failed`.
+	 * provider hold that can still be retried, then a spent recovery budget
+	 * (GSHIP-864) -- surfaced to the operator, never silently absorbed as an
+	 * ordinary technical failure -- and only otherwise `failed`.
 	 */
 	#settleDriveFailure(runId: string, signal: AbortSignal, error: unknown): void {
 		if (signal.aborted) {
@@ -2151,12 +2183,54 @@ export class RunRuntime {
 		}
 		if (this.#restForProviderFailure(runId, error)) return;
 		const current = this.#store.getRun(runId);
-		if (current !== null && canTransition(current.state, 'failed')) {
+		if (current === null) return;
+		if (error instanceof RecoveryBudgetExhaustedError && canTransition(current.state, 'waiting-user')) {
+			this.#settleRecoveryBudgetExhaustion(current, error);
+			return;
+		}
+		if (canTransition(current.state, 'failed')) {
 			const failedRun = this.#transition(runId, 'failed', 'run.failed', {
 				error: errorMessage(error),
 			}).run;
 			if (!(error instanceof RecoveryBudgetExhaustedError)) this.#releaseFinishedWorkspace(failedRun, false);
 		}
+	}
+
+	/**
+	 * A spent recovery budget is a technical exhaustion, distinct from both a
+	 * missing-authorization question and a diagnosed-stagnation escalation
+	 * (GSHIP-864): the run stops at `waiting-user` with a safe reason, the
+	 * operator's own next step, and a convergence diagnosis over the last
+	 * three corrective rounds so the operator can tell an unproductive loop
+	 * from a run that was still uncovering fresh evidence when the budget ran
+	 * out. This delivery has no budget-extension mechanism -- the spec forbids
+	 * recalibrating automatically, and none of this issue's approved acceptance
+	 * or boundaries introduces one -- so the only real next step is ending the
+	 * run: `resumeRun` refuses outright while the budget stays spent
+	 * (`#recoveryLimitUnresolved`), never a promise this delivery cannot keep.
+	 * The workspace is preserved exactly like the technical-failure case this
+	 * replaces; an invalid response or a resolver error are never routed here
+	 * -- both remain `failed`, never consent.
+	 */
+	#settleRecoveryBudgetExhaustion(run: RunRecord, error: RecoveryBudgetExhaustedError): void {
+		const convergence = recoveryConvergenceDiagnosis(this.#store.listRunDecisionEvents(run.id));
+		const maxRecoveryDispatches = run.recoveryPolicy?.maxRecoveryDispatches ?? 0;
+		const summary = `${run.issueId}: recovery budget exhausted after ${maxRecoveryDispatches} corrective dispatches. `
+			+ 'This run cannot make further automatic progress within the approved budget; cancel it with cancelRun, then abandonRun (a dirty worktree is preserved), and start a new run for the issue if needed.';
+		this.#transition(run.id, 'waiting-user', 'run.recovery-limit', {
+			summary,
+			// `payload.summary` duplicates the same safe reason and requested next
+			// step (GSHIP-864): the operator-notification path (needsOperatorNotification,
+			// remoteNotificationForRunEvent) reads a waiting-user event's own
+			// payload, never the run record, for the alert body.
+			payload: {
+				summary,
+				reason: 'recovery-budget-exhausted',
+				maxRecoveryDispatches,
+				detail: errorMessage(error),
+				convergence,
+			},
+		});
 	}
 
 	#recordMergeConflictRecoveryResult(runId: string): void {
@@ -2524,7 +2598,7 @@ export class RunRuntime {
 	): Promise<void> {
 		const prior = this.#store.listRunDecisionEvents(run.id)
 			.find((event) => event.kind === 'run.ci-fix-requested');
-		if (prior !== undefined) {
+		if (prior !== undefined && !this.#recoveryPolicyEnabled(run)) {
 			this.#transition(run.id, 'waiting-user', 'run.ci-fix-limit', {
 				summary: `Required check "${evidence.check.name}" failed after the CI correction.`,
 				payload: { evidence, previousEvidence: prior.payload['evidence'] },
@@ -2915,11 +2989,25 @@ export class RunRuntime {
 		if (executionInput.ciFeedback !== undefined
 			&& this.#hasWorkspaceChanges !== undefined
 			&& !this.#hasWorkspaceChanges(executionInput.cwd)) {
-			this.#transition(run.id, 'waiting-user', 'run.ci-fix-no-change', {
-				summary: 'The CI correction produced no change.',
-				payload: { evidence: this.#latestCiEvidence(run.id) },
+			if (!this.#recoveryPolicyEnabled(run)) {
+				this.#transition(run.id, 'waiting-user', 'run.ci-fix-no-change', {
+					summary: 'The CI correction produced no change.',
+					payload: { evidence: this.#latestCiEvidence(run.id) },
+				});
+				return false;
+			}
+			// An explicit policy debits the budget for another attempt at the same
+			// CI feedback instead of giving up on the first no-op round (GSHIP-864):
+			// repetition here signals the eventual recovery-limit diagnosis, not an
+			// automatic stop. A durable decision event -- never the legacy
+			// `run.ci-fix-no-change` stop, which is the terminal transition the
+			// no-policy branch above already owns -- so `recoveryConvergenceDiagnosis`
+			// sees every repeated no-op round, not just the one CI finding that
+			// started them.
+			this.#emit(run.id, 'run.ci-fix-no-change-retry', {
+				origin: 'ci', evidence: this.#latestCiEvidence(run.id),
 			});
-			return false;
+			return { resume: true, ciFeedback: executionInput.ciFeedback };
 		}
 		this.#transition(run.id, 'verify', 'run.work-completed', { summary: execution.summary });
 		this.#captureProposals(run, execution.proposals);
@@ -3036,6 +3124,45 @@ export class RunRuntime {
 		return run.recoveryPolicy != null;
 	}
 
+	/**
+	 * Whether this run's explicit recovery budget has no room left for another
+	 * dispatch (GSHIP-864), read fresh from the durable reservation events.
+	 * A run with no policy is never spent: legacy behavior has no budget to
+	 * exhaust. Never sufficient on its own to refuse a resume -- see
+	 * `#recoveryLimitUnresolved`, the check that actually gates `resumeRun`.
+	 */
+	#recoveryBudgetSpent(run: RunRecord): boolean {
+		const policy = run.recoveryPolicy;
+		if (policy == null) return false;
+		const reserved = new Set(this.#store.listRunDecisionEvents(run.id)
+			.filter((event) => event.kind === 'run.recovery-dispatch-reserved')
+			.map((event) => event.payload['dispatchId'])
+			.filter((id): id is string => typeof id === 'string'));
+		return reserved.size >= policy.maxRecoveryDispatches;
+	}
+
+	/**
+	 * Whether this run already stopped at a recovery-limit `waiting-user` and
+	 * nothing has changed since (GSHIP-864): the durable `run.recovery-limit`
+	 * event is still on record, and the budget it reported spent is -- there is
+	 * no extension mechanism in this delivery -- still exactly as spent. Gates
+	 * `resumeRun` for both `waiting-user` and `interrupted`: cancelling a
+	 * recovery-limit run (`cancelRun`, waiting-user -> interrupted) must not
+	 * reopen the same dead end through a plain resume, reserving a dispatch
+	 * that only fails again and lands back on `waiting-user` with a fresh
+	 * alert -- the very loop this check exists to prevent. A legitimate human
+	 * question at `waiting-user` with no `run.recovery-limit` on record is
+	 * never blocked here, even when the budget happens to be exactly spent:
+	 * that resume answers a real question, not a dead end, and if the next
+	 * dispatch it buys does exhaust the budget, that is its own single,
+	 * legitimate new transition to `run.recovery-limit`.
+	 */
+	#recoveryLimitUnresolved(run: RunRecord): boolean {
+		if (!this.#recoveryBudgetSpent(run)) return false;
+		return this.#store.listRunDecisionEvents(run.id)
+			.some((event) => event.kind === 'run.recovery-limit');
+	}
+
 	#hasRecoveryDispatchCause(run: RunRecord, attempt: RunAttempt): boolean {
 		return attempt.reviewFeedback !== undefined || attempt.verificationFeedback !== undefined
 			|| attempt.fullVerifyFeedback !== undefined || attempt.ciFeedback !== undefined
@@ -3060,7 +3187,7 @@ export class RunRuntime {
 	#newRecoveryDispatch(run: RunRecord, attempt: RunAttempt): { dispatchId: string } {
 		const dispatchId = attempt.recoveryDispatchId ?? this.#newRecoveryDispatchId();
 		const result = this.#store.reserveRecoveryDispatch(run.id, dispatchId, this.#now());
-		if (result === 'exhausted') throw new RecoveryBudgetExhaustedError(`recovery dispatch budget exhausted after ${run.recoveryPolicy?.maxRecoveryDispatches ?? 0} attempts; request an explicit budget extension through the authorized proposal flow`);
+		if (result === 'exhausted') throw new RecoveryBudgetExhaustedError(`recovery dispatch budget exhausted after ${run.recoveryPolicy?.maxRecoveryDispatches ?? 0} attempts; cancel the run and start a new one for the issue if needed`);
 		return { dispatchId };
 	}
 
@@ -3181,6 +3308,48 @@ export class RunRuntime {
 		}
 		const finding = events[requestIndex]?.payload['findings'];
 		return typeof finding === 'string' ? { verificationFeedback: finding } : null;
+	}
+
+	/**
+	 * Restore an unconsumed review correction after any resume (GSHIP-864),
+	 * only for a run with an explicit recovery policy: that is the only case
+	 * where review retries directly, so a budget exhaustion or a crash can
+	 * interrupt a round that reserved this correction but never reached
+	 * `run.work-completed` -- the operator's own resume must hand the
+	 * executor the same finding back, not a bare guidance string with no idea
+	 * what still needs fixing. A legacy run's own single automatic correction
+	 * (`#review`, `!recoveryPolicyEnabled`) can leave exactly the same kind of
+	 * unconsumed `run.review-fix-requested` behind a crash, but before this
+	 * delivery a legacy resume never restored it either -- the resumed round
+	 * ran with no reviewFeedback and no recovery-dispatch cause of its own, so
+	 * `#reserveRecoveryDispatch` never reserved a second dispatch for it.
+	 * Restoring the feedback here would give that resumed round a cause it
+	 * never had and reserve one anyway: "Runs legadas mantêm comportamento"
+	 * means the prior, unrecovered resume, not a new one.
+	 */
+	#unconsumedReviewAttempt(run: RunRecord): Pick<RunAttempt, 'reviewFeedback'> | null {
+		if (!this.#recoveryPolicyEnabled(run)) return null;
+		const events = this.#store.listRunDecisionEvents(run.id);
+		const requestIndex = events.findLastIndex((event) => event.kind === 'run.review-fix-requested');
+		if (requestIndex < 0 || events.slice(requestIndex + 1).some((event) => event.kind === 'run.work-completed')) {
+			return null;
+		}
+		const finding = events[requestIndex]?.payload['findings'];
+		if (typeof finding !== 'string') return null;
+		const reviewEvidence = this.#lastReviewEvidenceSummary(run.id);
+		return { reviewFeedback: reviewEvidence === undefined ? finding : `${finding}\n\n${reviewEvidence}` };
+	}
+
+	/** Restore an unconsumed full-verify correction after any resume (GSHIP-864), only with an explicit recovery policy; see `#unconsumedReviewAttempt`. */
+	#unconsumedFullVerifyAttempt(run: RunRecord): Pick<RunAttempt, 'fullVerifyFeedback'> | null {
+		if (!this.#recoveryPolicyEnabled(run)) return null;
+		const events = this.#store.listRunDecisionEvents(run.id);
+		const requestIndex = events.findLastIndex((event) => event.kind === 'run.full-verify-fix-requested');
+		if (requestIndex < 0 || events.slice(requestIndex + 1).some((event) => event.kind === 'run.work-completed')) {
+			return null;
+		}
+		const finding = events[requestIndex]?.payload['findings'];
+		return typeof finding === 'string' ? { fullVerifyFeedback: finding } : null;
 	}
 
 	#unconsumedMergeConflictAttempt(runId: string): Pick<RunAttempt, 'conflictFeedback'> | null {

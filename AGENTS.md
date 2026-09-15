@@ -27,8 +27,11 @@ are installed in the image and authenticated by the operator on first boot.
   verification and shipping.
 - The operator specification is the execution contract. Do not require planner
   and auditor convergence before work can start.
-- Keep review independent and read-only. Findings may trigger one bounded fix;
-  unresolved judgment returns to the operator.
+- Keep review independent and read-only. A run's explicit recovery budget
+  bounds automatic correction across execution, verification, review, full
+  verification and CI; once it is spent, or a decision needs a human, the run
+  stops at waiting-user with the reason and next step, never silent consent.
+  A run with no recovery policy keeps the legacy one-bounded-fix behavior.
 
 ## Agent and workspace lifecycle
 

@@ -58,15 +58,20 @@ pagination; queue dependencies with explicit execution order (GSHIP-875);
 automatic provider CLI updates through Renovate; and CI and release hardening
 (GSHIP-866, 877 to 880).
 
-The autonomy seam is partly delivered: verifiable contract and context in every
+The autonomy seam is mostly delivered: verifiable contract and context in every
 cycle (GSHIP-869), technical progress distinguished from repeated questions
 (GSHIP-870), a persisted shared recovery budget per run (GSHIP-871), recovery
 evaluation and human-attention provenance (GSHIP-873), retry bounded per
 failure after a correction (GSHIP-881, 882), final CI result recorded on merge
-with reconciliation of older runs (GSHIP-883), and same-run recovery of a
-confirmed merge conflict with fresh verification (GSHIP-884, PR #745). The
-activation of the policy before notifying the operator (GSHIP-864) and its
-post-activation validation (GSHIP-874) remain in the approved queue.
+with reconciliation of older runs (GSHIP-883), same-run recovery of a
+confirmed merge conflict with fresh verification (GSHIP-884, PR #745), and the
+activation of the recovery budget before notifying the operator (GSHIP-864):
+new runs get an explicit `maxRecoveryDispatches=10` policy covering executor,
+verification, review, full verification and repeated/no-diff CI corrections,
+exhaustion stops at waiting-user with a safe reason, next step and a
+convergence diagnosis over the last three corrective rounds instead of ending
+the run, and runs created before activation keep their own legacy behavior.
+Its post-activation validation (GSHIP-874) remains in the approved queue.
 
 Operational state on 2026-09-14: the Codex subscription is exhausted until
 2026-09-19. The gateship project runs on Claude Code with `claude-sonnet-5`
@@ -143,10 +148,10 @@ different roadmap stage requires its own authorization.
 The approved queue was drained on 2026-09-15: GSHIP-884, 888, 889, 890, 891
 and 872 shipped through PRs #745 to #750 under `chain-runs`, all on Claude
 Code. The chain is paused on `no-admissible-issue`. GSHIP-864 and GSHIP-874
-are specified but need re-approval: on 2026-09-14 both gained a convergence
-diagnosis (findings per round over the last rounds, and whether the last fix
-produced a new finding) at the recovery limit and in the post-activation
-report.
+are approved, both carrying the convergence diagnosis (findings per round over
+the last rounds, and whether the last fix produced a new finding) added on
+2026-09-14 at the recovery limit and in the post-activation report. GSHIP-874's
+own post-activation validation is next.
 
 Observed during the drain: the chain reconciler reads the operator's local
 checkout, which is deliberately behind `origin/main`, and returned `material`

@@ -68,10 +68,33 @@ function event(
 }
 
 describe('remoteNotificationForRunEvent', () => {
-	test('reports a real entry into waiting-user', () => {
+	test('reports a real entry into waiting-user, with the reason and the CLI/web response action', () => {
 		expect(remoteNotificationForRunEvent(
 			event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' }),
-		)).toEqual({ title: 'Gateship needs you', body: 'Escolha o seam.' });
+		)).toEqual({
+			title: 'Gateship needs you',
+			body: 'Escolha o seam.\n\nRespond with guidance through the CLI/web flow.',
+		});
+	});
+
+	test('titles the alert with the project and issue when both are known, omitting only the part that is absent', () => {
+		const waitingUser = event('waiting-user', 'run.waiting-user', { summary: 'Escolha o seam.' });
+		expect(remoteNotificationForRunEvent(waitingUser, { projectLabel: 'Acme', issueId: 'GSHIP-1' })?.title)
+			.toBe('Gateship: Acme / GSHIP-1');
+		expect(remoteNotificationForRunEvent(waitingUser, { projectLabel: 'Acme' })?.title).toBe('Gateship: Acme');
+		expect(remoteNotificationForRunEvent(waitingUser, { issueId: 'GSHIP-1' })?.title).toBe('Gateship: GSHIP-1');
+		expect(remoteNotificationForRunEvent(waitingUser, {})?.title).toBe('Gateship needs you');
+	});
+
+	test('a recovery-limit stop carries only its own reason, never a second, misleading resume action', () => {
+		expect(remoteNotificationForRunEvent(
+			event('waiting-user', 'run.recovery-limit', {
+				summary: 'GSHIP-756: recovery budget exhausted after 1 corrective dispatches. Cancel it with cancelRun, then abandonRun.',
+			}),
+		)).toEqual({
+			title: 'Gateship needs you',
+			body: 'GSHIP-756: recovery budget exhausted after 1 corrective dispatches. Cancel it with cancelRun, then abandonRun.',
+		});
 	});
 
 	test('does not alert on provider waits, recoverable failures, shipping, preserved workspaces, queue states, merges or repeated waiting-user', () => {
@@ -160,7 +183,7 @@ describe('createRemoteNotifier', () => {
 		expect(`${url.origin}${url.pathname}`).toBe(TOPIC_URL);
 		expect(url.searchParams.get('title')).toBe('Gateship needs you');
 		expect(call.init?.method).toBe('POST');
-		expect(call.init?.body).toBe('Escolha o seam.');
+		expect(call.init?.body).toBe('Escolha o seam.\n\nRespond with guidance through the CLI/web flow.');
 	});
 
 	test('a transition that does not need attention sends nothing', async () => {
@@ -254,8 +277,14 @@ describe('createRemoteNotifier', () => {
 			listBacklog: notifierBacklog,
 		});
 		const { fetchImpl, calls } = stubFetch();
-		runtimeA.subscribe(createRemoteNotifier({ cwd: projectA, stateDir: globalStateDir, legacyStateDir: legacyStateDirA, env: {}, fetchImpl }));
-		runtimeB.subscribe(createRemoteNotifier({ cwd: projectB, stateDir: globalStateDir, legacyStateDir: legacyStateDirB, env: {}, fetchImpl }));
+		runtimeA.subscribe(createRemoteNotifier({
+			cwd: projectA, stateDir: globalStateDir, legacyStateDir: legacyStateDirA, env: {}, fetchImpl,
+			projectLabel: 'Project A', issueIdForRun: (runId) => runtimeA.getRun(runId)?.issueId,
+		}));
+		runtimeB.subscribe(createRemoteNotifier({
+			cwd: projectB, stateDir: globalStateDir, legacyStateDir: legacyStateDirB, env: {}, fetchImpl,
+			projectLabel: 'Project B', issueIdForRun: (runId) => runtimeB.getRun(runId)?.issueId,
+		}));
 
 		try {
 			const runA = await runtimeA.startRun('GSHIP-735-A');
@@ -265,7 +294,16 @@ describe('createRemoteNotifier', () => {
 
 			expect(calls).toHaveLength(2);
 			expect(calls.map(({ url }) => `${new URL(url).origin}${new URL(url).pathname}`)).toEqual([globalTopic, globalTopic]);
-			expect(calls.map(({ init }) => init?.body)).toEqual(['Projeto A precisa de você.', 'Projeto B precisa de você.']);
+			// One global topic identifies neither run on its own; the title must
+			// name each alert's own project and issue (GSHIP-864).
+			expect(calls.map(({ url }) => new URL(url).searchParams.get('title'))).toEqual([
+				'Gateship: Project A / GSHIP-735-A',
+				'Gateship: Project B / GSHIP-735-B',
+			]);
+			expect(calls.map(({ init }) => init?.body)).toEqual([
+				'Projeto A precisa de você.\n\nRespond with guidance through the CLI/web flow.',
+				'Projeto B precisa de você.\n\nRespond with guidance through the CLI/web flow.',
+			]);
 			expect(calls.some(({ url }) => url.includes(legacyTopicA) || url.includes(legacyTopicB))).toBe(false);
 		} finally {
 			await runtimeA.stop();
@@ -578,7 +616,7 @@ describe('the Resend channel (GSHIP-653)', () => {
 			from: RESEND_FROM,
 			to: [RESEND_TO],
 			subject: 'Gateship needs you',
-			text: 'Escolha o seam.',
+			text: 'Escolha o seam.\n\nRespond with guidance through the CLI/web flow.',
 		});
 	});
 

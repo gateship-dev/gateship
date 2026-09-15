@@ -1577,7 +1577,9 @@ describe('durable run runtime', () => {
 			} },
 		});
 		const run = await runtime.startRun('GSHIP-884');
-		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		// GSHIP-864: exhaustion stops at waiting-user with the operator's next
+		// step, never the old failed terminal.
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 		// Round 1: no recovery-dispatch cause, runs free. Round 2: the failed
 		// verification is a cause, spends the one dispatch the policy allows.
 		// Round 3, the one the merge-conflict recovery would dispatch, has its
@@ -1585,6 +1587,8 @@ describe('durable run runtime', () => {
 		// budget instead of calling the executor again for free.
 		expect(executions).toBe(2);
 		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-reserved')).toHaveLength(1);
+		const limit = runtime.listRunEvents(run.id).findLast((event) => event.kind === 'run.recovery-limit');
+		expect(limit?.payload['reason']).toBe('recovery-budget-exhausted');
 		await runtime.stop(); runtime.close();
 	});
 
@@ -2219,7 +2223,7 @@ describe('durable run runtime', () => {
 		runtime.close();
 	});
 
-	test('preserves the workspace when recovery budget exhaustion is technical', async () => {
+	test('stops at waiting-user with a safe reason and a convergence diagnosis when the recovery budget is technically exhausted', async () => {
 		const releases: string[] = [];
 		let executions = 0;
 		const runtime = new RunRuntime({
@@ -2230,9 +2234,310 @@ describe('durable run runtime', () => {
 			verifier: { verify: async () => ({ ok: false, detail: 'retry' }) },
 		});
 		const run = await runtime.startRun('GSHIP-675');
-		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		// GSHIP-864: a spent budget is a technical exhaustion the operator still
+		// decides on, never the old failed terminal -- and never fabricated
+		// consent to continue.
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
 		expect(releases).toEqual([]);
 		expect(runtime.getRunEvaluation(run.id)?.recovery).toMatchObject({ reserved: 1 });
+		const limit = runtime.listRunEvents(run.id).findLast((event) => event.kind === 'run.recovery-limit');
+		expect(limit?.payload).toMatchObject({
+			reason: 'recovery-budget-exhausted',
+			maxRecoveryDispatches: 1,
+			convergence: { rounds: [{ origin: 'verification', finding: 'retry' }], lastRoundIsNewFinding: null },
+		});
+		expect(typeof limit?.payload['summary']).toBe('string');
+		expect(limit?.payload['summary']).not.toContain('/project');
+		// The delivery has no budget-extension mechanism, so the next step must
+		// never promise one -- only actions that actually exist.
+		expect(limit?.payload['summary']).not.toContain('proposal flow');
+		expect(limit?.payload['summary']).not.toContain('budget extension');
+		expect(limit?.payload['summary']).toContain('cancelRun');
+		expect(limit?.payload['summary']).toContain('abandonRun');
+		runtime.close();
+	});
+
+	test('GSHIP-864: a repeated no-diff CI correction under an explicit policy reports the stagnation in the convergence diagnosis', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-ci-no-change-convergence',
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 3 },
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => false,
+			shipper: { ship: async () => ({
+				outcome: 'ci-failed' as const,
+				evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+			}) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		const limit = runtime.listRunEvents(run.id).findLast((event) => event.kind === 'run.recovery-limit');
+		// Every no-op retry left its own `run.ci-fix-no-change-retry` marker, so
+		// the diagnosis reads the same repeated CI finding across the window
+		// instead of the single `run.ci-fix-requested` round that started it,
+		// and correctly reports no new finding.
+		expect(limit?.payload['convergence']).toEqual({
+			rounds: [
+				{ origin: 'ci', finding: 'ci/build' },
+				{ origin: 'ci', finding: 'ci/build' },
+				{ origin: 'ci', finding: 'ci/build' },
+			],
+			lastRoundIsNewFinding: false,
+		});
+		expect(runtime.listRunEvents(run.id)).not.toContainEqual(
+			expect.objectContaining({ kind: 'run.ci-fix-no-change' }),
+		);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('GSHIP-864: a legacy run with no recovery policy still stops immediately on the first no-diff CI correction', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-ci-no-change-legacy',
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => false,
+			shipper: { ship: async () => ({
+				outcome: 'ci-failed' as const,
+				evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+			}) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(runtime.listRunEvents(run.id).at(-1)?.kind).toBe('run.ci-fix-no-change');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('GSHIP-864: refuses to resume a run whose recovery budget is still exhausted, without a new transition or alert', async () => {
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-budget-exhausted-resume',
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 1 },
+			executor: { execute: async () => { executions += 1; if (executions > 1) throw new RecoveryBudgetExhaustedError('budget exhausted'); return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: false, detail: 'retry' }) },
+		});
+		const run = await runtime.startRun('GSHIP-675');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		const eventsBefore = runtime.listRunEvents(run.id).length;
+		// The budget is still exactly as spent as when the run stopped, so
+		// resuming -- even with guidance -- must fail immediately instead of
+		// reserving a dispatch, failing again and cycling back to waiting-user
+		// with a second alert for the same, unchanged reason.
+		expect(() => runtime.resumeRun(run.id, 'Approved: please continue.', 'web', 'explicit'))
+			.toThrow(/recovery budget is exhausted/);
+		expect(runtime.getRun(run.id)?.state).toBe('waiting-user');
+		expect(runtime.listRunEvents(run.id)).toHaveLength(eventsBefore);
+		runtime.close();
+	});
+
+	test('GSHIP-864: cancelling a recovery-limit run still refuses to resume it, but abandonRun ends it cleanly', async () => {
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-budget-exhausted-cancel',
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 1 },
+			executor: { execute: async () => { executions += 1; if (executions > 1) throw new RecoveryBudgetExhaustedError('budget exhausted'); return { outcome: 'completed' }; } },
+			verifier: { verify: async () => ({ ok: false, detail: 'retry' }) },
+		});
+		const run = await runtime.startRun('GSHIP-675');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		await runtime.cancelRun(run.id);
+		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
+		const eventsBefore = runtime.listRunEvents(run.id).length;
+		// cancelRun moves a recovery-limit run to interrupted, but the budget it
+		// reported spent is still exactly as spent: a plain resume must not
+		// reopen the same dead end, reserve a dispatch, fail again and land
+		// back on waiting-user with a fresh alert.
+		expect(() => runtime.resumeRun(run.id)).toThrow(/recovery budget is exhausted/);
+		expect(runtime.getRun(run.id)?.state).toBe('interrupted');
+		expect(runtime.listRunEvents(run.id)).toHaveLength(eventsBefore);
+		// Ending the run outright is the one real next step, and it still works.
+		const abandoned = runtime.abandonRun(run.id);
+		expect(abandoned.state).toBe('cancelled');
+		runtime.close();
+	});
+
+	test('GSHIP-864: a legitimate human question at waiting-user with an exactly spent budget still accepts a normal resume', async () => {
+		let reviews = 0;
+		let executions = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-question-budget-spent',
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 1 },
+			executor: {
+				execute: async () => {
+					executions += 1;
+					// The first call is free (round 1, no cause yet) and completes.
+					// The second call spends the run's only dispatch -- the one the
+					// review's own finding buys -- and asks a genuine question
+					// instead of completing, so the run reaches waiting-user through
+					// the cycle-question resolver's own escalation, never a spent
+					// budget: `run.cycle-question`/`run.cycle-response` are unconditional
+					// on the executor's own origin, regardless of the policy.
+					if (executions === 2) return { outcome: 'waiting-user' as const, summary: 'Escolha entre a abordagem A e B.' };
+					return { outcome: 'completed' as const };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			cycleQuestionResolver: {
+				resolve: async () => ({
+					outcome: 'operator' as const, reason: 'Escolha entre a abordagem A e B.',
+					diagnostic: { kind: 'human-decision', question: 'Escolha entre a abordagem A e B.', evidence: [] },
+					usage: { model: 'test-model', effort: 'medium' },
+				}),
+			},
+			reviewer: {
+				review: async () => { reviews += 1; return { verdict: 'findings' as const, detail: 'fix the first issue' }; },
+			},
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		expect(runtime.listRunEvents(run.id).at(-1)?.kind).toBe('run.cycle-response');
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-limit')).toHaveLength(0);
+		// A real human decision, not a spent-budget dead end: the normal
+		// CLI/web resume flow must accept the operator's answer instead of the
+		// refusal a genuine recovery-limit stop would get.
+		expect(() => runtime.resumeRun(run.id, 'Use approach A.', 'web', 'explicit')).not.toThrow();
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		// Whatever the next dispatch this answer buys does, the budget was
+		// already exactly spent before the resume -- so reaching it again ends
+		// in exactly one legitimate new transition to recovery-limit, not a
+		// refused resume and not a second, unrelated stop reason.
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-limit')).toHaveLength(1);
+		runtime.close();
+	});
+
+	test('GSHIP-864: a crash between a policy-driven review retry and its completion restores the same finding on resume', async () => {
+		let reviews = 0;
+		let executions = 0;
+		const executorFeedback: (string | undefined)[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-review-retry-crash',
+			// Plenty of budget: this test is about restoring the interrupted
+			// round's own finding, not about exhaustion.
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 5 },
+			executor: {
+				execute: async (input) => {
+					executions += 1;
+					executorFeedback.push(input.reviewFeedback);
+					if (executions === 2) {
+						// A confirmed exit, not merely a reservation, so the resumed
+						// dispatch reconciles as finished instead of refusing a
+						// duplicate spawn on an uncertain process.
+						input.onExecutorSpawn?.(101);
+						input.onExecutorExit?.(1);
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.');
+					}
+					return { outcome: 'completed' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async () => {
+					reviews += 1;
+					return reviews === 1 ? { verdict: 'findings' as const, detail: 'fix the missing null check' } : { verdict: 'clean' as const };
+				},
+			},
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		// Round 1 completes and reviews with a finding; the policy retries
+		// directly (no cycle question) and the second executor call -- the one
+		// that would resolve the finding -- throws a usage-limit failure before
+		// reaching `run.work-completed`, parking the run on `waiting-provider`
+		// with that correction still reserved and unconsumed.
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(executions).toBe(2);
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		// The resumed executor call must see the same review finding the
+		// interrupted round was correcting, not a bare resume with nothing to
+		// act on.
+		expect(executorFeedback[2]).toContain('fix the missing null check');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('GSHIP-864: a legacy run with no recovery policy does not restore review feedback or reserve a dispatch on resume', async () => {
+		let reviews = 0;
+		let executions = 0;
+		const executorFeedback: (string | undefined)[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-review-retry-legacy',
+			executor: {
+				execute: async (input) => {
+					executions += 1;
+					executorFeedback.push(input.reviewFeedback);
+					if (executions === 2) {
+						input.onExecutorSpawn?.(101);
+						input.onExecutorExit?.(1);
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.');
+					}
+					return { outcome: 'completed' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async () => {
+					reviews += 1;
+					return reviews === 1 ? { verdict: 'findings' as const, detail: 'fix the missing null check' } : { verdict: 'clean' as const };
+				},
+			},
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		// A legacy run's own single automatic correction retries review
+		// directly too, exactly like a policy-driven one; the second executor
+		// call still crashes before `run.work-completed`.
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(executions).toBe(2);
+		const reservedBefore = runtime.listRunEvents(run.id)
+			.filter((event) => event.kind === 'run.recovery-dispatch-reserved').length;
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		// No recovery policy means no restored feedback and no new dispatch:
+		// the resumed round runs exactly as it did before this delivery.
+		expect(executorFeedback[2]).toBeUndefined();
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-reserved'))
+			.toHaveLength(reservedBefore);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('GSHIP-864: a legacy run with no recovery policy does not restore full-verify feedback or reserve a dispatch on resume', async () => {
+		let fullVerifications = 0;
+		let executions = 0;
+		const executorFeedback: (string | undefined)[] = [];
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-full-verify-retry-legacy',
+			executor: {
+				execute: async (input) => {
+					executions += 1;
+					executorFeedback.push(input.fullVerifyFeedback);
+					if (executions === 2) {
+						input.onExecutorSpawn?.(101);
+						input.onExecutorExit?.(1);
+						throw new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.');
+					}
+					return { outcome: 'completed' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			fullVerifier: {
+				verify: async () => {
+					fullVerifications += 1;
+					return fullVerifications === 1 ? { ok: false, detail: 'lint failure' } : { ok: true };
+				},
+			},
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'waiting-provider');
+		expect(executions).toBe(2);
+		const reservedBefore = runtime.listRunEvents(run.id)
+			.filter((event) => event.kind === 'run.recovery-dispatch-reserved').length;
+		runtime.resumeRun(run.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(executorFeedback[2]).toBeUndefined();
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-reserved'))
+			.toHaveLength(reservedBefore);
+		await runtime.stop();
 		runtime.close();
 	});
 });
@@ -2408,7 +2713,9 @@ describe('executor handoff between providers (GSHIP-722)', () => {
 			});
 			runtime.setExecutorHandoffEnabled(true);
 			const run = await runtime.startRun('GSHIP-722');
-			await waitFor(() => runtime.getRun(run.id)?.state === (maxRecoveryDispatches === 1 ? 'failed' : 'ready-to-ship'));
+			// GSHIP-864: exhaustion stops at waiting-user, never the old failed
+			// terminal, since the operator still owns the next step.
+			await waitFor(() => runtime.getRun(run.id)?.state === (maxRecoveryDispatches === 1 ? 'waiting-user' : 'ready-to-ship'));
 			const recoveryEvents = runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-finished');
 			expect({ claudeCalls, codexCalls, recoveryEvents: recoveryEvents.length }).toEqual(maxRecoveryDispatches === 1
 				? { claudeCalls: 2, codexCalls: 0, recoveryEvents: 1 }
