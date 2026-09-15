@@ -7,7 +7,7 @@
     "GSHIP-893"
   ],
   "createdAt": "2026-09-14T18:56:51.474Z",
-  "updatedAt": "2026-09-15T12:20:30.318Z",
+  "updatedAt": "2026-09-15T12:21:05.902Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -27,5 +27,9 @@
       "bun test test/web/launch.test.ts test/web/project-status-api.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "17e73d79d4329c729673dbb0c6ae85ba5cfaa36a3a18cd8b3c84a5cad5ba8632",
+    "approvedAt": "2026-09-15T12:21:05.902Z"
   }
 }
