@@ -6,18 +6,21 @@ import process from 'node:process';
 import { getIssueOnMain } from '../commands/issue-get.ts';
 import { issueFilePath } from '../issues/backlog.ts';
 import { type EvidenceItem, fingerprintSpec, type Spec } from '../issues/spec.ts';
+import { buildAllowlistedEnv } from './child-env.ts';
 import { terminateProcessGroup } from './process-group.ts';
 import { readProjectVerificationManifest } from './project-verification.ts';
-import { readReviewEvidencePaths, type ReviewEvidenceFile, snapshotReviewEvidenceFiles } from './review-evidence.ts';
-import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
-import { buildAllowlistedEnv } from './child-env.ts';
-import { verificationVersion } from './verification-version.ts';
+import { type ReviewEvidenceFile, readReviewEvidencePaths, snapshotReviewEvidenceFiles } from './review-evidence.ts';
 import type {
 	RuntimeEvidenceCheck,
 	RuntimeExecutionInput,
+	RuntimeTestBaselineCommand,
+	RuntimeTestBaselineRecorder,
 	RuntimeVerificationResult,
 	RuntimeVerifier,
 } from './run-runtime.ts';
+import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
+import { type ParsedTestCounts, parseTestCounts } from './test-integrity.ts';
+import { verificationVersion } from './verification-version.ts';
 
 const DEFAULT_TERMINATION_GRACE_MS = 1_000;
 const DIAGNOSTIC_TAIL_LENGTH = 2_000;
@@ -518,15 +521,39 @@ function commandCompletedPayload(
 	verifiedVersion: string,
 	attemptNumber: number | undefined,
 	artifacts: readonly ReviewEvidenceFile[],
+	testCounts?: ParsedTestCounts,
 ): Record<string, unknown> {
 	return {
 		commandIndex, command, exitCode, verifiedVersion,
 		...(attemptNumber === undefined ? {} : { attempt: attemptNumber }),
 		...(artifacts.length === 0 ? {} : { artifacts }),
+		...(testCounts === undefined ? {} : { testTotal: testCounts.total, testSkip: testCounts.skip }),
 	};
 }
 
-export class GitIssueVerifier implements RuntimeVerifier {
+const TEST_FILE_PATTERN = /\.test\.[cm]?[jt]sx?$/;
+
+/**
+ * Test files the run's own worktree has deleted relative to the run's base
+ * commit (GSHIP-895) -- the only observable fact `#checkTestIntegrity`
+ * (run-runtime.ts) accepts as a candidate for a legitimate count drop. Never
+ * throws: any Git failure here is unknown equivalence, same as
+ * `#overlapsFullVerification`, and simply reports no removed files.
+ */
+function removedTestFiles(runGit: GitCommandRunner, cwd: string): string[] {
+	const base = runGit(cwd, ['merge-base', 'HEAD', RUNTIME_SOURCE_REF]);
+	const baseSha = base.stdout.trim();
+	if (base.exitCode !== 0 || baseSha.length === 0) return [];
+	const diff = runGit(cwd, ['diff', '--name-status', '--diff-filter=D', baseSha]);
+	if (diff.exitCode !== 0) return [];
+	return diff.stdout.split('\n')
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.map((line) => line.split(/\s+/).slice(1).join(' '))
+		.filter((path) => TEST_FILE_PATTERN.test(path));
+}
+
+export class GitIssueVerifier implements RuntimeVerifier, RuntimeTestBaselineRecorder {
 	readonly #options: GitRuntimeOptions;
 	readonly #runGit: GitCommandRunner;
 	readonly #loadIssue: (cwd: string, issueId: string) => string;
@@ -560,7 +587,10 @@ export class GitIssueVerifier implements RuntimeVerifier {
 	async #runOneCommand(input: Parameters<RuntimeVerifier['verify']>[0], commandIndex: number, command: string): Promise<RuntimeVerificationResult> {
 		input.emit('verify.command.started', { commandIndex: commandIndex + 1 });
 		const { result, verifiedVersion, artifacts } = await runVersionedVerification(this.#runCommand, this.#runGit, { cwd: input.cwd, command, signal: input.signal });
-		input.emit('verify.command.completed', commandCompletedPayload(commandIndex + 1, command, result.exitCode, verifiedVersion, input.attemptNumber, artifacts));
+		const testCounts = parseTestCounts(`${result.stdout}\n${result.stderr}`);
+		input.emit('verify.command.completed', commandCompletedPayload(
+			commandIndex + 1, command, result.exitCode, verifiedVersion, input.attemptNumber, artifacts, testCounts ?? undefined,
+		));
 		return result.exitCode === 0
 			? { ok: true }
 			: { ok: false, detail: `verification command ${commandIndex + 1} exited ${result.exitCode}: ${outputTail(result)}` };
@@ -582,7 +612,10 @@ export class GitIssueVerifier implements RuntimeVerifier {
 				continue;
 			}
 			executed += 1;
-			if (executed === 1) input.emit('verify.started');
+			if (executed === 1) {
+				const removed = removedTestFiles(this.#runGit, input.cwd);
+				input.emit('verify.started', removed.length === 0 ? undefined : { removedTestFiles: removed });
+			}
 			const outcome = await this.#runOneCommand(input, commandIndex, command);
 			if (!outcome.ok) return outcome;
 		}
@@ -591,6 +624,31 @@ export class GitIssueVerifier implements RuntimeVerifier {
 			return { ok: true, skipped: true };
 		}
 		return { ok: true };
+	}
+
+	/**
+	 * Baseline capture (GSHIP-895): runs the same resolved verify commands as
+	 * `verify` -- skipping the same full-verify-equivalent ones -- against
+	 * the clean worktree, but never stops on a non-zero exit and never
+	 * requires a working-tree change first. Only the suite's own shape
+	 * matters here, not whether the clean tree happens to pass.
+	 */
+	async captureBaseline(input: Parameters<RuntimeVerifier['verify']>[0]): Promise<{ commands: RuntimeTestBaselineCommand[] }> {
+		const resolved = this.#resolveCommands(input);
+		if (!resolved.ok) return { commands: [] };
+		const { commands, issueContent } = resolved;
+		const captured: RuntimeTestBaselineCommand[] = [];
+		for (const [commandIndex, command] of commands.entries()) {
+			if (this.#overlapsFullVerification(input, issueContent, command) !== null) continue;
+			const { result } = await runVersionedVerification(this.#runCommand, this.#runGit, { cwd: input.cwd, command, signal: input.signal });
+			const testCounts = parseTestCounts(`${result.stdout}\n${result.stderr}`);
+			captured.push({
+				command,
+				commandIndex: commandIndex + 1,
+				...(testCounts === null ? {} : { total: testCounts.total, skip: testCounts.skip }),
+			});
+		}
+		return { commands: captured };
 	}
 }
 

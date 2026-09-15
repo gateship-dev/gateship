@@ -2523,6 +2523,7 @@ export function createDefaultRunRuntimeOptions(
 			providerId,
 			role,
 		);
+	const issueVerifier = new GitIssueVerifier();
 	return {
 		cwd,
 		store,
@@ -2534,7 +2535,8 @@ export function createDefaultRunRuntimeOptions(
 			},
 			resolveModel: (providerId) => model(providerId, 'executor')(),
 		}),
-		verifier: new GitIssueVerifier(),
+		verifier: issueVerifier,
+		testBaseline: issueVerifier,
 		fullVerifier: new GitFullVerifier(),
 		lintVerifier: new GitLintVerifier(),
 		reviewer: new AgentReviewerRouter({
