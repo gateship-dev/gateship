@@ -3,9 +3,11 @@
   "title": "Chain: reconciliar em worktree fresca de origin/main, nao no checkout local",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-899"
+  ],
   "createdAt": "2026-09-15T00:00:12.743Z",
-  "updatedAt": "2026-09-15T00:00:12.743Z",
+  "updatedAt": "2026-09-15T12:20:30.318Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

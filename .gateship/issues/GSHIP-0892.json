@@ -3,9 +3,11 @@
   "title": "Cycle question: fallback de provider em limite de uso, como review e executor",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-900"
+  ],
   "createdAt": "2026-09-14T18:36:33.271Z",
-  "updatedAt": "2026-09-14T18:36:33.271Z",
+  "updatedAt": "2026-09-15T12:20:30.318Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

@@ -3,9 +3,11 @@
   "title": "Review: veredito por criterio de aceitacao com evidencia file:line",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-892"
+  ],
   "createdAt": "2026-09-14T18:56:23.036Z",
-  "updatedAt": "2026-09-14T18:56:23.036Z",
+  "updatedAt": "2026-09-15T12:20:30.318Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

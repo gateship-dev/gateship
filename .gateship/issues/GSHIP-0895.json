@@ -3,9 +3,11 @@
   "title": "Verify: guarda deterministica de integridade dos testes",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-894"
+  ],
   "createdAt": "2026-09-14T18:56:26.924Z",
-  "updatedAt": "2026-09-14T18:56:26.924Z",
+  "updatedAt": "2026-09-15T12:20:30.318Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

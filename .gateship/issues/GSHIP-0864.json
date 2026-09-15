@@ -9,10 +9,11 @@
     "GSHIP-869",
     "GSHIP-870",
     "GSHIP-871",
-    "GSHIP-872"
+    "GSHIP-872",
+    "GSHIP-896"
   ],
   "createdAt": "2026-09-11T02:41:26.459Z",
-  "updatedAt": "2026-09-14T21:20:45.167Z",
+  "updatedAt": "2026-09-15T12:20:30.318Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

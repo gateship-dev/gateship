@@ -3,9 +3,11 @@
   "title": "Verify: comando de lint por rodada declarado no projeto, antes da review",
   "stage": "specified",
   "status": "open",
-  "blockedBy": [],
+  "blockedBy": [
+    "GSHIP-898"
+  ],
   "createdAt": "2026-09-15T05:58:28.395Z",
-  "updatedAt": "2026-09-15T05:58:28.395Z",
+  "updatedAt": "2026-09-15T12:20:30.318Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
