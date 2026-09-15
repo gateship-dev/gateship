@@ -16,10 +16,10 @@ import { printError } from '../logging/color.ts';
 import { AgentCycleQuestionResolver } from '../runtime/agent-cycle-question-resolver.ts';
 import { AgentChainReconciler } from '../runtime/agent-chain-reconciler.ts';
 import { AgentExecutorRouter } from '../runtime/agent-executor-router.ts';
-import { AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
+import { AgentMutationSelectorRouter, AgentReviewerRouter } from '../runtime/agent-reviewer-router.ts';
 import type { AgentProviderId } from '../runtime/agent-session.ts';
 import { ClaudeAgentSession, ClaudeCliExecutor, probeClaudeModel } from '../runtime/claude-cli-executor.ts';
-import { ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
+import { ClaudeCliMutationSelector, ClaudeCliReviewer } from '../runtime/claude-cli-reviewer.ts';
 import {
 	captureBootClaudeToken,
 	removeClaudeCredential,
@@ -32,7 +32,7 @@ import {
 	CodexReviewSession,
 	probeCodexModel,
 } from '../runtime/codex-cli-executor.ts';
-import { CodexCliReviewer } from '../runtime/codex-cli-reviewer.ts';
+import { CodexCliMutationSelector, CodexCliReviewer } from '../runtime/codex-cli-reviewer.ts';
 import { DiagnosticTransitionError } from '../runtime/diagnostic-finding.ts';
 import {
 	DIAGNOSTIC_CADENCES,
@@ -2537,7 +2537,16 @@ export function createDefaultRunRuntimeOptions(
 		}),
 		verifier: issueVerifier,
 		testBaseline: issueVerifier,
-		fullVerifier: new GitFullVerifier(),
+		// GSHIP-893: the mutation sensor's own model slot is the reviewer's --
+		// it is the reviewer's read-only step, not a fourth configurable role --
+		// and it is routed to the run's own provider exactly like review is,
+		// never unconditionally on Claude.
+		fullVerifier: new GitFullVerifier({
+			mutationSelector: new AgentMutationSelectorRouter({
+				claude: new ClaudeCliMutationSelector({ resolveModel: model('claude', 'reviewer'), resolveClaudeCredential }),
+				codex: new CodexCliMutationSelector({ resolveModel: model('codex', 'reviewer') }),
+			}),
+		}),
 		lintVerifier: new GitLintVerifier(),
 		reviewer: new AgentReviewerRouter({
 			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer'), resolveClaudeCredential }),

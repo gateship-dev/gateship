@@ -1067,7 +1067,7 @@ describe('run cost summary', () => {
 	function appendUsage(
 		store: RunStore,
 		runId: string,
-		kind: 'provider.usage' | 'review.usage' | 'cycle-question.usage' | 'chain-reconciliation.usage'
+		kind: 'provider.usage' | 'review.usage' | 'mutation-sensor.usage' | 'cycle-question.usage' | 'chain-reconciliation.usage'
 			| 'run.cycle-response' | 'run.chain-reconciliation',
 		payload: Record<string, unknown>,
 	): void {
@@ -1123,6 +1123,38 @@ describe('run cost summary', () => {
 			roles: [{ role: 'executor', effort: 'high' }],
 			unpricedInvocations: 0,
 		});
+		store.close();
+	});
+
+	// GSHIP-893: the mutation sensor's own model call (`mutation-sensor.usage`,
+	// emitted by `ClaudeCliMutationSelector`) is the reviewer's own read-only
+	// step, so it must roll into the same 'reviewer' role and count toward
+	// coverage exactly like `review.usage` does above -- never left out of the
+	// total, which would otherwise understate the run's real cost every time
+	// full-verify actually calls a model.
+	test('folds mutation-sensor.usage into the reviewer role, alongside review.usage', () => {
+		const store = storeWithRun('run-cost-mutation-sensor', 'CAM-893');
+		appendUsage(store, 'run-cost-mutation-sensor', 'review.usage', {
+			model: 'sonnet',
+			totalCostUsd: 0.03,
+			modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 300, outputTokens: 40, costUsd: 0.03 }],
+		});
+		appendUsage(store, 'run-cost-mutation-sensor', 'mutation-sensor.usage', {
+			model: 'sonnet',
+			totalCostUsd: 0.02,
+			modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 150, outputTokens: 20, costUsd: 0.02 }],
+		});
+
+		const summary = store.getRunCostSummary('run-cost-mutation-sensor');
+		expect(summary.totalCostUsd).toBeCloseTo(0.05, 6);
+		expect(summary.costCoverage).toBe('complete');
+		expect(summary.breakdown).toEqual([{
+			role: 'reviewer',
+			model: 'claude-sonnet-4-6',
+			costUsd: expect.closeTo(0.05, 6),
+			inputTokens: 450,
+			outputTokens: 60,
+		}]);
 		store.close();
 	});
 

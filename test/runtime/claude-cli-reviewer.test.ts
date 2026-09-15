@@ -11,25 +11,34 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 
+import { AgentMutationSelectorRouter } from '../../src/runtime/agent-reviewer-router.ts';
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
 import {
+	buildMutationSelectionPrompt,
 	buildReviewerCliArgv,
 	buildReviewPrompt,
+	ClaudeCliMutationSelector,
 	ClaudeCliReviewer,
 	collectChange,
 	collectReviewEvidence,
 	formatReviewEvidence,
 	emitReviewCoverage,
 	evaluateReviewCoverage,
+	MUTATION_SELECTION_SCHEMA,
+	MUTATION_TYPES,
+	parseMutationSelection,
 	parseReviewVerdict,
 	REVIEW_COVERAGE_CONTRACT,
 	REVIEW_MATERIALITY_CONTRACT,
 	REVIEW_RESULT_SCHEMA,
 } from '../../src/runtime/claude-cli-reviewer.ts';
+import { CodexCliMutationSelector } from '../../src/runtime/codex-cli-reviewer.ts';
 import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
 import { snapshotReviewEvidenceFiles } from '../../src/runtime/review-evidence.ts';
 import type {
 	RuntimeExecutionInput,
+	RuntimeMutationSelection,
+	RuntimeMutationSelector,
 	RuntimeReviewResult,
 	RuntimeVerificationProvenance,
 } from '../../src/runtime/run-runtime.ts';
@@ -1080,5 +1089,276 @@ describe('collectReviewEvidence / formatReviewEvidence (GSHIP-872)', () => {
 
 		const withoutEvidence = buildReviewPrompt('CAM-872', issue, change, []);
 		expect(withoutEvidence).not.toContain('Verification evidence for run');
+	});
+});
+
+// GSHIP-893: mutation selection is the reviewer's own read-only step, sharing
+// its capability surface (`buildReviewerCliArgv`, already proven read-only by
+// the tests above) and, in `ClaudeCliMutationSelector`, its whole CLI
+// transport with `ClaudeCliReviewer`. These tests cover the two things that
+// are new: parsing the selector's structured reply into `RuntimeMutationCandidate`s,
+// and that `GitFullVerifier` (git-runtime.test.ts) receives exactly that shape
+// end-to-end through a real fixture child.
+describe('parseMutationSelection (GSHIP-893)', () => {
+	function validCandidate(overrides: Record<string, unknown> = {}) {
+		return { file: 'src/a.ts', line: 12, type: 'condition-inverted', patch: 'a patch', ...overrides };
+	}
+
+	test('accepts a well-formed candidate of each declared type', () => {
+		for (const type of MUTATION_TYPES) {
+			const selection = parseMutationSelection({ candidates: [validCandidate({ type })] });
+			expect(selection.candidates).toEqual([{ file: 'src/a.ts', line: 12, type, patch: 'a patch' }]);
+		}
+	});
+
+	test('drops a candidate with an unknown type, a non-positive or fractional line, an empty file or patch, or a path that escapes the worktree', () => {
+		const malformed = [
+			{ ...validCandidate(), type: 'renamed-variable' },
+			{ ...validCandidate(), line: 0 },
+			{ ...validCandidate(), line: -1 },
+			{ ...validCandidate(), line: 1.5 },
+			{ ...validCandidate(), file: '' },
+			{ ...validCandidate(), file: '../outside.ts' },
+			{ ...validCandidate(), patch: '' },
+			{ ...validCandidate(), patch: '   ' },
+			'not an object',
+			42,
+			null,
+		];
+		expect(parseMutationSelection({ candidates: malformed }).candidates).toEqual([]);
+	});
+
+	test('never mutates a test file, even when the reviewer proposes one', () => {
+		const selection = parseMutationSelection({
+			candidates: [validCandidate({ file: 'test/runtime/git-runtime.test.ts' }), validCandidate({ file: 'src/a.test.tsx' })],
+		});
+		expect(selection.candidates).toEqual([]);
+	});
+
+	test('caps candidates at the approved limit even when the reply carries more', () => {
+		const candidates = [0, 1, 2, 3, 4].map((line) => validCandidate({ line }));
+		expect(parseMutationSelection({ candidates }).candidates).toHaveLength(3);
+	});
+
+	test('keeps a non-empty skippedReason and drops a blank or missing one', () => {
+		expect(parseMutationSelection({ candidates: [], skippedReason: 'only tests changed' }).skippedReason)
+			.toBe('only tests changed');
+		expect(parseMutationSelection({ candidates: [], skippedReason: '   ' }).skippedReason).toBeUndefined();
+		expect(parseMutationSelection({ candidates: [] }).skippedReason).toBeUndefined();
+	});
+
+	test('never throws on a malformed or missing structured reply', () => {
+		expect(parseMutationSelection(undefined)).toEqual({ candidates: [] });
+		expect(parseMutationSelection(null)).toEqual({ candidates: [] });
+		expect(parseMutationSelection('a string')).toEqual({ candidates: [] });
+		expect(parseMutationSelection({})).toEqual({ candidates: [] });
+		expect(parseMutationSelection({ candidates: 'not an array' })).toEqual({ candidates: [] });
+	});
+});
+
+describe('MUTATION_SELECTION_SCHEMA / buildMutationSelectionPrompt (GSHIP-893)', () => {
+	test('the schema caps candidates at 3 and constrains type to the four declared mutations', () => {
+		const candidateSchema = (MUTATION_SELECTION_SCHEMA.properties.candidates as { maxItems: number; items: { properties: { type: { enum: readonly string[] } } } });
+		expect(candidateSchema.maxItems).toBe(3);
+		expect(candidateSchema.items.properties.type.enum).toEqual([...MUTATION_TYPES]);
+	});
+
+	test('the prompt names the issue, carries the diff, and lists every mutation type', () => {
+		const prompt = buildMutationSelectionPrompt('CAM-893', undefined, { status: 'M src/a.ts', diff: 'diff --git a/src/a.ts b/src/a.ts\n+injected line\n' });
+		expect(prompt).toContain('CAM-893');
+		expect(prompt).toContain('+injected line');
+		for (const type of MUTATION_TYPES) expect(prompt).toContain(type);
+		expect(prompt).toContain('read-only');
+	});
+
+	// GSHIP-893, fixing a review finding: skippedReason becomes
+	// `run.mutation-sensor-skipped.reason`, shown in the run's timeline, so it
+	// is operator-facing text and needs the same language contract every other
+	// operator-facing prompt already carries -- with or without an Issue
+	// record to take that language from.
+	test('carries the shared operator language contract with and without an Issue record', () => {
+		const change = { status: 'M src/a.ts', diff: 'diff --git a/src/a.ts b/src/a.ts\n+injected line\n' };
+		const contract = OPERATOR_LANGUAGE_CONTRACT.join('\n');
+		expect(buildMutationSelectionPrompt('CAM-893', undefined, change)).toContain(contract);
+		expect(buildMutationSelectionPrompt('CAM-893', '{"id":"CAM-893"}', change)).toContain(contract);
+	});
+
+	test('with an Issue record, keeps the contract between the verdict format and the record, and includes the record text', () => {
+		const change = { status: 'M src/a.ts', diff: 'diff --git a/src/a.ts b/src/a.ts\n+injected line\n' };
+		const issue = '{"id":"CAM-893","title":"Sensor de mutação"}';
+		const prompt = buildMutationSelectionPrompt('CAM-893', issue, change);
+
+		expect(prompt).toContain(issue);
+		expect(prompt.indexOf('End your reply'))
+			.toBeLessThan(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]));
+		expect(prompt.indexOf(OPERATOR_LANGUAGE_CONTRACT[0]))
+			.toBeLessThan(prompt.indexOf('Issue record:'));
+		expect(prompt.indexOf('Issue record:')).toBeLessThan(prompt.indexOf(issue));
+	});
+
+	test('without an Issue record, never claims to carry one', () => {
+		const change = { status: 'M src/a.ts', diff: 'diff --git a/src/a.ts b/src/a.ts\n+injected line\n' };
+		expect(buildMutationSelectionPrompt('CAM-893', undefined, change)).not.toContain('Issue record:');
+	});
+});
+
+// GSHIP-893, fixing a review finding: `buildMutationSelectionPrompt` is
+// shared by both providers -- this proves `CodexCliMutationSelector` carries
+// the same language contract and Issue record as the Claude side above,
+// mirroring how the reviewer's own parity is proven (GSHIP-703).
+describe('CodexCliMutationSelector prompt parity (GSHIP-893)', () => {
+	test('carries the same operator language contract and Issue record as ClaudeCliMutationSelector', async () => {
+		let capturedPrompt = '';
+		const selector = new CodexCliMutationSelector({
+			session: {
+				provider: 'codex',
+				run: async (input) => {
+					capturedPrompt = input.prompt;
+					return { summary: '', structuredOutput: { candidates: [] } };
+				},
+			},
+			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+		});
+		const issue = '{"id":"CAM-893","title":"Sensor de mutação"}';
+
+		await selector.select({
+			runId: 'run-mutation-codex', issueId: 'CAM-893', approvedContract: issue,
+			sessionId: 'session-mutation-codex', resume: false, cwd: createTestTmpdir('gship-mutation-codex-'),
+			signal: new AbortController().signal, emit: () => {},
+		});
+
+		expect(capturedPrompt).toContain(OPERATOR_LANGUAGE_CONTRACT.join('\n'));
+		expect(capturedPrompt).toContain('Issue record:');
+		expect(capturedPrompt).toContain(issue);
+	});
+});
+
+describe('ClaudeCliMutationSelector (GSHIP-893)', () => {
+	function mutationInput(overrides: Partial<RuntimeExecutionInput> = {}): RuntimeExecutionInput {
+		return {
+			runId: 'run-mutation', issueId: 'CAM-893', approvedContract: '{"id":"CAM-893"}',
+			sessionId: 'session-mutation', resume: false, cwd: createTestTmpdir('gship-mutation-selector-'),
+			signal: new AbortController().signal, emit: () => {}, ...overrides,
+		};
+	}
+
+	test('parses the fixture child\'s structured candidates into RuntimeMutationCandidates', async () => {
+		const candidates = [{ file: 'src/a.ts', line: 3, type: 'off-by-one' as const, patch: 'fixture patch' }];
+		const selector = new ClaudeCliMutationSelector({
+			command: ['bun', FIXTURE, '--fixture-mode=mutation-sensor', `--fixture-candidates=${JSON.stringify(candidates)}`],
+			runGit: () => ({ exitCode: 0, stdout: 'M src/a.ts\n', stderr: '' }),
+		});
+		const selection = await selector.select(mutationInput());
+		expect(selection).toEqual({ candidates });
+	});
+
+	test('carries the skippedReason the fixture child reports when it proposes no candidate', async () => {
+		const selector = new ClaudeCliMutationSelector({
+			command: ['bun', FIXTURE, '--fixture-mode=mutation-sensor', '--fixture-candidates=[]', '--fixture-skipped-reason=only tests changed'],
+			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+		});
+		const selection = await selector.select(mutationInput());
+		expect(selection).toEqual({ candidates: [], skippedReason: 'only tests changed' });
+	});
+
+	test('emits its own model-selection event under the mutation-sensor prefix, distinct from review', async () => {
+		const selector = new ClaudeCliMutationSelector({
+			command: ['bun', FIXTURE, '--fixture-mode=mutation-sensor', '--fixture-candidates=[]'],
+			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+			model: 'configured-model', effort: 'high',
+		});
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		await selector.select(mutationInput({ emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }) }));
+		expect(events.find((event) => event.kind === 'mutation-sensor.model')?.payload)
+			.toEqual({ model: 'configured-model', effort: 'high', provider: 'claude' });
+	});
+});
+
+// GSHIP-893, fixing a review finding: the mutation sensor must run on the
+// run's own provider, exactly like review does (`AgentReviewerRouter`), never
+// unconditionally on Claude -- a codex run with no Claude credential would
+// otherwise have its sensor silently skipped instead of ever testing a
+// mutation.
+describe('AgentMutationSelectorRouter (GSHIP-893)', () => {
+	function stubSelector(calls: string[], name: string, result: RuntimeMutationSelection | Error): RuntimeMutationSelector {
+		return {
+			select: async () => {
+				calls.push(name);
+				if (result instanceof Error) throw result;
+				return result;
+			},
+		};
+	}
+
+	function routerInput(overrides: Partial<RuntimeExecutionInput> = {}): RuntimeExecutionInput {
+		return {
+			runId: 'run-mutation-router', issueId: 'CAM-893', sessionId: 'session-mutation-router',
+			resume: false, cwd: '/worktree', signal: new AbortController().signal, emit: () => {},
+			...overrides,
+		};
+	}
+
+	test('a codex run calls only the codex selector, never claude', async () => {
+		const calls: string[] = [];
+		const router = new AgentMutationSelectorRouter({
+			claude: stubSelector(calls, 'claude', { candidates: [] }),
+			codex: stubSelector(calls, 'codex', { candidates: [] }),
+		});
+
+		await router.select(routerInput({ providerId: 'codex' }));
+
+		expect(calls).toEqual(['codex']);
+	});
+
+	test('a run with no providerId recorded goes to claude', async () => {
+		const calls: string[] = [];
+		const router = new AgentMutationSelectorRouter({
+			claude: stubSelector(calls, 'claude', { candidates: [] }),
+			codex: stubSelector(calls, 'codex', { candidates: [] }),
+		});
+
+		await router.select(routerInput());
+
+		expect(calls).toEqual(['claude']);
+	});
+
+	test('a subscription limit on the run\'s own provider buys exactly one attempt on the other, in either direction', async () => {
+		const codexHeld = new ProviderCallError('codex', 'usage-limit', 'Codex usage limit reached.');
+		const claudeHeld = new ProviderCallError('claude', 'rate-limited', 'Claude is rate limited.');
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+
+		const codexToClaude: string[] = [];
+		const codexToClaudeRouter = new AgentMutationSelectorRouter({
+			claude: stubSelector(codexToClaude, 'claude', { candidates: [] }),
+			codex: stubSelector(codexToClaude, 'codex', codexHeld),
+		});
+		await codexToClaudeRouter.select(routerInput({
+			providerId: 'codex',
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		}));
+		expect(codexToClaude).toEqual(['codex', 'claude']);
+
+		const claudeToCodex: string[] = [];
+		const claudeToCodexRouter = new AgentMutationSelectorRouter({
+			claude: stubSelector(claudeToCodex, 'claude', claudeHeld),
+			codex: stubSelector(claudeToCodex, 'codex', { candidates: [] }),
+		});
+		await claudeToCodexRouter.select(routerInput({ providerId: 'claude' }));
+		expect(claudeToCodex).toEqual(['claude', 'codex']);
+
+		expect(events.find((event) => event.kind === 'run.mutation-sensor-fallback')?.payload)
+			.toMatchObject({ from: 'codex', to: 'claude', phase: 'mutation-sensor', reason: 'usage-limit', outcome: 'skipped' });
+	});
+
+	test('a non-limit failure never falls back, and rethrows the origin\'s own error', async () => {
+		const refused = new ProviderCallError('codex', 'auth-required', 'Codex is not logged in.');
+		const calls: string[] = [];
+		const router = new AgentMutationSelectorRouter({
+			claude: stubSelector(calls, 'claude', { candidates: [] }),
+			codex: stubSelector(calls, 'codex', refused),
+		});
+
+		await expect(router.select(routerInput({ providerId: 'codex' }))).rejects.toBe(refused);
+		expect(calls).toEqual(['codex']);
 	});
 });

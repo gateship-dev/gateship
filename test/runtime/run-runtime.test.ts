@@ -5325,6 +5325,76 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 	});
 });
 
+// GSHIP-893: the mutation sensor lives entirely inside `fullVerifier.verify`
+// (git-runtime.test.ts covers `GitFullVerifier` itself); at this layer the
+// only new behavior is that its durable `run.mutation-sensor` evidence rides
+// along with an ordinary full-verify pass or failure, through the exact same
+// `run.full-verify-fix-requested` path any other full-verify failure already
+// uses -- never the issue-verify fix round, and no round budget of its own.
+describe('mutation-sensor evidence from the full verifier (GSHIP-893)', () => {
+	test('a surviving mutant returns to the executor through the existing full-verify fix round, and both attempts\' evidence lands in run history', async () => {
+		let fullVerifications = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: {
+				verify: async (input) => {
+					fullVerifications += 1;
+					if (fullVerifications === 1) {
+						input.emit('run.mutation-sensor', {
+							file: 'src/a.ts', line: 3, type: 'return-altered', command: 'bun test', outcome: 'survived', durationMs: 12,
+						});
+						return { ok: false, detail: 'mutation sensor: surviving mutant at src/a.ts:3' };
+					}
+					input.emit('run.mutation-sensor', {
+						file: 'src/a.ts', line: 3, type: 'return-altered', command: 'bun test', outcome: 'killed', durationMs: 8,
+					});
+					return { ok: true };
+				},
+			},
+		});
+
+		const run = await runtime.startRun('GSHIP-732');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(fullVerifications).toBe(2);
+		const events = runtime.listRunDecisionEvents(run.id);
+		expect(events.filter((event) => event.kind === 'run.mutation-sensor')).toHaveLength(2);
+		expect(events.find((event) => event.kind === 'run.mutation-sensor')?.payload).toMatchObject({ outcome: 'survived' });
+		expect(events.findLast((event) => event.kind === 'run.mutation-sensor')?.payload).toMatchObject({ outcome: 'killed' });
+		expect(events.some((event) => event.kind === 'run.full-verify-fix-requested')).toBe(true);
+		// A mutation-sensor finding is a full-verify finding, never the issue's
+		// own verification fix round: the two budgets stay independent.
+		expect(events.some((event) => event.kind === 'run.verification-fix-requested')).toBe(false);
+	});
+
+	test('a diff with no executable target records run.mutation-sensor-skipped without blocking ready-to-ship', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'ready' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: {
+				verify: async (input) => {
+					input.emit('run.mutation-sensor-skipped', { reason: 'the run diff exposed no executable mutation target' });
+					return { ok: true };
+				},
+			},
+		});
+
+		const run = await runtime.startRun('GSHIP-732');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		const events = runtime.listRunDecisionEvents(run.id);
+		expect(events.find((event) => event.kind === 'run.mutation-sensor-skipped')?.payload).toMatchObject({
+			reason: 'the run diff exposed no executable mutation target',
+		});
+		expect(events.some((event) => event.kind === 'run.full-verify-fix-requested')).toBe(false);
+	});
+});
+
 describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 	// Mirrors the GSHIP-629 evidence this issue cites: the operator ratifies a
 	// deviation, the next review reports it again as a pending defect, and the

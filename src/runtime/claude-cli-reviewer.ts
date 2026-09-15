@@ -64,6 +64,10 @@ import {
 import { verificationVersion } from './verification-version.ts';
 import type {
 	RuntimeExecutionInput,
+	RuntimeMutationCandidate,
+	RuntimeMutationSelection,
+	RuntimeMutationSelector,
+	RuntimeMutationType,
 	RuntimeReviewer,
 	RuntimeReviewResult,
 	RuntimeVerificationProvenance,
@@ -917,5 +921,184 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 		});
 		const coverageFindings = emitReviewCoverage(input, issue, result.structuredOutput);
 		return parseReviewVerdict(result.structuredOutput, result.summary, coverageFindings);
+	}
+}
+
+// GSHIP-893: mutation selection is the reviewer's read-only step over the
+// run's own diff, sharing every capability restriction `ClaudeCliReviewer`
+// already enforces (see the module header) -- the model proposes a patch, it
+// never applies one. `GitFullVerifier` (git-runtime.ts) owns applying each
+// candidate in its own scratch worktree and never in the real one.
+
+/** The four kinds of minimal behavior mutation the sensor accepts, mirrored from `RuntimeMutationType` (run-runtime.ts). */
+export const MUTATION_TYPES: readonly RuntimeMutationType[] = [
+	'condition-inverted', 'return-altered', 'off-by-one', 'side-effect-removed',
+];
+
+/** Mirrors `MUTATION_CANDIDATE_LIMIT` in `git-runtime.ts`; kept here too so a malformed reply cannot smuggle more than the approved limit past parsing. */
+const MUTATION_LIMIT = 3;
+
+const MUTATION_TEST_FILE_PATTERN = /\.test\.[cm]?[jt]sx?$/;
+
+export const MUTATION_SELECTION_SCHEMA = {
+	type: 'object',
+	properties: {
+		candidates: {
+			type: 'array',
+			maxItems: MUTATION_LIMIT,
+			items: {
+				type: 'object',
+				properties: {
+					file: { type: 'string' },
+					line: { type: 'integer' },
+					type: { type: 'string', enum: [...MUTATION_TYPES] },
+					patch: { type: 'string' },
+				},
+				required: ['file', 'line', 'type', 'patch'],
+				additionalProperties: false,
+			},
+		},
+		skippedReason: { type: 'string' },
+	},
+	required: ['candidates'],
+	additionalProperties: false,
+} as const;
+
+export function buildMutationSelectionPrompt(issueId: string, issue: string | undefined, change: { status: string; diff: string }): string {
+	return [
+		`Propose mutations to test whether the approved verify commands for Gateship issue ${issueId} would catch a regression in the code this run just added or changed.`,
+		'You are read-only: Read, Grep and Glob only. You never edit any file and never run a command.',
+		'A separate process applies your proposed patch in an isolated scratch worktree; you have no access to it and never see its result.',
+		'',
+		"Propose 0 to 3 minimal mutations, each a small behavior change to code this run's own diff added or modified -- never to a test file, never to code the diff does not touch.",
+		'Each mutation is exactly one of these types:',
+		'  - condition-inverted: a boolean condition flipped (== to !=, < to >=, && to ||, or similar).',
+		'  - return-altered: a return value changed to a different, still-plausible value.',
+		'  - off-by-one: a boundary shifted by one (< to <=, an index off by one, a loop bound changed).',
+		'  - side-effect-removed: one statement with an observable effect (a write, a mutation, a call) deleted.',
+		'',
+		'For each mutation, open the exact current file with Read to get precise line numbers, then report:',
+		'  - file: the path exactly as it appears in the diff below.',
+		"  - line: the 1-based line in the CURRENT file (after this run's change) the mutation targets.",
+		'  - type: one of the four kinds above.',
+		'  - patch: a minimal unified diff hunk (the format `git apply` accepts: "--- a/<file>" / "+++ b/<file>" headers, correct @@ line numbers) that applies cleanly to the current file and expresses only that one mutation.',
+		'',
+		'If the diff carries no code a mutation could target -- only tests, only comments, only configuration, only generated or deleted files -- return an empty candidates list and explain why in skippedReason.',
+		'',
+		'Working tree status:',
+		change.status.length === 0 ? '(clean)' : change.status,
+		'',
+		'Diff against HEAD:',
+		change.diff.trim().length === 0 ? '(empty)' : change.diff,
+		'',
+		'End your reply with a single JSON object on the last line and nothing after it:',
+		'{"candidates":[{"file":"src/example.ts","line":42,"type":"condition-inverted","patch":"--- a/src/example.ts\\n+++ b/src/example.ts\\n@@ -40,3 +40,3 @@\\n..."}]}',
+		'or',
+		'{"candidates":[],"skippedReason":"the diff only touches test files"}',
+		'',
+		// GSHIP-893, fixing a review finding: skippedReason is the only prose in
+		// this reply the operator ever reads -- it becomes
+		// `run.mutation-sensor-skipped.reason`, shown in the run's timeline -- so
+		// it needs the same language contract every other operator-facing prompt
+		// already carries.
+		'skippedReason is operator-facing text and follows the language contract below.',
+		'',
+		...OPERATOR_LANGUAGE_CONTRACT,
+		'',
+		...(issue === undefined ? [] : ['Issue record:', issue, '']),
+	].join('\n');
+}
+
+function isMutationType(value: unknown): value is RuntimeMutationType {
+	return MUTATION_TYPES.includes(value as RuntimeMutationType);
+}
+
+/** `null` for a malformed or out-of-scope candidate: never mutating a test file, and never a path that escapes the worktree. */
+function normalizeMutationCandidate(raw: unknown): RuntimeMutationCandidate | null {
+	if (raw === null || typeof raw !== 'object') return null;
+	const record = raw as Record<string, unknown>;
+	const file = record['file'];
+	const line = record['line'];
+	const type = record['type'];
+	const patch = record['patch'];
+	if (typeof file !== 'string' || file.trim().length === 0) return null;
+	if (!isSafeRelativeEvidencePath(file) || MUTATION_TEST_FILE_PATTERN.test(file)) return null;
+	if (typeof line !== 'number' || !Number.isInteger(line) || line <= 0) return null;
+	if (!isMutationType(type)) return null;
+	if (typeof patch !== 'string' || patch.trim().length === 0) return null;
+	return { file, line, type, patch };
+}
+
+/** Never throws: a malformed or missing structured reply simply proposes nothing, same as a reviewer reply with no coverage entries. */
+export function parseMutationSelection(structuredOutput: unknown): RuntimeMutationSelection {
+	if (structuredOutput === null || typeof structuredOutput !== 'object' || Array.isArray(structuredOutput)) {
+		return { candidates: [] };
+	}
+	const record = structuredOutput as Record<string, unknown>;
+	const rawCandidates = Array.isArray(record['candidates']) ? record['candidates'] : [];
+	const candidates = rawCandidates
+		.map(normalizeMutationCandidate)
+		.filter((candidate): candidate is RuntimeMutationCandidate => candidate !== null)
+		.slice(0, MUTATION_LIMIT);
+	const skippedReason = typeof record['skippedReason'] === 'string' && record['skippedReason'].trim().length > 0
+		? record['skippedReason']
+		: undefined;
+	return { candidates, ...(skippedReason === undefined ? {} : { skippedReason }) };
+}
+
+export interface ClaudeCliMutationSelectorOptions {
+	command?: string[];
+	model?: string;
+	effort?: string;
+	/** Asked at every full-verify pass, so the operator's choice needs no restart. Shares the reviewer's own model slot: this is the reviewer's own read-only step, not a fourth configurable role. */
+	resolveModel?: ModelSlotResolver;
+	sourceEnv?: Record<string, string | undefined>;
+	resolveClaudeCredential?: () => string | undefined;
+	terminationGraceMs?: number;
+	activityTimeoutMs?: number;
+	runGit?: GitCommandRunner;
+	newSessionId?: () => string;
+	onSpawn?: (pid: number) => void;
+}
+
+/** The Claude implementation of `RuntimeMutationSelector` (GSHIP-893). See the module header for the read-only capability surface every headless Claude child here shares. */
+export class ClaudeCliMutationSelector implements RuntimeMutationSelector {
+	readonly #options: ClaudeCliMutationSelectorOptions;
+
+	constructor(options: ClaudeCliMutationSelectorOptions = {}) {
+		this.#options = options;
+	}
+
+	async select(input: RuntimeExecutionInput): Promise<RuntimeMutationSelection> {
+		const runGit = this.#options.runGit ?? defaultRunGit;
+		const change = collectChange(runGit, input.cwd);
+		const slot = resolveModelSlot(this.#options);
+		const argv = buildReviewerCliArgv({
+			command: this.#options.command ?? ['claude'],
+			sessionId: (this.#options.newSessionId ?? randomUUID)(),
+			jsonSchema: MUTATION_SELECTION_SCHEMA,
+			...slot,
+		});
+		emitModelSelection(input.emit, 'mutation-sensor', slot, 'claude');
+		const result = await runClaudeCli({
+			argv,
+			cwd: input.cwd,
+			env: buildClaudeEnv(this.#options.sourceEnv ?? process.env, this.#options.resolveClaudeCredential?.()),
+			prompt: buildMutationSelectionPrompt(input.issueId, input.approvedContract, change),
+			signal: input.signal,
+			emit: input.emit,
+			eventPrefix: 'mutation-sensor',
+			slot,
+			// Minted fresh for this one call (GSHIP-888), same as the review call above.
+			invocationId: randomUUID(),
+			...(this.#options.terminationGraceMs === undefined
+				? {}
+				: { terminationGraceMs: this.#options.terminationGraceMs }),
+			...(this.#options.activityTimeoutMs === undefined
+				? {}
+				: { activityTimeoutMs: this.#options.activityTimeoutMs }),
+			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
+		});
+		return parseMutationSelection(result.structuredOutput);
 	}
 }

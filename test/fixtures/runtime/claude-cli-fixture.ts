@@ -88,6 +88,21 @@ if (mode === 'wait') {
 			structured_output: output,
 		})}\n`);
 	}
+} else if (mode === 'mutation-sensor') {
+	// GSHIP-893: mirrors the 'review' branch above, but for the read-only
+	// mutation-selection step -- `--fixture-candidates=<json>` lets a test
+	// drive the parsed candidate list without a fixture mode of its own.
+	process.stdout.write(`${JSON.stringify({ type: 'assistant', message: { content: [] } })}\n`);
+	const output = {
+		candidates: JSON.parse(fixtureArgument('candidates') ?? '[]'),
+		...(fixtureArgument('skipped-reason') === undefined ? {} : { skippedReason: fixtureArgument('skipped-reason') }),
+	};
+	process.stdout.write(`${JSON.stringify({
+		type: 'result',
+		is_error: false,
+		result: JSON.stringify(output),
+		structured_output: output,
+	})}\n`);
 } else {
 	// GSHIP-704: echoes exactly the two keys the dedicated-credential boundary
 	// cares about, so a test can confirm what the real child actually received

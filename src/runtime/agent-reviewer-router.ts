@@ -1,6 +1,8 @@
 import { ProviderCallError, type AgentProviderId, type ProviderErrorKind } from './agent-session.ts';
 import type {
 	RuntimeExecutionInput,
+	RuntimeMutationSelection,
+	RuntimeMutationSelector,
 	RuntimeReviewer,
 	RuntimeReviewResult,
 } from './run-runtime.ts';
@@ -124,6 +126,93 @@ export class AgentReviewerRouter implements RuntimeReviewer {
 			from: origin,
 			to: fallback,
 			phase: 'review',
+			reason: held.kind,
+			message: held.message,
+			...(held.retryAt === undefined ? {} : { retryAt: held.retryAt }),
+			...result,
+		});
+	}
+}
+
+/**
+ * The durable record of one mutation-selector fallback (GSHIP-893), mirroring
+ * `REVIEW_FALLBACK_EVENT`: where it came from, where it went, why it was
+ * tried and what the attempt produced.
+ */
+export const MUTATION_SELECTOR_FALLBACK_EVENT = 'run.mutation-sensor-fallback';
+
+/**
+ * Routes mutation selection to the run's own provider (GSHIP-893), same as
+ * `AgentReviewerRouter` routes review: the sensor is the reviewer's own
+ * read-only step, so it must run on the provider the operator actually
+ * chose for this run, never unconditionally on Claude. Shares the exact same
+ * one-attempt, same-reason fallback policy as review -- only a subscription
+ * limit reached before any selection buys the alternative provider, and never
+ * on an already-aborted run.
+ */
+export class AgentMutationSelectorRouter implements RuntimeMutationSelector {
+	readonly #selectors: Readonly<Record<AgentProviderId, RuntimeMutationSelector>>;
+
+	constructor(selectors: Readonly<Record<AgentProviderId, RuntimeMutationSelector>>) {
+		this.#selectors = selectors;
+	}
+
+	async select(input: RuntimeExecutionInput): Promise<RuntimeMutationSelection> {
+		const providerId = input.providerId ?? 'claude';
+		try {
+			return await this.#selectors[providerId].select(input);
+		} catch (error) {
+			const fallback = this.#fallbackProvider(providerId, error, input);
+			if (fallback === null) throw error;
+			return await this.#selectWithFallback(input, providerId, fallback, error as ProviderCallError);
+		}
+	}
+
+	/** Same admission rule as `AgentReviewerRouter#fallbackProvider`: see there for the reasoning. */
+	#fallbackProvider(
+		providerId: AgentProviderId,
+		error: unknown,
+		input: RuntimeExecutionInput,
+	): AgentProviderId | null {
+		if (!(error instanceof ProviderCallError)) return null;
+		if (error.provider !== providerId) return null;
+		if (!REVIEW_FALLBACK_REASONS.includes(error.kind)) return null;
+		if (input.signal.aborted) return null;
+		return REVIEW_FALLBACK[providerId];
+	}
+
+	/** The one alternative attempt, same shape as `AgentReviewerRouter#reviewWithFallback`. */
+	async #selectWithFallback(
+		input: RuntimeExecutionInput,
+		origin: AgentProviderId,
+		fallback: AgentProviderId,
+		held: ProviderCallError,
+	): Promise<RuntimeMutationSelection> {
+		try {
+			const selection = await this.#selectors[fallback].select(input);
+			this.#emitFallback(input, origin, fallback, held, { outcome: selection.candidates.length === 0 ? 'skipped' : 'selected' });
+			return selection;
+		} catch (error) {
+			this.#emitFallback(input, origin, fallback, held, {
+				outcome: 'refused',
+				error: errorMessage(error),
+				...(error instanceof ProviderCallError ? { errorKind: error.kind } : {}),
+			});
+			throw held;
+		}
+	}
+
+	#emitFallback(
+		input: RuntimeExecutionInput,
+		origin: AgentProviderId,
+		fallback: AgentProviderId,
+		held: ProviderCallError,
+		result: Record<string, unknown>,
+	): void {
+		input.emit(MUTATION_SELECTOR_FALLBACK_EVENT, {
+			from: origin,
+			to: fallback,
+			phase: 'mutation-sensor',
 			reason: held.kind,
 			message: held.message,
 			...(held.retryAt === undefined ? {} : { retryAt: held.retryAt }),

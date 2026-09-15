@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 
 import type { AgentSession } from './agent-session.ts';
 import {
+	buildMutationSelectionPrompt,
 	buildReviewPrompt,
 	collectChange,
 	emitReviewCoverage,
+	MUTATION_SELECTION_SCHEMA,
+	parseMutationSelection,
 	parseReviewVerdict,
 	REVIEW_RESULT_SCHEMA,
 	reviewEvidenceForPrompt,
@@ -17,6 +20,8 @@ import { defaultRunGit, type GitCommandRunner } from './git-runtime.ts';
 import type { ModelSlotResolver } from './model-settings.ts';
 import type {
 	RuntimeExecutionInput,
+	RuntimeMutationSelection,
+	RuntimeMutationSelector,
 	RuntimeReviewer,
 	RuntimeReviewResult,
 } from './run-runtime.ts';
@@ -89,5 +94,39 @@ export class CodexCliReviewer implements RuntimeReviewer {
 		});
 		const coverageFindings = emitReviewCoverage(input, issue, result.structuredOutput);
 		return parseReviewVerdict(result.structuredOutput, result.summary, coverageFindings);
+	}
+}
+
+// GSHIP-893: mirrors `CodexCliReviewer` above -- same session shape, same
+// read-only session (`CodexReviewSession` never grants write access), and the
+// same `sessionOptions` mapping -- but for the reviewer's read-only mutation-
+// selection step instead of its verdict. See `ClaudeCliMutationSelector`
+// (claude-cli-reviewer.ts) for the Claude counterpart this shares its prompt,
+// schema and parsing with.
+export type CodexCliMutationSelectorOptions = Omit<CodexCliReviewerOptions, 'loadIssue' | 'approvedContract'>;
+
+export class CodexCliMutationSelector implements RuntimeMutationSelector {
+	readonly #options: CodexCliMutationSelectorOptions;
+	readonly #session: AgentSession;
+
+	constructor(options: CodexCliMutationSelectorOptions = {}) {
+		this.#options = options;
+		this.#session = options.session ?? new CodexReviewSession(sessionOptions(options));
+	}
+
+	async select(input: RuntimeExecutionInput): Promise<RuntimeMutationSelection> {
+		const runGit = this.#options.runGit ?? defaultRunGit;
+		const change = collectChange(runGit, input.cwd);
+		const result = await this.#session.run({
+			sessionId: randomUUID(),
+			resume: false,
+			cwd: input.cwd,
+			prompt: buildMutationSelectionPrompt(input.issueId, input.approvedContract, change),
+			outputSchema: MUTATION_SELECTION_SCHEMA,
+			signal: input.signal,
+			emit: input.emit,
+			eventPrefix: 'mutation-sensor',
+		});
+		return parseMutationSelection(result.structuredOutput);
 	}
 }

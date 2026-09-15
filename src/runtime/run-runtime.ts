@@ -588,6 +588,33 @@ export interface RuntimeReviewer {
 	review: (input: RuntimeExecutionInput) => Promise<RuntimeReviewResult>;
 }
 
+/** One kind of minimal behavior mutation the mutation sensor (GSHIP-893) can inject. */
+export type RuntimeMutationType = 'condition-inverted' | 'return-altered' | 'off-by-one' | 'side-effect-removed';
+
+/** One mutation the read-only selector proposed against the run's own diff. `patch` is a minimal unified diff the runtime applies -- the selector never writes to any worktree itself. */
+export interface RuntimeMutationCandidate {
+	file: string;
+	line: number;
+	type: RuntimeMutationType;
+	patch: string;
+}
+
+export interface RuntimeMutationSelection {
+	candidates: readonly RuntimeMutationCandidate[];
+	/** Present when the selector examined the diff and found no executable target -- distinct from the sensor never running at all. */
+	skippedReason?: string;
+}
+
+/**
+ * Read-only mutation selection (GSHIP-893): examines the run's own diff and
+ * proposes up to a handful of minimal behavior mutations for `GitFullVerifier`
+ * to apply, one at a time, in its own scratch worktree. Mirrors `RuntimeReviewer`
+ * in capability -- the implementation never gets write access to any worktree.
+ */
+export interface RuntimeMutationSelector {
+	select: (input: RuntimeExecutionInput) => Promise<RuntimeMutationSelection>;
+}
+
 export interface RuntimeCycleResponseUsage {
 	model: string;
 	effort: string;
