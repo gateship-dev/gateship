@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-900",
+  "title": "Verify: comando de lint por rodada declarado no projeto, antes da review",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-15T05:58:28.395Z",
+  "updatedAt": "2026-09-15T05:58:28.395Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Quatro runs seguidas (884, 889, 890, 872) passaram verify e review e cairam no full verify so por lint (complexidade biome), custando uma rodada de correcao e uma review extra cada. Permitir que .gateship/project.json declare um comando de lint executado a cada rodada do executor, antes da review.",
+    "acceptance": [
+      "Contrato de .gateship/project.json ganha campo opcional lint (lista de comandos), com a mesma validacao e o mesmo ambiente minimo de prepare e verify. Ausente, nada muda.",
+      "Apos cada run.work-completed e antes de run.review-started, o runtime executa os comandos de lint no workspace; falha vira run.verification-fix-requested com a saida sanitizada, dentro do orcamento de correcao existente, sem nova categoria de rodada.",
+      "O full verify continua rodando o verify completo do projeto; lint por rodada e adicional, nao substitui.",
+      "Evento duravel registra comando, duracao e resultado por rodada; telemetria de duracao por fase atribui o tempo a verify.",
+      "Gateship declara lint: [bun run lint] no proprio .gateship/project.json. Testes cobrem projeto sem lint, lint que passa, lint que falha e corrige, e lint que falha duas vezes (segue o caminho existente de verificacao exaurida)."
+    ],
+    "boundaries": [
+      "Nao inferir comando de lint da stack; so o declarado pelo projeto.",
+      "Nao alterar os comandos de verify aprovados nas issues nem o full verify."
+    ],
+    "verify": [
+      "bun test test/runtime/project-verification.test.ts test/runtime/multistack-verification.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
