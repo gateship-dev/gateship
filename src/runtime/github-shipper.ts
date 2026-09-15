@@ -108,6 +108,32 @@
 // does not end the ship at all, unconfirmed or otherwise: unlike reading the
 // merge state itself, this is a second opinion the ship can simply ask for
 // again on the next poll.
+//
+// The direct merge fired once a poll reads CLEAN with CI ready races the
+// auto-merge armed earlier in this same attempt: GitHub can land that armed
+// merge in the moment between the poll and this call, so the direct
+// `--match-head-commit` merge is refused as "not mergeable" or with the base
+// branch modified, even though the change already merged or main simply
+// advanced meanwhile (GSHIP-899). Trusting that refusal at face value is the
+// bug: the ship reports run.ship-failed on a change that is already shipped,
+// and only a manual resend notices GitHub had already said yes. So the
+// refusal is never trusted on its own — the pull request is reread within
+// the same attempt first: a merged pull request with the head this ship
+// published settles as merged here, in the same attempt, with no resend; a
+// still-open pull request with that same head, whose base actually moved
+// since the poll that read CLEAN, is handed to the same branch-update
+// recovery and budget BEHIND already uses elsewhere in this file, not a
+// second one. Moved is judged by comparing `baseRefOid`, not by the reread
+// still reading `mergeStateStatus` BEHIND specifically: the mergeability
+// GitHub just recomputed after refusing the direct merge can just as easily
+// read UNKNOWN, or even stay CLEAN for a repository that does not require an
+// up-to-date branch to merge, for the exact same moved base. Only a reread
+// whose base is still the one the direct merge was requested against — the
+// pull request reads exactly as it did then — keeps the refusal as the real
+// failure it then is. Every outcome is
+// recorded in its own `ship.merge-race` event alongside the `gh` error that
+// triggered the reread, so a real failure is still distinguishable from a
+// race the reread resolved.
 
 import { lstatSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1062,21 +1088,24 @@ export class GithubShipper implements RuntimeShipper {
 		}
 		const blocked = await this.#pollBlocked(input, prNumber, headSha, view);
 		if (blocked !== null) return { result: blocked };
-		directMergeRequested = await this.#requestDirectMerge(
+		const directMerge = await this.#requestDirectMerge(
 			input,
 			prNumber,
+			branch,
 			headSha,
+			branchUpdates,
 			view,
 			ci,
 			autoMergeUnavailable,
 			directMergeRequested,
 		);
+		if ('result' in directMerge) return { result: directMerge.result };
 		return {
-			headSha,
-			branchUpdates,
-			pending: view.mergeStateStatus,
+			headSha: directMerge.headSha,
+			branchUpdates: directMerge.branchUpdates,
+			pending: directMerge.retried ? null : view.mergeStateStatus,
 			ciStatus: ci.status,
-			directMergeRequested,
+			directMergeRequested: directMerge.requested,
 		};
 	}
 
@@ -1149,14 +1178,19 @@ export class GithubShipper implements RuntimeShipper {
 	}
 
 	async #requestDirectMerge(
-		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch'>,
+		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'deleteBranch' | 'protectedBaseSha'>,
 		prNumber: number,
+		branch: string,
 		headSha: string,
+		branchUpdates: number,
 		view: PullRequestView,
 		ci: CiAggregate,
 		autoMergeUnavailable: boolean,
 		requested: boolean,
-	): Promise<boolean> {
+	): Promise<
+		| { result: RuntimeShipResult }
+		| { requested: boolean; headSha: string; branchUpdates: number; retried: boolean }
+	> {
 		const ciReady = ci.status === 'not-reported' || ci.status === 'passed';
 		if (
 			requested ||
@@ -1164,17 +1198,109 @@ export class GithubShipper implements RuntimeShipper {
 			view.headRefOid !== headSha ||
 			view.mergeStateStatus !== 'CLEAN' ||
 			!ciReady
-		) return requested;
-		await this.#checked(input, 'gh', [
-			'pr', 'merge', String(prNumber), '--squash', '--match-head-commit', headSha,
-			...(input.deleteBranch === true ? ['--delete-branch'] : []),
-		], { retryIdempotent: true });
+		) return { requested, headSha, branchUpdates, retried: false };
+		try {
+			await this.#checked(input, 'gh', [
+				'pr', 'merge', String(prNumber), '--squash', '--match-head-commit', headSha,
+				...(input.deleteBranch === true ? ['--delete-branch'] : []),
+			], { retryIdempotent: true });
+		} catch (error) {
+			// GithubUnavailableError already exhausted #checked's own retry budget;
+			// that stays the pre-existing generic failure, same as any other
+			// unavailable idempotent read in this file. Only a decision GitHub
+			// actually returned (not mergeable, base branch was modified) is a
+			// candidate for the race this handles.
+			if (error instanceof GithubUnavailableError) throw error;
+			return await this.#mergeRace(input, prNumber, branch, headSha, branchUpdates, view.baseRefOid, error);
+		}
 		input.emit('ship.direct-merge-requested', {
 			prNumber,
 			headSha,
 			reason: autoMergeUnavailable ? 'auto-merge-unavailable' : 'auto-merge-stalled',
 		});
-		return true;
+		return { requested: true, headSha, branchUpdates, retried: false };
+	}
+
+	/**
+	 * GSHIP-899: the direct merge above races the auto-merge armed earlier in
+	 * this same attempt (or main advancing) in the window between the poll
+	 * that read CLEAN and this call — GitHub then refuses the direct merge
+	 * with "not mergeable" or "base branch was modified" even though the
+	 * change is already landing, already landed, or the base simply moved.
+	 * Rather than trust that refusal as a real failure, this rereads the pull
+	 * request within the same attempt and settles it exactly like a normal
+	 * poll would: `#pollVerdict` reports a matching-head merge as merged and a
+	 * real divergence or closed pull request as the failure it already is.
+	 * `#pollVerdict` returning null here already proves the pull request is
+	 * still OPEN with the head this ship published and not a genuine content
+	 * conflict, so a still-open pull request whose base actually moved since
+	 * the poll that read CLEAN — `baseRefOid` no longer the one that poll saw
+	 * — is handed to the same branch-update recovery and budget `#pollBehind`
+	 * uses, not conditioned on the reread still reading `mergeStateStatus`
+	 * BEHIND specifically: the mergeability GitHub just recomputed after
+	 * refusing the direct merge can just as easily read UNKNOWN, or even stay
+	 * CLEAN for a repository that does not require an up-to-date branch to
+	 * merge, the same way it reads UNKNOWN right after `update-branch` is
+	 * requested elsewhere in this file. Only a reread whose base is still the
+	 * one the direct merge was requested against — the pull request reads
+	 * exactly as it did then — keeps the original `gh` error as a real
+	 * failure instead of spending the branch-update budget on a refusal
+	 * nothing here explains.
+	 */
+	async #mergeRace(
+		input: RuntimeShipInput & Pick<GithubPullRequestInput, 'protectedBaseSha'>,
+		prNumber: number,
+		branch: string,
+		headSha: string,
+		branchUpdates: number,
+		baseRefOidAtRequest: string,
+		error: unknown,
+	): Promise<
+		| { result: RuntimeShipResult }
+		| { requested: boolean; headSha: string; branchUpdates: number; retried: boolean }
+	> {
+		const detail = errorMessage(error);
+		let view: PullRequestView;
+		try {
+			view = await this.#pullRequestView(input, prNumber);
+		} catch (rereadError) {
+			if (!(rereadError instanceof GithubUnavailableError)) throw rereadError;
+			input.emit('ship.merge-race', { prNumber, head: headSha, error: detail, outcome: 'failed' });
+			return { result: await this.#unconfirmed(input, prNumber, headSha, rereadError) };
+		}
+		const verdict = await this.#pollVerdict(input, prNumber, branch, headSha, view, input.protectedBaseSha);
+		if (verdict !== null) {
+			input.emit('ship.merge-race', {
+				prNumber,
+				head: headSha,
+				error: detail,
+				outcome: verdict.outcome === 'merged' ? 'merged' : 'failed',
+			});
+			return { result: verdict };
+		}
+		if (input.protectedBaseSha !== undefined && view.baseRefOid !== input.protectedBaseSha) {
+			input.emit('ship.merge-race', { prNumber, head: headSha, error: detail, outcome: 'failed' });
+			return {
+				result: {
+					outcome: 'failed',
+					detail: `protected intake base changed from ${input.protectedBaseSha} to ${view.baseRefOid || 'unknown'} before merge`,
+				},
+			};
+		}
+		const baseMoved = view.baseRefOid !== baseRefOidAtRequest;
+		const behind = input.protectedBaseSha === undefined && baseMoved
+			? await this.#recoverStaleBranch(input, prNumber, branch, headSha, branchUpdates)
+			: null;
+		if (behind !== null) {
+			if ('result' in behind) {
+				input.emit('ship.merge-race', { prNumber, head: headSha, error: detail, outcome: 'failed' });
+				return behind;
+			}
+			input.emit('ship.merge-race', { prNumber, head: headSha, error: detail, outcome: 'retried' });
+			return { requested: false, headSha: behind.headSha, branchUpdates: behind.branchUpdates, retried: true };
+		}
+		input.emit('ship.merge-race', { prNumber, head: headSha, error: detail, outcome: 'failed' });
+		return { result: { outcome: 'failed', detail } };
 	}
 
 	/**
@@ -1200,6 +1326,30 @@ export class GithubShipper implements RuntimeShipper {
 		if (view.state !== 'OPEN' || view.mergeStateStatus !== 'BEHIND' || view.headRefOid !== headSha) {
 			return null;
 		}
+		return await this.#recoverStaleBranch(input, prNumber, branch, headSha, branchUpdates);
+	}
+
+	/**
+	 * Update the pull request's branch and confirm it landed, within the
+	 * shared branch-update budget: the recovery both a BEHIND poll
+	 * (`#pollBehind`) and a refused direct merge with the base moved
+	 * (`#mergeRace`, GSHIP-899) use once each has already established the
+	 * pull request is still OPEN with the head this ship published. Auto-merge
+	 * can still settle and delete its head between that check and this
+	 * mutation, so this rereads the same pull request immediately before
+	 * asking GitHub to update it, so a settled, exact head reaches the normal
+	 * merged exit instead of being turned into a retryable failure.
+	 */
+	async #recoverStaleBranch(
+		input: RuntimeShipInput,
+		prNumber: number,
+		branch: string,
+		headSha: string,
+		branchUpdates: number,
+	): Promise<
+		| { result: RuntimeShipResult }
+		| { headSha: string; branchUpdates: number; pending: null }
+	> {
 		if (branchUpdates >= this.#maxBranchUpdates) {
 			return {
 				result: {
@@ -1208,10 +1358,6 @@ export class GithubShipper implements RuntimeShipper {
 				},
 			};
 		}
-		// Auto-merge can settle and delete its head between the poll that saw
-		// BEHIND and the update mutation. Re-read the same PR immediately before
-		// asking GitHub to update it so that a settled, exact head reaches the
-		// normal merged exit instead of being turned into a retryable failure.
 		try {
 			const beforeUpdate = await this.#pullRequestView(input, prNumber);
 			const settledBeforeUpdate = await this.#pollVerdict(input, prNumber, branch, headSha, beforeUpdate, undefined);
