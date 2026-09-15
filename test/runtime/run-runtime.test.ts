@@ -5323,7 +5323,7 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		runtime.close();
 	});
 
-	test('reconciles from the stable project root after the source worktree is released', async () => {
+	test('reconciles from a fresh reconciliation worktree, never the operator checkout, after the source worktree is released', async () => {
 		let releaseReconciliation!: () => void;
 		const reconciliationPending = new Promise<void>((resolve) => { releaseReconciliation = resolve; });
 		const releaseCalls: string[] = [];
@@ -5341,6 +5341,10 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 					return { outcome: 'released' as const, branch: 'gship/gship-818' };
 				},
 			},
+			reconciliationWorkspace: {
+				prepare: async (runId) => ({ path: `/reconcile-workspaces/${runId}`, sha: 'origin-main-sha' }),
+				release: (path) => { releaseCalls.push(path); },
+			},
 			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')]
 				.filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
 			chainReconciler: { reconcile: async (input) => {
@@ -5354,11 +5358,80 @@ describe('chaining approved runs in series (GSHIP-638)', () => {
 		const source = await runtime.startRun('GSHIP-1');
 		await waitFor(() => reconciliationInput !== undefined && releaseCalls.length === 1);
 
-		expect(reconciliationInput?.workspace).toBe('/project');
+		expect(reconciliationInput?.workspace).toBe(`/reconcile-workspaces/${source.id}`);
 		expect(releaseCalls).toEqual([`/workspaces/${source.id}`]);
 
 		releaseReconciliation();
 		await waitFor(() => runtime.listRuns().some((run) => run.issueId === 'GSHIP-2'));
+		expect(releaseCalls.slice(0, 2)).toEqual([`/workspaces/${source.id}`, `/reconcile-workspaces/${source.id}`]);
+		expect(runtime.listRunEvents(source.id).find((event) => event.kind === 'run.chain-reconciliation')?.payload)
+			.toMatchObject({ workspacePath: `/reconcile-workspaces/${source.id}`, originSha: 'origin-main-sha' });
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('releases the reconciliation worktree even when the reconciliation is aborted mid-flight', async () => {
+		let sawAbort!: () => void;
+		const abortSeen = new Promise<void>((resolve) => { sawAbort = resolve; });
+		const releaseCalls: string[] = [];
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			reconciliationWorkspace: {
+				prepare: async (runId) => ({ path: `/reconcile-workspaces/${runId}`, sha: 'origin-main-sha' }),
+				release: (path) => { releaseCalls.push(path); },
+			},
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')]
+				.filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
+			chainReconciler: { reconcile: async (input) => new Promise((resolve) => {
+				const settle = () => {
+					sawAbort();
+					resolve({ outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' } });
+				};
+				if (input.signal.aborted) settle();
+				else input.signal.addEventListener('abort', settle, { once: true });
+			}) },
+		});
+		runtime.setChainRuns(true);
+
+		const source = await runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getRun(source.id)?.state === 'done');
+		await runtime.stop();
+		await abortSeen;
+
+		expect(releaseCalls).toEqual([`/reconcile-workspaces/${source.id}`]);
+		runtime.close();
+	});
+
+	test('pauses the chain with chain-start-failed, never material, when the reconciliation worktree cannot be prepared', async () => {
+		const store = new RunStore(':memory:');
+		const runtime = new RunRuntime({
+			cwd: '/project', store,
+			executor: { execute: async () => ({ outcome: 'completed' as const }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			shipper: { ship: async () => ({ outcome: 'merged' as const, prNumber: 1 }) },
+			reconciliationWorkspace: {
+				prepare: async () => { throw new Error('cannot fetch origin/main: unable to access remote'); },
+				release: () => {},
+			},
+			listBacklog: () => [admissibleIssue('GSHIP-1'), admissibleIssue('GSHIP-2')]
+				.filter((issue) => !store.listRuns().some((run) => run.state === 'done' && run.issueId === issue.id)),
+			chainReconciler: { reconcile: async () => ({
+				outcome: 'unchanged' as const, justification: 'sem alteração', usage: { model: 'm', effort: 'e' },
+			}) },
+		});
+		runtime.setChainRuns(true);
+
+		const source = await runtime.startRun('GSHIP-1');
+		await waitFor(() => runtime.getChainPause() !== null);
+
+		expect(runtime.getChainPause()).toMatchObject({ reason: 'chain-start-failed' });
+		expect(runtime.listRunEvents(source.id).find((event) => event.kind === 'run.chain-paused')?.payload)
+			.toMatchObject({ reason: 'chain-start-failed', error: 'cannot fetch origin/main: unable to access remote' });
+		expect(runtime.listRunEvents(source.id).map((event) => event.kind)).not.toContain('run.chain-reconciliation');
 		await runtime.stop();
 		runtime.close();
 	});
