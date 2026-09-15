@@ -62,7 +62,8 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 			unassignedDuration: { durationMs: 1, entries: 1 },
 			durationReconciliation: { classifiedMs: 0, unassignedMs: 1, totalMs: 1, toleranceMs: 1000, reconciles: true },
 		},
-		cost: { totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] },
+		cost: { totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [], unpricedInvocations: 0 },
+		activityEventCount: 0,
 	};
 }
 
@@ -512,15 +513,21 @@ test('expõe derivações históricas, denominadores e desconhecidos sem inventa
 // while the known subtotal (runsWithKnownCost/knownCostUsd) still sums every
 // run that reported any known cost, partial included.
 test('separa cobertura completa, parcial e desconhecida nos totais sem descartar o subtotal conhecido', () => {
-	const complete = { ...history('cost-complete', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: 0.1, costCoverage: 'complete' as const, breakdown: [], roles: [] } };
-	const partial = { ...history('cost-partial', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: 0.2, costCoverage: 'partial' as const, breakdown: [], roles: [] } };
-	const unknown = { ...history('cost-unknown', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: null, costCoverage: 'unknown' as const, breakdown: [], roles: [] } };
+	const complete = { ...history('cost-complete', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: 0.1, costCoverage: 'complete' as const, breakdown: [], roles: [], unpricedInvocations: 0 } };
+	const partial = { ...history('cost-partial', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: 0.2, costCoverage: 'partial' as const, breakdown: [], roles: [], unpricedInvocations: 1 } };
+	const unknown = { ...history('cost-unknown', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: null, costCoverage: 'unknown' as const, breakdown: [], roles: [], unpricedInvocations: 1 } };
 	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [complete, partial, unknown]).overview;
 	expect(overview?.runsByCostCoverage).toEqual({ complete: 1, partial: 1, unknown: 1 });
 	// The partial run's known portion still counts toward the subtotal: never
 	// discarded, only never presented as if the run were fully priced.
 	expect(overview?.runsWithKnownCost).toBe(2);
 	expect(overview?.knownCostUsd).toBeCloseTo(0.3, 6);
+	// GSHIP-891: the comparative reevaluation is reachable on this same typed
+	// read (projects.status / projects.overview in the agent CLI), reusing
+	// each run's own cost.costCoverage/cost.unpricedInvocations -- never a
+	// second parser.
+	expect(overview?.reevaluation?.cost.after).toEqual({ complete: 1, partial: 1, unknown: 1 });
+	expect(overview?.reevaluation?.nonRecoverable).toMatchObject({ cost: 1, unpricedInvocations: 2 });
 });
 
 test('mede correção pelo intervalo durável da solicitação, não pela fase inteira', () => {

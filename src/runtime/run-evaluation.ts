@@ -385,6 +385,20 @@ function cycleResponseInvocation(event: RunEvent): 'orchestrator' | 'guidance' |
 }
 
 /**
+ * Whether `event` is shaped like a dispatch at all -- a `provider.model` /
+ * `review.model` / `run.cycle-response` spawn or a `run.cycle-response-invalid`
+ * -- before `dispatchesOf` disambiguates which of those are a confirmed
+ * CLI-process invocation (GSHIP-891). Reused by `reevaluateHistoricalSample`
+ * (run-store.ts) as the raw, undisambiguated count a historical sample's
+ * `dispatches.total + dispatches.unknown` is compared against: never a second
+ * counting rule, only the membership test `dispatchesOf` already applies
+ * before it decides what each match means.
+ */
+export function isDispatchLikeEvent(event: RunEvent): boolean {
+	return event.kind === 'run.cycle-response-invalid' || event.kind in MODEL_EVENT_ROLES;
+}
+
+/**
  * Counts every confirmed CLI-process invocation (GSHIP-890): an executor or
  * reviewer spawn, a `run.cycle-response` the orchestrator's own resolver
  * answered, and a `run.cycle-response-invalid` (`#answerCycleQuestion`,

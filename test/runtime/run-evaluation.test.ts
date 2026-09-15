@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { fingerprintSpec, profileSpec } from '../../src/issues/spec.ts';
-import { evaluateRun } from '../../src/runtime/run-evaluation.ts';
+import { evaluateRun, isDispatchLikeEvent } from '../../src/runtime/run-evaluation.ts';
 import type { RunEvent, RunRecord } from '../../src/runtime/run-store.ts';
 
 const RUN: RunRecord = {
@@ -266,6 +266,20 @@ describe('replayable run evaluation', () => {
 			expect(evaluation.dispatches).toMatchObject({ total: 2, orchestrator: 2, unknown: 0 });
 			expect(evaluation.resolvedCycleQuestions).toBe(1);
 		});
+	});
+
+	// GSHIP-891: `isDispatchLikeEvent` is the raw, undisambiguated membership
+	// test `reevaluateHistoricalSample` (run-store.ts) compares against
+	// `dispatches.total + dispatches.unknown` -- it must match every kind
+	// `dispatchesOf` treats as dispatch-shaped, including the ones its own
+	// disambiguation later excludes from `total`.
+	test('matches every dispatch-shaped event kind, before disambiguation decides what each one means', () => {
+		expect(isDispatchLikeEvent(event('provider.model', 'working', 'working'))).toBe(true);
+		expect(isDispatchLikeEvent(event('review.model', 'review', 'review'))).toBe(true);
+		expect(isDispatchLikeEvent(event('run.cycle-response', 'working', 'working', { responder: 'operator' }))).toBe(true);
+		expect(isDispatchLikeEvent(event('run.cycle-response-invalid', 'working', 'waiting-user'))).toBe(true);
+		expect(isDispatchLikeEvent(event('run.cycle-question', 'working', 'working'))).toBe(false);
+		expect(isDispatchLikeEvent(event('run.operator-guidance', 'waiting-user', 'waiting-user'))).toBe(false);
 	});
 
 	// GSHIP-709: a review answered by the fallback is attributed to the

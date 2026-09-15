@@ -36,7 +36,8 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 			unassignedDuration: { durationMs: 1, entries: 1 },
 			durationReconciliation: { classifiedMs: 0, unassignedMs: 1, totalMs: 1, toleranceMs: 1000, reconciles: true },
 	},
-		cost: { totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] },
+		cost: { totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [], unpricedInvocations: 0 },
+		activityEventCount: 0,
 	};
 }
 

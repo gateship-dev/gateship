@@ -8,11 +8,13 @@ import type { IssueEntry } from '../issues/types.ts';
 import type { RegisteredProject } from './project-registry.ts';
 import type { ChainPauseView, RunRuntime } from './run-runtime.ts';
 import {
+	type HistoricalReevaluation,
 	type PersistedRunHistory,
 	type PersistedRunStatus,
 	readPersistedRunHistory,
 	readPersistedRunOverview,
 	readPersistedRunStatuses,
+	reevaluateHistoricalSample,
 } from './run-store.ts';
 import { isTerminalRunState } from './run-state.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
@@ -219,6 +221,19 @@ export interface HistoricalOverview {
 		recommended: number | null;
 		reason: DispatchCeilingReasonCode;
 	};
+	/**
+	 * GSHIP-891: the comparative reevaluation of this same `selected` sample --
+	 * `reevaluateHistoricalSample` (run-store.ts), reused, never a second
+	 * parser. Reachable through the existing typed read this field already
+	 * sits on (`projects.status` and `projects.overview` in the agent CLI,
+	 * `/api/overview`), so an operator can obtain the report against real
+	 * history without opening the database directly. Present only on a
+	 * single-project overview, the same as `autonomyEvidence` and
+	 * `dispatchCeilings` above -- never combined across projects, since
+	 * `combineHistoricalOverviews` has no rule to merge a `before`/`after`
+	 * comparison that stays meaningful.
+	 */
+	reevaluation?: HistoricalReevaluation;
 }
 
 export type AutonomyDenominatorCode = 'selected-historical-runs';
@@ -1024,6 +1039,7 @@ function historicalOverview(
 	result.cohorts = historicalCohorts(selected);
 	result.autonomyEvidence = autonomyEvidence(selected);
 	result.dispatchCeilings = dispatchCeilingAnalysis(selected);
+	result.reevaluation = reevaluateHistoricalSample(selected);
 	return paginateHistoricalOverview(result, pagination, filters.cohortSortBy, filters.cohortSortDirection);
 }
 
