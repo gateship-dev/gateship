@@ -40,11 +40,37 @@ export interface RunRoleConfiguration {
 export type RunGuidanceChannel = 'web' | 'agent-cli' | 'other' | 'unknown';
 export type AuthorizationEvidence = 'observed' | 'absent' | 'unknown';
 
+/**
+ * Versions the dispatch-counting methodology (GSHIP-890). `'cli-process-v1'`
+ * counts only the CLI process invocation itself -- one `provider.model` /
+ * `review.model` spawn, one `run.cycle-response` the orchestrator's own
+ * resolver answered, or one `run.cycle-response-invalid` (the same resolver
+ * call, confirmed even though its response failed validation). It never
+ * counts, and is not a zero for: internal LLM calls or subagents a CLI
+ * process makes on its own (not observed by this run's event log at all, so
+ * not measurable here), or usage from any chat or agent session outside this
+ * run (out of scope by construction, since only this run's own events are
+ * read). A future methodology that changes what counts as a dispatch gets its
+ * own version string, so a report reading multiple runs can tell which rule
+ * produced which count.
+ */
+export const DISPATCH_METHODOLOGY_VERSION = 'cli-process-v1' as const;
+export type DispatchMethodologyVersion = typeof DISPATCH_METHODOLOGY_VERSION;
+
 export interface RunDispatches {
 	total: number;
 	executor: number;
 	reviewer: number;
 	orchestrator: number;
+	/**
+	 * `run.cycle-response` events with no responder recorded, or an
+	 * unrecognized one (GSHIP-890): a legacy event with no verifiable evidence
+	 * of whether the resolver ran. Never folded into `total` -- that would
+	 * either invent an invocation that may not have happened or silently drop
+	 * one that did -- and never reclassified as autonomous or as a human/
+	 * agent-cli answer by guessing.
+	 */
+	unknown: number;
 }
 
 export interface RunGuidanceEvidence {
@@ -60,6 +86,16 @@ export interface RunEvaluation {
 	specProfile: SpecProfile;
 	corrections: { verification: number; review: number; fullVerify: number; ci: number; total: number };
 	dispatches?: RunDispatches;
+	/**
+	 * Which counting rule produced `dispatches` (GSHIP-890) -- see
+	 * `DISPATCH_METHODOLOGY_VERSION`. Always the current version: this run is
+	 * replayed by today's `evaluateRun`, not read back pre-computed, so there is
+	 * no older methodology it could carry forward. A report comparing runs
+	 * across a methodology change reads this to know which rule produced which
+	 * count, rather than assuming every run in the sample was measured the
+	 * same way.
+	 */
+	dispatchMethodologyVersion: DispatchMethodologyVersion;
 	recovery?: { policy: { version: 1; maxRecoveryDispatches: number } | null; reserved: number; finished: number };
 	guidance?: RunGuidanceEvidence;
 	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
@@ -72,8 +108,30 @@ export interface RunEvaluation {
 	unassignedDuration: RunPhaseDuration;
 	durationReconciliation: RunDurationReconciliation;
 	attentionRequests: number;
+	/**
+	 * `run.operator-guidance` events, excluding only an agent-cli/MCP answer
+	 * with observed authorization evidence (GSHIP-890): that one combination is
+	 * a technical response the operator explicitly authorized, not text or
+	 * intervention the human produced directly, even though it still required
+	 * the operator to call `resumeRun`. An agent-cli answer with authorization
+	 * `'absent'` or `'unknown'` (including legacy events with no evidence at
+	 * all) still counts -- legacy with no evidence stays unknown, never
+	 * reclassified as autonomous by assuming every agent-cli answer was
+	 * authorized. `guidance.channels` and `guidance.authorization` are the
+	 * distinct, complete breakdown this reads from.
+	 */
 	operatorInterventions: number;
 	providerHolds: number;
+	/**
+	 * `run.cycle-response` events the orchestrator's own resolver answered
+	 * `continue` (GSHIP-890): never a human/agent-cli-authorized answer to a
+	 * pending question (`responder` other than `'orchestrator'`, no resolver
+	 * call made at all) and never an escalation (`outcome: 'operator'`) --
+	 * escalating to a human decision is not an internal resolution. A `continue`
+	 * here is the resolver's own claim, not proof the follow-up correction was
+	 * ever effective; `corrections` and `dispatches.executor` are the distinct
+	 * measures for that.
+	 */
 	resolvedCycleQuestions?: number;
 	roles: RunRoleConfiguration[];
 	/** The observed split between focused checks and the project full verify. */
@@ -307,9 +365,50 @@ function guidanceEvidence(events: readonly RunEvent[]): RunGuidanceEvidence {
 	return { channels, authorization };
 }
 
+/**
+ * Whether a `run.cycle-response` event actually invoked the resolver, never
+ * called it, or leaves that undecidable (GSHIP-890). `orchestrator` is a
+ * confirmed CLI-process invocation. `guidance` is `#applyOperatorCycleGuidance`
+ * (run-runtime.ts) answering a pending question directly, human or agent-cli
+ * -- it never calls the resolver, the same distinction `payloadCarriesUsage`
+ * already draws for cost (run-store.ts, GSHIP-889). `unknown` is a legacy
+ * event with no responder recorded at all: not zero, not guessed either way.
+ * `run.cycle-response-invalid` (`#answerCycleQuestion`, run-runtime.ts) is not
+ * covered here -- it is never a `run.cycle-response`, always a confirmed
+ * invocation on its own, folded directly in `dispatchesOf`.
+ */
+function cycleResponseInvocation(event: RunEvent): 'orchestrator' | 'guidance' | 'unknown' {
+	const { responder } = event.payload;
+	if (responder === 'orchestrator') return 'orchestrator';
+	if (responder === 'operator' || responder === 'agent-cli') return 'guidance';
+	return 'unknown';
+}
+
+/**
+ * Counts every confirmed CLI-process invocation (GSHIP-890): an executor or
+ * reviewer spawn, a `run.cycle-response` the orchestrator's own resolver
+ * answered, and a `run.cycle-response-invalid` (`#answerCycleQuestion`,
+ * run-runtime.ts) -- recorded only once `#resolveCycleQuestionCall` returns a
+ * result that fails validation, so the resolver call itself is confirmed even
+ * though it produced no usable answer and never counts toward
+ * `resolvedCycleQuestions`. A repeated attempt after that invalid response,
+ * whether it lands on another invalid response or a valid orchestrator
+ * continue, is its own additional dispatch.
+ */
 function dispatchesOf(events: readonly RunEvent[]): RunDispatches {
-	const dispatches: RunDispatches = { total: 0, executor: 0, reviewer: 0, orchestrator: 0 };
+	const dispatches: RunDispatches = { total: 0, executor: 0, reviewer: 0, orchestrator: 0, unknown: 0 };
 	for (const event of events) {
+		if (event.kind === 'run.cycle-response-invalid') {
+			dispatches.orchestrator += 1;
+			dispatches.total += 1;
+			continue;
+		}
+		if (event.kind === 'run.cycle-response') {
+			const invocation = cycleResponseInvocation(event);
+			if (invocation === 'orchestrator') { dispatches.orchestrator += 1; dispatches.total += 1; }
+			else if (invocation === 'unknown') dispatches.unknown += 1;
+			continue;
+		}
 		const role = MODEL_EVENT_ROLES[event.kind];
 		if (role === undefined) continue;
 		dispatches[role] += 1;
@@ -346,8 +445,44 @@ function foldProviderPair(
  * The models, efforts and providers each role was actually invoked with. The
  * model events carry the first two; the provider comes from the run, which is
  * the one that spawned them, plus the review fallback's own durable record --
- * the only place a role runs on a provider the run did not select.
+ * the only place a role runs on a provider the run did not select. A
+ * `run.cycle-response` only ever feeds the `orchestrator` entry when
+ * `cycleResponseInvocation` confirms the resolver actually ran (GSHIP-890):
+ * an operator or agent-cli answer to a pending question never called it, and
+ * a legacy event with no responder recorded leaves that undecidable, so
+ * neither lists a configuration for a call that may never have happened --
+ * the same rule `addModelConfiguration` applies in project-status.ts.
  */
+/** Folds one model event's own model, effort and provider into `entry` (GSHIP-709/890 share this shape between `provider.model`/`review.model` and a confirmed orchestrator `run.cycle-response`). */
+function foldModelEvent(entry: RoleConfigurationAccumulator, payload: Record<string, unknown>, run: RunRecord): void {
+	const model = normalizedText(payload['model']);
+	const effort = normalizedText(payload['effort']);
+	if (model !== null) entry.models.add(model);
+	if (effort !== null) entry.efforts.add(effort);
+	entry.providers.add(providerOf(payload['provider']) ?? run.providerId);
+}
+
+function foldRoleConfigurationEvent(
+	entryFor: (role: RunCostRole) => RoleConfigurationAccumulator,
+	run: RunRecord,
+	event: RunEvent,
+): void {
+	if (event.kind === REVIEW_FALLBACK_EVENT) {
+		foldProviderPair(entryFor('reviewer'), event.payload);
+		return;
+	}
+	if (event.kind === EXECUTOR_HANDOFF_EVENT) {
+		foldProviderPair(entryFor('executor'), event.payload);
+		return;
+	}
+	if (event.kind === 'run.cycle-response') {
+		if (cycleResponseInvocation(event) === 'orchestrator') foldModelEvent(entryFor('orchestrator'), event.payload, run);
+		return;
+	}
+	const role = MODEL_EVENT_ROLES[event.kind];
+	if (role !== undefined) foldModelEvent(entryFor(role), event.payload, run);
+}
+
 function roleConfigurations(run: RunRecord, events: readonly RunEvent[]): RunRoleConfiguration[] {
 	const configurations = new Map<RunCostRole, RoleConfigurationAccumulator>();
 	const entryFor = (role: RunCostRole): RoleConfigurationAccumulator => {
@@ -356,24 +491,7 @@ function roleConfigurations(run: RunRecord, events: readonly RunEvent[]): RunRol
 		configurations.set(role, entry);
 		return entry;
 	};
-	for (const event of events) {
-		if (event.kind === REVIEW_FALLBACK_EVENT) {
-			foldProviderPair(entryFor('reviewer'), event.payload);
-			continue;
-		}
-		if (event.kind === EXECUTOR_HANDOFF_EVENT) {
-			foldProviderPair(entryFor('executor'), event.payload);
-			continue;
-		}
-		const role = MODEL_EVENT_ROLES[event.kind];
-		if (role === undefined) continue;
-		const entry = entryFor(role);
-		const model = normalizedText(event.payload['model']);
-		const effort = normalizedText(event.payload['effort']);
-		if (model !== null) entry.models.add(model);
-		if (effort !== null) entry.efforts.add(effort);
-		entry.providers.add(providerOf(event.payload['provider']) ?? run.providerId);
-	}
+	for (const event of events) foldRoleConfigurationEvent(entryFor, run, event);
 	return [...configurations.entries()]
 		.sort(([left], [right]) => left.localeCompare(right))
 		.map(([role, configuration]) => ({
@@ -451,6 +569,7 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		specProfile: specProfileOf(events),
 		corrections,
 		dispatches: dispatchesOf(events),
+		dispatchMethodologyVersion: DISPATCH_METHODOLOGY_VERSION,
 		recovery: { policy: run.recoveryPolicy ?? null, ...recoveryCountsValue },
 		guidance: guidanceEvidence(events),
 		cycleQuestions: { ...cycleQuestions, total: Object.values(cycleQuestions).reduce((sum, count) => sum + count, 0) },
@@ -462,9 +581,11 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		...duration,
 		attentionRequests: events.filter((event) =>
 			event.toState === 'waiting-user' && event.fromState !== 'waiting-user').length,
-		operatorInterventions: events.filter((event) => event.kind === 'run.operator-guidance').length,
+		operatorInterventions: events.filter((event) => event.kind === 'run.operator-guidance'
+			&& !(guidanceChannel(event) === 'agent-cli' && authorizationEvidence(event) === 'observed')).length,
 		providerHolds: events.filter((event) => event.kind === 'run.provider-waiting').length,
-		resolvedCycleQuestions: events.filter((event) => event.kind === 'run.cycle-response').length,
+		resolvedCycleQuestions: events.filter((event) => event.kind === 'run.cycle-response'
+			&& event.payload['responder'] === 'orchestrator' && event.payload['outcome'] === 'continue').length,
 		roles: roleConfigurations(run, events),
 		...(verificationCadence === undefined ? {} : { verificationCadence }),
 		...(verificationRetryMetrics(events) === undefined ? {} : { verificationRetries: verificationRetryMetrics(events) }),

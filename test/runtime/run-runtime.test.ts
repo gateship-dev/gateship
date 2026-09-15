@@ -3826,6 +3826,73 @@ describe('selectRunRoundOrigins', () => {
 		];
 		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, ci: 0, decision: 0, orchestrator: 0, indeterminate: 1 });
 	});
+
+	// GSHIP-890: only a resolver-answered continue opens an orchestrator round;
+	// an operator or agent-cli answer to the same pending question never
+	// called the resolver, so the round it opens is a decision.
+	test('a round that starts with a resolver continue counts as orchestrator, never a human or agent-cli answer', () => {
+		const withResponder = (seq: number, responder: string): RunEvent => ({
+			...roundEvent(seq, 'run.cycle-response', 'working'),
+			payload: { outcome: 'continue', responder },
+		});
+		expect(selectRunRoundOrigins([
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			withResponder(3, 'orchestrator'),
+		])).toEqual({ executor: 0, ci: 0, decision: 0, orchestrator: 1, indeterminate: 0 });
+		expect(selectRunRoundOrigins([
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			withResponder(3, 'agent-cli'),
+		])).toEqual({ executor: 0, ci: 0, decision: 1, orchestrator: 0, indeterminate: 0 });
+	});
+
+	// GSHIP-890: a legacy cycle-response continue with no responder recorded
+	// admits no pattern -- it is never guessed as a human/agent-cli decision
+	// nor reclassified as an autonomous orchestrator round.
+	test('a legacy cycle-response continue with no responder recorded is indeterminate, never guessed', () => {
+		const events: RunEvent[] = [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			{ ...roundEvent(3, 'run.cycle-response', 'working'), payload: { outcome: 'continue' } },
+		];
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, ci: 0, decision: 0, orchestrator: 0, indeterminate: 1 });
+	});
+
+	// GSHIP-890: `resumeRun` emits `run.operator-guidance` then a `run.started`
+	// that already counts this decision, and only then the operator or
+	// agent-cli continue that applies it to the pending cycle question --
+	// one operator decision beside one executor dispatch, not two.
+	test('folds an operator or agent-cli continue that follows its own resume into the same decision round', () => {
+		const resumeThenContinue = (responder: string): RunEvent[] => [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			roundEvent(3, 'run.waiting-user', 'working'),
+			roundEvent(4, 'run.operator-guidance', 'waiting-user'),
+			roundEvent(5, 'run.started', 'waiting-user'),
+			{ ...roundEvent(6, 'run.cycle-response', 'working'), payload: { outcome: 'continue', responder } },
+		];
+		expect(selectRunRoundOrigins(resumeThenContinue('agent-cli')))
+			.toEqual({ executor: 0, ci: 0, decision: 1, orchestrator: 0, indeterminate: 0 });
+		expect(selectRunRoundOrigins(resumeThenContinue('operator')))
+			.toEqual({ executor: 0, ci: 0, decision: 1, orchestrator: 0, indeterminate: 0 });
+	});
+
+	// GSHIP-890: `run.work-completed` closes that window -- a later operator
+	// continue with no `run.started` of its own before it is a fresh decision.
+	test('counts a further operator continue after run.work-completed as its own decision round', () => {
+		const events: RunEvent[] = [
+			roundEvent(1, 'run.created', null),
+			roundEvent(2, 'run.started', 'queued'),
+			roundEvent(3, 'run.waiting-user', 'working'),
+			roundEvent(4, 'run.operator-guidance', 'waiting-user'),
+			roundEvent(5, 'run.started', 'waiting-user'),
+			{ ...roundEvent(6, 'run.cycle-response', 'working'), payload: { outcome: 'continue', responder: 'agent-cli' } },
+			roundEvent(7, 'run.work-completed'),
+			{ ...roundEvent(8, 'run.cycle-response', 'working'), payload: { outcome: 'continue', responder: 'operator' } },
+		];
+		expect(selectRunRoundOrigins(events)).toEqual({ executor: 0, ci: 0, decision: 2, orchestrator: 0, indeterminate: 0 });
+	});
 });
 
 const CYCLE_AUDIT_USAGE = { model: 'configured-model', effort: 'high' } as const;
@@ -4039,8 +4106,12 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 		expect(events.filter((event) => event.kind === 'run.waiting-user')).toHaveLength(0);
 		expect(events.findLast((event) => event.kind === 'run.cycle-response'))
 			.toMatchObject({ fromState: 'working', toState: 'waiting-user' });
+		// GSHIP-890: the resolver was invoked (dispatches.orchestrator) but it
+		// escalated to a human decision -- escalation is not an internal
+		// resolution, so it must not count toward resolvedCycleQuestions.
 		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
-			attentionRequests: 1, operatorInterventions: 0, resolvedCycleQuestions: 1,
+			attentionRequests: 1, operatorInterventions: 0, resolvedCycleQuestions: 0,
+			dispatches: { orchestrator: 1 },
 		});
 	});
 
@@ -4719,10 +4790,14 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 			outcome: 'operator',
 			reason: 'The same finding returned without new executable guidance.',
 		});
+		// GSHIP-890: three resolver invocations happened (dispatches.orchestrator)
+		// but only the two `continue` answers are an internal resolution -- the
+		// third escalated to the operator and must not count as resolved.
 		expect(runtime.getRunEvaluation(run.id)).toMatchObject({
 			attentionRequests: 1,
 			operatorInterventions: 0,
-			resolvedCycleQuestions: 3,
+			resolvedCycleQuestions: 2,
+			dispatches: { orchestrator: 3 },
 		});
 
 		let invalidReviews = 0;
@@ -4748,7 +4823,11 @@ describe('orchestrator cycle questions (GSHIP-675)', () => {
 			questionId: 'question-invalid',
 			reason: 'Cycle question resolver returned an invalid response.',
 		});
-		expect(invalid.getRunEvaluation(invalidRun.id)).toMatchObject({ resolvedCycleQuestions: 0 });
+		// GSHIP-890: the resolver call ran and is a confirmed dispatch even
+		// though its response failed validation -- never a resolution.
+		expect(invalid.getRunEvaluation(invalidRun.id)).toMatchObject({
+			resolvedCycleQuestions: 0, dispatches: { orchestrator: 1, unknown: 0 },
+		});
 	});
 });
 
@@ -4856,8 +4935,22 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 			expect(runtime.listRunEvents(runId).filter((event) => event.kind === 'run.cycle-response')).toHaveLength(1);
 			expect(runtime.listRunEvents(runId).find((event) => event.kind === 'run.cycle-response')?.payload)
 				.toMatchObject({ responder: 'agent-cli', source: 'agent-cli', guidance: 'Apply the approved correction.' });
+			// GSHIP-890: an agent-cli answer authorized by the operator never
+			// called the resolver -- it must not read as an orchestrator dispatch
+			// or an internal resolution, the same way it carries no usage (889),
+			// and it must not list an orchestrator configuration in `roles` either.
+			expect(runtime.getRunEvaluation(runId)).toMatchObject({
+				resolvedCycleQuestions: 0, dispatches: { orchestrator: 0 },
+			});
+			expect(runtime.getRunEvaluation(runId)?.roles).not.toContainEqual(
+				expect.objectContaining({ role: 'orchestrator' }),
+			);
 			expect(runtime.listRunEvents(runId).find((event) => event.kind === 'run.operator-guidance')?.payload)
 				.toMatchObject({ text: 'Apply the approved correction.', authorizationEvidence: 'explicit' });
+			// GSHIP-890: the resume's own `run.started` and the agent-cli continue
+			// that follows it are the same decision, not two -- one operator
+			// decision beside one executor dispatch is one `decision` round.
+			expect(runtime.getRunRoundOrigins(runId)).toMatchObject({ decision: 1, orchestrator: 0, indeterminate: 0 });
 			runtime.close();
 		}
 	});

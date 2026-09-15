@@ -54,6 +54,7 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
 			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
 			workflowRevision: null, provider: providerId, outcome: 'shipped', wallTimeMs: 1, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, roles: [],
+			dispatchMethodologyVersion: 'cli-process-v1',
 			phaseDurations: {
 				queued: { durationMs: 0, entries: 0 }, working: { durationMs: 0, entries: 0 }, verify: { durationMs: 0, entries: 0 }, review: { durationMs: 0, entries: 0 },
 				'full-verify': { durationMs: 0, entries: 0 }, shipping: { durationMs: 0, entries: 0 }, 'waiting-provider': { durationMs: 0, entries: 0 }, 'waiting-user': { durationMs: 0, entries: 0 },
@@ -616,6 +617,22 @@ test('filtra a proveniência por provider, papel, modelo e esforço', () => {
 		readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [legacy], filters).overview;
 	expect(readLegacy({ providerId: 'claude' })?.totalRuns).toBe(1);
 	expect(readLegacy({ providerId: 'claude', role: 'executor' })?.totalRuns).toBe(0);
+});
+
+// GSHIP-890: an operator or agent-cli answer to a pending cycle question
+// never called the orchestrator's own provider -- listing it as an observed
+// "orchestrator" configuration would claim a call that never ran.
+test('não lista configuração de orquestrador para uma resposta do operador ou agent-cli', () => {
+	const item = history('guidance-answered', '2026-09-05T00:00:00.000Z', 'claude');
+	item.events = [
+		{ kind: 'run.cycle-response', payload: { responder: 'operator', outcome: 'continue' } },
+		{ kind: 'run.cycle-response', payload: { responder: 'agent-cli', outcome: 'continue' } },
+		{ kind: 'run.cycle-response', payload: { responder: 'orchestrator', outcome: 'continue', model: 'opus', effort: 'high' } },
+	] as never;
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [item]).overview;
+	expect(overview?.configurations).toEqual([
+		{ provider: 'claude', role: 'orchestrator', model: 'opus', effort: 'high' },
+	]);
 });
 
 test('calcula mediana ímpar, média par e ignora timestamps inválidos', () => {

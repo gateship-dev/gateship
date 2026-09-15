@@ -45,7 +45,23 @@ function recordRound(
 		return;
 	}
 	if (kind === 'run.cycle-response' && event.payload['outcome'] === 'continue') {
-		origins.orchestrator = (origins.orchestrator ?? 0) + 1;
+		// GSHIP-890: a human or agent-cli answer to a pending cycle question
+		// (`#applyOperatorCycleGuidance`, run-runtime.ts) never called the
+		// resolver, so the round it opens is a decision, not an orchestrator
+		// one -- the same distinction `isResolverInvocation` draws in
+		// run-evaluation.ts. A legacy event with no responder recorded at all
+		// admits no pattern either way and is never guessed as either kind of
+		// round -- `indeterminate`, the same as any other unattributed resume.
+		// An operator or agent-cli continue that follows its own resume's
+		// `run.started` (`resumeRoundOpen` in `selectRunRoundOrigins`) never
+		// reaches here at all: that `run.started` already counted the one
+		// decision this resume-and-answer pair represents, so a single
+		// operator decision beside one executor dispatch is one `decision`
+		// round, not two.
+		const { responder } = event.payload;
+		if (responder === 'orchestrator') origins.orchestrator = (origins.orchestrator ?? 0) + 1;
+		else if (responder === 'operator' || responder === 'agent-cli') origins.decision += 1;
+		else origins.indeterminate += 1;
 		return;
 	}
 	origins.executor += 1;
@@ -72,28 +88,67 @@ function recordRound(
  * exception is a `run.started` replay while a durable orchestrator continue
  * response is still unconsumed: that reopens the same correction round and is
  * not a second origin, with or without recovery guidance.
+ *
+ * An operator or agent-cli answer to a pending cycle question
+ * (`#applyOperatorCycleGuidance`, run-runtime.ts, GSHIP-890) is a second event
+ * from that very same resume, not a second decision: `resumeRun` emits
+ * `run.operator-guidance`, then a `run.started` that already counted this
+ * decision (or, if unattributed, `indeterminate`), and only then the
+ * `run.cycle-response` continue that applies it. `resumeRoundOpen` tracks
+ * that window -- open the instant this resume's own `run.started` is counted,
+ * closed by `run.work-completed` or by any other round starting -- so that
+ * trailing continue is folded into the round its own resume already opened
+ * instead of counted again. A continue with no preceding `run.started` at all
+ * (the executor's own pending question, answered without an interruption in
+ * between) still counts its own `decision` round exactly as before.
  */
+interface RoundScanState {
+	seenFirstRound: boolean;
+	previousKind: string | null;
+	unconsumedCycleContinue: boolean;
+	resumeRoundOpen: boolean;
+}
+
+function isCycleContinue(event: RunEvent): boolean {
+	return event.kind === 'run.cycle-response' && event.payload['outcome'] === 'continue';
+}
+
+/**
+ * Whether this cycle-continue is the trailing half of a resume already
+ * counted as a decision (GSHIP-890) -- see `selectRunRoundOrigins`.
+ * `cycleContinue` is only true once `event.kind === 'run.cycle-response'` is
+ * already confirmed, so `event.payload` is safe to read here -- never
+ * evaluated for any other round-start kind.
+ */
+function isGuidanceContinueDuringResume(event: RunEvent, cycleContinue: boolean, resumeRoundOpen: boolean): boolean {
+	if (!cycleContinue || !resumeRoundOpen) return false;
+	const { responder } = event.payload;
+	return responder === 'operator' || responder === 'agent-cli';
+}
+
+function processRoundEvent(origins: RunRoundOrigins, event: RunEvent, state: RoundScanState): void {
+	const cycleContinue = isCycleContinue(event);
+	const replayingCycleContinue = event.kind === 'run.started' && state.unconsumedCycleContinue;
+	const startsRound = (ROUND_START_KINDS.has(event.kind) && !replayingCycleContinue) || cycleContinue;
+	if (startsRound) {
+		if (!state.seenFirstRound) {
+			state.seenFirstRound = true;
+		} else {
+			const guidanceContinueDuringResume = isGuidanceContinueDuringResume(event, cycleContinue, state.resumeRoundOpen);
+			if (!guidanceContinueDuringResume) recordRound(origins, event, state.previousKind);
+			state.resumeRoundOpen = event.kind === 'run.started';
+		}
+	}
+	if (event.kind === 'run.work-completed') { state.unconsumedCycleContinue = false; state.resumeRoundOpen = false; }
+	if (cycleContinue) state.unconsumedCycleContinue = true;
+	state.previousKind = event.kind;
+}
+
 export function selectRunRoundOrigins(events: readonly RunEvent[]): RunRoundOrigins {
 	const origins: RunRoundOrigins = { executor: 0, ci: 0, decision: 0, orchestrator: 0, indeterminate: 0 };
-	let seenFirstRound = false;
-	let previousKind: string | null = null;
-	let unconsumedCycleContinue = false;
-	for (const event of events) {
-		const cycleContinue = event.kind === 'run.cycle-response'
-			&& event.payload['outcome'] === 'continue';
-		const replayingCycleContinue = event.kind === 'run.started' && unconsumedCycleContinue;
-		const startsRound = (ROUND_START_KINDS.has(event.kind) && !replayingCycleContinue)
-			|| cycleContinue;
-		if (startsRound) {
-			if (!seenFirstRound) {
-				seenFirstRound = true;
-			} else {
-				recordRound(origins, event, previousKind);
-			}
-		}
-		if (cycleContinue) unconsumedCycleContinue = true;
-		if (event.kind === 'run.work-completed') unconsumedCycleContinue = false;
-		previousKind = event.kind;
-	}
+	const state: RoundScanState = {
+		seenFirstRound: false, previousKind: null, unconsumedCycleContinue: false, resumeRoundOpen: false,
+	};
+	for (const event of events) processRoundEvent(origins, event, state);
 	return origins;
 }
