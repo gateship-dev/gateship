@@ -660,6 +660,15 @@ export interface RunRuntimeOptions {
 	 * before this gate existed.
 	 */
 	fullVerifier?: RuntimeVerifier;
+	/**
+	 * The project's per-round lint commands (GSHIP-900), run after each
+	 * `run.work-completed` and before review starts, alongside the issue's own
+	 * `verifier`. A failure reuses the same one automatic correction round as
+	 * a failed issue verification -- never a round category of its own.
+	 * Optional: a project or a test runtime with none configured runs no lint
+	 * pass, unchanged from before this gate existed.
+	 */
+	lintVerifier?: RuntimeVerifier;
 	shipper?: RuntimeShipper;
 	/** Production git-backed check used only to reject a no-change CI correction. */
 	hasWorkspaceChanges?: (cwd: string) => boolean;
@@ -960,6 +969,7 @@ export class RunRuntime {
 	readonly #chainReconciler: RuntimeChainReconciler | undefined;
 	readonly #reconciliationWorkspace: RuntimeChainReconciliationWorkspace | undefined;
 	readonly #fullVerifier: RuntimeVerifier | undefined;
+	readonly #lintVerifier: RuntimeVerifier | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
 	readonly #hasWorkspaceChanges: ((cwd: string) => boolean) | undefined;
 	readonly #now: () => string;
@@ -1000,6 +1010,7 @@ export class RunRuntime {
 		this.#chainReconciler = options.chainReconciler;
 		this.#reconciliationWorkspace = options.reconciliationWorkspace;
 		this.#fullVerifier = options.fullVerifier;
+		this.#lintVerifier = options.lintVerifier;
 		this.#shipper = options.shipper;
 		this.#hasWorkspaceChanges = options.hasWorkspaceChanges;
 		this.#now = options.now ?? (() => new Date().toISOString());
@@ -1889,16 +1900,16 @@ export class RunRuntime {
 		attempt: RunAttempt,
 	): Promise<void> {
 		const startedAt = performance.now();
-		let result: RuntimeVerificationResult;
+		let result: RuntimeVerificationResult | 'aborted';
 		try {
-			result = await verifier.verify(this.#executionInput(run, signal, attempt));
+			result = await this.#verifyAndLint(verifier, this.#executionInput(run, signal, attempt), signal);
 		} catch (error) {
 			if (signal.aborted) { this.#interrupt(run.id); return; }
 			const detail = error instanceof Error ? error.message : String(error);
 			this.#recordVerificationRetryFailure(run, detail, startedAt);
 			return;
 		}
-		if (signal.aborted) { this.#interrupt(run.id); return; }
+		if (result === 'aborted') { this.#interrupt(run.id); return; }
 		const retryPayload = {
 			durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
 			...(result.usage === undefined ? {} : { usage: result.usage }),
@@ -2565,6 +2576,29 @@ export class RunRuntime {
 	}
 
 	/**
+	 * Issue verification, then the project's per-round lint (GSHIP-900) when
+	 * one is configured and the issue verification passed -- a lint failure is
+	 * reported exactly like a failed issue verification, so the caller needs
+	 * no separate path for it. On a lint pass, returns the issue verifier's own
+	 * result unchanged (not lint's) so a caller reading `skipped`/`usage` --
+	 * `#driveVerificationRetry` treats an issue verification that ran no gate
+	 * as itself unproven -- keeps seeing the issue verification's own signal,
+	 * never conflated with the separate, commonly-absent lint gate.
+	 */
+	async #verifyAndLint(
+		verifier: RuntimeVerifier,
+		executionInput: RuntimeExecutionInput,
+		signal: AbortSignal,
+	): Promise<RuntimeVerificationResult | 'aborted'> {
+		const verification = await verifier.verify(executionInput);
+		if (signal.aborted) return 'aborted';
+		if (!verification.ok || this.#lintVerifier === undefined) return verification;
+		const lint = await this.#lintVerifier.verify(executionInput);
+		if (signal.aborted) return 'aborted';
+		return lint.ok ? verification : lint;
+	}
+
+	/**
 	 * One implementation pass plus its verification. A failed issue verification
 	 * returns its one correction attempt; false means the run already settled.
 	 */
@@ -2602,8 +2636,8 @@ export class RunRuntime {
 		}
 		this.#transition(run.id, 'verify', 'run.work-completed', { summary: execution.summary });
 		this.#captureProposals(run, execution.proposals);
-		const verification = await verifier.verify(executionInput);
-		if (signal.aborted) {
+		const verification = await this.#verifyAndLint(verifier, executionInput, signal);
+		if (verification === 'aborted') {
 			this.#interrupt(run.id);
 			return false;
 		}

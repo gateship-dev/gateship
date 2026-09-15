@@ -34,6 +34,38 @@ describe('project verification manifest', () => {
 		}
 	});
 
+	// GSHIP-900: `lint` follows the same optional, list-of-commands contract as `prepare`.
+	test('preserves lint presence so absent fallback and explicit empty differ', () => {
+		expect(readProjectVerificationManifest(JSON.stringify({
+			version: 1,
+			verify: ['bun test'],
+		}))).toEqual({ version: 1, verify: ['bun test'] });
+		expect(readProjectVerificationManifest(JSON.stringify({
+			version: 1,
+			verify: ['bun test'],
+			lint: [],
+		}))).toEqual({ version: 1, verify: ['bun test'], lint: [] });
+		expect(readProjectVerificationManifest(JSON.stringify({
+			version: 1,
+			verify: ['npm test'],
+			lint: ['bun run lint'],
+		}))).toEqual({
+			version: 1,
+			verify: ['npm test'],
+			lint: ['bun run lint'],
+		});
+	});
+
+	test('rejects malformed lint commands without weakening verification', () => {
+		for (const lint of [null, 'bun run lint', [42], [''], ['   ']]) {
+			expect(() => readProjectVerificationManifest(JSON.stringify({
+				version: 1,
+				verify: ['npm test'],
+				lint,
+			}))).toThrow('project verification manifest has invalid lint commands');
+		}
+	});
+
 	test('accepts one optional project diagnostic command and rejects extra configuration', () => {
 		expect(readProjectVerificationManifest(JSON.stringify({
 			version: 1,

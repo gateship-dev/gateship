@@ -9,6 +9,8 @@ export interface ProjectVerificationManifest {
 	/** Commands run in order after the worktree is cut and before the agent starts. */
 	prepare?: string[];
 	verify: string[];
+	/** Commands run in order every round, after `run.work-completed` and before review starts. */
+	lint?: string[];
 	/** One repository-owned advisory command run in an isolated diagnostic checkout. */
 	diagnostic?: ProjectDiagnosticManifest;
 	/**
@@ -32,6 +34,16 @@ function validCommands(value: unknown, allowEmpty: boolean): value is string[] {
 	return Array.isArray(value)
 		&& (allowEmpty || value.length > 0)
 		&& value.every((command) => typeof command === 'string' && command.trim().length > 0);
+}
+
+/** `prepare` and `lint` share one contract: an optional list of commands, empty allowed. */
+function optionalCommandList(record: Record<string, unknown>, field: 'prepare' | 'lint', label: string): string[] | undefined {
+	if (!Object.hasOwn(record, field)) return undefined;
+	const value = record[field];
+	if (!validCommands(value, true)) {
+		throw new Error(`project verification manifest has invalid ${label} commands`);
+	}
+	return [...value];
 }
 
 /**
@@ -81,10 +93,8 @@ export function readProjectVerificationManifest(content: string): ProjectVerific
 	if (!validCommands(record.verify, false)) {
 		throw new Error('project verification manifest has no valid verification commands');
 	}
-	const hasPrepare = Object.hasOwn(record, 'prepare');
-	if (hasPrepare && !validCommands(record.prepare, true)) {
-		throw new Error('project verification manifest has invalid preparation commands');
-	}
+	const prepare = optionalCommandList(record, 'prepare', 'preparation');
+	const lint = optionalCommandList(record, 'lint', 'lint');
 	const hasDiagnostic = Object.hasOwn(record, 'diagnostic');
 	const projectDiagnostic = hasDiagnostic ? diagnostic(record.diagnostic) : undefined;
 	if (projectDiagnostic === null) {
@@ -96,8 +106,9 @@ export function readProjectVerificationManifest(content: string): ProjectVerific
 	}
 	return {
 		version: PROJECT_VERIFICATION_VERSION,
-		...(hasPrepare ? { prepare: [...record.prepare as string[]] } : {}),
+		...(prepare === undefined ? {} : { prepare }),
 		verify: [...record.verify],
+		...(lint === undefined ? {} : { lint }),
 		...(projectDiagnostic === undefined ? {} : { diagnostic: projectDiagnostic }),
 		...(hasReviewEvidencePaths ? { reviewEvidencePaths: [...record.reviewEvidencePaths as string[]] } : {}),
 	};

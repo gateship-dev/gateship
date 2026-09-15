@@ -642,6 +642,89 @@ describe('durable run runtime', () => {
 		runtime.close();
 	});
 
+	// GSHIP-900: a per-round lint pass runs after issue verification and before review.
+	test('runs no lint pass when the project has no lint verifier configured', async () => {
+		let verificationCalls = 0;
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => { verificationCalls += 1; return { ok: true }; } },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' as const }; } },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect({ verificationCalls, reviews }).toEqual({ verificationCalls: 1, reviews: 1 });
+		expect(runtime.listRunEvents(run.id).some((event) => event.kind.startsWith('lint.'))).toBe(false);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('runs a configured lint pass after issue verification, before review', async () => {
+		let verificationCalls = 0;
+		let lintCalls = 0;
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => { verificationCalls += 1; return { ok: true }; } },
+			lintVerifier: { verify: async () => { lintCalls += 1; return { ok: true }; } },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' as const }; } },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect({ verificationCalls, lintCalls, reviews }).toEqual({ verificationCalls: 1, lintCalls: 1, reviews: 1 });
+		expect(runtime.getRun(run.id)?.fixRounds).toBe(0);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('corrects a failing lint pass through the same one automatic fix round as issue verification', async () => {
+		const executions: Array<{ resume: boolean; verificationFeedback?: string }> = [];
+		let lintCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'), newId: () => 'run-lint-fix',
+			executor: { execute: async (input) => {
+				executions.push({ resume: input.resume, verificationFeedback: input.verificationFeedback });
+				return { outcome: 'completed' };
+			} },
+			verifier: { verify: async () => ({ ok: true }) },
+			lintVerifier: { verify: async () => ({ ok: ++lintCalls > 1, detail: 'lint failed: complexidade' }) },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+		expect(executions).toEqual([
+			{ resume: false, verificationFeedback: undefined },
+			{ resume: true, verificationFeedback: 'lint failed: complexidade' },
+		]);
+		expect(lintCalls).toBe(2);
+		expect(runtime.getRun(run.id)?.fixRounds).toBe(1);
+		expect(runtime.listRunEvents(run.id).map((event) => event.kind)).toContain('run.verification-fix-requested');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('fails on a persistent lint failure through the existing verification-exhausted path', async () => {
+		let lintCalls = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project', store: new RunStore(':memory:'),
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			lintVerifier: { verify: async () => { lintCalls += 1; return { ok: false, detail: `lint falhou ${lintCalls}` }; } },
+		});
+		const run = await runtime.startRun('GSHIP-756');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+		expect(lintCalls).toBe(2);
+		expect(runtime.getRun(run.id)).toMatchObject({ error: 'lint falhou 2', fixRounds: 1 });
+		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.verification-failed')).toHaveLength(1);
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('retries a failed verification without executing, then requires fresh review and full verify', async () => {
 		const issue = retryIssue();
 		const workspace = createTestTmpdir('gship-verification-retry-');
@@ -668,6 +751,60 @@ describe('durable run runtime', () => {
 		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
 		expect({ executorCalls, verificationCalls, reviews, fullVerifications }).toEqual({ executorCalls: 2, verificationCalls: 3, reviews: 1, fullVerifications: 1 });
 		expect(runtime.getRunEvaluation(run.id)?.verificationRetries).toMatchObject({ attempts: 1, failures: 0, durationMs: expect.any(Number), usage: [{ costUsd: 0.25 }] });
+		await runtime.stop(); runtime.close();
+	});
+
+	// GSHIP-900: a verification retry must re-run the configured lint gate, not
+	// only the issue verifier -- otherwise a run that failed on exhausted lint
+	// could reach review on an unchanged, still-lint-failing workspace.
+	test('reruns the configured lint gate on a verification retry, so a lint failure cannot be bypassed', async () => {
+		const issue = retryIssue('GSHIP-881-lint-retry-fails');
+		const workspace = createTestTmpdir('gship-verification-retry-lint-fails-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-lint-retry-fails', issue, workspace);
+		let executorCalls = 0;
+		let verificationCalls = 0;
+		let lintCalls = 0;
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => { executorCalls += 1; return { outcome: 'completed' }; } },
+			verifier: { verify: async () => { verificationCalls += 1; return { ok: true }; } },
+			lintVerifier: { verify: async () => { lintCalls += 1; return { ok: false, detail: 'lint failed: complexidade' }; } },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' as const }; } },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		runtime.retryVerificationRun('run-lint-retry-fails', 'retry after lint fix attempt');
+		await waitFor(() => runtime.getRun('run-lint-retry-fails')?.state === 'failed'
+			&& runtime.listRunEvents('run-lint-retry-fails').some((event) => event.kind === 'run.verification-retry-result'));
+		expect({ executorCalls, verificationCalls, lintCalls, reviews }).toEqual({ executorCalls: 0, verificationCalls: 1, lintCalls: 1, reviews: 0 });
+		expect(runtime.listRunEvents('run-lint-retry-fails').find((event) => event.kind === 'run.verification-retry-result')?.payload)
+			.toMatchObject({ outcome: 'failed', detail: 'lint failed: complexidade' });
+		await runtime.stop(); runtime.close();
+	});
+
+	test('advances a verification retry to review only after both issue verification and lint pass', async () => {
+		const issue = retryIssue('GSHIP-881-lint-retry-passes');
+		const workspace = createTestTmpdir('gship-verification-retry-lint-passes-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-lint-retry-passes', issue, workspace);
+		let verificationCalls = 0;
+		let lintCalls = 0;
+		let reviews = 0;
+		let fullVerifications = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => { verificationCalls += 1; return { ok: true }; } },
+			lintVerifier: { verify: async () => { lintCalls += 1; return { ok: true }; } },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' as const }; } },
+			fullVerifier: { verify: async () => { fullVerifications += 1; return { ok: true }; } },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+		runtime.retryVerificationRun('run-lint-retry-passes', 'retry after lint fix');
+		await waitFor(() => runtime.getRun('run-lint-retry-passes')?.state === 'ready-to-ship');
+		expect({ verificationCalls, lintCalls, reviews, fullVerifications }).toEqual({ verificationCalls: 1, lintCalls: 1, reviews: 1, fullVerifications: 1 });
 		await runtime.stop(); runtime.close();
 	});
 

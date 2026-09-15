@@ -52,6 +52,7 @@ import {
 	GitEvidenceChecker,
 	GitFullVerifier,
 	GitIssueVerifier,
+	GitLintVerifier,
 	RuntimePreflightError,
 } from '../runtime/git-runtime.ts';
 import { GitReconciliationWorkspace, GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
@@ -2535,6 +2536,7 @@ export function createDefaultRunRuntimeOptions(
 		}),
 		verifier: new GitIssueVerifier(),
 		fullVerifier: new GitFullVerifier(),
+		lintVerifier: new GitLintVerifier(),
 		reviewer: new AgentReviewerRouter({
 			claude: new ClaudeCliReviewer({ resolveModel: model('claude', 'reviewer'), resolveClaudeCredential }),
 			codex: new CodexCliReviewer({ resolveModel: model('codex', 'reviewer') }),
