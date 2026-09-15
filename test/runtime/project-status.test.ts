@@ -61,7 +61,7 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 			unassignedDuration: { durationMs: 1, entries: 1 },
 			durationReconciliation: { classifiedMs: 0, unassignedMs: 1, totalMs: 1, toleranceMs: 1000, reconciles: true },
 		},
-		cost: { totalCostUsd: null, breakdown: [], roles: [] },
+		cost: { totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] },
 	};
 }
 
@@ -503,6 +503,23 @@ test('expõe derivações históricas, denominadores e desconhecidos sem inventa
 	incomplete.evaluation.outcome = 'incomplete';
 	const partial = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [incomplete]);
 	expect(partial.overview).toMatchObject({ activeRuns: 1, terminalRuns: 0, terminalWallTimeMs: null, terminalWallTimeRuns: 0 });
+});
+
+// GSHIP-889: a run whose cost is only partly known must never read as fully
+// covered in the totals -- runsByCostCoverage counts it under 'partial',
+// distinct from a fully priced run and from one that never priced anything,
+// while the known subtotal (runsWithKnownCost/knownCostUsd) still sums every
+// run that reported any known cost, partial included.
+test('separa cobertura completa, parcial e desconhecida nos totais sem descartar o subtotal conhecido', () => {
+	const complete = { ...history('cost-complete', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: 0.1, costCoverage: 'complete' as const, breakdown: [], roles: [] } };
+	const partial = { ...history('cost-partial', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: 0.2, costCoverage: 'partial' as const, breakdown: [], roles: [] } };
+	const unknown = { ...history('cost-unknown', '2026-09-05T00:00:00.000Z'), cost: { totalCostUsd: null, costCoverage: 'unknown' as const, breakdown: [], roles: [] } };
+	const overview = readProjectHistoricalOverview(project, 'all', new Date('2026-09-07T00:00:00.000Z'), () => [complete, partial, unknown]).overview;
+	expect(overview?.runsByCostCoverage).toEqual({ complete: 1, partial: 1, unknown: 1 });
+	// The partial run's known portion still counts toward the subtotal: never
+	// discarded, only never presented as if the run were fully priced.
+	expect(overview?.runsWithKnownCost).toBe(2);
+	expect(overview?.knownCostUsd).toBeCloseTo(0.3, 6);
 });
 
 test('mede correção pelo intervalo durável da solicitação, não pela fase inteira', () => {

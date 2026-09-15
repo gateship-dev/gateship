@@ -1064,7 +1064,8 @@ describe('run cost summary', () => {
 	function appendUsage(
 		store: RunStore,
 		runId: string,
-		kind: 'provider.usage' | 'review.usage',
+		kind: 'provider.usage' | 'review.usage' | 'cycle-question.usage' | 'chain-reconciliation.usage'
+			| 'run.cycle-response' | 'run.chain-reconciliation',
 		payload: Record<string, unknown>,
 	): void {
 		store.appendEvent({ runId, kind, createdAt: '2026-08-17T10:00:00.000Z', payload });
@@ -1097,6 +1098,7 @@ describe('run cost summary', () => {
 
 		expect(store.getRunCostSummary('run-cost')).toEqual({
 			totalCostUsd: 0.19,
+			costCoverage: 'complete',
 			breakdown: [
 				{
 					role: 'executor',
@@ -1206,7 +1208,7 @@ describe('run cost summary', () => {
 	test('reads as null, never zero, when the run has no usage event at all', () => {
 		const store = storeWithRun('run-cost-none', 'CAM-61');
 		expect(store.getRunCostSummary('run-cost-none'))
-			.toEqual({ totalCostUsd: null, breakdown: [], roles: [] });
+			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] });
 		store.close();
 	});
 
@@ -1247,9 +1249,422 @@ describe('run cost summary', () => {
 		});
 		expect(store.getRunCostSummary('run-cost-noisy')).toEqual({
 			totalCostUsd: 0.05,
+			costCoverage: 'complete',
 			breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.05 }],
 			roles: [],
 		});
+		store.close();
+	});
+
+	// GSHIP-889: a raw `.usage` event and its response copy share the same
+	// invocationId. Both the resolver's (`cycle-question.usage` /
+	// `run.cycle-response`) and the reconciler's (`chain-reconciliation.usage` /
+	// `run.chain-reconciliation`) pairs must fold into one invocation, not two.
+	test('folds a raw usage event and its response copy into one invocation, never doubling the total', () => {
+		const store = storeWithRun('run-cost-dup', 'CAM-889');
+		appendUsage(store, 'run-cost-dup', 'cycle-question.usage', {
+			provider: 'claude', invocationId: 'inv-1', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.05, modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 100, outputTokens: 20, costUsd: 0.05 }],
+		});
+		appendUsage(store, 'run-cost-dup', 'run.cycle-response', {
+			provider: 'claude', invocationId: 'inv-1', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.05, modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 100, outputTokens: 20, costUsd: 0.05 }],
+		});
+		appendUsage(store, 'run-cost-dup', 'chain-reconciliation.usage', {
+			provider: 'claude', invocationId: 'inv-2', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.01, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+		});
+		appendUsage(store, 'run-cost-dup', 'run.chain-reconciliation', {
+			provider: 'claude', invocationId: 'inv-2', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.01, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-dup');
+		expect(summary.totalCostUsd).toBeCloseTo(0.06, 6);
+		expect(summary.costCoverage).toBe('complete');
+		expect(summary.breakdown).toEqual([{
+			role: 'orchestrator', model: 'claude-sonnet-4-6',
+			costUsd: expect.closeTo(0.06, 6), inputTokens: 100, outputTokens: 20,
+		}]);
+		store.close();
+	});
+
+	// GSHIP-889: a run recorded before GSHIP-888 minted invocationId has a raw
+	// resolver/reconciler usage event and its response copy with no id to match
+	// them by. Counting the raw event here would double it against the copy --
+	// the ambiguous legacy pair must still fold to one invocation, exactly as
+	// it did before the raw kind was added as a source.
+	test('never doubles a legacy raw usage event and its response copy when neither carries an invocationId', () => {
+		const store = storeWithRun('run-cost-legacy-dup', 'CAM-889-f');
+		appendUsage(store, 'run-cost-legacy-dup', 'cycle-question.usage', {
+			provider: 'claude', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.05, modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 100, outputTokens: 20, costUsd: 0.05 }],
+		});
+		appendUsage(store, 'run-cost-legacy-dup', 'run.cycle-response', {
+			provider: 'claude', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.05, modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 100, outputTokens: 20, costUsd: 0.05 }],
+		});
+		appendUsage(store, 'run-cost-legacy-dup', 'chain-reconciliation.usage', {
+			provider: 'claude', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.01, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+		});
+		appendUsage(store, 'run-cost-legacy-dup', 'run.chain-reconciliation', {
+			provider: 'claude', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.01, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-legacy-dup');
+		expect(summary.totalCostUsd).toBeCloseTo(0.06, 6);
+		expect(summary.costCoverage).toBe('complete');
+		expect(summary.breakdown).toEqual([{
+			role: 'orchestrator', model: 'claude-sonnet-4-6',
+			costUsd: expect.closeTo(0.06, 6), inputTokens: 100, outputTokens: 20,
+		}]);
+		store.close();
+	});
+
+	// GSHIP-889: a legacy resolver/reconciler failure has only the raw usage
+	// event, no id, no copy at all. Its cost and tokens are skipped -- there is
+	// no copy to add them from either -- but the invocation itself still
+	// counts toward coverage as unpriced: with nothing else in the run, that
+	// is the only invocation there is, and it was never priced, so coverage
+	// reads 'unknown', never 'complete' for lack of anything to compare it to.
+	test('skips a legacy raw resolver or reconciler usage event that never carries an invocationId and has no copy', () => {
+		const store = storeWithRun('run-cost-legacy-orphan', 'CAM-889-g');
+		appendUsage(store, 'run-cost-legacy-orphan', 'chain-reconciliation.usage', {
+			provider: 'claude', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.02, modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 50, outputTokens: 10, costUsd: 0.02 }],
+		});
+		expect(store.getRunCostSummary('run-cost-legacy-orphan'))
+			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] });
+		store.close();
+	});
+
+	// GSHIP-889: the same legacy resolver failure as above, but beside a priced
+	// executor call elsewhere in the run. The orphaned raw event still cannot
+	// contribute its own cost or tokens -- there is no copy to add them from --
+	// but it now counts toward coverage as an invocation this history cannot
+	// account for, so coverage reads 'partial', never 'complete' just because
+	// another call in the run happened to be priced.
+	test('marks coverage partial, not complete, when a legacy resolver failure with no copy sits beside a priced executor call', () => {
+		const store = storeWithRun('run-cost-legacy-partial-resolver', 'CAM-889-k');
+		appendUsage(store, 'run-cost-legacy-partial-resolver', 'provider.usage', {
+			model: 'opus', totalCostUsd: 0.12,
+			modelUsage: [{ model: 'claude-opus-4-6', inputTokens: 900, outputTokens: 150, costUsd: 0.12 }],
+		});
+		appendUsage(store, 'run-cost-legacy-partial-resolver', 'cycle-question.usage', {
+			model: 'sonnet', totalCostUsd: 0.02,
+			modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.02 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-legacy-partial-resolver');
+		expect(summary.totalCostUsd).toBeCloseTo(0.12, 6);
+		expect(summary.costCoverage).toBe('partial');
+		expect(summary.breakdown).toEqual([{
+			role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.12, 6), inputTokens: 900, outputTokens: 150,
+		}]);
+		store.close();
+	});
+
+	// GSHIP-889: two legacy raw chain-reconciliation.usage events but only one
+	// legacy run.chain-reconciliation copy -- one raw event is unmatched. The
+	// total is exactly the priced executor call plus the one matched copy: the
+	// unmatched raw event contributes nothing (there is no second copy to add
+	// it from), yet it still counts toward coverage, so the run reads
+	// 'partial' instead of 'complete'.
+	test('counts an unmatched legacy raw event toward coverage without adding its cost, when a matched copy sits beside it', () => {
+		const store = storeWithRun('run-cost-legacy-partial-reconciler', 'CAM-889-l');
+		appendUsage(store, 'run-cost-legacy-partial-reconciler', 'provider.usage', {
+			model: 'opus', totalCostUsd: 0.1,
+			modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.1 }],
+		});
+		appendUsage(store, 'run-cost-legacy-partial-reconciler', 'chain-reconciliation.usage', {
+			model: 'sonnet', totalCostUsd: 0.01, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+		});
+		appendUsage(store, 'run-cost-legacy-partial-reconciler', 'chain-reconciliation.usage', {
+			model: 'sonnet', totalCostUsd: 0.02, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.02 }],
+		});
+		appendUsage(store, 'run-cost-legacy-partial-reconciler', 'run.chain-reconciliation', {
+			model: 'sonnet', totalCostUsd: 0.03, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.03 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-legacy-partial-reconciler');
+		expect(summary.totalCostUsd).toBeCloseTo(0.13, 6);
+		expect(summary.costCoverage).toBe('partial');
+		expect(summary.breakdown).toEqual([
+			{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.1, 6) },
+			{ role: 'orchestrator', model: 'claude-sonnet-4-6', costUsd: expect.closeTo(0.03, 6) },
+		]);
+		store.close();
+	});
+
+	// GSHIP-889: the reconciler's raw usage event is durable the instant its
+	// call completes, before its final `run.chain-reconciliation` (which never
+	// exists for a run that threw on an invalid response). The raw event alone
+	// must still count.
+	test('counts a resolver or reconciler usage report even when it never produced a final response', () => {
+		const store = storeWithRun('run-cost-failed', 'CAM-889-b');
+		appendUsage(store, 'run-cost-failed', 'chain-reconciliation.usage', {
+			provider: 'claude', invocationId: 'inv-failed', model: 'sonnet', effort: 'medium',
+			totalCostUsd: 0.02, modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 50, outputTokens: 10, costUsd: 0.02 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-failed');
+		expect(summary.totalCostUsd).toBeCloseTo(0.02, 6);
+		expect(summary.costCoverage).toBe('complete');
+		expect(summary.breakdown).toEqual([{
+			role: 'orchestrator', model: 'claude-sonnet-4-6', costUsd: expect.closeTo(0.02, 6), inputTokens: 50, outputTokens: 10,
+		}]);
+		store.close();
+	});
+
+	// GSHIP-889: Codex never reports a per-model cost or a `modelUsage` array,
+	// only flat token counts on `payload.usage`. Its tokens must still surface
+	// in the breakdown, with cost absent rather than a fabricated zero, and the
+	// run's coverage must read as partial once a priced Claude call sits beside
+	// an unpriced Codex one.
+	test('reports Codex tokens without a modelUsage array, cost absent, coverage partial beside a priced call', () => {
+		const store = storeWithRun('run-cost-mixed', 'CAM-889-c');
+		appendUsage(store, 'run-cost-mixed', 'provider.usage', {
+			provider: 'claude', invocationId: 'inv-claude', model: 'opus', effort: 'high',
+			totalCostUsd: 0.1, modelUsage: [{ model: 'claude-opus-4-6', inputTokens: 400, outputTokens: 80, costUsd: 0.1 }],
+		});
+		appendUsage(store, 'run-cost-mixed', 'review.usage', {
+			provider: 'codex', invocationId: 'inv-codex', model: 'gpt-5-codex', effort: 'medium',
+			usage: { inputTokens: 300, outputTokens: 60, cacheReadInputTokens: 120 },
+		});
+		const summary = store.getRunCostSummary('run-cost-mixed');
+		expect(summary.totalCostUsd).toBeCloseTo(0.1, 6);
+		expect(summary.costCoverage).toBe('partial');
+		expect(summary.breakdown).toEqual([
+			{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.1, 6), inputTokens: 400, outputTokens: 80 },
+			{ role: 'reviewer', model: 'gpt-5-codex', inputTokens: 300, outputTokens: 60, cacheReadInputTokens: 120 },
+		]);
+		store.close();
+	});
+
+	// GSHIP-889: no invocation in the run ever reported a price at all -- the
+	// tokens are known, but the run's cost coverage must read as unknown, never
+	// upgraded to complete or partial just because tokens exist.
+	test('reads coverage as unknown when every invocation reported tokens but never a price', () => {
+		const store = storeWithRun('run-cost-unpriced', 'CAM-889-d');
+		appendUsage(store, 'run-cost-unpriced', 'review.usage', {
+			provider: 'codex', invocationId: 'inv-codex-only', model: 'gpt-5-codex',
+			usage: { inputTokens: 30, outputTokens: 5 },
+		});
+		const summary = store.getRunCostSummary('run-cost-unpriced');
+		expect(summary.totalCostUsd).toBeNull();
+		expect(summary.costCoverage).toBe('unknown');
+		expect(summary.breakdown).toEqual([{ role: 'reviewer', model: 'gpt-5-codex', inputTokens: 30, outputTokens: 5 }]);
+		store.close();
+	});
+
+	// GSHIP-889: the default Codex slot (model-settings.ts) has no configured
+	// model at all, so `emitCodexUsage` never sets `payload.model`. The
+	// invocation's tokens must still appear in the breakdown, keyed to
+	// 'provider-default' -- the same fallback `emitModelSelection` and the
+	// resolvers already use for an unconfigured slot -- rather than vanishing
+	// for lack of a model name.
+	test('keys Codex tokens to provider-default when the invoked slot had no model configured', () => {
+		const store = storeWithRun('run-cost-codex-default-model', 'CAM-889-p');
+		appendUsage(store, 'run-cost-codex-default-model', 'review.usage', {
+			provider: 'codex', invocationId: 'inv-codex-default',
+			usage: { inputTokens: 30, outputTokens: 5, cacheReadInputTokens: 12 },
+		});
+		expect(store.getRunCostSummary('run-cost-codex-default-model')).toEqual({
+			totalCostUsd: null,
+			costCoverage: 'unknown',
+			breakdown: [{ role: 'reviewer', model: 'provider-default', inputTokens: 30, outputTokens: 5, cacheReadInputTokens: 12 }],
+			roles: [],
+		});
+		store.close();
+	});
+
+	// GSHIP-889: the same unconfigured-slot Codex call as above, but beside a
+	// priced Claude executor call. The Codex tokens still surface under
+	// 'provider-default', with cost absent, and coverage reads 'partial' since
+	// one of the two invocations was never priced.
+	test('reports an unconfigured-slot Codex call as provider-default beside a priced Claude call', () => {
+		const store = storeWithRun('run-cost-codex-default-mixed', 'CAM-889-q');
+		appendUsage(store, 'run-cost-codex-default-mixed', 'provider.usage', {
+			provider: 'claude', invocationId: 'inv-claude', model: 'opus',
+			totalCostUsd: 0.1, modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.1 }],
+		});
+		appendUsage(store, 'run-cost-codex-default-mixed', 'provider.usage', {
+			provider: 'codex', invocationId: 'inv-codex-default-mixed',
+			usage: { inputTokens: 200, outputTokens: 40 },
+		});
+		const summary = store.getRunCostSummary('run-cost-codex-default-mixed');
+		expect(summary.totalCostUsd).toBeCloseTo(0.1, 6);
+		expect(summary.costCoverage).toBe('partial');
+		expect(summary.breakdown).toEqual([
+			{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.1, 6) },
+			{ role: 'executor', model: 'provider-default', inputTokens: 200, outputTokens: 40 },
+		]);
+		store.close();
+	});
+
+	// GSHIP-889: a real reported zero is a known price, distinct from an
+	// absent one -- it must count toward coverage and never be conflated with
+	// "no price reported".
+	test('treats a real reported zero as a known price, not as missing', () => {
+		const store = storeWithRun('run-cost-zero', 'CAM-889-e');
+		appendUsage(store, 'run-cost-zero', 'provider.usage', {
+			provider: 'claude', invocationId: 'inv-zero', model: 'haiku',
+			totalCostUsd: 0, modelUsage: [{ model: 'claude-haiku-4-5', inputTokens: 40, outputTokens: 5, costUsd: 0 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-zero');
+		expect(summary.totalCostUsd).toBe(0);
+		expect(summary.costCoverage).toBe('complete');
+		expect(summary.breakdown).toEqual([{ role: 'executor', model: 'claude-haiku-4-5', costUsd: 0, inputTokens: 40, outputTokens: 5 }]);
+		store.close();
+	});
+
+	// GSHIP-889: each invocation's own reported total is a delta on the running
+	// sum, never a replacement -- the snapshot read after each append must be
+	// the exact cumulative total of everything appended so far, not just the
+	// final one computed once at the end.
+	test('reports the exact cumulative snapshot after each delta, not just the final total', () => {
+		const store = storeWithRun('run-cost-snapshots', 'CAM-889-h');
+		appendUsage(store, 'run-cost-snapshots', 'provider.usage', {
+			provider: 'claude', invocationId: 'inv-a', model: 'opus', effort: 'high',
+			totalCostUsd: 0.1, modelUsage: [{ model: 'claude-opus-4-6', inputTokens: 500, outputTokens: 100, costUsd: 0.1 }],
+		});
+		const afterFirst = store.getRunCostSummary('run-cost-snapshots');
+		expect(afterFirst.totalCostUsd).toBeCloseTo(0.1, 6);
+		expect(afterFirst.breakdown).toEqual([{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.1, 6), inputTokens: 500, outputTokens: 100 }]);
+
+		appendUsage(store, 'run-cost-snapshots', 'provider.usage', {
+			provider: 'claude', invocationId: 'inv-b', model: 'opus', effort: 'high',
+			totalCostUsd: 0.04, modelUsage: [{ model: 'claude-opus-4-6', inputTokens: 200, outputTokens: 60, costUsd: 0.04 }],
+		});
+		const afterSecond = store.getRunCostSummary('run-cost-snapshots');
+		expect(afterSecond.totalCostUsd).toBeCloseTo(0.14, 6);
+		expect(afterSecond.breakdown).toEqual([{
+			role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.14, 6), inputTokens: 700, outputTokens: 160,
+		}]);
+		store.close();
+	});
+
+	// GSHIP-889: claude-cli-executor.test.ts ("emits a separate usage event per
+	// invocation on resume, without summing or dropping either call") confirms
+	// against Claude's own primary source that a resumed session's usage
+	// "starts fresh" per call -- unlike Codex's per-turn counters, it is never
+	// a running total carried across the resume. Each resumed invocation's
+	// totalCostUsd is therefore its own delta, so summing across invocations
+	// here is correct: it is not double-counting a total the CLI itself
+	// already accumulated.
+	test('sums a resumed session\'s own fresh per-call delta instead of an already-cumulative total', () => {
+		const store = storeWithRun('run-cost-resume', 'CAM-889-i');
+		appendUsage(store, 'run-cost-resume', 'provider.usage', {
+			provider: 'claude', invocationId: 'inv-first', model: 'opus',
+			totalCostUsd: 0.1234, modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.1234 }],
+		});
+		// A resumed call to the same session reports its own fresh figures
+		// again -- never the session's running total to date.
+		appendUsage(store, 'run-cost-resume', 'provider.usage', {
+			provider: 'claude', invocationId: 'inv-resumed', model: 'opus',
+			totalCostUsd: 0.1234, modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.1234 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-resume');
+		expect(summary.totalCostUsd).toBeCloseTo(0.2468, 6);
+		expect(summary.breakdown).toEqual([{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.2468, 6) }]);
+		store.close();
+	});
+
+	// GSHIP-889: executor, reviewer, resolver and reconciler all in the same
+	// run, several of them with more than one model, combined into one exact
+	// total and breakdown -- the resolver's and reconciler's shared
+	// 'orchestrator' role folds their (role, model) pairs together, same as
+	// any other repeated pair.
+	test('combines executor, reviewer, resolver and reconciler in one run, each with multiple models, into one exact total', () => {
+		const store = storeWithRun('run-cost-all-functions', 'CAM-889-j');
+		appendUsage(store, 'run-cost-all-functions', 'provider.usage', {
+			invocationId: 'inv-exec', model: 'opus', totalCostUsd: 0.12,
+			modelUsage: [
+				{ model: 'claude-opus-4-6', inputTokens: 400, outputTokens: 80, costUsd: 0.1 },
+				{ model: 'claude-haiku-4-5', costUsd: 0.02 },
+			],
+		});
+		appendUsage(store, 'run-cost-all-functions', 'review.usage', {
+			invocationId: 'inv-review', model: 'sonnet', totalCostUsd: 0.03,
+			modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 300, outputTokens: 40, costUsd: 0.03 }],
+		});
+		appendUsage(store, 'run-cost-all-functions', 'cycle-question.usage', {
+			invocationId: 'inv-resolver', model: 'sonnet', totalCostUsd: 0.01,
+			modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+		});
+		appendUsage(store, 'run-cost-all-functions', 'chain-reconciliation.usage', {
+			invocationId: 'inv-reconciler', model: 'sonnet', totalCostUsd: 0.005,
+			modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.005 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-all-functions');
+		expect(summary.totalCostUsd).toBeCloseTo(0.165, 6);
+		expect(summary.costCoverage).toBe('complete');
+		expect(summary.breakdown).toEqual([
+			{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.1, 6), inputTokens: 400, outputTokens: 80 },
+			{ role: 'executor', model: 'claude-haiku-4-5', costUsd: expect.closeTo(0.02, 6) },
+			{ role: 'reviewer', model: 'claude-sonnet-4-6', costUsd: expect.closeTo(0.03, 6), inputTokens: 300, outputTokens: 40 },
+			{ role: 'orchestrator', model: 'claude-sonnet-4-6', costUsd: expect.closeTo(0.015, 6) },
+		]);
+		store.close();
+	});
+
+	// GSHIP-889: the operator's own guidance on a cycle question
+	// (`#applyOperatorCycleGuidance`, run-runtime.ts) writes a `run.cycle-response`
+	// with no invocationId and none of the usage fields `cycleUsageEventPayload`
+	// would have set -- it never called a provider. A run fully priced on the
+	// provider side must read as 'complete' even though it also received this
+	// guidance: a human decision is not an unpriced invocation.
+	test('does not count the operator\'s own cycle guidance as an invocation, so a fully priced run still reads complete', () => {
+		const store = storeWithRun('run-cost-operator-guidance', 'CAM-889-m');
+		appendUsage(store, 'run-cost-operator-guidance', 'provider.usage', {
+			invocationId: 'inv-exec', model: 'opus', totalCostUsd: 0.12,
+			modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.12 }],
+		});
+		appendUsage(store, 'run-cost-operator-guidance', 'run.cycle-response', {
+			questionId: 'question-1', responder: 'operator', source: 'operator',
+			outcome: 'continue', guidance: 'Proceed with the documented workaround.',
+			findings: 'The executor asked whether to retry.', origin: 'review',
+		});
+		const summary = store.getRunCostSummary('run-cost-operator-guidance');
+		expect(summary.totalCostUsd).toBeCloseTo(0.12, 6);
+		expect(summary.costCoverage).toBe('complete');
+		expect(summary.breakdown).toEqual([{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.12, 6) }]);
+		expect(summary.roles).toEqual([]);
+		store.close();
+	});
+
+	// GSHIP-889: the same operator guidance beside a legacy reconciler failure
+	// that has no copy at all. The guidance still does not pair against the
+	// orphaned raw event (it carries no usage to match), so the raw event stays
+	// unmatched and coverage still reads 'partial', not 'complete'.
+	test('leaves a legacy reconciler failure unmatched beside operator guidance with no usage of its own', () => {
+		const store = storeWithRun('run-cost-operator-guidance-partial', 'CAM-889-n');
+		appendUsage(store, 'run-cost-operator-guidance-partial', 'provider.usage', {
+			invocationId: 'inv-exec', model: 'opus', totalCostUsd: 0.12,
+			modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.12 }],
+		});
+		appendUsage(store, 'run-cost-operator-guidance-partial', 'run.chain-reconciliation', {
+			questionId: 'question-2', responder: 'operator', source: 'operator',
+			outcome: 'continue', guidance: 'Proceed anyway.', findings: 'Reconciliation asked a question.', origin: 'review',
+		});
+		appendUsage(store, 'run-cost-operator-guidance-partial', 'chain-reconciliation.usage', {
+			model: 'sonnet', totalCostUsd: 0.02, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.02 }],
+		});
+		const summary = store.getRunCostSummary('run-cost-operator-guidance-partial');
+		expect(summary.totalCostUsd).toBeCloseTo(0.12, 6);
+		expect(summary.costCoverage).toBe('partial');
+		expect(summary.breakdown).toEqual([{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.12, 6) }]);
+		store.close();
+	});
+
+	// GSHIP-889: operator guidance with no other usage in the run at all is not
+	// an invocation, so there is nothing to report -- never 'complete' for lack
+	// of any actual provider call, and never a fabricated zero cost.
+	test('reads as null and unknown when the only event is the operator\'s own cycle guidance', () => {
+		const store = storeWithRun('run-cost-operator-guidance-only', 'CAM-889-o');
+		appendUsage(store, 'run-cost-operator-guidance-only', 'run.cycle-response', {
+			questionId: 'question-3', responder: 'operator', source: 'operator',
+			outcome: 'continue', guidance: 'Proceed.', findings: 'The executor asked a question.', origin: 'executor',
+		});
+		expect(store.getRunCostSummary('run-cost-operator-guidance-only'))
+			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] });
 		store.close();
 	});
 });

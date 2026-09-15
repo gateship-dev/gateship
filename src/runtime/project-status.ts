@@ -137,6 +137,16 @@ export interface HistoricalOverview {
 	totalRuns: number;
 	runsWithKnownCost: number;
 	knownCostUsd: number | null;
+	/**
+	 * How many runs' cost is fully known, only partly known, or unknown
+	 * (GSHIP-889), read from each run's own `cost.costCoverage`. Optional so
+	 * older callers that never populate it keep compiling; a real read always
+	 * sets it. `runsWithKnownCost`/`knownCostUsd` above still count and sum
+	 * every run that reported *any* known cost, partial included -- the known
+	 * subtotal is never discarded, only never displayed as if it were the
+	 * whole of every run counted in it.
+	 */
+	runsByCostCoverage?: { complete: number; partial: number; unknown: number };
 	runsByOutcome: Record<'shipped' | 'failed' | 'cancelled' | 'incomplete', number>;
 	activeRuns: number;
 	terminalRuns: number;
@@ -344,6 +354,7 @@ function emptyOutcomes(): HistoricalOverview['runsByOutcome'] {
 function emptyHistoricalOverview(window: OverviewWindow): HistoricalOverview {
 	return {
 		window, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null,
+		runsByCostCoverage: { complete: 0, partial: 0, unknown: 0 },
 		runsByOutcome: emptyOutcomes(), activeRuns: 0, terminalRuns: 0, terminalWallTimeMs: null, terminalWallTimeRuns: 0,
 		shippedWithoutIntervention: 0, dispatchToMergeMs: null, dispatchToMergeRuns: 0, medianDispatchToMergeMs: null,
 		firstReviewPasses: 0, firstReviewPassKnownRuns: 0, ciCorrections: 0,
@@ -838,6 +849,7 @@ function addRunMetrics(result: HistoricalOverview, item: PersistedRunHistory): v
 		result.runsWithKnownCost += 1;
 		result.knownCostUsd = (result.knownCostUsd ?? 0) + item.cost.totalCostUsd;
 	}
+	if (result.runsByCostCoverage !== undefined) result.runsByCostCoverage[item.cost.costCoverage] += 1;
 }
 
 function modelProviderMap(item: PersistedRunHistory): Map<number, string> {
@@ -1222,6 +1234,11 @@ function mergeHistoricalTotals(combined: HistoricalOverview, item: HistoricalOve
 	combined.totalRuns += item.totalRuns;
 	combined.runsWithKnownCost += item.runsWithKnownCost;
 	if (item.knownCostUsd !== null) combined.knownCostUsd = (combined.knownCostUsd ?? 0) + item.knownCostUsd;
+	if (combined.runsByCostCoverage !== undefined && item.runsByCostCoverage !== undefined) {
+		combined.runsByCostCoverage.complete += item.runsByCostCoverage.complete;
+		combined.runsByCostCoverage.partial += item.runsByCostCoverage.partial;
+		combined.runsByCostCoverage.unknown += item.runsByCostCoverage.unknown;
+	}
 	for (const outcome of Object.keys(combined.runsByOutcome) as Array<keyof HistoricalOverview['runsByOutcome']>) {
 		combined.runsByOutcome[outcome] += item.runsByOutcome[outcome];
 	}

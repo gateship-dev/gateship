@@ -296,6 +296,8 @@ export interface HistoricalOverviewView {
 	totalRuns: number;
 	runsWithKnownCost: number;
 	knownCostUsd: number | null;
+	/** Mirrors HistoricalOverview.runsByCostCoverage in src/runtime/project-status.ts (GSHIP-889). */
+	runsByCostCoverage?: { complete: number; partial: number; unknown: number };
 	runsByOutcome: { shipped: number; failed: number; cancelled: number; incomplete: number };
 	activeRuns: number;
 	terminalRuns: number;
