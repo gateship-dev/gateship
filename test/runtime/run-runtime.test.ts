@@ -3544,6 +3544,7 @@ describe('releasing a failed run workspace', () => {
 				{ role: 'reviewer', model: 'claude-sonnet-4-6', costUsd: expect.closeTo(0.02, 6) },
 			],
 			roles: [],
+			unpricedInvocations: 0,
 		});
 		await runtime.stop();
 		runtime.close();

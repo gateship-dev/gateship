@@ -5,7 +5,13 @@ import { pathToFileURL } from 'node:url';
 
 import type { AgentProviderId } from './agent-session.ts';
 import type { ResearchContract, SpecProfile } from '../issues/spec.ts';
-import { evaluateRun, type RunEvaluation } from './run-evaluation.ts';
+import {
+	DISPATCH_METHODOLOGY_VERSION,
+	type DispatchMethodologyVersion,
+	evaluateRun,
+	isDispatchLikeEvent,
+	type RunEvaluation,
+} from './run-evaluation.ts';
 import {
 	type DiagnosticDraft,
 	type DiagnosticFinding,
@@ -417,6 +423,15 @@ export interface RunCostSummary {
 	costCoverage: RunCostCoverage;
 	breakdown: RunCostBreakdownEntry[];
 	roles: RunCostRoleUsage[];
+	/**
+	 * Invocations counted toward coverage (`costCoverageOf`'s own
+	 * `totalInvocations`) that reported no price at all (GSHIP-891) -- the same
+	 * subtraction `costCoverageOf` already makes internally, exposed so a
+	 * sample-level reevaluation can count what stayed unpriced even inside a
+	 * `'partial'` run, not only a run whose `costCoverage` reads `'unknown'`
+	 * outright.
+	 */
+	unpricedInvocations: number;
 }
 
 export interface PersistedRunHistory {
@@ -424,6 +439,15 @@ export interface PersistedRunHistory {
 	events: RunEvent[];
 	evaluation: RunEvaluation;
 	cost: RunCostSummary;
+	/**
+	 * Count of this run's own `event_class = 'activity'` rows (GSHIP-891) --
+	 * ephemeral provider/review activity `readPersistedRunHistory` deliberately
+	 * excludes from `events`/`evaluation`/`cost` (see `decodeEventClass`). A
+	 * plain count read from the same durable rows, never a guess at what an
+	 * excluded row might have meant: this is discarded from decision-level
+	 * projection by design, not lost by omission.
+	 */
+	activityEventCount: number;
 }
 
 /**
@@ -785,6 +809,7 @@ export function summarizeRunCost(events: readonly RunEvent[]): RunCostSummary {
 		costCoverage: costCoverageOf(acc.totalInvocations, acc.pricedInvocations),
 		breakdown: [...acc.breakdown.values()],
 		roles: roleUsage,
+		unpricedInvocations: acc.totalInvocations - acc.pricedInvocations,
 	};
 }
 
@@ -947,6 +972,10 @@ export function readPersistedRunHistory(path: string): PersistedRunHistory[] {
 			list.push(event);
 			byRun.set(event.runId, list);
 		}
+		const activityCounts = db.query(
+			"SELECT run_id, COUNT(*) as count FROM run_events WHERE event_class = 'activity' GROUP BY run_id",
+		).all() as { run_id: string; count: number }[];
+		const activityByRun = new Map(activityCounts.map((row) => [row.run_id, row.count]));
 		return runs.map((run) => {
 			const decisionEvents = byRun.get(run.id) ?? [];
 			return {
@@ -954,11 +983,101 @@ export function readPersistedRunHistory(path: string): PersistedRunHistory[] {
 				events: decisionEvents,
 				evaluation: evaluateRun(run, decisionEvents),
 				cost: summarizeRunCost(decisionEvents),
+				activityEventCount: activityByRun.get(run.id) ?? 0,
 			};
 		});
 	} finally {
 		db.close();
 	}
+}
+
+/**
+ * A comparative reevaluation of an already-persisted sample (GSHIP-891):
+ * reads only what `readPersistedRunHistory` already returned -- never a
+ * provider, a cache, a discovery service, or a second parser -- and never
+ * writes anything back, so calling it twice on the same sample, or after a
+ * restart, returns the same result. `before` is a plain count of every event
+ * shaped like a dispatch (`isDispatchLikeEvent`, run-evaluation.ts) or like a
+ * usage report, read with no disambiguation at all. `after` is exactly the
+ * `evaluation.dispatches` (GSHIP-888/890) and `cost.costCoverage`
+ * (GSHIP-889) each `PersistedRunHistory` entry already carries -- reused,
+ * never recomputed by a second rule. The gap between the two is what those
+ * corrections actually changed once reapplied to this sample: a
+ * `run.cycle-response` an operator or agent-cli answered directly no longer
+ * counts as a dispatch, and a run with some usage-shaped event but no priced
+ * invocation at all no longer counts as known cost. Neither total claims to
+ * be more "real" than the other -- `before` is what a naive read would show,
+ * `after` is what each run's own durable decision log actually supports.
+ *
+ * `nonRecoverable` counts only what the corrected read itself flags as
+ * permanently discarded, never a guess at what a missing value might have
+ * been: `dispatches` sums `evaluation.dispatches.unknown` (a legacy
+ * `run.cycle-response` with no responder recorded); `cost` counts runs whose
+ * `costCoverage` is `'unknown'` (no priced invocation in the whole run);
+ * `unpricedInvocations` sums `cost.unpricedInvocations` across every run,
+ * including a `'partial'` run whose overall coverage still looks recoverable
+ * even though some of its own invocations never priced; `missingTokens`
+ * counts priced `cost.breakdown` rows that carry a `costUsd` but not one of
+ * the four token fields -- a provider that priced a call without ever
+ * reporting its tokens (e.g. Codex, GSHIP-888), never reconstructed from
+ * text by estimate; `discardedActivityEvents` sums `activityEventCount`, the
+ * `event_class = 'activity'` rows `readPersistedRunHistory` excludes from
+ * `events`/`evaluation`/`cost` by design. Requested model or effort never
+ * substitutes for any of these counts -- every total comes only from what
+ * the sample's own durable rows confirm.
+ */
+export interface HistoricalReevaluation {
+	sampleSize: number;
+	dispatchMethodologyVersion: DispatchMethodologyVersion;
+	dispatches: { before: number; after: { known: number; unknown: number } };
+	cost: {
+		before: number;
+		after: { complete: number; partial: number; unknown: number };
+		knownCostUsd: number | null;
+	};
+	nonRecoverable: {
+		dispatches: number;
+		cost: number;
+		unpricedInvocations: number;
+		missingTokens: number;
+		discardedActivityEvents: number;
+	};
+}
+
+function missingTokenBreakdownRows(breakdown: readonly RunCostBreakdownEntry[]): number {
+	return breakdown.filter((entry) => entry.costUsd !== undefined
+		&& entry.inputTokens === undefined && entry.outputTokens === undefined
+		&& entry.cacheCreationInputTokens === undefined && entry.cacheReadInputTokens === undefined).length;
+}
+
+export function reevaluateHistoricalSample(history: readonly PersistedRunHistory[]): HistoricalReevaluation {
+	const after = { complete: 0, partial: 0, unknown: 0 };
+	let dispatchesBefore = 0;
+	let costBefore = 0;
+	let dispatchesKnown = 0;
+	let dispatchesUnknown = 0;
+	let knownCostUsd: number | null = null;
+	let unpricedInvocations = 0;
+	let missingTokens = 0;
+	let discardedActivityEvents = 0;
+	for (const item of history) {
+		dispatchesBefore += item.events.filter(isDispatchLikeEvent).length;
+		if (item.events.some((event) => USAGE_EVENT_ROLES[event.kind] !== undefined)) costBefore += 1;
+		dispatchesKnown += item.evaluation.dispatches?.total ?? 0;
+		dispatchesUnknown += item.evaluation.dispatches?.unknown ?? 0;
+		after[item.cost.costCoverage] += 1;
+		if (item.cost.totalCostUsd !== null) knownCostUsd = (knownCostUsd ?? 0) + item.cost.totalCostUsd;
+		unpricedInvocations += item.cost.unpricedInvocations;
+		missingTokens += missingTokenBreakdownRows(item.cost.breakdown);
+		discardedActivityEvents += item.activityEventCount;
+	}
+	return {
+		sampleSize: history.length,
+		dispatchMethodologyVersion: DISPATCH_METHODOLOGY_VERSION,
+		dispatches: { before: dispatchesBefore, after: { known: dispatchesKnown, unknown: dispatchesUnknown } },
+		cost: { before: costBefore, after, knownCostUsd },
+		nonRecoverable: { dispatches: dispatchesUnknown, cost: after.unknown, unpricedInvocations, missingTokens, discardedActivityEvents },
+	};
 }
 
 /**

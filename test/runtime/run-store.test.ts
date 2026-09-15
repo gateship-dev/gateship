@@ -4,11 +4,14 @@ import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { emptyModelSettings } from '../../src/runtime/model-settings.ts';
+import { DISPATCH_METHODOLOGY_VERSION } from '../../src/runtime/run-evaluation.ts';
 import { selectPullRequestDelivery } from '../../src/runtime/pull-request-delivery.ts';
 import { PROPOSAL_LIMITS, ProposalTransitionError } from '../../src/runtime/run-proposal.ts';
 import {
 	PROJECT_BRIEF_LIMITS,
+	readPersistedRunHistory,
 	readPersistedRunStatuses,
+	reevaluateHistoricalSample,
 	RunStore,
 } from '../../src/runtime/run-store.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
@@ -1118,6 +1121,7 @@ describe('run cost summary', () => {
 			// The executor's two invocations agreed on 'high'; the reviewer never
 			// reported an effort or a thinking count at all, so it has no row here.
 			roles: [{ role: 'executor', effort: 'high' }],
+			unpricedInvocations: 0,
 		});
 		store.close();
 	});
@@ -1208,7 +1212,7 @@ describe('run cost summary', () => {
 	test('reads as null, never zero, when the run has no usage event at all', () => {
 		const store = storeWithRun('run-cost-none', 'CAM-61');
 		expect(store.getRunCostSummary('run-cost-none'))
-			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] });
+			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [], unpricedInvocations: 0 });
 		store.close();
 	});
 
@@ -1252,6 +1256,7 @@ describe('run cost summary', () => {
 			costCoverage: 'complete',
 			breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.05 }],
 			roles: [],
+			unpricedInvocations: 0,
 		});
 		store.close();
 	});
@@ -1334,7 +1339,7 @@ describe('run cost summary', () => {
 			totalCostUsd: 0.02, modelUsage: [{ model: 'claude-sonnet-4-6', inputTokens: 50, outputTokens: 10, costUsd: 0.02 }],
 		});
 		expect(store.getRunCostSummary('run-cost-legacy-orphan'))
-			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] });
+			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [], unpricedInvocations: 1 });
 		store.close();
 	});
 
@@ -1471,6 +1476,7 @@ describe('run cost summary', () => {
 			costCoverage: 'unknown',
 			breakdown: [{ role: 'reviewer', model: 'provider-default', inputTokens: 30, outputTokens: 5, cacheReadInputTokens: 12 }],
 			roles: [],
+			unpricedInvocations: 1,
 		});
 		store.close();
 	});
@@ -1664,8 +1670,192 @@ describe('run cost summary', () => {
 			outcome: 'continue', guidance: 'Proceed.', findings: 'The executor asked a question.', origin: 'executor',
 		});
 		expect(store.getRunCostSummary('run-cost-operator-guidance-only'))
-			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] });
+			.toEqual({ totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [], unpricedInvocations: 0 });
 		store.close();
+	});
+});
+
+// GSHIP-891: `reevaluateHistoricalSample` reapplies T1-T3's own per-run
+// evaluation (run-evaluation.ts) and cost projection (`summarizeRunCost`
+// above) to an already-persisted sample -- reading only what
+// `readPersistedRunHistory` already returns, never a second parser and never
+// a write, so replay and a service restart are idempotent by construction.
+describe('historical reevaluation', () => {
+	function fileStore(id: string, issueId: string, dbPath: string): RunStore {
+		const store = new RunStore(dbPath);
+		store.createRun({ id, issueId, sessionId: `session-${id}`, workspacePath: `/workspaces/${id}`, createdAt: '2026-09-14T10:00:00.000Z' });
+		return store;
+	}
+
+	test('returns the identical result on repeated reads and after a restart', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-idempotent-'), 'runtime.sqlite');
+		const store = fileStore('run-reeval-a', 'GSHIP-a', dbPath);
+		store.appendEvent({ runId: 'run-reeval-a', kind: 'provider.model', createdAt: '2026-09-14T10:01:00.000Z', payload: { model: 'opus', provider: 'claude' } });
+		store.appendEvent({
+			runId: 'run-reeval-a', kind: 'provider.usage', createdAt: '2026-09-14T10:01:30.000Z',
+			payload: { model: 'opus', totalCostUsd: 0.05, modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.05, inputTokens: 100, outputTokens: 20 }] },
+		});
+		store.close();
+
+		const first = reevaluateHistoricalSample(readPersistedRunHistory(dbPath));
+		expect(first).toEqual({
+			sampleSize: 1,
+			dispatchMethodologyVersion: DISPATCH_METHODOLOGY_VERSION,
+			dispatches: { before: 1, after: { known: 1, unknown: 0 } },
+			cost: { before: 1, after: { complete: 1, partial: 0, unknown: 0 }, knownCostUsd: expect.closeTo(0.05, 6) },
+			nonRecoverable: { dispatches: 0, cost: 0, unpricedInvocations: 0, missingTokens: 0, discardedActivityEvents: 0 },
+		});
+		// A second read through the same on-demand path, no service restart.
+		expect(reevaluateHistoricalSample(readPersistedRunHistory(dbPath))).toEqual(first);
+		// A restart -- reopening and closing the mutable store -- changes nothing
+		// this read-only path sees, since it opens its own connection each time.
+		const reopened = new RunStore(dbPath);
+		reopened.close();
+		expect(reevaluateHistoricalSample(readPersistedRunHistory(dbPath))).toEqual(first);
+	});
+
+	test('dedupes a raw orchestrator usage event against its response copy, matching the per-run rule', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-dedup-'), 'runtime.sqlite');
+		const store = fileStore('run-reeval-b', 'GSHIP-b', dbPath);
+		store.appendEvent({
+			runId: 'run-reeval-b', kind: 'cycle-question.usage', createdAt: '2026-09-14T10:01:00.000Z',
+			payload: { invocationId: 'inv-1', model: 'sonnet', totalCostUsd: 0.02, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.02 }] },
+		});
+		store.appendEvent({
+			runId: 'run-reeval-b', kind: 'run.cycle-response', createdAt: '2026-09-14T10:01:05.000Z',
+			payload: { invocationId: 'inv-1', responder: 'orchestrator', outcome: 'continue', model: 'sonnet', totalCostUsd: 0.02, modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.02 }] },
+		});
+		store.close();
+		const report = reevaluateHistoricalSample(readPersistedRunHistory(dbPath));
+		// Raw `cycle-question.usage` is not itself dispatch-shaped -- only its
+		// response copy is -- so `before` counts the pairing once, the same as
+		// `after`, and the shared invocationId keeps the priced total from
+		// doubling.
+		expect(report.dispatches).toEqual({ before: 1, after: { known: 1, unknown: 0 } });
+		expect(report.cost).toEqual({ before: 1, after: { complete: 1, partial: 0, unknown: 0 }, knownCostUsd: expect.closeTo(0.02, 6) });
+	});
+
+	test('flags a legacy responder-less cycle-response as non-recoverable dispatch provenance, never guessed', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-legacy-'), 'runtime.sqlite');
+		const store = fileStore('run-reeval-c', 'GSHIP-c', dbPath);
+		store.appendEvent({ runId: 'run-reeval-c', kind: 'run.cycle-response', createdAt: '2026-09-14T10:01:00.000Z', payload: { outcome: 'continue' } });
+		store.close();
+		const report = reevaluateHistoricalSample(readPersistedRunHistory(dbPath));
+		expect(report.dispatches).toEqual({ before: 1, after: { known: 0, unknown: 1 } });
+		expect(report.nonRecoverable.dispatches).toBe(1);
+	});
+
+	test('counts an unpriced invocation as unknown cost coverage, present in `before` but not recalculable into a price', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-unpriced-'), 'runtime.sqlite');
+		const store = fileStore('run-reeval-d', 'GSHIP-d', dbPath);
+		store.appendEvent({ runId: 'run-reeval-d', kind: 'provider.usage', createdAt: '2026-09-14T10:01:00.000Z', payload: { model: 'opus' } });
+		store.close();
+		const report = reevaluateHistoricalSample(readPersistedRunHistory(dbPath));
+		expect(report.cost).toEqual({ before: 1, after: { complete: 0, partial: 0, unknown: 1 }, knownCostUsd: null });
+		expect(report.nonRecoverable.cost).toBe(1);
+	});
+
+	test('includes a non-terminal run in the sample without fabricating its outcome or wall time', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-terminal-'), 'runtime.sqlite');
+		const doneStore = fileStore('run-reeval-done', 'GSHIP-e', dbPath);
+		doneStore.transition({ runId: 'run-reeval-done', toState: 'working', kind: 'run.started', createdAt: '2026-09-14T10:01:00.000Z' });
+		doneStore.appendEvent({ runId: 'run-reeval-done', kind: 'provider.model', createdAt: '2026-09-14T10:01:10.000Z', payload: { model: 'opus', provider: 'claude' } });
+		for (const [toState, kind] of [['verify', 'run.verify'], ['ready-to-ship', 'run.ready-to-ship'], ['shipping', 'run.shipping'], ['done', 'run.shipped']] as const) {
+			doneStore.transition({ runId: 'run-reeval-done', toState, kind, createdAt: '2026-09-14T10:02:00.000Z' });
+		}
+		doneStore.createRun({ id: 'run-reeval-active', issueId: 'GSHIP-f', sessionId: 'session-run-reeval-active', workspacePath: '/workspaces/run-reeval-active', createdAt: '2026-09-14T10:05:00.000Z' });
+		doneStore.transition({ runId: 'run-reeval-active', toState: 'working', kind: 'run.started', createdAt: '2026-09-14T10:05:30.000Z' });
+		doneStore.appendEvent({ runId: 'run-reeval-active', kind: 'provider.model', createdAt: '2026-09-14T10:06:00.000Z', payload: { model: 'sonnet', provider: 'claude' } });
+		doneStore.close();
+
+		const history = readPersistedRunHistory(dbPath);
+		const active = history.find((item) => item.run.id === 'run-reeval-active');
+		expect(active?.evaluation.outcome).toBe('incomplete');
+		expect(active?.evaluation.wallTimeMs).toBeNull();
+
+		const report = reevaluateHistoricalSample(history);
+		expect(report.sampleSize).toBe(2);
+		expect(report.dispatches).toEqual({ before: 2, after: { known: 2, unknown: 0 } });
+	});
+
+	test('never mixes two projects\' samples, even with the same run id reused across separate files', () => {
+		const dbPathA = join(createTestTmpdir('gship-reeval-isolation-a-'), 'runtime.sqlite');
+		const dbPathB = join(createTestTmpdir('gship-reeval-isolation-b-'), 'runtime.sqlite');
+		const storeA = fileStore('run-shared-id', 'GSHIP-g', dbPathA);
+		storeA.appendEvent({ runId: 'run-shared-id', kind: 'provider.model', createdAt: '2026-09-14T10:01:00.000Z', payload: { model: 'opus', provider: 'claude' } });
+		storeA.close();
+		const storeB = fileStore('run-shared-id', 'GSHIP-h', dbPathB);
+		storeB.close();
+
+		expect(reevaluateHistoricalSample(readPersistedRunHistory(dbPathA)).dispatches.before).toBe(1);
+		expect(reevaluateHistoricalSample(readPersistedRunHistory(dbPathB)).dispatches.before).toBe(0);
+	});
+
+	test('reports zero counts and a null total for an empty sample, never a fabricated zero cost', () => {
+		expect(reevaluateHistoricalSample([])).toEqual({
+			sampleSize: 0,
+			dispatchMethodologyVersion: DISPATCH_METHODOLOGY_VERSION,
+			dispatches: { before: 0, after: { known: 0, unknown: 0 } },
+			cost: { before: 0, after: { complete: 0, partial: 0, unknown: 0 }, knownCostUsd: null },
+			nonRecoverable: { dispatches: 0, cost: 0, unpricedInvocations: 0, missingTokens: 0, discardedActivityEvents: 0 },
+		});
+	});
+
+	// GSHIP-891 review: a run's overall coverage can still read 'partial' while
+	// one of its own invocations never priced at all -- that invocation must
+	// not hide inside a coverage bucket that looks mostly recoverable.
+	test('counts an unpriced invocation inside an otherwise partial run, not only a fully unknown run', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-partial-unpriced-'), 'runtime.sqlite');
+		const store = fileStore('run-reeval-partial', 'GSHIP-i', dbPath);
+		store.appendEvent({
+			runId: 'run-reeval-partial', kind: 'provider.usage', createdAt: '2026-09-14T10:01:00.000Z',
+			payload: { model: 'opus', totalCostUsd: 0.05, modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.05 }] },
+		});
+		store.appendEvent({ runId: 'run-reeval-partial', kind: 'review.usage', createdAt: '2026-09-14T10:01:10.000Z', payload: { model: 'sonnet' } });
+		store.close();
+		const report = reevaluateHistoricalSample(readPersistedRunHistory(dbPath));
+		expect(report.cost.after).toEqual({ complete: 0, partial: 1, unknown: 0 });
+		// The run's own coverage bucket is 'partial', so the fully-unknown-run
+		// counter stays untouched -- the unpriced invocation only shows up in
+		// its own, more granular counter.
+		expect(report.nonRecoverable.cost).toBe(0);
+		expect(report.nonRecoverable.unpricedInvocations).toBe(1);
+	});
+
+	// GSHIP-891 review: a priced invocation whose tokens were never reported at
+	// all (e.g. Codex, GSHIP-888) is a permanent gap distinct from an unpriced
+	// invocation -- counted even on a run whose coverage otherwise reads
+	// 'complete', never reconstructed from text by estimate.
+	test('counts a priced breakdown row with no token field at all as a missing-tokens gap', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-missing-tokens-'), 'runtime.sqlite');
+		const store = fileStore('run-reeval-tokens', 'GSHIP-j', dbPath);
+		store.appendEvent({
+			runId: 'run-reeval-tokens', kind: 'provider.usage', createdAt: '2026-09-14T10:01:00.000Z',
+			payload: { totalCostUsd: 0.03, modelUsage: [{ model: 'gpt-5-codex', costUsd: 0.03 }] },
+		});
+		store.close();
+		const history = readPersistedRunHistory(dbPath);
+		expect(history[0]?.cost.costCoverage).toBe('complete');
+		expect(history[0]?.cost.breakdown).toEqual([{ role: 'executor', model: 'gpt-5-codex', costUsd: 0.03 }]);
+		const report = reevaluateHistoricalSample(history);
+		expect(report.nonRecoverable.missingTokens).toBe(1);
+	});
+
+	// GSHIP-891 review: an 'activity' event readPersistedRunHistory excludes
+	// from events/evaluation/cost by design (GSHIP-628's ephemeral provider
+	// activity) is still a discard the reevaluation must surface, never
+	// silently dropped from the report.
+	test('counts activity-class events readPersistedRunHistory excludes from decision-level projection', () => {
+		const dbPath = join(createTestTmpdir('gship-reeval-activity-'), 'runtime.sqlite');
+		const store = fileStore('run-reeval-activity', 'GSHIP-k', dbPath);
+		store.appendEvent({ runId: 'run-reeval-activity', kind: 'provider.activity', createdAt: '2026-09-14T10:01:00.000Z', eventClass: 'activity', payload: { chunk: 'thinking...' } });
+		store.appendEvent({ runId: 'run-reeval-activity', kind: 'provider.activity', createdAt: '2026-09-14T10:01:01.000Z', eventClass: 'activity', payload: { chunk: 'still thinking...' } });
+		store.close();
+		const history = readPersistedRunHistory(dbPath);
+		expect(history[0]?.events.map((event) => event.kind)).toEqual(['run.created']);
+		expect(history[0]?.activityEventCount).toBe(2);
+		const report = reevaluateHistoricalSample(history);
+		expect(report.nonRecoverable.discardedActivityEvents).toBe(2);
 	});
 });
 
