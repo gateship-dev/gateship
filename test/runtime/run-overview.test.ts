@@ -28,6 +28,7 @@ function history(id: string, updatedAt: string, providerId: 'claude' | 'codex' =
 			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
 			workflowRevision: null, provider: providerId, outcome: 'shipped', wallTimeMs: 1,
 			attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, roles: [],
+			dispatchMethodologyVersion: 'cli-process-v1',
 			phaseDurations: {
 				queued: { durationMs: 0, entries: 0 }, working: { durationMs: 0, entries: 0 }, verify: { durationMs: 0, entries: 0 }, review: { durationMs: 0, entries: 0 },
 				'full-verify': { durationMs: 0, entries: 0 }, shipping: { durationMs: 0, entries: 0 }, 'waiting-provider': { durationMs: 0, entries: 0 }, 'waiting-user': { durationMs: 0, entries: 0 },
@@ -137,7 +138,21 @@ describe('readRunOverview', () => {
 		});
 		expect(overview?.autonomyEvidence?.denominator).toBe('selected-historical-runs');
 		expect(overview?.autonomyEvidence?.percentileMethod).toBe('median-center-nearest-rank-p90');
+		expect(overview?.autonomyEvidence?.dispatchMethodologyVersion).toBe('cli-process-v1');
 		expect(overview?.dispatchCeilings?.reason).toBe('equivalent-outcome-not-demonstrated');
+	});
+
+	// GSHIP-890: a legacy cycle-response with no responder recorded cannot
+	// confirm whether the resolver ran, a limitation distinct from `dispatches`
+	// being entirely absent -- both must be visible in `missing`.
+	test('marca proveniência de despacho ausente quando um cycle-response legado não tem responder', () => {
+		const ambiguous = history('dispatch-ambiguous', '2026-09-01T00:00:00.000Z');
+		ambiguous.evaluation.dispatches = { total: 0, executor: 0, reviewer: 0, orchestrator: 0, unknown: 1 };
+		const clean = history('dispatch-clean', '2026-09-02T00:00:00.000Z');
+		clean.evaluation.dispatches = { total: 1, executor: 1, reviewer: 0, orchestrator: 0, unknown: 0 };
+		const overview = readProjectHistoricalOverview(project('one'), 'all', new Date('2026-09-03T00:00:00.000Z'), () => [ambiguous, clean], {}, null).overview;
+		expect(overview?.autonomyEvidence?.missing.dispatchProvenance).toBe(1);
+		expect(overview?.autonomyEvidence?.missing.dispatches).toBeUndefined();
 	});
 
 	test('publica cobertura de despachos sem transformar ausência em zero', () => {
@@ -149,8 +164,8 @@ describe('readRunOverview', () => {
 		for (const candidate of missingOverview?.dispatchCeilings?.candidates ?? []) expect(candidate).toMatchObject({ observedRuns: null, cappedDispatches: null });
 
 		const partial = [1, 2, 3, 4].map((index) => history(`dispatch-partial-${index}`, `2026-09-0${index}T00:00:00.000Z`));
-		partial[0]!.evaluation.dispatches = { total: 7, executor: 7, reviewer: 0, orchestrator: 0 };
-		partial[1]!.evaluation.dispatches = { total: 10, executor: 10, reviewer: 0, orchestrator: 0 };
+		partial[0]!.evaluation.dispatches = { total: 7, executor: 7, reviewer: 0, orchestrator: 0, unknown: 0 };
+		partial[1]!.evaluation.dispatches = { total: 10, executor: 10, reviewer: 0, orchestrator: 0, unknown: 0 };
 		const partialOverview = readProjectHistoricalOverview(project('one'), 'all', new Date('2026-09-05T00:00:00.000Z'), () => partial, {}, null).overview;
 		expect(partialOverview?.dispatchCeilings).toMatchObject({ known: 2, denominator: 4 });
 		expect(partialOverview?.dispatchCeilings?.candidates.find((candidate) => candidate.ceiling === 7)).toEqual({ ceiling: 7, observedRuns: 1, cappedDispatches: 3 });

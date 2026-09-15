@@ -1342,6 +1342,22 @@ describe('runs surface', () => {
 		// fabricated zero line.
 		const withoutRounds = runsPage({ runs: [runIn('done')] });
 		expect(withoutRounds).not.toContain('Correction rounds');
+
+		// GSHIP-890: an `orchestrator` round comes from a resolver continue,
+		// which proves neither resolution nor an effective correction, in both
+		// languages the card renders.
+		const withOrchestrator = runsPage({
+			runs: [runIn('done', { roundOrigins: { executor: 0, decision: 0, orchestrator: 1, indeterminate: 0 } })],
+		});
+		expect(withOrchestrator).toContain('1 after an orchestrator continue');
+		expect(withOrchestrator).not.toContain('resolved by the orchestrator');
+
+		const withOrchestratorPtBr = runsPage({
+			locale: 'pt-BR',
+			runs: [runIn('done', { roundOrigins: { executor: 0, decision: 0, orchestrator: 1, indeterminate: 0 } })],
+		});
+		expect(withOrchestratorPtBr).toContain('1 após continue do orquestrador');
+		expect(withOrchestratorPtBr).not.toContain('pelo orquestrador');
 	});
 
 	test('the detail breaks the total down by role and model, with the token counts each reported', () => {
@@ -1473,11 +1489,18 @@ describe('runs surface', () => {
 		expect(summary).toContain('Local window of the latest 3 runs');
 		expect(summary).toContain('1 completed');
 		expect(summary).toContain('4 rounds across 2 runs');
-		expect(summary).toContain('1 orchestrator-resolved');
+		// GSHIP-890: `orchestrator` rounds come from a resolver continue, which
+		// proves neither resolution nor an effective correction.
+		expect(summary).toContain('1 after an orchestrator continue');
+		expect(summary).not.toContain('orchestrator-resolved');
 		expect(summary).toContain('1 response across 1 run');
 		expect(summary).toContain('2 after human decisions');
 		expect(summary).toContain('$');
 		expect(summary).not.toContain('Score');
+
+		const summaryPtBr = panel(runsPage({ runs, locale: 'pt-BR' }), 'Sinais do fluxo de trabalho');
+		expect(summaryPtBr).toContain('1 após continue do orquestrador');
+		expect(summaryPtBr).not.toContain('pelo orquestrador');
 	});
 
 	// GSHIP-720: a CI correction is a correction round like any other. A run
@@ -1717,6 +1740,7 @@ describe('runs surface', () => {
 			toState: 'review',
 			payload: {
 				questionId: 'question-1',
+				responder: 'orchestrator',
 				outcome: 'continue',
 				guidance: 'Keep Authored_GUIDANCE verbatim.',
 				provider: 'claude',
@@ -1728,8 +1752,14 @@ describe('runs surface', () => {
 		const english = runsPage({ runs: [runIn('review')], events: [event] });
 		const portuguese = runsPage({ locale: 'pt-BR', runs: [runIn('review')], events: [event] });
 
-		expect(english).toContain('Orchestrator answer to the review cycle');
-		expect(portuguese).toContain('Resposta do orquestrador ao ciclo de revisão');
+		// GSHIP-890: the cycle-response badge is neutral -- the actor comes only
+		// from the role label, read from the event's own `responder`.
+		expect(english).toContain('Answer to the review cycle');
+		expect(english).not.toContain('Orchestrator answer to the review cycle');
+		expect(english).toContain('<span class="font-medium">Orchestrator</span>');
+		expect(portuguese).toContain('Resposta ao ciclo de revisão');
+		expect(portuguese).not.toContain('Resposta do orquestrador ao ciclo de revisão');
+		expect(portuguese).toContain('<span class="font-medium">Orquestrador</span>');
 		for (const html of [english, portuguese]) {
 			expect(html).toContain('Keep Authored_GUIDANCE verbatim.');
 			expect(html).toContain('raw-model-v9');
@@ -1739,6 +1769,49 @@ describe('runs surface', () => {
 		expect(question).toContain('Needs attention');
 		expect(question).not.toContain('>Decision<');
 		expect(question).not.toContain('>Decisão<');
+	});
+
+	// GSHIP-890: a `run.cycle-response` never invoked by the resolver -- a
+	// human or agent-cli answer to a pending question, or a legacy event with
+	// no responder recorded -- must never read as an orchestrator on the
+	// timeline. `run.operator-guidance` carries the same channel distinction.
+	test('attributes a cycle response or operator guidance to its own actor, never the orchestrator by default', () => {
+		const cycleResponse = (responder?: string): AppProps['events'][number] => ({
+			seq: 1, runId: 'run-1', kind: 'run.cycle-response', fromState: 'review', toState: 'review',
+			payload: { questionId: 'question-1', outcome: 'continue', guidance: 'Ratify.', ...(responder === undefined ? {} : { responder }) },
+			createdAt: '2026-08-16T03:04:05.000Z',
+		});
+		const operatorSpan = '<span class="font-medium">Operator</span>';
+		const orchestratorSpan = '<span class="font-medium">Orchestrator</span>';
+
+		const operator = runsPage({ runs: [runIn('review')], events: [cycleResponse('operator')] });
+		expect(operator).toContain(operatorSpan);
+		expect(operator).not.toContain(orchestratorSpan);
+
+		const agentCli = runsPage({ runs: [runIn('review')], events: [cycleResponse('agent-cli')] });
+		expect(agentCli).toContain('<span class="font-medium">Agent CLI</span>');
+		expect(agentCli).not.toContain(orchestratorSpan);
+		expect(agentCli).not.toContain(operatorSpan);
+
+		const legacy = runsPage({ runs: [runIn('review')], events: [cycleResponse()] });
+		expect(legacy).toContain('<span class="font-medium">Unknown origin</span>');
+		expect(legacy).not.toContain(orchestratorSpan);
+
+		const legacyPtBr = runsPage({ locale: 'pt-BR', runs: [runIn('review')], events: [cycleResponse()] });
+		expect(legacyPtBr).toContain('<span class="font-medium">Origem desconhecida</span>');
+
+		const guidanceFromAgentCli: AppProps['events'][number] = {
+			seq: 1, runId: 'run-1', kind: 'run.operator-guidance', fromState: 'waiting-user', toState: 'waiting-user',
+			payload: { text: 'Apply the approved correction.', source: 'agent-cli' }, createdAt: '2026-08-16T03:04:05.000Z',
+		};
+		const agentCliGuidance = runsPage({ runs: [runIn('waiting-user')], events: [guidanceFromAgentCli] });
+		expect(agentCliGuidance).toContain('<span class="font-medium">Agent CLI</span>');
+
+		const guidanceFromWeb: AppProps['events'][number] = {
+			...guidanceFromAgentCli, payload: { text: 'Ratify.', source: 'web' },
+		};
+		const webGuidance = runsPage({ runs: [runIn('waiting-user')], events: [guidanceFromWeb] });
+		expect(webGuidance).toContain(operatorSpan);
 	});
 
 	test('provider noise never pushes a cycle event out of the activity window', () => {
@@ -3333,6 +3406,7 @@ function factualAutonomyOverview(known = 3) {
 		outcomes: { shipped: 1, failed: 1, cancelled: 0, incomplete: 1 }, interventionRuns: 1,
 		guidance: { channels: { web: 2, 'agent-cli': 3, other: 1, unknown: 1 }, authorization: { observed: 3, absent: 1, unknown: 3 } },
 		missing: { cost: 1 }, denominator: 'selected-historical-runs', percentileMethod: 'median-center-nearest-rank-p90',
+		dispatchMethodologyVersion: 'cli-process-v1',
 		comparables: {
 			corrections: { verification: { median: 1, p90: 2, max: 2, known, denominator: 5 } },
 			dispatches: { median: 2, p90: 3, max: 3, known, denominator: 5 },
@@ -3456,6 +3530,10 @@ test('renderiza o relatório agregado de autonomia em en-US', () => {
 	expect(html).toContain('runs in the selected historical slice');
 	expect(html).toContain('the history does not demonstrate an equivalent outcome under a ceiling');
 	expect(html).not.toContain('Runs no recorte histórico selecionado');
+	// GSHIP-890: the dispatch-counting methodology is versioned and exposed
+	// beside the existing denominator/percentile-method codes.
+	expect(html).toContain('dispatch methodology');
+	expect(html).toContain('counts one CLI process invocation per dispatch');
 });
 
 test('renderiza o relatório agregado de autonomia em pt-BR', () => {
@@ -3477,6 +3555,26 @@ test('renderiza o relatório agregado de autonomia em pt-BR', () => {
 	expect(html).not.toContain('unknown 1');
 	expect(html).not.toContain('observed 3');
 	expect(html).not.toContain('absent 1');
+	expect(html).toContain('metodologia de despacho');
+	expect(html).toContain('conta uma invocação do processo CLI por despacho');
+});
+
+// GSHIP-890: `resolvedCycleQuestions` only counts the orchestrator's own
+// resolver answering `continue`, never an escalation or a human/agent-cli
+// answer, so the label must not claim resolution -- a `continue` proves
+// neither resolution nor an effective correction.
+test('rotula respostas continue do orquestrador sem declarar resolução', () => {
+	const result = factualCohortOverview([]) as { overview: Record<string, unknown> };
+	result.overview.resolvedCycleQuestions = 4;
+	result.overview.operatorInterventions = 2;
+	for (const [locale, label, oldLabel] of [
+		['en-US', 'Orchestrator continue answers', 'Questions resolved internally'],
+		['pt-BR', 'Respostas continue do orquestrador', 'Perguntas resolvidas internamente'],
+	] as const) {
+		const html = renderInsightsWithLoadedOverview(locale, result);
+		expect(html).toContain(label);
+		expect(html).not.toContain(oldLabel);
+	}
 });
 
 test('declara dados insuficientes até haver cinco medições comparáveis', () => {

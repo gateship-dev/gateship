@@ -17,7 +17,7 @@ import {
 import { isTerminalRunState } from './run-state.ts';
 import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 import { selectRunRoundOrigins } from './round-origin.ts';
-import { RUN_DURATION_PHASES, type RunDurationPhase } from './run-evaluation.ts';
+import { DISPATCH_METHODOLOGY_VERSION, RUN_DURATION_PHASES, type DispatchMethodologyVersion, type RunDurationPhase } from './run-evaluation.ts';
 
 export const PROJECT_STATUS_RUN_LIMIT = 20;
 
@@ -209,6 +209,8 @@ export interface HistoricalOverview {
 		};
 		denominator: AutonomyDenominatorCode;
 		percentileMethod: AutonomyPercentileMethodCode;
+		/** GSHIP-890: which rule produced `comparables.dispatches` and the per-run `dispatches` it reads -- see `DISPATCH_METHODOLOGY_VERSION`. */
+		dispatchMethodologyVersion: DispatchMethodologyVersion;
 	};
 	dispatchCeilings?: {
 		known: number;
@@ -421,6 +423,11 @@ function accumulateAutonomyRun(item: PersistedRunHistory, accumulator: AutonomyA
 	addMissingField(accumulator.missing, 'authorizationEvidence', guidance.authorization.unknown > 0 || guidance.authorization.observed + guidance.authorization.absent === 0);
 	addMissingField(accumulator.missing, 'guidanceChannel', guidance.channels.unknown > 0);
 	addMissingField(accumulator.missing, 'dispatches', evaluation.dispatches?.total === undefined);
+	// GSHIP-890: a legacy `run.cycle-response` with no responder recorded
+	// leaves this run's own dispatch count unable to confirm whether the
+	// resolver ran -- a distinct limitation from `dispatches` being absent
+	// outright.
+	addMissingField(accumulator.missing, 'dispatchProvenance', (evaluation.dispatches?.unknown ?? 0) > 0);
 	addAutonomyValue(accumulator.values, 'corrections', evaluation.corrections.total);
 	addAutonomyValue(accumulator.values, 'dispatches', evaluation.dispatches?.total ?? null);
 	addAutonomyValue(accumulator.values, 'wait:provider', evaluation.phaseDurations['waiting-provider'].durationMs);
@@ -456,6 +463,7 @@ function autonomyEvidence(items: readonly PersistedRunHistory[]): NonNullable<Hi
 		},
 		denominator: 'selected-historical-runs',
 		percentileMethod: 'median-center-nearest-rank-p90',
+		dispatchMethodologyVersion: DISPATCH_METHODOLOGY_VERSION,
 	};
 }
 
@@ -895,9 +903,13 @@ function addModelConfiguration(
 	item: PersistedRunHistory,
 	event: PersistedRunHistory['events'][number],
 ): void {
+	// GSHIP-890: a `run.cycle-response` from a human or agent-cli answer to a
+	// pending question never invoked the orchestrator's own provider -- listing
+	// it here would show an "orchestrator" configuration for a call that never
+	// ran.
 	const role = event.kind === 'provider.model' ? 'executor'
 		: event.kind === 'review.model' ? 'reviewer'
-			: event.kind === 'run.cycle-response' ? 'orchestrator' : null;
+			: event.kind === 'run.cycle-response' && event.payload['responder'] === 'orchestrator' ? 'orchestrator' : null;
 	if (role === null) return;
 	configurations.add(JSON.stringify({
 		provider: providers.get(event.seq) ?? item.run.providerId, role,

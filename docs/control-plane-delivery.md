@@ -96,6 +96,49 @@ avaliação de modelo. Diagnósticos, coortes e ideias derivadas continuam
 advisory: podem gerar uma proposta revisável, mas não aprovam, iniciam,
 corrigem ou bloqueiam uma execução.
 
+`resolvedCycleQuestions` conta só as respostas `run.cycle-response` que o
+próprio resolvedor do orquestrador respondeu `continue`; uma escalada
+(`outcome: 'operator'`) e uma resposta de operador ou agent-cli a uma pergunta
+pendente nunca contam como resolução interna, já que nenhuma delas chamou o
+resolvedor. Um `continue` não prova que a correção seguinte foi de fato
+aplicada nem que teve efeito -- essa medição é distinta de `corrections` e de
+`dispatches.executor`. `dispatches` segue a mesma proveniência: só conta uma
+invocação confirmada do processo CLI (executor, reviewer ou o resolvedor do
+orquestrador); nunca conta chamadas LLM internas ou subagentes que um
+processo CLI faça por conta própria, porque este histórico de eventos não os
+observa. `dispatches.orchestrator` soma cada `run.cycle-response` com
+`responder: 'orchestrator'` e cada `run.cycle-response-invalid` -- este
+último é gravado só depois que a chamada ao resolvedor retorna, então a
+invocação está confirmada mesmo que a resposta tenha falhado a validação e
+nunca conte em `resolvedCycleQuestions`; uma resposta de operador ou de
+agent-cli nunca soma aqui, porque nenhuma delas chamou o resolvedor. Um
+`run.cycle-response` legado sem `responder` registrado fica em
+`dispatches.unknown`, nunca chutado para autônomo nem para zero.
+`evaluation.roles` segue a mesma regra: só lista a configuração do
+orquestrador quando o resolvedor de fato rodou (`responder: 'orchestrator'`);
+uma resposta de operador ou de agent-cli, ou um `run.cycle-response` legado
+ambíguo, nunca aparece como configuração de orquestrador nas coortes do
+workflow. A regra de contagem tem versão própria (`dispatchMethodologyVersion`,
+hoje `'cli-process-v1'`), exposta junto de `dispatches` e do relatório
+agregado de autonomia, para que uma futura mudança de metodologia não seja
+lida como se sempre tivesse sido a mesma. `operatorInterventions` exclui só a
+resposta de
+canal `agent-cli` com evidência de autorização `observed`: essa combinação é
+uma resposta técnica que o operador explicitamente autorizou, não texto
+produzido diretamente pelo humano, ainda que tenha exigido a autorização do
+operador para retomar a run. Uma resposta `agent-cli` com autorização
+`absent` ou `unknown` -- inclusive evento legado sem esse campo -- continua
+contando como intervenção: legado sem evidência fica desconhecido, nunca
+reclassificado como autônomo por supor que todo `agent-cli` foi autorizado.
+`guidance.channels` e `guidance.authorization` continuam expondo essa
+distribuição completa, por canal e por autorização.
+A timeline da run (`webui/src/screens/runs.tsx`) segue a mesma proveniência:
+atribui o ator de cada `run.cycle-response` pelo seu `responder` --
+orquestrador, operador ou agent-cli -- e mostra um evento legado sem
+`responder` registrado como origem desconhecida, nunca como orquestrador.
+Nenhuma dessas correções declara melhora causal de modelo ou de provider --
+apenas separa quem originou cada resposta.
+
 ## Envelope de adaptação autônoma
 
 Uma adaptação técnica durante a execução é válida somente quando permanece

@@ -74,7 +74,8 @@ describe('replayable run evaluation', () => {
 			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
 			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
 			recovery: { policy: null, reserved: 0, finished: 0 },
-			dispatches: { total: 4, executor: 3, reviewer: 1, orchestrator: 0 },
+			dispatches: { total: 4, executor: 3, reviewer: 1, orchestrator: 0, unknown: 0 },
+			dispatchMethodologyVersion: 'cli-process-v1',
 			guidance: { channels: { web: 0, 'agent-cli': 0, other: 0, unknown: 2 }, authorization: { observed: 0, absent: 0, unknown: 2 } },
 			workflowRevision: 'revision-b',
 			provider: 'claude',
@@ -139,7 +140,11 @@ describe('replayable run evaluation', () => {
 	test('uses the complete log for dispatches and preserves channel and authorization uncertainty', () => {
 		const events = Array.from({ length: 51 }, (_, index) => event(
 			index % 3 === 0 ? 'provider.model' : index % 3 === 1 ? 'review.model' : 'run.cycle-response',
-			'working', 'working', index === 0 ? { source: 'web', authorizationEvidence: 'explicit' } : {},
+			'working', 'working',
+			// GSHIP-890: every resolver invocation records its own responder; a
+			// cycle-response with no responder at all is not one (see the
+			// dedicated provenance tests below).
+			index === 0 ? { source: 'web', authorizationEvidence: 'explicit' } : index % 3 === 2 ? { responder: 'orchestrator' } : {},
 		));
 		events.push(
 			event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'web', authorizationEvidence: 'explicit' }),
@@ -147,10 +152,119 @@ describe('replayable run evaluation', () => {
 			event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'plugin-channel' }),
 		);
 		const evaluation = evaluateRun(RUN, events);
-		expect(evaluation.dispatches).toEqual({ total: 51, executor: 17, reviewer: 17, orchestrator: 17 });
+		expect(evaluation.dispatches).toEqual({ total: 51, executor: 17, reviewer: 17, orchestrator: 17, unknown: 0 });
 		expect(evaluation.guidance).toEqual({
 			channels: { web: 1, 'agent-cli': 1, other: 1, unknown: 0 },
 			authorization: { observed: 1, absent: 1, unknown: 1 },
+		});
+		// GSHIP-890: the agent-cli-channel guidance here has authorization
+		// `'absent'` (`operatorAuthorized: false`), not `'observed'` -- only an
+		// agent-cli answer with authorization actually observed is excluded as a
+		// technical response the operator authorized, so this one still counts
+		// as an intervention alongside web and other, even though
+		// `guidance.channels` above already lists it under `'agent-cli'`.
+		expect(evaluation.operatorInterventions).toBe(3);
+	});
+
+	// GSHIP-890: only an agent-cli answer with authorization actually observed
+	// is excluded from operatorInterventions -- absent or unknown evidence,
+	// including a legacy event with no authorization field at all, still
+	// counts, so legacy with no evidence stays unknown and every agent-cli
+	// answer is never assumed authorized.
+	describe('operatorInterventions and agent-cli authorization', () => {
+		test('excludes an agent-cli answer only when authorization is observed', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'agent-cli', authorizationEvidence: 'explicit' }),
+			]);
+			expect(evaluation.operatorInterventions).toBe(0);
+		});
+
+		test('counts an agent-cli answer with absent authorization', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'agent-cli', authorizationEvidence: 'absent' }),
+			]);
+			expect(evaluation.operatorInterventions).toBe(1);
+		});
+
+		test('counts a legacy agent-cli answer with no authorization field recorded', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.operator-guidance', 'waiting-user', 'waiting-user', { source: 'agent-cli' }),
+			]);
+			expect(evaluation.operatorInterventions).toBe(1);
+		});
+	});
+
+	// GSHIP-890: corrects provenance so an escalation, an operator/agent-cli
+	// answer or an ambiguous legacy event never reads as an internal
+	// resolution or an orchestrator dispatch it never made.
+	describe('cycle-response provenance', () => {
+		test('counts an orchestrator continue as both a dispatch and an internal resolution, with no later dispatch to prove the correction', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.cycle-question', 'working', 'working', { origin: 'review' }),
+				event('run.cycle-response', 'working', 'working', { responder: 'orchestrator', outcome: 'continue' }),
+			]);
+			expect(evaluation.dispatches).toMatchObject({ total: 1, orchestrator: 1 });
+			expect(evaluation.resolvedCycleQuestions).toBe(1);
+		});
+
+		test('counts an orchestrator escalation as a dispatch but not an internal resolution', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.cycle-question', 'working', 'working', { origin: 'review' }),
+				event('run.cycle-response', 'working', 'waiting-user', { responder: 'orchestrator', outcome: 'operator' }),
+			]);
+			expect(evaluation.dispatches).toMatchObject({ total: 1, orchestrator: 1 });
+			expect(evaluation.resolvedCycleQuestions).toBe(0);
+		});
+
+		test('excludes an operator or agent-cli answer from both dispatches and resolved questions -- no resolver ran', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.cycle-question', 'working', 'working', { origin: 'review' }),
+				event('run.cycle-response', 'waiting-user', 'working', { responder: 'operator', source: 'operator', outcome: 'continue' }),
+				event('run.cycle-response', 'waiting-user', 'working', { responder: 'agent-cli', source: 'agent-cli', outcome: 'continue' }),
+			]);
+			expect(evaluation.dispatches).toMatchObject({ total: 0, orchestrator: 0 });
+			expect(evaluation.resolvedCycleQuestions).toBe(0);
+		});
+
+		test('leaves an ambiguous legacy cycle-response with no responder recorded out of both counts, never assumed autonomous', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.cycle-response', 'working', 'working', { outcome: 'continue' }),
+			]);
+			expect(evaluation.dispatches).toMatchObject({ total: 0, orchestrator: 0, unknown: 1 });
+			expect(evaluation.resolvedCycleQuestions).toBe(0);
+		});
+
+		// GSHIP-890: `roles` mirrors `dispatches`' own provenance -- only a
+		// confirmed resolver invocation lists an orchestrator configuration, even
+		// when an operator or agent-cli answer carries a model and effort of its
+		// own (it never invoked one).
+		test('lists an orchestrator configuration only for a responder the resolver actually confirmed', () => {
+			const withModel = (responder: string) => evaluateRun(RUN, [
+				event('run.cycle-response', 'waiting-user', 'working', { responder, source: responder, outcome: 'continue', model: 'opus', effort: 'high' }),
+			]).roles;
+			expect(withModel('operator')).toEqual([]);
+			expect(withModel('agent-cli')).toEqual([]);
+			expect(withModel('orchestrator')).toEqual([
+				{ role: 'orchestrator', models: ['opus'], efforts: ['high'], providers: ['claude'] },
+			]);
+			expect(evaluateRun(RUN, [
+				event('run.cycle-response', 'working', 'working', { outcome: 'continue', model: 'opus', effort: 'high' }),
+			]).roles).toEqual([]);
+		});
+
+		// GSHIP-890: a resolver call that came back invalid still ran the CLI
+		// process -- `run.cycle-response-invalid` is its own confirmed dispatch,
+		// never folded into `resolvedCycleQuestions`. A repeated attempt for the
+		// same pending question that then lands on an orchestrator continue adds
+		// a second dispatch and is the run's one internal resolution.
+		test('counts a resolver call that returned invalid, then a repeated attempt that resolves, as two dispatches and one resolution', () => {
+			const evaluation = evaluateRun(RUN, [
+				event('run.cycle-question', 'working', 'working', { origin: 'review' }),
+				event('run.cycle-response-invalid', 'working', 'waiting-user', { questionId: 'question-1', reason: 'invalid', provider: 'claude', latencyMs: 12 }),
+				event('run.cycle-response', 'waiting-user', 'working', { responder: 'orchestrator', outcome: 'continue' }),
+			]);
+			expect(evaluation.dispatches).toMatchObject({ total: 2, orchestrator: 2, unknown: 0 });
+			expect(evaluation.resolvedCycleQuestions).toBe(1);
 		});
 	});
 

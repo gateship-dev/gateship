@@ -172,9 +172,25 @@ export function formatRoleUsage(
 	return `${label}${suffix}${thinking}`;
 }
 
-type TimelineRole = 'executor' | 'reviewer' | 'orchestrator' | 'operator' | 'runtime';
+type TimelineRole = 'executor' | 'reviewer' | 'orchestrator' | 'operator' | 'agent-cli' | 'unknown' | 'runtime';
 type TimelineEntry = { event: RunEventView; events: RunEventView[]; phase: (typeof RUN_PHASES)[number] | null; role: TimelineRole; detail: string | null };
 const browserEnvironment = globalThis as unknown as { window?: { scrollY: number; innerHeight: number; addEventListener: Function; removeEventListener: Function; scrollTo: Function }; document?: { documentElement: { scrollHeight: number } } };
+
+/**
+ * `run.cycle-response` and `run.operator-guidance` carry their own actor in
+ * `payload` -- the same distinction `cycleResponseInvocation` draws in
+ * run-evaluation.ts (GSHIP-890). Only a `responder: 'orchestrator'` answer
+ * actually invoked the resolver; an `'operator'` or `'agent-cli'` answer to a
+ * pending question never did, and a legacy event with no responder recorded
+ * is never guessed as either -- `'unknown'`, not `'orchestrator'`.
+ */
+function roleOfCycleResponse(event: RunEventView): TimelineRole {
+	const responder = event.payload['responder'];
+	if (responder === 'orchestrator') return 'orchestrator';
+	if (responder === 'operator') return 'operator';
+	if (responder === 'agent-cli') return 'agent-cli';
+	return 'unknown';
+}
 
 function roleOfEvent(event: RunEventView): TimelineRole {
 	if (event.kind.startsWith('executor.')) return 'executor';
@@ -182,7 +198,9 @@ function roleOfEvent(event: RunEventView): TimelineRole {
 	if (event.kind.startsWith('provider.')) return 'executor';
 	if (event.kind.startsWith('review.')) return 'reviewer';
 	if (event.kind.startsWith('cycle-question.') || event.kind === 'run.cycle-question') return 'orchestrator';
-	if (event.kind.startsWith('orchestrator.') || event.kind === 'run.cycle-response') return 'orchestrator';
+	if (event.kind === 'run.cycle-response') return roleOfCycleResponse(event);
+	if (event.kind.startsWith('orchestrator.')) return 'orchestrator';
+	if (event.kind === 'run.operator-guidance' && event.payload['source'] === 'agent-cli') return 'agent-cli';
 	if (event.kind.startsWith('run.operator-')) return 'operator';
 	return 'runtime';
 }
@@ -719,7 +737,7 @@ function SpecFactsPanel({
 				<dt className="text-muted-foreground">{catalog.specFacts.corrections}</dt><dd>{catalog.specFacts.correctionCounts(corrections.verification, corrections.review, corrections.fullVerify, corrections.ci, corrections.total)}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.questions}</dt><dd>{catalog.specFacts.questionCounts(cycleQuestions.executor, cycleQuestions.review, cycleQuestions.fullVerify, cycleQuestions.total)}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.reconciliations}</dt><dd>{catalog.specFacts.reconciliationCounts(reconciliations.unchanged, reconciliations.adapted, reconciliations['contract-change-required'], reconciliations.total)}</dd>
-				{evaluation.dispatches === undefined ? null : <><dt className="text-muted-foreground">{catalog.specFacts.dispatches}</dt><dd>{catalog.specFacts.dispatchCounts(evaluation.dispatches.executor, evaluation.dispatches.reviewer, evaluation.dispatches.orchestrator, evaluation.dispatches.total)}</dd></>}
+				{evaluation.dispatches === undefined ? null : <><dt className="text-muted-foreground">{catalog.specFacts.dispatches}</dt><dd>{catalog.specFacts.dispatchCounts(evaluation.dispatches.executor, evaluation.dispatches.reviewer, evaluation.dispatches.orchestrator, evaluation.dispatches.total, evaluation.dispatches.unknown)}</dd></>}
 				{evaluation.guidance === undefined ? null : <><dt className="text-muted-foreground">{catalog.specFacts.guidance}</dt><dd>{catalog.specFacts.guidanceCounts(evaluation.guidance.channels.web, evaluation.guidance.channels['agent-cli'], evaluation.guidance.channels.other, evaluation.guidance.channels.unknown)}</dd><dt className="text-muted-foreground">{catalog.specFacts.authorization}</dt><dd>{catalog.specFacts.authorizationCounts(evaluation.guidance.authorization.observed, evaluation.guidance.authorization.absent, evaluation.guidance.authorization.unknown)}</dd></>}
 			</dl>
 			<div className="mt-4 border-t pt-3">
