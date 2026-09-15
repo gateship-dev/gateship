@@ -7,7 +7,7 @@
     "GSHIP-892"
   ],
   "createdAt": "2026-09-14T18:56:23.036Z",
-  "updatedAt": "2026-09-15T12:20:30.318Z",
+  "updatedAt": "2026-09-15T12:20:54.036Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -27,5 +27,9 @@
       "bun test test/runtime/claude-cli-reviewer.test.ts test/runtime/codex-cli-reviewer.test.ts test/runtime/run-runtime.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "69b61d559f42fea56a2d0108f346f6f9072723fee071225abbe7020a7edc8bbb",
+    "approvedAt": "2026-09-15T12:20:54.036Z"
   }
 }
