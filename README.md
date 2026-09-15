@@ -140,6 +140,16 @@ approval.” Every agent command emits one JSON object without ANSI or progress
 output. Use `--url http://127.0.0.1:PORT` when the existing local service uses
 a different port.
 
+When calling `issues.create` or `issues.specify`, the guide has the agent scan
+nine implicit dimensions — input bounds, partial failure, idempotency, auth,
+concurrency, data lifecycle, observability, external dependency, state
+transition — and turn each into an acceptance item or drop it with N/A and a
+reason, inside boundaries. The scan is mandatory when the issue touches
+persistence, state, an external call, auth, or a state transition, and
+optional for a doc-only or pure UI change. Facts the agent looks up; decisions
+it asks the operator — the scan never invents a requirement outside the
+issue's boundary.
+
 From the browser you can:
 
 1. describe and refine the work with an external agent, which invokes typed
