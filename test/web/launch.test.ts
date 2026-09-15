@@ -18,6 +18,9 @@ import {
 	BIND_HOSTNAME_ENV_VAR,
 	DEFAULT_WEB_PORT,
 	isTrustedCommandOrigin,
+	isTrustedServiceHost,
+	MAX_REQUEST_BODY_BYTES,
+	PUBLISHED_PORT_ENV_VAR,
 	resolveBindHostname,
 	startWebServer,
 	WEB_HOSTNAME,
@@ -336,4 +339,206 @@ describe('GATESHIP_BIND_HOST (container bind address)', () => {
 		});
 		expect(isTrustedCommandOrigin(trusted)).toBe(true);
 	});
+});
+
+// GSHIP-897: DNS rebinding closes over `Host`, not `Origin` -- an attacker's
+// page is served from the attacker's own hostname, which DNS then resolves to
+// 127.0.0.1, and the browser keeps sending that attacker hostname as `Host`
+// regardless of what DNS resolved it to. This check runs ahead of and
+// independent of the trusted-origin check above.
+describe('isTrustedServiceHost (GSHIP-897)', () => {
+	const request = (host: string | null) => new Request('http://ignored/', {
+		headers: host === null ? {} : { host },
+	});
+
+	test("accepts 127.0.0.1 and localhost, with no port or the service's bind port", () => {
+		expect(isTrustedServiceHost(request('127.0.0.1:7777'), 7777)).toBe(true);
+		expect(isTrustedServiceHost(request('127.0.0.1'), 7777)).toBe(true);
+		expect(isTrustedServiceHost(request('localhost:7777'), 7777)).toBe(true);
+		expect(isTrustedServiceHost(request('localhost'), 7777)).toBe(true);
+	});
+
+	// compose.yaml publishes the container's fixed internal 7777 on an
+	// operator-chosen GATESHIP_PORT and declares that same value as
+	// GATESHIP_PUBLISHED_PORT, since Docker's NAT never lets this process see
+	// GATESHIP_PORT itself. The browser then legitimately sends Host with the
+	// published port while this process still binds 7777.
+	test('accepts the explicitly declared GATESHIP_PUBLISHED_PORT even when it differs from the bind port', () => {
+		const previous = process.env[PUBLISHED_PORT_ENV_VAR];
+		process.env[PUBLISHED_PORT_ENV_VAR] = '9999';
+		try {
+			expect(isTrustedServiceHost(request('127.0.0.1:9999'), 7777)).toBe(true);
+			expect(isTrustedServiceHost(request('localhost:9999'), 7777)).toBe(true);
+		} finally {
+			if (previous === undefined) delete process.env[PUBLISHED_PORT_ENV_VAR];
+			else process.env[PUBLISHED_PORT_ENV_VAR] = previous;
+		}
+	});
+
+	test('refuses a different hostname, a port that is neither the bind port nor a declared published port, or a missing Host header', () => {
+		expect(isTrustedServiceHost(request('evil.example'), 7777)).toBe(false);
+		expect(isTrustedServiceHost(request('evil.example:7777'), 7777)).toBe(false);
+		expect(isTrustedServiceHost(request('127.0.0.1:9999'), 7777)).toBe(false);
+		expect(isTrustedServiceHost(request(null), 7777)).toBe(false);
+	});
+});
+
+describe('Host guard and security headers (GSHIP-897)', () => {
+	test('a mismatched Host is refused with 421 and no body, on GET and POST, on every kind of route', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-') });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const rebound = { host: 'evil.example' };
+			const getTargets = ['/', '/app.js', '/api/snapshot', '/api/runs', '/api/events'];
+			for (const path of getTargets) {
+				const response = await fetch(`${origin}${path}`, { headers: rebound });
+				expect(response.status).toBe(421);
+				expect(await response.text()).toBe('');
+			}
+			const post = await fetch(`${origin}/api/runs`, {
+				method: 'POST',
+				headers: { ...rebound, 'content-type': 'application/json' },
+				body: JSON.stringify({ issueId: 'GSHIP-1' }),
+			});
+			expect(post.status).toBe(421);
+			expect(await post.text()).toBe('');
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('a valid Host is accepted with and without an explicit port', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-valid-') });
+		try {
+			const base = `http://${handle.hostname}:${handle.port}/api/snapshot`;
+			const withPort = await fetch(base, { headers: { host: `${handle.hostname}:${handle.port}` } });
+			expect(withPort.status).toBe(200);
+			const withoutPort = await fetch(base, { headers: { host: handle.hostname } });
+			expect(withoutPort.status).toBe(200);
+			const localhostWithPort = await fetch(base, { headers: { host: `localhost:${handle.port}` } });
+			expect(localhostWithPort.status).toBe(200);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('a Host port that is neither the bind port nor a declared published port is refused with 421', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-unpublished-') });
+		try {
+			const base = `http://${handle.hostname}:${handle.port}/api/snapshot`;
+			const otherPort = handle.port > 1024 ? handle.port - 1 : handle.port + 1;
+			const response = await fetch(base, { headers: { host: `${handle.hostname}:${otherPort}` } });
+			expect(response.status).toBe(421);
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	// compose.yaml publishes this process's fixed internal port on a separate,
+	// operator-chosen GATESHIP_PORT (127.0.0.1:${GATESHIP_PORT:-7777}:7777) and
+	// declares that same value as GATESHIP_PUBLISHED_PORT for this process to
+	// read, since Docker's NAT never lets it see GATESHIP_PORT itself.
+	test('a Host on the declared GATESHIP_PUBLISHED_PORT is accepted even when it differs from the bind port', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-published-') });
+		try {
+			const base = `http://${handle.hostname}:${handle.port}/api/snapshot`;
+			const publishedPort = handle.port > 1024 ? handle.port - 1 : handle.port + 1;
+			const previous = process.env[PUBLISHED_PORT_ENV_VAR];
+			process.env[PUBLISHED_PORT_ENV_VAR] = String(publishedPort);
+			try {
+				const response = await fetch(base, { headers: { host: `${handle.hostname}:${publishedPort}` } });
+				expect(response.status).toBe(200);
+			} finally {
+				if (previous === undefined) delete process.env[PUBLISHED_PORT_ENV_VAR];
+				else process.env[PUBLISHED_PORT_ENV_VAR] = previous;
+			}
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('every response carries the fixed security headers, on an API route and on a static asset', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-security-headers-') });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			for (const path of ['/api/snapshot', '/app.js']) {
+				const response = await fetch(`${origin}${path}`);
+				expect(response.headers.get('content-security-policy'))
+					.toBe("default-src 'self'; script-src 'self'; frame-ancestors 'none'");
+				expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+				expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+			}
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	// `routes` only dispatches the paths and methods it declares; anything
+	// else falls through to Bun.serve's `fetch` fallback, which must apply the
+	// same Host guard and security headers `guard` applies to every declared
+	// route.
+	test('an unknown path with a mismatched Host is refused with 421 and no body', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-unknown-path-host-') });
+		try {
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/no-such-route`, {
+				headers: { host: 'evil.example' },
+			});
+			expect(response.status).toBe(421);
+			expect(await response.text()).toBe('');
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('an unknown path with a valid Host answers 404 and still carries the security headers', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-unknown-path-') });
+		try {
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/no-such-route`);
+			expect(response.status).toBe(404);
+			expect(response.headers.get('content-security-policy'))
+				.toBe("default-src 'self'; script-src 'self'; frame-ancestors 'none'");
+			expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+			expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('a method not declared on a known route still carries the security headers', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-undeclared-method-') });
+		try {
+			// '/api/runs' declares only GET and POST; DELETE falls through to the
+			// fetch fallback exactly like an unknown path does.
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/api/runs`, { method: 'DELETE' });
+			expect(response.status).toBe(404);
+			expect(response.headers.get('content-security-policy'))
+				.toBe("default-src 'self'; script-src 'self'; frame-ancestors 'none'");
+			expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+			expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+		} finally {
+			await handle.stop();
+		}
+	});
+
+	test('a request body over the configured limit is refused with 413', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-body-limit-') });
+		try {
+			const origin = `http://${handle.hostname}:${handle.port}`;
+			const oversized = 'x'.repeat(MAX_REQUEST_BODY_BYTES + 1);
+			const response = await fetch(`${origin}/api/projects`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json', origin },
+				body: oversized,
+			});
+			expect(response.status).toBe(413);
+			// Bun rejects an oversized body at the connection level -- before
+			// `routes`, the `fetch` fallback or `error` ever run -- so this
+			// specific response cannot carry the security headers every other
+			// response in this file does. Known Bun limitation, not something
+			// this issue works around by resizing the limit.
+			expect(response.headers.get('content-security-policy')).toBeNull();
+		} finally {
+			await handle.stop();
+		}
+	}, 10_000);
 });
