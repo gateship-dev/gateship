@@ -1,0 +1,28 @@
+{
+  "id": "GSHIP-901",
+  "title": "Executor: exit 1 do CLI apos resultado valido nao pode falhar a run",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-15T20:17:38.893Z",
+  "updatedAt": "2026-09-15T20:17:38.893Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "O Claude CLI as vezes entrega provider.result e provider.usage completos e sai com codigo 1; o runtime marca a run como failed (terminal), a worktree com o trabalho pronto vira leftover e a cadeia pausa. Tratar exit 1 apos resultado valido como falha tecnica recuperavel na mesma run.",
+    "acceptance": [
+      "Quando o processo do executor sai com codigo diferente de zero mas o stream trouxe provider.result valido (resumo nao vazio, sem erro de protocolo), o runtime segue para verify com esse resultado e registra run.executor-exit-mismatch com exitCode e stderr sanitizado, em vez de run.failed.",
+      "Sem provider.result valido, o comportamento atual permanece: falha tecnica pelo caminho existente (GSHIP-885), nunca consentimento implicito.",
+      "Regressao coberta com processo simulado: resultado valido mais exit 1 leva a verify; exit 1 sem resultado leva ao caminho de falha existente; exit 0 inalterado. Casos reais: runs 461a069b (GSHIP-899) e aea6ee91 (GSHIP-896), 15/09/2026.",
+      "Telemetria: a invocacao continua contada com seu uso e custo; o evento novo aparece na timeline da run como diagnostico, sem score."
+    ],
+    "boundaries": [
+      "Nao mascarar exit code diferente de zero sem resultado valido.",
+      "Nao alterar o contrato de review nem o de verify."
+    ],
+    "verify": [
+      "bun test test/runtime/claude-cli-executor.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
