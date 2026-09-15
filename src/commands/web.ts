@@ -54,7 +54,7 @@ import {
 	GitIssueVerifier,
 	RuntimePreflightError,
 } from '../runtime/git-runtime.ts';
-import { GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
+import { GitReconciliationWorkspace, GitWorkspaceManager, RuntimeWorkspaceError } from '../runtime/git-workspace.ts';
 import { GithubShipper } from '../runtime/github-shipper.ts';
 import {
 	abandonOperatorIssue,
@@ -2547,6 +2547,7 @@ export function createDefaultRunRuntimeOptions(
 			claude: new ClaudeAgentSession({ resolveModel: model('claude', 'orchestrator'), resolveClaudeCredential }),
 			codex: new CodexReviewSession({ resolveModel: model('codex', 'orchestrator') }),
 		}),
+		reconciliationWorkspace: new GitReconciliationWorkspace(cwd, undefined, stateDir),
 		agentDefaults,
 		shipper: new GithubShipper({ ensureIdentity }),
 		hasWorkspaceChanges: (workspace) => {

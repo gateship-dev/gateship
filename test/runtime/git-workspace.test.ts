@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
+	GitReconciliationWorkspace,
 	GitWorkspaceManager,
 	RuntimeWorkspaceError,
 	type WorkspacePrepareRunner,
@@ -614,5 +615,115 @@ describe('git workspace manager', () => {
 			detail: 'workspace is not owned by a persisted run',
 		});
 		expect(existsSync(workspacePath)).toBe(true);
+	});
+});
+
+/** Advances a bare `origin` remote past whatever `root`'s local checkout has, from an independent clone. */
+function advanceRemoteAhead(remote: string, fileName: string): string {
+	const clone = createTestTmpdir('gship-reconcile-clone-');
+	spawnSync('git', ['clone', '-q', remote, clone]);
+	// The bare remote's own HEAD may still point at whichever branch name the
+	// runner's git defaults to (e.g. `master`), which never exists here since
+	// only `main` was ever pushed to it -- checking out `main` explicitly
+	// keeps this independent of that default.
+	git(clone, ['checkout', '-B', 'main', 'origin/main']);
+	git(clone, ['config', 'user.name', 'Gateship Test']);
+	git(clone, ['config', 'user.email', 'test@example.invalid']);
+	writeFileSync(join(clone, fileName), 'delivered only on origin/main\n');
+	git(clone, ['add', fileName]);
+	git(clone, ['commit', '-m', 'advance origin/main ahead of the local checkout']);
+	git(clone, ['push', 'origin', 'main']);
+	return git(clone, ['rev-parse', 'HEAD']);
+}
+
+// GSHIP-898: chain reconciliation must read a fresh worktree on `origin/main`,
+// never the operator's own (possibly stale) local checkout.
+describe('git reconciliation workspace', () => {
+	test('creates a detached worktree at the fetched origin/main commit, never the local checkout', async () => {
+		const root = seedRepository();
+		const remote = seedRemote(root);
+		git(root, ['push', 'origin', 'main']);
+		const originSha = advanceRemoteAhead(remote, 'origin-only.txt');
+
+		const workspace = new GitReconciliationWorkspace(root);
+		const prepared = await workspace.prepare('run-reconcile-1');
+
+		expect(prepared.sha).toBe(originSha);
+		expect(git(prepared.path, ['rev-parse', 'HEAD'])).toBe(originSha);
+		expect(git(prepared.path, ['branch', '--show-current'])).toBe('');
+		expect(existsSync(join(prepared.path, 'origin-only.txt'))).toBe(true);
+
+		// The local checkout is never read, moved or advanced.
+		expect(existsSync(join(root, 'origin-only.txt'))).toBe(false);
+		expect(git(root, ['rev-parse', 'main'])).not.toBe(originSha);
+		expect(git(root, ['branch', '--show-current'])).toBe('main');
+		expect(git(root, ['status', '--porcelain', '--untracked-files=all'])).toBe('');
+
+		workspace.release(prepared.path);
+	});
+
+	test('places the reconciliation worktree outside the run workspaces root', async () => {
+		const root = seedRepository();
+		seedRemote(root);
+		git(root, ['push', 'origin', 'main']);
+		const stateDir = createTestTmpdir('gship-reconcile-state-');
+
+		const workspace = new GitReconciliationWorkspace(root, undefined, stateDir);
+		const prepared = await workspace.prepare('run-reconcile-2');
+
+		expect(prepared.path.startsWith(join(stateDir, 'reconcile-worktrees'))).toBe(true);
+		expect(prepared.path.startsWith(join(stateDir, 'worktrees'))).toBe(false);
+
+		workspace.release(prepared.path);
+	});
+
+	test('release removes the worktree and forgets it from git', async () => {
+		const root = seedRepository();
+		seedRemote(root);
+		git(root, ['push', 'origin', 'main']);
+		const workspace = new GitReconciliationWorkspace(root);
+		const prepared = await workspace.prepare('run-reconcile-3');
+		expect(existsSync(prepared.path)).toBe(true);
+
+		workspace.release(prepared.path);
+
+		expect(existsSync(prepared.path)).toBe(false);
+		const listed = spawnSync('git', ['-C', root, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' }).stdout;
+		expect(listed).not.toContain(prepared.path);
+	});
+
+	test('release is a harmless no-op when the workspace was never created, e.g. after an abort', () => {
+		const root = seedRepository();
+		const workspace = new GitReconciliationWorkspace(root);
+		expect(() => workspace.release(join(root, '.gship', 'reconcile-worktrees', 'run-never-prepared'))).not.toThrow();
+	});
+
+	test('fails closed on a fetch failure, without touching the local checkout', async () => {
+		const root = seedRepository();
+		const workspace = new GitReconciliationWorkspace(root, (cwd, args) => {
+			if (args[0] === 'fetch') return { exitCode: 1, stdout: '', stderr: 'unable to access origin' };
+			const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+			return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+		});
+
+		await expect(workspace.prepare('run-reconcile-4')).rejects.toThrow(
+			new RuntimeWorkspaceError('cannot fetch origin/main: unable to access origin'),
+		);
+		expect(existsSync(join(root, '.gship', 'reconcile-worktrees'))).toBe(false);
+		expect(git(root, ['status', '--porcelain', '--untracked-files=all'])).toBe('');
+	});
+
+	test('fails closed when origin/main cannot be resolved after fetching', async () => {
+		const root = seedRepository();
+		const workspace = new GitReconciliationWorkspace(root, (cwd, args) => {
+			if (args[0] === 'fetch') return { exitCode: 0, stdout: '', stderr: '' };
+			if (args[0] === 'rev-parse') return { exitCode: 1, stdout: '', stderr: 'unknown revision origin/main' };
+			const result = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
+			return { exitCode: result.status ?? 1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+		});
+
+		await expect(workspace.prepare('run-reconcile-5')).rejects.toThrow(
+			new RuntimeWorkspaceError('cannot resolve origin/main: unknown revision origin/main'),
+		);
 	});
 });

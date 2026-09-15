@@ -1,10 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import process from 'node:process';
 
 import { buildAllowlistedEnv } from './child-env.ts';
 import { readProjectVerificationManifest } from './project-verification.ts';
+import { runtimeSourceFetchArgs, RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 interface CommandResult {
 	exitCode: number;
@@ -591,5 +592,87 @@ export class GitWorkspaceManager implements RuntimeWorkspace {
 		return cleanup.outcome === 'preserved'
 			? `${detail}; workspace preserved: ${cleanup.detail}`
 			: detail;
+	}
+}
+
+export interface ChainReconciliationWorkspace {
+	path: string;
+	sha: string;
+}
+
+export interface RuntimeChainReconciliationWorkspace {
+	prepare: (runId: string) => Promise<ChainReconciliationWorkspace>;
+	release: (path: string) => void;
+}
+
+const RECONCILIATION_WORKTREES_DIR = 'reconcile-worktrees';
+
+/**
+ * A fresh, detached worktree cut from the runtime's own source ref
+ * (`origin/main`), used only to let chain reconciliation compare the delivered
+ * tree against a commit no worse than a new run would admit against (GSHIP-898).
+ * Kept out of `GitWorkspaceManager`'s own `worktrees` directory so
+ * `RunRuntime#reconcileFinishedWorkspaces` -- which walks that directory
+ * expecting only run-owned, branch-carrying workspaces -- never has to reason
+ * about a branchless, reconciliation-owned one landing next to them.
+ */
+export class GitReconciliationWorkspace implements RuntimeChainReconciliationWorkspace {
+	readonly #projectRoot: string;
+	readonly #root: string;
+	readonly #runGit: WorkspaceGitRunner;
+
+	constructor(
+		projectRoot: string,
+		runGit: WorkspaceGitRunner = defaultRunGit,
+		stateDir = resolve(projectRoot, '.gship'),
+	) {
+		this.#projectRoot = resolve(projectRoot);
+		this.#root = resolve(stateDir, RECONCILIATION_WORKTREES_DIR);
+		this.#runGit = runGit;
+	}
+
+	/** Refreshes and resolves `origin/main`, then adds a detached worktree at that commit; never reads or moves the operator's own checkout. */
+	async prepare(runId: string): Promise<ChainReconciliationWorkspace> {
+		const fetched = this.#runGit(this.#projectRoot, runtimeSourceFetchArgs());
+		if (fetched.exitCode !== 0) {
+			throw new RuntimeWorkspaceError(`cannot fetch ${RUNTIME_SOURCE_REF}: ${failureDetail(fetched)}`);
+		}
+		const resolved = this.#runGit(this.#projectRoot, ['rev-parse', '--verify', RUNTIME_SOURCE_REF]);
+		if (resolved.exitCode !== 0) {
+			throw new RuntimeWorkspaceError(`cannot resolve ${RUNTIME_SOURCE_REF}: ${failureDetail(resolved)}`);
+		}
+		const sha = resolved.stdout.trim();
+
+		if (existsSync(this.#root) && !lstatSync(this.#root).isDirectory()) {
+			throw new RuntimeWorkspaceError('managed reconciliation worktrees root is not a directory');
+		}
+		mkdirSync(this.#root, { recursive: true });
+		const path = resolve(this.#root, safeSegment(runId, 'run'));
+		if (!path.startsWith(`${this.#root}${sep}`)) {
+			throw new RuntimeWorkspaceError('reconciliation workspace path escaped the managed root');
+		}
+		if (existsSync(path)) this.#forceRemove(path);
+
+		const added = this.#runGit(this.#projectRoot, ['worktree', 'add', '--detach', path, sha]);
+		if (added.exitCode !== 0) {
+			throw new RuntimeWorkspaceError(`cannot create reconciliation workspace: ${failureDetail(added)}`);
+		}
+		return { path, sha };
+	}
+
+	/** Best-effort: cleanup must never block the chain from moving on. */
+	release(path: string): void {
+		try {
+			if (existsSync(path)) this.#forceRemove(path);
+		} catch {
+			// best-effort cleanup; a leftover worktree is harmless outside the managed run root
+		}
+	}
+
+	#forceRemove(path: string): void {
+		const removed = this.#runGit(this.#projectRoot, ['worktree', 'remove', '--force', path]);
+		if (removed.exitCode === 0) return;
+		if (existsSync(path)) rmSync(path, { recursive: true, force: true });
+		this.#runGit(this.#projectRoot, ['worktree', 'prune']);
 	}
 }

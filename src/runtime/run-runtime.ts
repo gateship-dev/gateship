@@ -18,6 +18,7 @@ import {
 	normalizeCycleDiagnostic,
 } from './cycle-diagnostic.ts';
 import type {
+	RuntimeChainReconciliationWorkspace,
 	RuntimeWorkspace,
 	WorkspaceNotice,
 	WorkspaceRunReference,
@@ -644,6 +645,14 @@ export interface RunRuntimeOptions {
 	/** Fresh read-only comparison performed before the next chained issue is admitted. */
 	chainReconciler?: RuntimeChainReconciler;
 	/**
+	 * Fresh, detached worktree on `origin/main` the reconciliation session reads
+	 * from instead of the operator's own checkout (GSHIP-898), which may sit on
+	 * an older commit and even lack the prior delivery. Omitted only by tests
+	 * exercising `chainReconciler` on a fixture `cwd` with no real git repo;
+	 * production always configures it alongside `chainReconciler`.
+	 */
+	reconciliationWorkspace?: RuntimeChainReconciliationWorkspace;
+	/**
 	 * The project's full verification manifest (GSHIP-649), run once the
 	 * issue's own verify and the independent review are both clean and before
 	 * the run is ever shipped. Optional like `reviewer`: a project or a test
@@ -949,6 +958,7 @@ export class RunRuntime {
 	readonly #reviewer: RuntimeReviewer | undefined;
 	readonly #cycleQuestionResolver: RuntimeCycleQuestionResolver | undefined;
 	readonly #chainReconciler: RuntimeChainReconciler | undefined;
+	readonly #reconciliationWorkspace: RuntimeChainReconciliationWorkspace | undefined;
 	readonly #fullVerifier: RuntimeVerifier | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
 	readonly #hasWorkspaceChanges: ((cwd: string) => boolean) | undefined;
@@ -988,6 +998,7 @@ export class RunRuntime {
 		this.#reviewer = options.reviewer;
 		this.#cycleQuestionResolver = options.cycleQuestionResolver;
 		this.#chainReconciler = options.chainReconciler;
+		this.#reconciliationWorkspace = options.reconciliationWorkspace;
 		this.#fullVerifier = options.fullVerifier;
 		this.#shipper = options.shipper;
 		this.#hasWorkspaceChanges = options.hasWorkspaceChanges;
@@ -3658,6 +3669,41 @@ export class RunRuntime {
 		this.#armedChainReconciliationRetry = null;
 	}
 
+	/**
+	 * The source run's worktree is released immediately after its terminal
+	 * transition, and the operator's own checkout can sit behind origin/main or
+	 * even lack the prior delivery entirely. Reconciliation therefore always
+	 * reads a fresh, detached worktree cut from origin/main -- the same source
+	 * ref a new run is admitted against -- never the local checkout (GSHIP-898).
+	 * The workspace is released here, in a `finally`, so it is cleaned up even
+	 * when the reconciler throws or the signal is aborted mid-call.
+	 */
+	async #reconcileAgainstFreshWorkspace(
+		reconciler: RuntimeChainReconciler,
+		run: RunRecord,
+		targetIssueId: string,
+		target: IssueEntry,
+		signal: AbortSignal,
+	): Promise<{ result: RuntimeChainReconciliationResult; workspacePath: string; originSha?: string }> {
+		const prepared = this.#reconciliationWorkspace === undefined
+			? { path: this.#cwd, sha: undefined }
+			: await this.#reconciliationWorkspace.prepare(run.id);
+		try {
+			const result = await reconciler.reconcile({
+				runId: run.id, sourceIssueId: run.issueId, targetIssueId,
+				workspace: prepared.path,
+				originMain: 'origin/main',
+				priorDelivery: { runId: run.id, issueId: run.issueId },
+				nextSpecification: JSON.stringify(target.spec), providerId: run.providerId,
+				signal,
+				emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
+			});
+			return { result, workspacePath: prepared.path, ...(prepared.sha === undefined ? {} : { originSha: prepared.sha }) };
+		} finally {
+			this.#reconciliationWorkspace?.release(prepared.path);
+		}
+	}
+
 	async #reconcileBeforeChain(
 		run: RunRecord,
 		targetIssueId: string,
@@ -3681,19 +3727,9 @@ export class RunRuntime {
 		}
 		this.#emit(run.id, 'run.chain-reconciliation-pending', { issueId: targetIssueId });
 		const started = performance.now();
-		const result = await reconciler.reconcile({
-			 runId: run.id, sourceIssueId: run.issueId, targetIssueId,
-			// The source run's worktree is released immediately after its terminal
-			// transition. Reconciliation therefore runs from the registered project
-			// root, which remains readable while it compares origin/main and the
-			// prior delivery.
-			workspace: this.#cwd,
-			originMain: 'origin/main',
-			priorDelivery: { runId: run.id, issueId: run.issueId },
-			nextSpecification: JSON.stringify(target.spec), providerId: run.providerId,
-			signal,
-			emit: (kind, payload, eventClass) => this.#emit(run.id, kind, payload, eventClass),
-		});
+		const { result, workspacePath, originSha } = await this.#reconcileAgainstFreshWorkspace(
+			reconciler, run, targetIssueId, target, signal,
+		);
 		if (signal.aborted) return { outcome: 'pause' };
 		const guidance = 'guidance' in result ? result.guidance : undefined;
 		const reconciliationPayload = {
@@ -3701,6 +3737,7 @@ export class RunRuntime {
 			provider: run.providerId, model: result.usage.model, effort: result.usage.effort,
 			latencyMs: Math.max(0, Math.round(performance.now() - started)), outcome: result.outcome,
 			justification: result.justification, ...(guidance === undefined ? {} : { guidance }),
+			workspacePath, ...(originSha === undefined ? {} : { originSha }),
 			...cycleUsageEventPayload(result.usage),
 		};
 		if (result.outcome === 'material') {
