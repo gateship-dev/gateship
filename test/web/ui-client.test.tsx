@@ -180,7 +180,7 @@ const NOTICES: AppProps['workspaceNotices'] = [{
 	detail: 'workspace is not owned by a persisted run',
 }];
 
-const EMPTY_RUN_COST: RunCostView = { totalCostUsd: null, breakdown: [], roles: [] };
+const EMPTY_RUN_COST: RunCostView = { totalCostUsd: null, costCoverage: 'unknown', breakdown: [], roles: [] };
 const EMPTY_ROUND_ORIGINS: RunRoundOriginsView = { executor: 0, decision: 0, indeterminate: 0 };
 
 function runIn(state: RunState, overrides: Partial<RunView> = {}): RunView {
@@ -1100,7 +1100,7 @@ describe('runs surface', () => {
 		}).format(0.1534);
 		const waitingRun = runIn('waiting-provider', {
 			summary: 'Resumo escrito pelo runtime para CAM-900.',
-			cost: { totalCostUsd: 0.1534, breakdown: [], roles: [] },
+			cost: { totalCostUsd: 0.1534, costCoverage: 'complete', breakdown: [], roles: [] },
 			roundOrigins: { executor: 1, decision: 2, indeterminate: 1 },
 			providerWait: {
 				provider: 'claude',
@@ -1185,6 +1185,7 @@ describe('runs surface', () => {
 					issueId: 'GSHIP-AUTHORED-CURRENT',
 					cost: {
 						totalCostUsd: 0.2,
+						costCoverage: 'complete',
 						breakdown: [{
 							role: 'executor',
 							model: 'model/Authored-V1',
@@ -1205,7 +1206,7 @@ describe('runs surface', () => {
 					id: 'run-previous-authored',
 					issueId: 'GSHIP-AUTHORED-PREVIOUS',
 					updatedAt: previousAt,
-					cost: { totalCostUsd: 0.1534, breakdown: [], roles: [] },
+					cost: { totalCostUsd: 0.1534, costCoverage: 'complete', breakdown: [], roles: [] },
 				}),
 			],
 			events: [{
@@ -1304,6 +1305,7 @@ describe('runs surface', () => {
 			runs: [runIn('done', {
 				cost: {
 					totalCostUsd: 0.1534,
+					costCoverage: 'complete',
 					breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.1534 }],
 					roles: [],
 				},
@@ -1347,6 +1349,7 @@ describe('runs surface', () => {
 			runs: [runIn('done', {
 				cost: {
 					totalCostUsd: 0.19,
+					costCoverage: 'complete',
 					breakdown: [
 						{
 							role: 'executor',
@@ -1413,6 +1416,7 @@ describe('runs surface', () => {
 			runs: [runIn('done', {
 				cost: {
 					totalCostUsd: 0.2,
+					costCoverage: 'complete',
 					breakdown: [
 						{
 							role: 'executor',
@@ -1445,13 +1449,13 @@ describe('runs surface', () => {
 		const runs = [
 			runIn('done', {
 				id: 'run-3',
-				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
+				cost: { totalCostUsd: 0.1, costCoverage: 'complete', breakdown: [], roles: [] },
 				roundOrigins: { executor: 1, decision: 0, orchestrator: 1, indeterminate: 0 },
 				evaluation: evaluation('revision-current', 'shipped', { resolvedCycleQuestions: 1 }),
 			}),
 			runIn('failed', {
 				id: 'run-2',
-				cost: { totalCostUsd: 0.05, breakdown: [], roles: [] },
+				cost: { totalCostUsd: 0.05, costCoverage: 'complete', breakdown: [], roles: [] },
 				roundOrigins: { executor: 0, decision: 2, indeterminate: 0 },
 			}),
 			runIn('cancelled', { id: 'run-1', cost: EMPTY_RUN_COST }),
@@ -1508,7 +1512,7 @@ describe('runs surface', () => {
 
 	test('keeps absent provider cost explicit instead of fabricating zero', () => {
 		const runs = [runIn('done', { id: 'run-2' }), runIn('failed', { id: 'run-1' })];
-		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2 });
+		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2, costCoverage: 'unknown' });
 		expect(panel(runsPage({ runs }), 'Workflow signals'))
 			.toContain('No provider reported cost in this window.');
 	});
@@ -1522,7 +1526,7 @@ describe('runs surface', () => {
 		const runs = [
 			runIn('done', {
 				id: 'run-b2',
-				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
+				cost: { totalCostUsd: 0.1, costCoverage: 'complete', breakdown: [], roles: [] },
 				roundOrigins: { executor: 1, decision: 0, indeterminate: 0 },
 					evaluation: evaluation('revision-b', 'shipped', {
 					wallTimeMs: 12 * 60_000,
@@ -1545,7 +1549,7 @@ describe('runs surface', () => {
 			}),
 			runIn('done', {
 				id: 'run-a1',
-				cost: { totalCostUsd: 0.2, breakdown: [], roles: [] },
+				cost: { totalCostUsd: 0.2, costCoverage: 'complete', breakdown: [], roles: [] },
 				evaluation: evaluation('revision-a', 'shipped', {
 					wallTimeMs: 30 * 60_000,
 					attentionRequests: 3,
@@ -1603,7 +1607,7 @@ describe('runs surface', () => {
 			}),
 			runIn('done', {
 				id: 'run-terminal-2',
-				cost: { totalCostUsd: 0.1, breakdown: [], roles: [] },
+				cost: { totalCostUsd: 0.1, costCoverage: 'complete', breakdown: [], roles: [] },
 				roundOrigins: { executor: 0, decision: 1, indeterminate: 0 },
 				evaluation: evaluation('revisao-crua-77', 'shipped', {
 					provider: 'codex',
@@ -1616,7 +1620,7 @@ describe('runs surface', () => {
 			}),
 			runIn('failed', {
 				id: 'run-terminal-1',
-				cost: { totalCostUsd: 0.0534, breakdown: [], roles: [] },
+				cost: { totalCostUsd: 0.0534, costCoverage: 'complete', breakdown: [], roles: [] },
 				evaluation: evaluation('revisao-crua-77', 'failed', {
 					provider: 'codex',
 					wallTimeMs: 90 * 60_000,
@@ -1866,7 +1870,7 @@ describe('runs surface', () => {
 				runIn('done', {
 					id: 'run-2',
 					issueId: 'CAM-802',
-					cost: { totalCostUsd: 0.1534, breakdown: [], roles: [] },
+					cost: { totalCostUsd: 0.1534, costCoverage: 'complete', breakdown: [], roles: [] },
 				}),
 				runIn('failed', { id: 'run-1', issueId: 'CAM-801', cost: EMPTY_RUN_COST }),
 			],
@@ -3348,6 +3352,25 @@ function factualTokenOverview() {
 	return result;
 }
 
+function factualCostCoverageOverview(
+	runsByCostCoverage: { complete: number; partial: number; unknown: number },
+	totalRuns: number,
+	runsWithKnownCost: number,
+	knownCostUsd: number | null,
+) {
+	const result = factualCohortOverview([]) as unknown as {
+		overview: {
+			totalRuns: number; runsWithKnownCost: number; knownCostUsd: number | null;
+			runsByCostCoverage: { complete: number; partial: number; unknown: number };
+		};
+	};
+	result.overview.totalRuns = totalRuns;
+	result.overview.runsWithKnownCost = runsWithKnownCost;
+	result.overview.knownCostUsd = knownCostUsd;
+	result.overview.runsByCostCoverage = runsByCostCoverage;
+	return result;
+}
+
 function factualSmallCohort() {
 	return {
 		workflowRevision: 'revision-1234567890abcdef', specVersion: 'v2', sampleSize: 3, evidenceSufficient: false,
@@ -3538,6 +3561,31 @@ describe('operator shell', () => {
 			const html = renderInsightsWithLoadedOverview(locale, factualTokenOverview());
 			expect(html).toContain(expected);
 			expect(html).toMatch(new RegExp(`${LOCALE_CATALOG[locale].overviewInsights.outputTokens}.*?—`));
+		}
+	});
+
+	// GSHIP-889: the Cost coverage stat must show the complete/partial/unknown
+	// breakdown, not just how many runs had any known cost -- and the known
+	// subtotal in Economy must flag itself as partial once not every counted
+	// run is fully priced, since that subtotal still sums the partial runs'
+	// known portion.
+	test('shows the complete/partial/unknown cost coverage breakdown beside the known subtotal', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const catalog = LOCALE_CATALOG[locale].overviewInsights;
+			const partialCoverage = LOCALE_CATALOG[locale].runsOperational.cost.partialCoverage;
+			const mixed = renderInsightsWithLoadedOverview(
+				locale,
+				factualCostCoverageOverview({ complete: 1, partial: 1, unknown: 1 }, 3, 2, 0.84),
+			);
+			expect(mixed).toContain(catalog.costCoverageCounts(1, 1, 1, 3));
+			expect(mixed).toContain(partialCoverage);
+
+			const complete = renderInsightsWithLoadedOverview(
+				locale,
+				factualCostCoverageOverview({ complete: 3, partial: 0, unknown: 0 }, 3, 3, 0.84),
+			);
+			expect(complete).toContain(catalog.costCoverageCounts(3, 0, 0, 3));
+			expect(complete).not.toContain(partialCoverage);
 		}
 	});
 
@@ -4733,6 +4781,7 @@ describe('operator shell', () => {
 		const withDeepPanel = runsPage({ locale: 'pt-BR', runs: [runIn('done', {
 			cost: {
 				totalCostUsd: 0.1,
+				costCoverage: 'complete',
 				breakdown: [{ role: 'executor', model: 'claude-opus-4-6', costUsd: 0.1 }],
 				roles: [],
 			},

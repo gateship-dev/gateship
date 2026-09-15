@@ -365,11 +365,17 @@ export interface RecordedMaterialChainReconciliation {
 /** Which run-owned provider invocation reported the API-equivalent cost. */
 export type RunCostRole = 'executor' | 'reviewer' | 'orchestrator';
 
-/** One (role, model) pair's cost and token counts, summed across every invocation that reported it. */
+/**
+ * One (role, model) pair's cost and token counts, summed across every
+ * invocation that reported it. `costUsd` is absent, never `0`, when no
+ * invocation of this (role, model) pair ever reported a price (GSHIP-889) --
+ * its tokens are still reported, so a call with unknown pricing is never
+ * dropped just because its cost is unknown.
+ */
 export interface RunCostBreakdownEntry {
 	role: RunCostRole;
 	model: string;
-	costUsd: number;
+	costUsd?: number;
 	inputTokens?: number;
 	outputTokens?: number;
 	cacheCreationInputTokens?: number;
@@ -391,13 +397,24 @@ export interface RunCostRoleUsage {
 }
 
 /**
+ * Whether a run's reported cost is known for every invocation it ran, only
+ * some, or none (GSHIP-889). `'unknown'` also covers the run having no usage
+ * event at all -- ambiguous legacy history is reported as unknown, never
+ * upgraded to `'complete'` just because a call happened to report tokens.
+ */
+export type RunCostCoverage = 'complete' | 'partial' | 'unknown';
+
+/**
  * A run's whole reported cost (GSHIP-623), derived from every `.usage` event
  * the run has, never from a display-bounded read. `totalCostUsd` is `null`
  * when the CLI never reported a cost for this run -- never `0`, which would
- * read as free.
+ * read as free. `costCoverage` (GSHIP-889) is the known subtotal's
+ * completeness across every invocation counted, so a partial total is never
+ * displayed as if it were the run's whole cost.
  */
 export interface RunCostSummary {
 	totalCostUsd: number | null;
+	costCoverage: RunCostCoverage;
 	breakdown: RunCostBreakdownEntry[];
 	roles: RunCostRoleUsage[];
 }
@@ -435,10 +452,28 @@ export interface DiagnosticFindingStats {
 	recurring: number;
 }
 
-/** The two `.usage` event kinds `emitUsage` (claude-cli-process.ts) writes, keyed to their role. */
+/**
+ * Every usage-bearing event kind, keyed to its role (GSHIP-889). `provider.usage`
+ * / `review.usage` are the executor's and reviewer's own raw invocation
+ * reports; `cycle-question.usage` / `chain-reconciliation.usage` are the
+ * resolver's and reconciler's raw reports, persisted the instant the call
+ * completes -- including when the resolver or reconciler later throws on an
+ * invalid response, since that raw event was already durable by then.
+ * `run.cycle-response` / `run.chain-reconciliation` carry a *copy* of that
+ * same usage on the resolver's/reconciler's final decision, tagged with the
+ * same `invocationId` as the raw event it copies -- `summarizeRunCost` folds
+ * on that id, not on either event's own id, so a raw report and its response
+ * copy are never counted twice. Either kind also durably records decisions
+ * with no usage at all -- e.g. the operator's own guidance on a cycle
+ * question -- which `summarizeRunCost` recognizes via `payloadCarriesUsage`
+ * and excludes entirely: a decision is not an invocation of the provider,
+ * and never affects coverage.
+ */
 const USAGE_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
 	'provider.usage': 'executor',
 	'review.usage': 'reviewer',
+	'cycle-question.usage': 'orchestrator',
+	'chain-reconciliation.usage': 'orchestrator',
 	'run.cycle-response': 'orchestrator',
 	'run.chain-reconciliation': 'orchestrator',
 };
@@ -451,41 +486,103 @@ function addTokenCount(existing: number | undefined, addition: number | undefine
 	return addition === undefined ? existing : (existing ?? 0) + addition;
 }
 
-/** Folds one `modelUsage` entry into the running per-(role, model) breakdown. */
+/** One `modelUsage` entry's fields, once validated (GSHIP-889) -- see `parseModelUsageEntry`. */
+interface ParsedModelUsageEntry {
+	model: string;
+	costUsd: number | undefined;
+	inputTokens: number | undefined;
+	outputTokens: number | undefined;
+	cacheCreationInputTokens: number | undefined;
+	cacheReadInputTokens: number | undefined;
+}
+
+/** Whether a parsed entry has anything at all to add -- a cost, or any token count. */
+function hasReportableValue(parsed: ParsedModelUsageEntry): boolean {
+	return parsed.costUsd !== undefined || parsed.inputTokens !== undefined || parsed.outputTokens !== undefined
+		|| parsed.cacheCreationInputTokens !== undefined || parsed.cacheReadInputTokens !== undefined;
+}
+
+/**
+ * Validates one raw `modelUsage` entry (GSHIP-889). `model` is required;
+ * `costUsd` is not -- a malformed cost (present but not a number) drops the
+ * whole entry, same as a malformed model, but an absent cost is kept, with
+ * tokens alone, so a call with unknown pricing is never dropped just because
+ * its price is unknown. An entry reporting neither a usable cost nor any
+ * token count is dropped too: it has nothing to add.
+ */
+function parseModelUsageEntry(entry: unknown): ParsedModelUsageEntry | undefined {
+	if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return undefined;
+	const record = entry as Record<string, unknown>;
+	const model = record['model'];
+	if (typeof model !== 'string') return undefined;
+	const rawCost = record['costUsd'];
+	if (rawCost !== undefined && typeof rawCost !== 'number') return undefined;
+	const parsed: ParsedModelUsageEntry = {
+		model,
+		costUsd: rawCost,
+		inputTokens: decodeUsageNumber(record['inputTokens']),
+		outputTokens: decodeUsageNumber(record['outputTokens']),
+		cacheCreationInputTokens: decodeUsageNumber(record['cacheCreationInputTokens']),
+		cacheReadInputTokens: decodeUsageNumber(record['cacheReadInputTokens']),
+	};
+	return hasReportableValue(parsed) ? parsed : undefined;
+}
+
+/** Folds one validated `modelUsage` entry into the running per-(role, model) breakdown (GSHIP-889). */
 function mergeModelUsageEntry(
 	breakdown: Map<string, RunCostBreakdownEntry>,
 	role: RunCostRole,
 	entry: unknown,
 ): void {
-	if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return;
-	const record = entry as Record<string, unknown>;
-	const model = record['model'];
-	const costUsd = record['costUsd'];
-	if (typeof model !== 'string' || typeof costUsd !== 'number') return;
-	const inputTokens = decodeUsageNumber(record['inputTokens']);
-	const outputTokens = decodeUsageNumber(record['outputTokens']);
-	const cacheCreationInputTokens = decodeUsageNumber(record['cacheCreationInputTokens']);
-	const cacheReadInputTokens = decodeUsageNumber(record['cacheReadInputTokens']);
-	const key = `${role} ${model}`;
+	const parsed = parseModelUsageEntry(entry);
+	if (parsed === undefined) return;
+	const key = `${role} ${parsed.model}`;
 	const existing = breakdown.get(key);
 	if (existing === undefined) {
 		breakdown.set(key, {
 			role,
-			model,
-			costUsd,
-			...(inputTokens === undefined ? {} : { inputTokens }),
-			...(outputTokens === undefined ? {} : { outputTokens }),
-			...(cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens }),
-			...(cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens }),
+			model: parsed.model,
+			...(parsed.costUsd === undefined ? {} : { costUsd: parsed.costUsd }),
+			...(parsed.inputTokens === undefined ? {} : { inputTokens: parsed.inputTokens }),
+			...(parsed.outputTokens === undefined ? {} : { outputTokens: parsed.outputTokens }),
+			...(parsed.cacheCreationInputTokens === undefined ? {} : { cacheCreationInputTokens: parsed.cacheCreationInputTokens }),
+			...(parsed.cacheReadInputTokens === undefined ? {} : { cacheReadInputTokens: parsed.cacheReadInputTokens }),
 		});
 		return;
 	}
-	existing.costUsd += costUsd;
-	existing.inputTokens = addTokenCount(existing.inputTokens, inputTokens);
-	existing.outputTokens = addTokenCount(existing.outputTokens, outputTokens);
+	existing.costUsd = addTokenCount(existing.costUsd, parsed.costUsd);
+	existing.inputTokens = addTokenCount(existing.inputTokens, parsed.inputTokens);
+	existing.outputTokens = addTokenCount(existing.outputTokens, parsed.outputTokens);
 	existing.cacheCreationInputTokens =
-		addTokenCount(existing.cacheCreationInputTokens, cacheCreationInputTokens);
-	existing.cacheReadInputTokens = addTokenCount(existing.cacheReadInputTokens, cacheReadInputTokens);
+		addTokenCount(existing.cacheCreationInputTokens, parsed.cacheCreationInputTokens);
+	existing.cacheReadInputTokens = addTokenCount(existing.cacheReadInputTokens, parsed.cacheReadInputTokens);
+}
+
+/**
+ * Codex reports its per-call tokens flat on `payload.usage`, never as a
+ * `modelUsage` breakdown the way Claude does (GSHIP-889): no per-model cost,
+ * since Codex never reports one. Used only when the event carried no real
+ * `modelUsage` array, so a Claude event's own breakdown is never replaced by
+ * this fallback. `payload.model` is absent whenever the invoked slot had no
+ * model configured (the default Codex slot, model-settings.ts) -- the same
+ * case `emitModelSelection` (model-settings.ts) and the resolvers already
+ * read as `'provider-default'`, so this reads it the same way rather than
+ * dropping the whole invocation's tokens for lack of a model name.
+ */
+function fallbackModelUsage(payload: Record<string, unknown>): unknown[] | undefined {
+	const rawModel = payload['model'];
+	const model = typeof rawModel === 'string' && rawModel.length > 0 ? rawModel : 'provider-default';
+	const usage = payload['usage'];
+	if (usage === null || typeof usage !== 'object' || Array.isArray(usage)) return undefined;
+	const record = usage as Record<string, unknown>;
+	const fields = ['inputTokens', 'outputTokens', 'cacheCreationInputTokens', 'cacheReadInputTokens'] as const;
+	if (!fields.some((field) => typeof record[field] === 'number')) return undefined;
+	return [{ model, ...Object.fromEntries(fields.flatMap((field) => typeof record[field] === 'number' ? [[field, record[field]]] : [])) }];
+}
+
+/** Whether this invocation reported a known price (GSHIP-889): Claude's own top-level `total_cost_usd`, present whenever it computed any cost at all -- Codex never sets it, since it never reports cost. */
+function invocationIsPriced(payload: Record<string, unknown>): boolean {
+	return typeof payload['totalCostUsd'] === 'number';
 }
 
 /** Folds one `.usage` event's payload into the running total and breakdown. */
@@ -497,7 +594,8 @@ function accumulateUsageRow(
 ): number | null {
 	const eventTotal = payload['totalCostUsd'];
 	const next = typeof eventTotal === 'number' ? (totalCostUsd ?? 0) + eventTotal : totalCostUsd;
-	const modelUsage = payload['modelUsage'];
+	const reported = payload['modelUsage'];
+	const modelUsage = Array.isArray(reported) && reported.length > 0 ? reported : fallbackModelUsage(payload);
 	if (Array.isArray(modelUsage)) {
 		for (const entry of modelUsage) mergeModelUsageEntry(breakdown, role, entry);
 	}
@@ -550,20 +648,144 @@ function accumulateRoleUsage(
 	roles.set(role, existing);
 }
 
-export function summarizeRunCost(events: readonly RunEvent[]): RunCostSummary {
-	let totalCostUsd: number | null = null;
-	const breakdown = new Map<string, RunCostBreakdownEntry>();
-	const roles = new Map<RunCostRole, RoleUsageAccumulator>();
-	for (const event of events) {
-		const role = USAGE_EVENT_ROLES[event.kind];
-		if (role === undefined) continue;
-		totalCostUsd = accumulateUsageRow(breakdown, totalCostUsd, role, event.payload);
-		accumulateRoleUsage(roles, role, event.payload);
+/**
+ * A run's cost coverage across every invocation counted (GSHIP-889): none
+ * counted or none priced both read as `'unknown'`, so ambiguous legacy
+ * history and a run that simply never priced anything are never upgraded to
+ * `'complete'` just because some call reported tokens.
+ */
+function costCoverageOf(totalInvocations: number, pricedInvocations: number): RunCostCoverage {
+	if (totalInvocations === 0 || pricedInvocations === 0) return 'unknown';
+	return pricedInvocations === totalInvocations ? 'complete' : 'partial';
+}
+
+/**
+ * The resolver's and reconciler's own raw usage kinds, each paired with the
+ * response copy (`run.cycle-response` / `run.chain-reconciliation`) that
+ * repeats the same usage once the call resolves (GSHIP-889). A raw event
+ * tagged with `invocationId` dedupes safely against that copy. One without it
+ * predates GSHIP-888 and cannot be matched to a specific copy at all, so its
+ * cost and tokens are never added -- that would double them against whichever
+ * copy already counted -- but it is not simply dropped either: a legacy raw
+ * event with no matching copy at all (a resolver or reconciler failure this
+ * run never got a durable final response for) still rebalances coverage
+ * below `'complete'`, counted in `totalInvocations` without a price, per
+ * `legacyOrphanCount` below.
+ */
+const RAW_ORCHESTRATOR_USAGE_KINDS: Readonly<Record<string, string>> = {
+	'cycle-question.usage': 'run.cycle-response',
+	'chain-reconciliation.usage': 'run.chain-reconciliation',
+};
+const ORCHESTRATOR_COPY_KINDS: ReadonlySet<string> = new Set(Object.values(RAW_ORCHESTRATOR_USAGE_KINDS));
+
+/**
+ * Whether a `run.cycle-response` / `run.chain-reconciliation` payload carries
+ * any usage signal at all (GSHIP-889). A plain decision with none of these
+ * fields -- notably the operator's own guidance on a cycle question
+ * (`#applyOperatorCycleGuidance`, run-runtime.ts), which only ever carries
+ * `questionId`/`responder`/`source`/`outcome`/`guidance`/`findings`/`origin`
+ * and never called a provider -- is not an invocation at all: it never pairs
+ * against a raw usage event, and `summarizeRunCost` skips it outright rather
+ * than counting it toward coverage as an unpriced call.
+ */
+function payloadCarriesUsage(payload: Record<string, unknown>): boolean {
+	return payload['model'] !== undefined || payload['totalCostUsd'] !== undefined
+		|| payload['modelUsage'] !== undefined || payload['usage'] !== undefined;
+}
+
+/**
+ * How many legacy (no invocationId) raw resolver/reconciler usage events, by
+ * kind, have no legacy copy-with-usage to match against (GSHIP-889): each one
+ * is an invocation this ambiguous legacy history genuinely cannot account
+ * for -- most often a resolver or reconciler call that failed before any
+ * final decision was ever durably recorded. Never negative: more legacy
+ * copies than raw events for a kind means every raw event already has a
+ * copy, so nothing is unmatched.
+ */
+function legacyOrphanCount(rawCounts: ReadonlyMap<string, number>, copyCounts: ReadonlyMap<string, number>): number {
+	let orphans = 0;
+	for (const [rawKind, copyKind] of Object.entries(RAW_ORCHESTRATOR_USAGE_KINDS)) {
+		orphans += Math.max(0, (rawCounts.get(rawKind) ?? 0) - (copyCounts.get(copyKind) ?? 0));
 	}
-	const roleUsage = [...roles.entries()]
-		.map(([role, acc]) => toRoleUsage(role, acc))
+	return orphans;
+}
+
+/** The running state `summarizeRunCost` folds each event into (GSHIP-889); see `foldUsageEvent`. */
+interface CostAccumulator {
+	totalCostUsd: number | null;
+	breakdown: Map<string, RunCostBreakdownEntry>;
+	roles: Map<RunCostRole, RoleUsageAccumulator>;
+	// A raw `.usage` event and its response copy (`run.cycle-response` /
+	// `run.chain-reconciliation`) share the same invocationId -- folded here,
+	// not on either event's own id, so the two never double the same
+	// invocation.
+	seenInvocations: Set<string>;
+	// Tallied only for legacy (no invocationId) events, to compare a raw
+	// kind's count against its copy kind's count once every event has been
+	// read -- see `legacyOrphanCount`.
+	legacyRawCounts: Map<string, number>;
+	legacyCopyCounts: Map<string, number>;
+	totalInvocations: number;
+	pricedInvocations: number;
+}
+
+function newCostAccumulator(): CostAccumulator {
+	return {
+		totalCostUsd: null,
+		breakdown: new Map(),
+		roles: new Map(),
+		seenInvocations: new Set(),
+		legacyRawCounts: new Map(),
+		legacyCopyCounts: new Map(),
+		totalInvocations: 0,
+		pricedInvocations: 0,
+	};
+}
+
+/** Folds one usage-bearing event into the accumulator (GSHIP-889): a decision with no usage, a legacy raw event, its legacy copy, and a normal invocation each take their own branch, kept out of `summarizeRunCost` itself so its own loop stays simple. */
+function foldUsageEvent(acc: CostAccumulator, event: RunEvent): void {
+	const role = USAGE_EVENT_ROLES[event.kind];
+	if (role === undefined) return;
+	// A `run.cycle-response` / `run.chain-reconciliation` with no usage signal
+	// at all is a plain decision -- e.g. the operator's own guidance, which
+	// never called a provider -- never an invocation, whether or not it
+	// carries an invocationId. It is not counted toward coverage at all.
+	if (ORCHESTRATOR_COPY_KINDS.has(event.kind) && !payloadCarriesUsage(event.payload)) return;
+	const invocationId = event.payload['invocationId'];
+	const hasInvocationId = typeof invocationId === 'string';
+	if (!hasInvocationId && event.kind in RAW_ORCHESTRATOR_USAGE_KINDS) {
+		acc.legacyRawCounts.set(event.kind, (acc.legacyRawCounts.get(event.kind) ?? 0) + 1);
+		return;
+	}
+	if (!hasInvocationId && ORCHESTRATOR_COPY_KINDS.has(event.kind)) {
+		acc.legacyCopyCounts.set(event.kind, (acc.legacyCopyCounts.get(event.kind) ?? 0) + 1);
+	}
+	if (hasInvocationId) {
+		if (acc.seenInvocations.has(invocationId)) return;
+		acc.seenInvocations.add(invocationId);
+	}
+	acc.totalInvocations += 1;
+	if (invocationIsPriced(event.payload)) acc.pricedInvocations += 1;
+	acc.totalCostUsd = accumulateUsageRow(acc.breakdown, acc.totalCostUsd, role, event.payload);
+	accumulateRoleUsage(acc.roles, role, event.payload);
+}
+
+export function summarizeRunCost(events: readonly RunEvent[]): RunCostSummary {
+	const acc = newCostAccumulator();
+	for (const event of events) foldUsageEvent(acc, event);
+	// Each unmatched legacy raw event counts toward coverage without a price:
+	// an invocation this history cannot deny happened, but also cannot show
+	// as fully accounted for.
+	acc.totalInvocations += legacyOrphanCount(acc.legacyRawCounts, acc.legacyCopyCounts);
+	const roleUsage = [...acc.roles.entries()]
+		.map(([role, roleAcc]) => toRoleUsage(role, roleAcc))
 		.filter((usage): usage is RunCostRoleUsage => usage !== undefined);
-	return { totalCostUsd, breakdown: [...breakdown.values()], roles: roleUsage };
+	return {
+		totalCostUsd: acc.totalCostUsd,
+		costCoverage: costCoverageOf(acc.totalInvocations, acc.pricedInvocations),
+		breakdown: [...acc.breakdown.values()],
+		roles: roleUsage,
+	};
 }
 
 /** Drops a role with nothing to report, the same absence-over-empty-value pattern as the breakdown. */
@@ -1896,7 +2118,10 @@ export class RunStore {
 	getRunCostSummary(runId: string): RunCostSummary {
 		const rows = this.#db.query(`
 			SELECT kind, payload_json FROM run_events
-			WHERE run_id = $runId AND kind IN ('provider.usage', 'review.usage', 'run.cycle-response', 'run.chain-reconciliation')
+			WHERE run_id = $runId AND kind IN (
+				'provider.usage', 'review.usage', 'cycle-question.usage', 'chain-reconciliation.usage',
+				'run.cycle-response', 'run.chain-reconciliation'
+			)
 			ORDER BY seq ASC
 		`).all({ runId }) as Array<{ kind: string; payload_json: string }>;
 

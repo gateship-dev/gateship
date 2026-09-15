@@ -36,7 +36,7 @@ export type RunCostRole = 'executor' | 'reviewer' | 'orchestrator';
 export interface RunCostBreakdownEntry {
 	role: RunCostRole;
 	model: string;
-	costUsd: number;
+	costUsd?: number;
 	inputTokens?: number;
 	outputTokens?: number;
 	cacheCreationInputTokens?: number;
@@ -57,14 +57,21 @@ export interface RunCostRoleUsage {
 	effort?: string;
 }
 
+/** Mirrors RunCostCoverage in src/runtime/run-store.ts (GSHIP-889). */
+export type RunCostCoverage = 'complete' | 'partial' | 'unknown';
+
 /**
  * A run's whole reported cost, already summed on the server from the complete
  * event log (GSHIP-623): no display limit here can ever shrink the number the
  * card shows. `totalCostUsd` is `null`, never `0`, when the CLI reported no
- * cost for this run -- `0` would read as free.
+ * cost for this run -- `0` would read as free. `costCoverage` (GSHIP-889) is
+ * whether that known subtotal covers every invocation the run made, some, or
+ * none -- shown beside the subtotal so a partial total is never read as the
+ * whole.
  */
 export interface RunCostView {
 	totalCostUsd: number | null;
+	costCoverage: RunCostCoverage;
 	breakdown: readonly RunCostBreakdownEntry[];
 	roles: readonly RunCostRoleUsage[];
 }
@@ -222,6 +229,20 @@ export function displayedRunId(requestedRunId: string | null, runs: readonly Run
 export interface RunCostAggregate {
 	totalCostUsd: number | null;
 	runCount: number;
+	/** Whether every run in the aggregate is itself fully priced, only some are, or none are (GSHIP-889) -- mirrors RunCostCoverage, so the subtotal is never shown as if it covered every run when it does not. */
+	costCoverage: RunCostCoverage;
+}
+
+/**
+ * Coverage across a set of runs (GSHIP-889): `'unknown'` when none of them
+ * ever reported any cost at all; `'complete'` only when every one of them is
+ * itself fully priced; `'partial'` otherwise -- a mix of priced and unpriced
+ * runs, or a run that is itself only partly priced, both read as partial
+ * rather than being rounded up to complete.
+ */
+function aggregateCostCoverage(runs: readonly RunView[]): RunCostCoverage {
+	if (runs.length === 0 || runs.every((run) => run.cost.costCoverage === 'unknown')) return 'unknown';
+	return runs.every((run) => run.cost.costCoverage === 'complete') ? 'complete' : 'partial';
 }
 
 /**
@@ -236,7 +257,7 @@ export function aggregateRunCosts(runs: readonly RunView[]): RunCostAggregate {
 	const totalCostUsd = known.length === 0
 		? null
 		: known.reduce((sum, run) => sum + (run.cost.totalCostUsd ?? 0), 0);
-	return { totalCostUsd, runCount: runs.length };
+	return { totalCostUsd, runCount: runs.length, costCoverage: aggregateCostCoverage(runs) };
 }
 
 /**

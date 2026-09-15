@@ -9,7 +9,7 @@ import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { runIdOf } from '../routes.ts';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
-import { PreviousRunsPanel, RunActivity, RunCard, RunCostPanel, RunReport, WorkflowBenchmarkPanel, WorkflowInsightsPanel, WorkspaceNoticesPanel, formatCostUsd } from './runs.tsx';
+import { PreviousRunsPanel, RunActivity, RunCard, RunCostPanel, RunReport, WorkflowBenchmarkPanel, WorkflowInsightsPanel, WorkspaceNoticesPanel, formatCostCoverage, formatCostUsd } from './runs.tsx';
 
 export function RunsSurface(props: AppProps): React.ReactElement {
 	const requestedRunId = runIdOf(String(props.surfaceRoute ?? props.route));
@@ -54,7 +54,11 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 					{run.cost.totalCostUsd === null ? null : (
 						<Stat
 							label={catalog.stats.expectedCost}
-							value={formatCostUsd(run.cost.totalCostUsd, props.locale)}
+							value={(() => {
+								const coverage = formatCostCoverage(run.cost.costCoverage, LOCALE_CATALOG[props.locale].runsOperational.cost);
+								const cost = formatCostUsd(run.cost.totalCostUsd, props.locale);
+								return coverage === null ? cost : `${cost} · ${coverage}`;
+							})()}
 						/>
 					)}
 					<Stat

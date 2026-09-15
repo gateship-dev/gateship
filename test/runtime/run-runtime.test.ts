@@ -3538,6 +3538,7 @@ describe('releasing a failed run workspace', () => {
 		expect(runtime.getRun(run.id)).toMatchObject({ fixRounds: 1 });
 		expect(runtime.getRunCost(run.id)).toEqual({
 			totalCostUsd: expect.closeTo(0.14, 6),
+			costCoverage: 'complete',
 			breakdown: [
 				{ role: 'executor', model: 'claude-opus-4-6', costUsd: expect.closeTo(0.12, 6) },
 				{ role: 'reviewer', model: 'claude-sonnet-4-6', costUsd: expect.closeTo(0.02, 6) },
@@ -4768,9 +4769,13 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 			newId: () => ids.shift() ?? 'unexpected-id',
 			newSessionId: () => 'session-decisions',
 			executor: {
-				execute: async ({ resume }) => {
+				execute: async ({ resume, emit }) => {
 					executorCalls += 1;
 					if (!resume) return { outcome: 'waiting-user', summary: 'Choose the seam.' };
+					emit('provider.usage', {
+						invocationId: `inv-exec-${executorCalls}`, model: 'opus', totalCostUsd: 0.05,
+						modelUsage: [{ model: 'claude-opus-4-6', costUsd: 0.05 }],
+					});
 					return { outcome: 'completed', summary: `pass ${executorCalls}` };
 				},
 			},
@@ -4779,6 +4784,10 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 				review: async (input) => {
 					reviewCalls += 1;
 					reviewDecisions.push(input.operatorDecisions);
+					input.emit('review.usage', {
+						invocationId: `inv-review-${reviewCalls}`, model: 'sonnet', totalCostUsd: 0.01,
+						modelUsage: [{ model: 'claude-sonnet-4-6', costUsd: 0.01 }],
+					});
 					// Findings on the first two reviews reproduce the "reported again"
 					// step; findings on review 2 forces the fix-limit wait for a
 					// second ratification, and review 3 is clean so the run settles.
@@ -4812,6 +4821,11 @@ describe('operator decisions reach the reviewer (GSHIP-630)', () => {
 		]);
 		const cycleResponses = runtime.listRunDecisionEvents(run.id).filter((event) => event.kind === 'run.cycle-response');
 		expect(cycleResponses[0]?.payload).toMatchObject({ responder: 'operator', source: 'operator', guidance: 'Ratify it again.' });
+		// GSHIP-889: the operator's own cycle guidance above carries no usage at
+		// all and must not count as an unpriced invocation -- every actual
+		// provider call here was priced, so coverage reads 'complete' despite
+		// the operator's `run.cycle-response` entries sitting beside them.
+		expect(runtime.getRunCost(run.id).costCoverage).toBe('complete');
 
 		await runtime.stop();
 		runtime.close();

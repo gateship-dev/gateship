@@ -12,7 +12,7 @@ import { cn } from '../lib/cn.ts';
 import { DEFAULT_LOCALE, LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, RunInspectorCatalog, RunsOperationalCatalog, RunsWorkflowCatalog, SettingsCatalog } from '../locale.ts';
 import { actionsFor, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
-import type { ProviderUsageWindowView, RunCostRole, RunCostRoleUsage, RunEventView, RunExecutorHandoffView, RunProviderWaitView, RunView, WorkflowCohort } from '../run-view.ts';
+import type { ProviderUsageWindowView, RunCostCoverage, RunCostRole, RunCostRoleUsage, RunEventView, RunExecutorHandoffView, RunProviderWaitView, RunView, WorkflowCohort } from '../run-view.ts';
 import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
 
@@ -79,6 +79,29 @@ export function formatCostUsd(
 		minimumFractionDigits: 2,
 		maximumFractionDigits,
 	}).format(value);
+}
+
+/**
+ * Appended beside a known cost subtotal once the run also ran an invocation
+ * that never reported a price (GSHIP-889): `totalCostUsd` is never `null`
+ * when coverage is `'unknown'` (no invocation was ever priced), so only
+ * `'partial'` needs a visible marker here -- `'complete'` shows the plain
+ * total, unchanged from before this coverage distinction existed.
+ */
+export function formatCostCoverage(coverage: RunCostCoverage, catalog: RunsOperationalCatalog['cost']): string | null {
+	return coverage === 'partial' ? catalog.partialCoverage : null;
+}
+
+/**
+ * The same partial-coverage marker as `formatCostCoverage`, ready to append
+ * to any already-formatted cost sentence (GSHIP-889): every screen shows the
+ * expected cost with the same wording, so this reads the shared
+ * `runsOperational.cost` catalog directly instead of asking each caller for
+ * it separately.
+ */
+function costCoverageSuffix(coverage: RunCostCoverage, locale: Locale): string {
+	const label = formatCostCoverage(coverage, LOCALE_CATALOG[locale].runsOperational.cost);
+	return label === null ? '' : ` · ${label}`;
 }
 
 export function formatEventTime(value: string, locale: Locale): string {
@@ -663,6 +686,7 @@ export function RunCardContent({
 			{showCost && run.cost.totalCostUsd !== null ? (
 				<p className="text-muted-foreground text-sm">
 					{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
+					{costCoverageSuffix(run.cost.costCoverage, locale)}
 				</p>
 			) : null}
 			<RunCommands
@@ -774,6 +798,9 @@ export function RunCostPanel({
 			description={catalog.cost.description}
 			title={catalog.cost.title}
 		>
+			{formatCostCoverage(run.cost.costCoverage, catalog.cost) === null ? null : (
+				<p className="mb-3 text-muted-foreground text-xs">{formatCostCoverage(run.cost.costCoverage, catalog.cost)}</p>
+			)}
 			<ul className="flex flex-col gap-4">
 				{roles.map((role) => {
 					const usage = run.cost.roles.find((entry) => entry.role === role);
@@ -788,7 +815,7 @@ export function RunCostPanel({
 										<div className="flex items-baseline justify-between gap-3">
 											<span className="min-w-0 break-all font-mono text-xs">{entry.model}</span>
 											<span className="shrink-0 font-mono text-muted-foreground text-xs tabular-nums">
-												{formatCostUsd(entry.costUsd, locale)}
+												{entry.costUsd === undefined ? catalog.cost.unknownCost : formatCostUsd(entry.costUsd, locale)}
 											</span>
 										</div>
 										{tokens === null ? null : (
@@ -850,7 +877,7 @@ export function PreviousRunRow({
 				<TableCell className="text-right font-mono text-muted-foreground text-xs">
 					{run.cost.totalCostUsd === null
 						? null
-						: runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
+						: `${runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}${costCoverageSuffix(run.cost.costCoverage, locale)}`}
 				</TableCell>
 			) : null}
 			<TableCell className="text-right">
@@ -959,11 +986,11 @@ export function WorkflowInsightsPanel({
 				<dd>
 					{insights.cost.totalCostUsd === null
 						? catalog.signals.noReportedCost
-						: catalog.signals.reportedCost(
+						: `${catalog.signals.reportedCost(
 							formatCostUsd(insights.cost.totalCostUsd, locale),
 							insights.cost.reportedRunCount,
 							insights.runCount,
-						)}
+						)}${costCoverageSuffix(insights.cost.costCoverage, locale)}`}
 				</dd>
 			</dl>
 			{insights.cost.totalCostUsd === null ? null : (
@@ -1057,10 +1084,10 @@ export function WorkflowCohortCard({
 				<dd>
 					{cohort.cost.totalCostUsd === null
 						? card.noReportedCost
-						: card.reportedCost(
+						: `${card.reportedCost(
 							formatCostUsd(cohort.cost.totalCostUsd, locale),
 							cohort.cost.reportedRunCount,
-						)}
+						)}${costCoverageSuffix(cohort.cost.costCoverage, locale)}`}
 				</dd>
 			</dl>
 			<div className="mt-3 flex flex-col gap-1 text-muted-foreground text-xs">
