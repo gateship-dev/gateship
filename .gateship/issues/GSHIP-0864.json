@@ -13,7 +13,7 @@
     "GSHIP-896"
   ],
   "createdAt": "2026-09-11T02:41:26.459Z",
-  "updatedAt": "2026-09-15T12:20:30.318Z",
+  "updatedAt": "2026-09-15T12:21:13.624Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -38,5 +38,9 @@
       "bun test test/web/notifications.test.ts test/web/notifications-api.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "68a4481ecfed326e299c92795b38bcb688bbad4e141cacedce1f6209381b4e57",
+    "approvedAt": "2026-09-15T12:21:13.624Z"
   }
 }
