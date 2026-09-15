@@ -19,7 +19,10 @@ import {
 	collectChange,
 	collectReviewEvidence,
 	formatReviewEvidence,
+	emitReviewCoverage,
+	evaluateReviewCoverage,
 	parseReviewVerdict,
+	REVIEW_COVERAGE_CONTRACT,
 	REVIEW_MATERIALITY_CONTRACT,
 	REVIEW_RESULT_SCHEMA,
 } from '../../src/runtime/claude-cli-reviewer.ts';
@@ -358,6 +361,228 @@ describe('independent Claude CLI reviewer', () => {
 			buildReviewPrompt('CAM-577', '{"id":"CAM-577"}', change, decisions, ciFeedback),
 		);
 	});
+
+	// GSHIP-894: a real child's coverage claim is validated against this
+	// worktree, not trusted as reported -- covered, spec-precision-gap,
+	// uncovered and a citation the workspace does not back all land the way
+	// evaluateReviewCoverage says they should, end to end through a real spawn.
+	test('a real reviewer child\'s coverage map is validated, folded into findings, and recorded as a durable event', async () => {
+		const cwd = createTestTmpdir('gship-coverage-e2e-');
+		mkdirSync(join(cwd, 'src'), { recursive: true });
+		writeFileSync(join(cwd, 'src', 'a.ts'), 'export const a = 1;\n');
+		const issue = JSON.stringify({
+			id: 'CAM-894',
+			spec: {
+				acceptance: ['Covered criterion', 'Gap criterion', 'Missed criterion', 'Falsely claimed criterion'],
+			},
+		});
+		const coverage = [
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'declares a' },
+			{ index: 1, status: 'spec-precision-gap', evidence: '', assertion: '' },
+			{ index: 2, status: 'uncovered', evidence: '', assertion: '' },
+			{ index: 3, status: 'covered', evidence: 'src/missing.ts:1', assertion: 'never actually cited' },
+		];
+		const reviewer = fixtureReviewer('CLEAN', {
+			command: ['bun', FIXTURE, '--fixture-mode=review', '--fixture-verdict=CLEAN', `--fixture-coverage=${JSON.stringify(coverage)}`],
+		});
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const result = await reviewer.review(reviewInput({
+			cwd,
+			approvedContract: issue,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		}));
+
+		expect(result.verdict).toBe('findings');
+		const detail = result.verdict === 'findings' ? result.detail : '';
+		expect(detail).toContain('Missed criterion');
+		expect(detail).toContain('Falsely claimed criterion');
+		expect(detail).not.toContain('Gap criterion');
+		expect(detail).not.toContain('Covered criterion');
+
+		const coverageEvent = events.find((event) => event.kind === 'run.review-coverage');
+		expect(coverageEvent?.payload?.['items']).toEqual([
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'declares a' },
+			{ index: 1, status: 'spec-precision-gap', evidence: '', assertion: '' },
+			{ index: 2, status: 'uncovered', evidence: '', assertion: '' },
+			// The citation names no file this worktree actually has, so the
+			// runtime downgrades it from the child's own "covered" claim.
+			{ index: 3, status: 'uncovered', evidence: 'src/missing.ts:1', assertion: 'never actually cited' },
+		]);
+	});
+});
+
+// GSHIP-894: the reviewer's coverage map by acceptance item, validated against
+// this worktree instead of trusted as reported, and independent of both
+// providers' own transport (the ClaudeCliReviewer end-to-end test above and
+// its CodexCliReviewer counterpart in codex-cli-reviewer.test.ts prove the
+// same validation reaches whichever one reviewed).
+describe('evaluateReviewCoverage / parseReviewVerdict extraFindings / emitReviewCoverage (GSHIP-894)', () => {
+	function coverageWorktree(): string {
+		const cwd = createTestTmpdir('gship-coverage-');
+		mkdirSync(join(cwd, 'src'), { recursive: true });
+		writeFileSync(join(cwd, 'src', 'a.ts'), 'line1\nline2\nline3\n');
+		return cwd;
+	}
+
+	test('every item covered with an existing file:line citation is CLEAN: no findings', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['First criterion', 'Second criterion'] } });
+		const raw = [
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'line1 establishes the first value' },
+			{ index: 1, status: 'covered', evidence: 'src/a.ts:2', assertion: 'line2 establishes the second value' },
+		];
+
+		const { coverage, findings } = evaluateReviewCoverage(cwd, issue, raw);
+
+		expect(coverage).toEqual([
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'line1 establishes the first value' },
+			{ index: 1, status: 'covered', evidence: 'src/a.ts:2', assertion: 'line2 establishes the second value' },
+		]);
+		expect(findings).toEqual([]);
+	});
+
+	test('an item the reviewer reports uncovered becomes a finding carrying the acceptance item\'s own text', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['Only criterion'] } });
+
+		const { coverage, findings } = evaluateReviewCoverage(cwd, issue, [
+			{ index: 0, status: 'uncovered', evidence: '', assertion: '' },
+		]);
+
+		expect(coverage).toEqual([{ index: 0, status: 'uncovered', evidence: '', assertion: '' }]);
+		expect(findings).toEqual([{ file: 'spec.acceptance[0]', summary: 'Only criterion' }]);
+	});
+
+	test('an item the reviewer silently omits is exactly as uncovered as one it names', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['First', 'Second'] } });
+
+		const { coverage, findings } = evaluateReviewCoverage(cwd, issue, [
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'ok' },
+		]);
+
+		expect(coverage).toEqual([
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'ok' },
+			{ index: 1, status: 'uncovered', evidence: '', assertion: '' },
+		]);
+		expect(findings).toEqual([{ file: 'spec.acceptance[1]', summary: 'Second' }]);
+	});
+
+	test('a citation naming a file this worktree does not have is downgraded to uncovered', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['Only criterion'] } });
+
+		const { coverage, findings } = evaluateReviewCoverage(cwd, issue, [
+			{ index: 0, status: 'covered', evidence: 'src/missing.ts:1', assertion: 'claims coverage' },
+		]);
+
+		expect(coverage).toEqual([
+			{ index: 0, status: 'uncovered', evidence: 'src/missing.ts:1', assertion: 'claims coverage' },
+		]);
+		expect(findings).toEqual([{ file: 'spec.acceptance[0]', summary: 'Only criterion' }]);
+	});
+
+	test('a citation naming a line past the end of the file is downgraded to uncovered', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['Only criterion'] } });
+
+		const { coverage } = evaluateReviewCoverage(cwd, issue, [
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:99', assertion: 'claims coverage' },
+		]);
+
+		expect(coverage).toEqual([
+			{ index: 0, status: 'uncovered', evidence: 'src/a.ts:99', assertion: 'claims coverage' },
+		]);
+	});
+
+	test('a citation with no evidence at all never counts as covered', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['Only criterion'] } });
+
+		const { coverage } = evaluateReviewCoverage(cwd, issue, [
+			{ index: 0, status: 'covered', evidence: '', assertion: 'claims coverage anyway' },
+		]);
+
+		expect(coverage).toEqual([{ index: 0, status: 'uncovered', evidence: '', assertion: 'claims coverage anyway' }]);
+	});
+
+	test('spec-precision-gap is recorded but never blocks: it produces no finding', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['Only criterion'] } });
+
+		const { coverage, findings } = evaluateReviewCoverage(cwd, issue, [
+			{ index: 0, status: 'spec-precision-gap', evidence: '', assertion: '' },
+		]);
+
+		expect(coverage).toEqual([{ index: 0, status: 'spec-precision-gap', evidence: '', assertion: '' }]);
+		expect(findings).toEqual([]);
+	});
+
+	test('with no parseable spec.acceptance, the reviewer\'s own reported indices are kept as-is', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ id: 'legacy-issue' });
+
+		const { coverage, findings } = evaluateReviewCoverage(cwd, issue, [
+			{ index: 5, status: 'covered', evidence: 'src/a.ts:1', assertion: 'ok' },
+		]);
+
+		expect(coverage).toEqual([{ index: 5, status: 'covered', evidence: 'src/a.ts:1', assertion: 'ok' }]);
+		expect(findings).toEqual([]);
+	});
+
+	test('parseReviewVerdict folds extraFindings into the same numbered detail, and can turn CLEAN into FINDINGS', () => {
+		expect(parseReviewVerdict({ verdict: 'CLEAN', findings: [] }, '', [])).toEqual({ verdict: 'clean' });
+		expect(parseReviewVerdict(
+			{ verdict: 'CLEAN', findings: [] }, '',
+			[{ file: 'spec.acceptance[0]', summary: 'gap' }],
+		)).toEqual({ verdict: 'findings', detail: '1. spec.acceptance[0]: gap' });
+		expect(parseReviewVerdict(
+			{ verdict: 'FINDINGS', findings: [{ file: 'a.ts', summary: 'leaks' }] }, '',
+			[{ file: 'spec.acceptance[1]', summary: 'gap' }],
+		)).toEqual({ verdict: 'findings', detail: '1. a.ts: leaks\n2. spec.acceptance[1]: gap' });
+	});
+
+	test('emitReviewCoverage validates the claim, emits the durable run.review-coverage event, and returns the auto findings', () => {
+		const cwd = coverageWorktree();
+		const issue = JSON.stringify({ spec: { acceptance: ['First', 'Second'] } });
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const structuredOutput = {
+			verdict: 'CLEAN',
+			findings: [],
+			coverage: [
+				{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'line1' },
+				{ index: 1, status: 'covered', evidence: 'src/missing.ts:1', assertion: 'nope' },
+			],
+		};
+
+		const findings = emitReviewCoverage(
+			reviewInput({ cwd, emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }) }),
+			issue,
+			structuredOutput,
+		);
+
+		expect(findings).toEqual([{ file: 'spec.acceptance[1]', summary: 'Second' }]);
+		expect(events).toEqual([{
+			kind: 'run.review-coverage',
+			payload: {
+				items: [
+					{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'line1' },
+					{ index: 1, status: 'uncovered', evidence: 'src/missing.ts:1', assertion: 'nope' },
+				],
+			},
+		}]);
+	});
+
+	test('emitReviewCoverage is a no-op when the child returned no structured object', () => {
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const findings = emitReviewCoverage(
+			reviewInput({ emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }) }),
+			'{}',
+			undefined,
+		);
+		expect(findings).toEqual([]);
+		expect(events).toEqual([]);
+	});
 });
 
 describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
@@ -394,10 +619,12 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 			'Speculation is not a finding.',
 			'Only the issue specification and recorded operator decisions are binding; description and other issue fields are context only.',
 			'',
+			...REVIEW_COVERAGE_CONTRACT,
+			'',
 			'End your reply with a single JSON object on the last line and nothing after it:',
-			'{"verdict":"CLEAN","findings":[]}',
+			'{"verdict":"CLEAN","findings":[],"coverage":[{"index":0,"status":"covered","evidence":"path/to/file.ts:12","assertion":"what that line establishes"}]}',
 			'or',
-			'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}]}',
+			'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}],"coverage":[{"index":0,"status":"uncovered","evidence":"","assertion":""}]}',
 			'',
 			...OPERATOR_LANGUAGE_CONTRACT,
 			'',
@@ -442,7 +669,7 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 		for (const decisions of [[], ['Keep the smaller seam.']]) {
 			const prompt = buildReviewPrompt(issueId, issue, change, decisions);
 			expect(prompt).toContain([
-				'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}]}',
+				'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}],"coverage":[{"index":0,"status":"uncovered","evidence":"","assertion":""}]}',
 				'',
 				...OPERATOR_LANGUAGE_CONTRACT,
 				'',
@@ -503,7 +730,7 @@ describe('buildReviewPrompt operator decisions (GSHIP-630)', () => {
 			// no severity, no score, no suggestion backlog.
 			expect(prompt.indexOf('CLEAN means the change carries no material defect'))
 				.toBeLessThan(prompt.indexOf('End your reply'));
-			expect(prompt).toContain('{"verdict":"CLEAN","findings":[]}');
+			expect(prompt).toContain('{"verdict":"CLEAN","findings":[],"coverage":[{"index":0,"status":"covered","evidence":"path/to/file.ts:12","assertion":"what that line establishes"}]}');
 			expect(prompt).not.toContain('severity');
 			expect(prompt).not.toContain('score');
 		}

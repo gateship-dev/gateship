@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ProviderCallError } from '../../src/runtime/agent-session.ts';
@@ -164,5 +165,40 @@ describe('independent Codex reviewer', () => {
 		// GSHIP-714: and the same materiality contract, so a stale internal
 		// comment is not a finding for this provider either.
 		expect(capturedPrompt).toContain(REVIEW_MATERIALITY_CONTRACT.join('\n'));
+	});
+
+	// GSHIP-894: the evidence-or-zero coverage map is validated and folded into
+	// findings the same way for this provider as for the Claude reviewer's own
+	// end-to-end test in claude-cli-reviewer.test.ts -- same shared schema, same
+	// shared validation, only the transport differs.
+	test('a real Codex reviewer child\'s coverage map is validated, folds an uncovered item into findings, and is recorded as a durable event', async () => {
+		const cwd = createTestTmpdir('gship-codex-coverage-');
+		mkdirSync(join(cwd, 'src'), { recursive: true });
+		writeFileSync(join(cwd, 'src', 'a.ts'), 'export const a = 1;\n');
+		const issue = JSON.stringify({ id: 'CAM-1', spec: { acceptance: ['Covered criterion', 'Missed criterion'] } });
+		const coverage = [
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'declares a' },
+			{ index: 1, status: 'uncovered', evidence: '', assertion: '' },
+		];
+		const reviewer = new CodexCliReviewer({
+			command: ['bun', FIXTURE, '--fixture-mode=review', '--fixture-verdict=CLEAN', `--fixture-coverage=${JSON.stringify(coverage)}`],
+			loadIssue: () => issue,
+			runGit: () => ({ exitCode: 0, stdout: '', stderr: '' }),
+		});
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+
+		const result = await reviewer.review({
+			...input(),
+			cwd,
+			approvedContract: issue,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+
+		expect(result).toEqual({ verdict: 'findings', detail: '1. spec.acceptance[1]: Missed criterion' });
+		const coverageEvent = events.find((event) => event.kind === 'run.review-coverage');
+		expect(coverageEvent?.payload?.['items']).toEqual([
+			{ index: 0, status: 'covered', evidence: 'src/a.ts:1', assertion: 'declares a' },
+			{ index: 1, status: 'uncovered', evidence: '', assertion: '' },
+		]);
 	});
 });

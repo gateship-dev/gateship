@@ -4,6 +4,7 @@ import type { AgentSession } from './agent-session.ts';
 import {
 	buildReviewPrompt,
 	collectChange,
+	emitReviewCoverage,
 	parseReviewVerdict,
 	REVIEW_RESULT_SCHEMA,
 	reviewEvidenceForPrompt,
@@ -86,6 +87,7 @@ export class CodexCliReviewer implements RuntimeReviewer {
 			emit: input.emit,
 			eventPrefix: 'review',
 		});
-		return parseReviewVerdict(result.structuredOutput, result.summary);
+		const coverageFindings = emitReviewCoverage(input, issue, result.structuredOutput);
+		return parseReviewVerdict(result.structuredOutput, result.summary, coverageFindings);
 	}
 }

@@ -115,6 +115,34 @@ export const REVIEW_MATERIALITY_CONTRACT = [
 		'Only the issue specification and recorded operator decisions are binding; description and other issue fields are context only.',
 ] as const;
 
+/**
+ * GSHIP-894: findings alone let a reviewer stay silent about an acceptance
+ * item nobody actually checked. Alongside the verdict, every review returns
+ * one coverage entry per item in the Issue record's `spec.acceptance` array,
+ * so a criterion nobody verified is visible as exactly that, not folded into
+ * a CLEAN verdict.
+ */
+export const REVIEW_COVERAGE_CONTRACT = [
+	"Besides the verdict, return a coverage entry for every item in the Issue",
+	"record's spec.acceptance array, indexed from 0 in that array's order, all",
+	'in one "coverage" list. Do not skip an item because it looks satisfied or',
+	'because you are unsure: report it, one way or another.',
+	'Each entry has:',
+	'  - index: the 0-based position of the acceptance item in spec.acceptance.',
+	'  - status: "covered", "uncovered", or "spec-precision-gap".',
+	'  - evidence: an existing "file:line" in this workspace, or "" when none applies.',
+	'  - assertion: what that file:line actually shows, in your own words.',
+	'Evidence-or-zero: "covered" only when evidence names a real file:line in',
+	'this workspace and assertion targets the exact value the acceptance item',
+	'defines, not merely a file that touches the same topic. The runtime',
+	'independently checks that the cited file:line exists; a citation it',
+	'cannot find is downgraded to "uncovered" regardless of what you asserted.',
+	'No citation at all is "uncovered", never "covered".',
+	'"spec-precision-gap" is only for an acceptance item that itself names no',
+	'observable value to check -- never a way to avoid marking an item',
+	'"uncovered" when it does name one.',
+] as const;
+
 export interface ClaudeCliReviewerOptions {
 	command?: string[];
 	model?: string;
@@ -568,6 +596,8 @@ export function buildReviewPrompt(
 		'',
 		...REVIEW_MATERIALITY_CONTRACT,
 		'',
+		...REVIEW_COVERAGE_CONTRACT,
+		'',
 		...(decisions.length === 0 ? [] : [
 			'Decisions the operator has already made for this run, oldest first:',
 			...formatOperatorDecisionList(decisions),
@@ -585,9 +615,9 @@ export function buildReviewPrompt(
 		...guidanceSection,
 		...(evidence === undefined ? [] : ['', evidence]),
 		'End your reply with a single JSON object on the last line and nothing after it:',
-		'{"verdict":"CLEAN","findings":[]}',
+		'{"verdict":"CLEAN","findings":[],"coverage":[{"index":0,"status":"covered","evidence":"path/to/file.ts:12","assertion":"what that line establishes"}]}',
 		'or',
-		'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}]}',
+		'{"verdict":"FINDINGS","findings":[{"file":"path/to/file.ts","summary":"what is wrong and why it matters"}],"coverage":[{"index":0,"status":"uncovered","evidence":"","assertion":""}]}',
 		'',
 		// GSHIP-708: between the verdict format and the Issue record, so the
 		// contract sits next to both the expected output and the record whose
@@ -618,10 +648,179 @@ export const REVIEW_RESULT_SCHEMA = {
 				additionalProperties: false,
 			},
 		},
+		coverage: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					index: { type: 'integer' },
+					status: { type: 'string', enum: ['covered', 'uncovered', 'spec-precision-gap'] },
+					evidence: { type: 'string' },
+					assertion: { type: 'string' },
+				},
+				required: ['index', 'status', 'evidence', 'assertion'],
+				additionalProperties: false,
+			},
+		},
 	},
-	required: ['verdict', 'findings'],
+	required: ['verdict', 'findings', 'coverage'],
 	additionalProperties: false,
 } as const;
+
+/** One item of the approved spec's `acceptance` array, judged for one review. */
+export type ReviewCoverageStatus = 'covered' | 'uncovered' | 'spec-precision-gap';
+
+export interface ReviewCoverageItem {
+	index: number;
+	status: ReviewCoverageStatus;
+	evidence: string;
+	assertion: string;
+}
+
+function parseIssueAcceptance(issueText: string): string[] {
+	try {
+		const parsed = JSON.parse(issueText) as { spec?: { acceptance?: unknown } };
+		const acceptance = parsed.spec?.acceptance;
+		return Array.isArray(acceptance) ? acceptance.filter((item): item is string => typeof item === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
+interface NormalizedCoverageItem {
+	index: number;
+	status: ReviewCoverageStatus;
+	evidence: string;
+	assertion: string;
+}
+
+function normalizeCoverageItem(raw: unknown): NormalizedCoverageItem | null {
+	if (raw === null || typeof raw !== 'object') return null;
+	const record = raw as Record<string, unknown>;
+	const index = record['index'];
+	const status = record['status'];
+	if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return null;
+	if (status !== 'covered' && status !== 'uncovered' && status !== 'spec-precision-gap') return null;
+	return {
+		index,
+		status,
+		evidence: typeof record['evidence'] === 'string' ? record['evidence'] : '',
+		assertion: typeof record['assertion'] === 'string' ? record['assertion'] : '',
+	};
+}
+
+/**
+ * Evidence-or-zero, enforced by the runtime rather than trusted from the
+ * reviewer's own claim: a "covered" citation must name an existing `file:line`
+ * inside this worktree, or it never counts as covered.
+ */
+function evidenceCitationExists(cwd: string, evidence: string): boolean {
+	const separator = evidence.lastIndexOf(':');
+	if (separator <= 0) return false;
+	const relativePath = evidence.slice(0, separator);
+	const line = Number(evidence.slice(separator + 1));
+	if (!Number.isInteger(line) || line <= 0) return false;
+	if (!isSafeRelativeEvidencePath(relativePath)) return false;
+	const root = resolve(cwd);
+	const resolved = resolve(cwd, relativePath);
+	if (resolved !== root && !resolved.startsWith(root + sep)) return false;
+	try {
+		const stat = lstatSync(resolved);
+		if (!stat.isFile()) return false;
+		return readFileSync(resolved, 'utf8').split('\n').length >= line;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * One acceptance item's final, worktree-checked status and the finding it
+ * earns, if any -- split out of `evaluateReviewCoverage` so that function
+ * stays a plain per-index composition instead of carrying this branching too.
+ */
+function resolveCoverageItem(
+	cwd: string,
+	acceptance: readonly string[],
+	byIndex: ReadonlyMap<number, NormalizedCoverageItem>,
+	index: number,
+): { item: ReviewCoverageItem; finding: { file: string; summary: string } | null } {
+	const raw = byIndex.get(index);
+	let status: ReviewCoverageStatus = raw?.status ?? 'uncovered';
+	const evidence = raw?.evidence ?? '';
+	const assertion = raw?.assertion ?? '';
+	if (status === 'covered' && (evidence.trim().length === 0 || !evidenceCitationExists(cwd, evidence))) {
+		status = 'uncovered';
+	}
+	const item: ReviewCoverageItem = { index, status, evidence, assertion };
+	if (status !== 'uncovered') return { item, finding: null };
+	const criterionText = acceptance[index] ?? assertion;
+	return {
+		item,
+		finding: {
+			file: `spec.acceptance[${index}]`,
+			summary: criterionText.length > 0 ? criterionText : `acceptance item ${index} is not covered by the review`,
+		},
+	};
+}
+
+/**
+ * Validates the reviewer's raw coverage claim against the approved spec's own
+ * acceptance array and this worktree's actual files (GSHIP-894).
+ *
+ * One entry per item the approved spec's `spec.acceptance` actually defines --
+ * never only the indices the reviewer happened to report, so an item the
+ * reviewer silently skips is exactly as unproven as one it marks "uncovered".
+ * When the issue carries no parseable `spec.acceptance` (legacy spec, or an
+ * unparseable `issueText`), the reviewer's own reported indices are kept
+ * as-is instead, since there is no approved list to check them against.
+ *
+ * Every final "uncovered" item -- whether reported that way, downgraded for a
+ * citation the workspace does not back, or missing from the reviewer's reply
+ * entirely -- becomes one finding, carrying the acceptance item's own text.
+ */
+export function evaluateReviewCoverage(
+	cwd: string,
+	issueText: string,
+	rawCoverage: unknown,
+): { coverage: ReviewCoverageItem[]; findings: { file: string; summary: string }[] } {
+	const acceptance = parseIssueAcceptance(issueText);
+	const rawItems = Array.isArray(rawCoverage)
+		? rawCoverage.map(normalizeCoverageItem).filter((item): item is NormalizedCoverageItem => item !== null)
+		: [];
+	const byIndex = new Map(rawItems.map((item) => [item.index, item]));
+	const indices = acceptance.length > 0
+		? acceptance.map((_, index) => index)
+		: [...byIndex.keys()].sort((a, b) => a - b);
+	const resolved = indices.map((index) => resolveCoverageItem(cwd, acceptance, byIndex, index));
+	return {
+		coverage: resolved.map((entry) => entry.item),
+		findings: resolved.flatMap((entry) => entry.finding === null ? [] : [entry.finding]),
+	};
+}
+
+function structuredRecord(value: unknown): Record<string, unknown> | undefined {
+	return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+/**
+ * Runs once per review that actually returned a structured object, shared by
+ * both providers so the same evidence-or-zero validation and the same durable
+ * `run.review-coverage` event (GSHIP-894) apply whichever one reviewed. The
+ * event carries the complete, already-validated coverage list; the returned
+ * findings are what folds an "uncovered" item into the same fix-round and
+ * cycle-question flow an ordinary finding already drives.
+ */
+export function emitReviewCoverage(
+	input: RuntimeExecutionInput,
+	issue: string,
+	structuredOutput: unknown,
+): { file: string; summary: string }[] {
+	const record = structuredRecord(structuredOutput);
+	if (record === undefined) return [];
+	const { coverage, findings } = evaluateReviewCoverage(input.cwd, issue, record['coverage']);
+	input.emit('run.review-coverage', { items: coverage });
+	return findings;
+}
 
 function formatFindings(findings: unknown[]): string {
 	return findings
@@ -643,22 +842,32 @@ function formatFindings(findings: unknown[]): string {
  * back to scanning the reviewer's prose for a parseable object: that rescue
  * is what let a JSON example from the review's own prose stand in for a
  * verdict the reviewer never actually returned.
+ *
+ * `extraFindings` (GSHIP-894) are findings the runtime derived itself -- from
+ * an uncovered acceptance item -- rather than ones the reviewer listed. They
+ * fold into the same detail text and can turn an otherwise-CLEAN verdict into
+ * FINDINGS; a caller that passes none gets exactly the prior behaviour.
  */
-export function parseReviewVerdict(structuredOutput: unknown, text: string): RuntimeReviewResult {
+export function parseReviewVerdict(
+	structuredOutput: unknown,
+	text: string,
+	extraFindings: readonly { file: string; summary: string }[] = [],
+): RuntimeReviewResult {
 	if (structuredOutput === null || typeof structuredOutput !== 'object' || Array.isArray(structuredOutput)) {
 		throw new Error(`reviewer did not return a structured verdict: ${text.trim().slice(-500)}`);
 	}
 	const parsed = structuredOutput as Record<string, unknown>;
 	const verdict = parsed['verdict'];
-	if (verdict === 'CLEAN') return { verdict: 'clean' };
-	if (verdict !== 'FINDINGS') {
+	if (verdict !== 'CLEAN' && verdict !== 'FINDINGS') {
 		throw new Error(`reviewer returned an unknown verdict: ${JSON.stringify(verdict)}`);
 	}
-	const findings = Array.isArray(parsed['findings']) ? parsed['findings'] : [];
-	if (findings.length === 0) {
+	const rawFindings = verdict === 'FINDINGS' && Array.isArray(parsed['findings']) ? parsed['findings'] : [];
+	if (verdict === 'FINDINGS' && rawFindings.length === 0 && extraFindings.length === 0) {
 		throw new Error('reviewer reported FINDINGS without listing any finding');
 	}
-	return { verdict: 'findings', detail: formatFindings(findings) };
+	const allFindings = [...rawFindings, ...extraFindings];
+	if (allFindings.length === 0) return { verdict: 'clean' };
+	return { verdict: 'findings', detail: formatFindings(allFindings) };
 }
 
 export class ClaudeCliReviewer implements RuntimeReviewer {
@@ -706,6 +915,7 @@ export class ClaudeCliReviewer implements RuntimeReviewer {
 				: { activityTimeoutMs: this.#options.activityTimeoutMs }),
 			...(this.#options.onSpawn === undefined ? {} : { onSpawn: this.#options.onSpawn }),
 		});
-		return parseReviewVerdict(result.structuredOutput, result.summary);
+		const coverageFindings = emitReviewCoverage(input, issue, result.structuredOutput);
+		return parseReviewVerdict(result.structuredOutput, result.summary, coverageFindings);
 	}
 }

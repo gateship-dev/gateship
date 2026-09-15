@@ -31,6 +31,24 @@ export function fieldReader(form: EventTarget): (name: string) => string {
 	};
 }
 
+/**
+ * One line per acceptance item, index alongside the citation a reviewer gave
+ * for it (GSHIP-894) -- the raw file:line and assertion, never a composite
+ * score, so a spec-precision-gap or an uncovered item reads exactly as
+ * inconclusive or missing, not as a number to optimize.
+ */
+function formatReviewCoverageDetail(items: unknown[]): string {
+	return items.map((raw, position) => {
+		if (raw === null || typeof raw !== 'object') return `${position}: ?`;
+		const record = raw as Record<string, unknown>;
+		const index = typeof record['index'] === 'number' ? record['index'] : position;
+		const status = typeof record['status'] === 'string' ? record['status'] : 'unknown';
+		const evidence = typeof record['evidence'] === 'string' && record['evidence'].length > 0 ? record['evidence'] : '—';
+		const assertion = typeof record['assertion'] === 'string' ? record['assertion'] : '';
+		return `${index}. ${status} — ${evidence}${assertion.length === 0 ? '' : `: ${assertion}`}`;
+	}).join('\n');
+}
+
 export function eventDetail(event: RunEventView, toolsLabel = 'Tools'): string | null {
 	const details: string[] = [];
 	const text = event.payload['text'];
@@ -42,6 +60,9 @@ export function eventDetail(event: RunEventView, toolsLabel = 'Tools'): string |
 	for (const key of ['findings', 'error']) {
 		const value = event.payload[key];
 		if (typeof value === 'string' && value.trim().length > 0) details.push(value);
+	}
+	if (event.kind === 'run.review-coverage' && Array.isArray(event.payload['items'])) {
+		details.push(formatReviewCoverageDetail(event.payload['items']));
 	}
 	const scalars = Object.entries(event.payload)
 		.filter(([key]) => !['text', 'tools', 'findings', 'error'].includes(key))
@@ -197,6 +218,7 @@ function roleOfEvent(event: RunEventView): TimelineRole {
 	if (event.kind.startsWith('reviewer.')) return 'reviewer';
 	if (event.kind.startsWith('provider.')) return 'executor';
 	if (event.kind.startsWith('review.')) return 'reviewer';
+	if (event.kind === 'run.review-coverage') return 'reviewer';
 	if (event.kind.startsWith('cycle-question.') || event.kind === 'run.cycle-question') return 'orchestrator';
 	if (event.kind === 'run.cycle-response') return roleOfCycleResponse(event);
 	if (event.kind.startsWith('orchestrator.')) return 'orchestrator';
@@ -235,6 +257,7 @@ function isKnownTimelineKind(kind: string): boolean {
 		'review.activity', 'review.system', 'review.rate-limit', 'review.result', 'review.usage', 'review.model',
 		'cycle-question.activity', 'cycle-question.system', 'cycle-question.result', 'cycle-question.usage',
 		'run.created', 'run.state', 'run.cycle-question', 'run.cycle-response', 'run.operator-guidance', 'run.waiting-user',
+		'run.review-coverage',
 		'run.verification-failed', 'run.verification-fix-requested', 'run.chain-reconciliation', 'run.chain-paused', 'run.shipped',
 		'verify.started', 'verify.command.started', 'verify.command.completed', 'verify.skipped', 'verify.skipped-equivalent',
 		'full-verify.command.started', 'full-verify.command.completed', 'full-verify.skipped',
