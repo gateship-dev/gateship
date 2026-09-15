@@ -622,6 +622,11 @@ describe('git workspace manager', () => {
 function advanceRemoteAhead(remote: string, fileName: string): string {
 	const clone = createTestTmpdir('gship-reconcile-clone-');
 	spawnSync('git', ['clone', '-q', remote, clone]);
+	// The bare remote's own HEAD may still point at whichever branch name the
+	// runner's git defaults to (e.g. `master`), which never exists here since
+	// only `main` was ever pushed to it -- checking out `main` explicitly
+	// keeps this independent of that default.
+	git(clone, ['checkout', '-B', 'main', 'origin/main']);
 	git(clone, ['config', 'user.name', 'Gateship Test']);
 	git(clone, ['config', 'user.email', 'test@example.invalid']);
 	writeFileSync(join(clone, fileName), 'delivered only on origin/main\n');
