@@ -1,13 +1,13 @@
 {
   "id": "GSHIP-893",
   "title": "Full verify: sensor de mutacao como evidencia deterministica",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-895"
   ],
   "createdAt": "2026-09-14T18:56:19.072Z",
-  "updatedAt": "2026-09-15T12:21:01.936Z",
+  "updatedAt": "2026-09-15T18:36:57.198Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

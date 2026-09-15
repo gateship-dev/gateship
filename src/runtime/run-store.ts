@@ -479,7 +479,9 @@ export interface DiagnosticFindingStats {
 /**
  * Every usage-bearing event kind, keyed to its role (GSHIP-889). `provider.usage`
  * / `review.usage` are the executor's and reviewer's own raw invocation
- * reports; `cycle-question.usage` / `chain-reconciliation.usage` are the
+ * reports; `mutation-sensor.usage` (GSHIP-893) is the reviewer's own raw
+ * report for its read-only mutation-selection call, rolled into the same
+ * 'reviewer' role rather than a role of its own; `cycle-question.usage` / `chain-reconciliation.usage` are the
  * resolver's and reconciler's raw reports, persisted the instant the call
  * completes -- including when the resolver or reconciler later throws on an
  * invalid response, since that raw event was already durable by then.
@@ -496,6 +498,7 @@ export interface DiagnosticFindingStats {
 const USAGE_EVENT_ROLES: Readonly<Record<string, RunCostRole>> = {
 	'provider.usage': 'executor',
 	'review.usage': 'reviewer',
+	'mutation-sensor.usage': 'reviewer',
 	'cycle-question.usage': 'orchestrator',
 	'chain-reconciliation.usage': 'orchestrator',
 	'run.cycle-response': 'orchestrator',
@@ -2238,7 +2241,7 @@ export class RunStore {
 		const rows = this.#db.query(`
 			SELECT kind, payload_json FROM run_events
 			WHERE run_id = $runId AND kind IN (
-				'provider.usage', 'review.usage', 'cycle-question.usage', 'chain-reconciliation.usage',
+				'provider.usage', 'review.usage', 'mutation-sensor.usage', 'cycle-question.usage', 'chain-reconciliation.usage',
 				'run.cycle-response', 'run.chain-reconciliation'
 			)
 			ORDER BY seq ASC

@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { getIssueOnMain } from '../commands/issue-get.ts';
@@ -13,6 +15,9 @@ import { type ReviewEvidenceFile, readReviewEvidencePaths, snapshotReviewEvidenc
 import type {
 	RuntimeEvidenceCheck,
 	RuntimeExecutionInput,
+	RuntimeMutationCandidate,
+	RuntimeMutationSelection,
+	RuntimeMutationSelector,
 	RuntimeTestBaselineCommand,
 	RuntimeTestBaselineRecorder,
 	RuntimeVerificationResult,
@@ -54,6 +59,8 @@ export interface GitRuntimeOptions {
 	loadIssueFromWorkspace?: (cwd: string, issueId: string) => string;
 	runCommand?: VerificationCommandRunner;
 	terminationGraceMs?: number;
+	/** Read-only mutation selection (GSHIP-893), consumed only by `GitFullVerifier`. Absent skips the mutation sensor entirely. */
+	mutationSelector?: RuntimeMutationSelector;
 }
 
 export class RuntimePreflightError extends Error {
@@ -791,6 +798,206 @@ function rejectPreflightOverlap(
 	}
 }
 
+const MUTATION_CANDIDATE_LIMIT = 3;
+
+function mutationScratchPath(): string {
+	return join(tmpdir(), `gship-mutation-${randomUUID()}`);
+}
+
+interface NumstatEntry {
+	added: string;
+	deleted: string;
+	/** One path for an ordinary change; two (old, new) for a rename or copy. */
+	paths: string[];
+}
+
+/**
+ * `git apply --numstat -z`'s own format: each entry is `added\tdeleted\tpath\0`,
+ * except a rename or copy, where the third field is empty and two more
+ * NUL-terminated path tokens (old, new) follow before the next entry.
+ */
+function parseNumstatEntries(stdout: string): NumstatEntry[] {
+	const tokens = stdout.split('\0').filter((token) => token.length > 0);
+	const entries: NumstatEntry[] = [];
+	let index = 0;
+	while (index < tokens.length) {
+		const [added, deleted, path] = tokens[index]!.split('\t');
+		index += 1;
+		if (added === undefined || deleted === undefined) continue;
+		if (path !== undefined && path.length > 0) {
+			entries.push({ added, deleted, paths: [path] });
+			continue;
+		}
+		const renamePaths = [tokens[index], tokens[index + 1]].filter((value): value is string => value !== undefined);
+		index += 2;
+		entries.push({ added, deleted, paths: renamePaths });
+	}
+	return entries;
+}
+
+/**
+ * Validates a mutation candidate's patch against Git's own reading of it
+ * (GSHIP-893) -- never against the candidate's own claim -- before the patch
+ * is ever applied: `--numstat`/`--summary` are read-only, so a rejection here
+ * leaves `file` (already written to disk, but not yet applied) untouched.
+ * Rejects when the patch: touches no path at all; touches any path other
+ * than `expectedFile` (`candidate.file`), including on a rename or copy;
+ * touches a test file even when that is `expectedFile` itself, so a selector
+ * that never went through `parseMutationSelection`'s own filter (`claude-cli-reviewer.ts`)
+ * is still covered; is binary (`added`/`deleted` reported as `-`); or is
+ * anything `--summary` reports at all -- create, delete, rename, copy or a
+ * mode change, never a plain content edit.
+ */
+function rejectedMutationPatch(runGit: GitCommandRunner, cwd: string, file: string, expectedFile: string): string | null {
+	const numstat = runGit(cwd, ['apply', '--numstat', '-z', file]);
+	if (numstat.exitCode !== 0) return commandFailure('cannot inspect the mutation patch', numstat).message;
+	const summary = runGit(cwd, ['apply', '--summary', file]);
+	if (summary.exitCode !== 0) return commandFailure('cannot inspect the mutation patch', summary).message;
+
+	const entries = parseNumstatEntries(numstat.stdout);
+	const paths = entries.flatMap((entry) => entry.paths);
+	if (paths.length === 0) return 'the mutation patch declares no changed path';
+
+	const otherPaths = [...new Set(paths.filter((path) => path !== expectedFile))];
+	if (otherPaths.length > 0) {
+		return `the mutation patch touches paths other than ${expectedFile}: ${otherPaths.join(', ')}`;
+	}
+	const testPaths = [...new Set(paths.filter((path) => TEST_FILE_PATTERN.test(path)))];
+	if (testPaths.length > 0) {
+		return `the mutation patch touches a test file: ${testPaths.join(', ')}`;
+	}
+	if (entries.some((entry) => entry.added === '-' || entry.deleted === '-')) {
+		return 'the mutation patch is binary';
+	}
+	if (summary.stdout.trim().length > 0) {
+		return `the mutation patch is not a simple content edit: ${summary.stdout.trim()}`;
+	}
+	return null;
+}
+
+/**
+ * Writes `patch` to a throwaway file inside `cwd` and applies it there with
+ * `git apply`; the file never survives the call, successful or not.
+ * `mkdirSync` here is a no-op against a real `git worktree add` (the
+ * directory already exists) and is what lets a test drive this whole path
+ * against a fake `runGit` with no real worktree ever created.
+ *
+ * `expectedFile`, when given, is validated first through `rejectedMutationPatch`
+ * -- a mutation candidate's own `patch` is untrusted content from a read-only
+ * model call, so it is never applied before Git's own reading of it confirms
+ * it touches exactly the file the candidate declared. The working-diff
+ * reproduction in `createMutationWorktree` calls this with no `expectedFile`:
+ * that patch is the run's own diff and legitimately touches every file it
+ * touched.
+ */
+function applyMutationPatch(
+	runGit: GitCommandRunner,
+	cwd: string,
+	patch: string,
+	expectedFile?: string,
+): { ok: true } | { ok: false; detail: string } {
+	const file = join(cwd, `.gship-mutation-${randomUUID()}.patch`);
+	try {
+		mkdirSync(cwd, { recursive: true });
+		writeFileSync(file, patch);
+	} catch (error) {
+		return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+	}
+	try {
+		if (expectedFile !== undefined) {
+			const rejection = rejectedMutationPatch(runGit, cwd, file, expectedFile);
+			if (rejection !== null) return { ok: false, detail: rejection };
+		}
+		const result = runGit(cwd, ['apply', file]);
+		return result.exitCode === 0 ? { ok: true } : { ok: false, detail: commandFailure('git apply failed', result).message };
+	} finally {
+		rmSync(file, { force: true });
+	}
+}
+
+/**
+ * Every file a run's own diff added but `git diff` cannot carry (GSHIP-893):
+ * an untracked file never has a HEAD-relative diff. Best-effort and read-only
+ * on `cwd` -- a file the sensor cannot copy is simply absent from the scratch
+ * worktree, never a reason to fail the whole attempt.
+ */
+function copyUntrackedFiles(runGit: GitCommandRunner, cwd: string, scratchPath: string): void {
+	const status = runGit(cwd, ['status', '--porcelain', '--untracked-files=all']);
+	if (status.exitCode !== 0) return;
+	for (const line of status.stdout.split('\n')) {
+		if (!line.startsWith('?? ')) continue;
+		const relativePath = line.slice(3).trim();
+		if (relativePath.length === 0) continue;
+		try {
+			const target = join(scratchPath, relativePath);
+			mkdirSync(dirname(target), { recursive: true });
+			writeFileSync(target, readFileSync(join(cwd, relativePath)));
+		} catch {
+			// best-effort, see docstring above.
+		}
+	}
+}
+
+/** Best-effort dependency reuse: a symlink, never a reinstall and never a write into `cwd`. Verify commands that still find no dependencies surface their own failure. */
+function linkMutationDependencies(cwd: string, scratchPath: string): void {
+	try {
+		const source = join(cwd, 'node_modules');
+		if (existsSync(source) && !existsSync(join(scratchPath, 'node_modules'))) {
+			symlinkSync(source, join(scratchPath, 'node_modules'), 'dir');
+		}
+	} catch {
+		// best-effort, see docstring above.
+	}
+}
+
+/**
+ * A detached worktree cut from the run's own HEAD, with the run's own
+ * uncommitted changes reproduced on top (GSHIP-893): a run's work is never
+ * committed before `ready-to-ship`, so `git worktree add` alone would only
+ * carry the base commit, not the new code the mutation sensor exists to
+ * test. Every write lands only in the returned scratch path; `cwd` -- the
+ * run's real worktree -- is only ever read.
+ */
+function createMutationWorktree(
+	runGit: GitCommandRunner,
+	cwd: string,
+): { ok: true; path: string } | { ok: false; detail: string } {
+	const head = runGit(cwd, ['rev-parse', 'HEAD']);
+	if (head.exitCode !== 0 || head.stdout.trim().length === 0) {
+		return { ok: false, detail: commandFailure('cannot resolve the run head', head).message };
+	}
+	const path = mutationScratchPath();
+	const added = runGit(cwd, ['worktree', 'add', '--detach', path, head.stdout.trim()]);
+	if (added.exitCode !== 0) {
+		return { ok: false, detail: commandFailure('cannot create the mutation scratch worktree', added).message };
+	}
+	const diff = runGit(cwd, ['diff', 'HEAD']);
+	if (diff.exitCode === 0 && diff.stdout.trim().length > 0) {
+		const applied = applyMutationPatch(runGit, path, diff.stdout);
+		if (!applied.ok) {
+			removeMutationWorktree(runGit, cwd, path);
+			return { ok: false, detail: `cannot reproduce the run's own changes in the scratch worktree: ${applied.detail}` };
+		}
+	}
+	copyUntrackedFiles(runGit, cwd, path);
+	linkMutationDependencies(cwd, path);
+	return { ok: true, path };
+}
+
+/**
+ * Best-effort, mirrors `GitReconciliationWorkspace#forceRemove`
+ * (git-workspace.ts): always leaves `cwd` untouched. Removes the directory
+ * itself unconditionally, on top of asking git to: a real `git worktree
+ * remove` already deletes it, so this is a harmless no-op there, and it is
+ * what actually cleans up the directory `applyMutationPatch`/`mkdirSync`
+ * created directly against a fake `runGit` in a test.
+ */
+function removeMutationWorktree(runGit: GitCommandRunner, cwd: string, path: string): void {
+	runGit(cwd, ['worktree', 'remove', '--force', path]);
+	if (existsSync(path)) rmSync(path, { recursive: true, force: true });
+	runGit(cwd, ['worktree', 'prune']);
+}
+
 /**
  * The project's full verification gate (GSHIP-649): whatever `package.json`
  * already declares as its `verify` script -- e.g. `bun run check:all` --
@@ -800,15 +1007,38 @@ function rejectPreflightOverlap(
  * declares no such script is skipped, not failed, so this stays exactly the
  * cutout the issue's own `spec.verify` and the project's full manifest
  * already agree on.
+ *
+ * Once that verify passes -- or is itself skipped, since a project with no
+ * `verify` script declares nothing this gate could fail on -- the mutation
+ * sensor (GSHIP-893) runs as one more step: the sensor is tied to the issue's
+ * own approved verify (`spec.verify`), which already passed in the run's
+ * earlier `verify` phase, never to whether the project separately declares a
+ * full-verify script, so it runs either way. A read-only reviewer step
+ * proposes up to `MUTATION_CANDIDATE_LIMIT` minimal behavior mutations
+ * against the run's own diff, and each is tested, one at a time, in its own
+ * scratch worktree cut from this run's HEAD -- never in `input.cwd`, the
+ * run's real worktree. The issue's own verify commands run there directly
+ * (`this.#runCommand`, never `GitIssueVerifier`), so this never emits `verify.*` events the durable
+ * test-integrity guard (GSHIP-895, `run-runtime.ts#checkTestIntegrity`) reads;
+ * only `run.mutation-sensor`/`run.mutation-sensor-skipped` record what
+ * happened. A surviving mutant -- the mutated code still passed every verify
+ * command -- fails this step exactly like a failed full-verify command
+ * already does, so it returns to the executor through the run's existing
+ * `run.full-verify-fix-requested` path and spends no round budget of its own.
+ * Absent `mutationSelector` (e.g. every test in this file that does not
+ * configure one), the sensor never runs at all -- not even `full-verify.skipped`-
+ * style event, since there is nothing this run's own dependencies asked for.
  */
 export class GitFullVerifier implements RuntimeVerifier {
 	readonly #options: GitRuntimeOptions;
 	readonly #runCommand: VerificationCommandRunner;
+	readonly #mutationSelector: RuntimeMutationSelector | undefined;
 	#origin: 'manifest' | 'package.json' | 'none' = 'none';
 
 	constructor(options: GitRuntimeOptions = {}) {
 		this.#options = options;
 		this.#runCommand = runtimeVerificationCommandRunner(options);
+		this.#mutationSelector = options.mutationSelector;
 	}
 
 	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {
@@ -816,7 +1046,11 @@ export class GitFullVerifier implements RuntimeVerifier {
 		this.#origin = selected.origin;
 		if (selected.commands.length === 0) {
 			input.emit('full-verify.skipped', { reason: 'no-project-verification' });
-			return { ok: true, skipped: true };
+			// GSHIP-893: the mutation sensor is tied to the issue's own approved
+			// verify (spec.verify), which already passed before `full-verify` was
+			// ever entered -- not to whether the project separately declares a
+			// full-verify script. A project with none still runs the sensor.
+			return this.#afterProjectVerify(input, true);
 		}
 
 		for (const [commandIndex, command] of selected.commands.entries()) {
@@ -838,6 +1072,103 @@ export class GitFullVerifier implements RuntimeVerifier {
 				return { ok: false, detail: `full verification failed: ${outputTail(result)}` };
 			}
 		}
-		return { ok: true };
+		return this.#afterProjectVerify(input, false);
+	}
+
+	/** Runs the mutation sensor once the project's own full verify is settled (passed, or had nothing to run), and restores `skipped` on an `ok` result -- the sensor's own result is never itself reported as skipped. */
+	async #afterProjectVerify(input: Parameters<RuntimeVerifier['verify']>[0], projectVerifySkipped: boolean): Promise<RuntimeVerificationResult> {
+		const sensorResult = await this.#runMutationSensor(input);
+		if (!sensorResult.ok) return sensorResult;
+		return projectVerifySkipped ? { ok: true, skipped: true } : { ok: true };
+	}
+
+	async #runMutationSensor(input: Parameters<RuntimeVerifier['verify']>[0]): Promise<RuntimeVerificationResult> {
+		const selector = this.#mutationSelector;
+		if (selector === undefined) return { ok: true };
+		const issueContent = input.approvedContract;
+		if (issueContent === undefined) return { ok: true };
+		let commands: string[];
+		try {
+			commands = verificationCommands(issueContent);
+		} catch {
+			return { ok: true };
+		}
+
+		let selection: RuntimeMutationSelection;
+		try {
+			selection = await selector.select(input);
+		} catch (error) {
+			const provider = input.providerId ?? 'claude';
+			input.emit('run.mutation-sensor-skipped', {
+				reason: `mutation selection failed on provider ${provider}: ${error instanceof Error ? error.message : String(error)}`,
+			});
+			return { ok: true };
+		}
+		const candidates = selection.candidates.slice(0, MUTATION_CANDIDATE_LIMIT);
+		if (candidates.length === 0) {
+			input.emit('run.mutation-sensor-skipped', {
+				reason: selection.skippedReason ?? 'the run diff exposed no executable mutation target',
+			});
+			return { ok: true };
+		}
+
+		const runGit = this.#options.runGit ?? defaultRunGit;
+		const survivors: string[] = [];
+		for (const candidate of candidates) {
+			const outcome = await this.#runMutationAttempt(input, runGit, commands, candidate);
+			if (outcome === 'survived') survivors.push(`${candidate.file}:${candidate.line} (${candidate.type})`);
+		}
+		return survivors.length === 0
+			? { ok: true }
+			: {
+				ok: false,
+				detail: `mutation sensor: the approved verify commands did not catch the injected regression at ${survivors.join(', ')}`,
+			};
+	}
+
+	/** One candidate, fully isolated: its own scratch worktree, always removed, whichever way this returns. */
+	async #runMutationAttempt(
+		input: Parameters<RuntimeVerifier['verify']>[0],
+		runGit: GitCommandRunner,
+		commands: readonly string[],
+		candidate: RuntimeMutationCandidate,
+	): Promise<'killed' | 'survived' | 'inconclusive'> {
+		const startedAt = performance.now();
+		const durationMs = (): number => Math.max(0, Math.round(performance.now() - startedAt));
+		const scratch = createMutationWorktree(runGit, input.cwd);
+		if (!scratch.ok) {
+			input.emit('run.mutation-sensor', {
+				file: candidate.file, line: candidate.line, type: candidate.type,
+				outcome: 'inconclusive', reason: scratch.detail, durationMs: durationMs(),
+			});
+			return 'inconclusive';
+		}
+		try {
+			const applied = applyMutationPatch(runGit, scratch.path, candidate.patch, candidate.file);
+			if (!applied.ok) {
+				input.emit('run.mutation-sensor', {
+					file: candidate.file, line: candidate.line, type: candidate.type,
+					outcome: 'inconclusive', reason: `cannot apply the mutation patch: ${applied.detail}`, durationMs: durationMs(),
+				});
+				return 'inconclusive';
+			}
+			for (const command of commands) {
+				const result = await this.#runCommand({ cwd: scratch.path, command, signal: input.signal });
+				if (result.exitCode !== 0) {
+					input.emit('run.mutation-sensor', {
+						file: candidate.file, line: candidate.line, type: candidate.type, command,
+						outcome: 'killed', durationMs: durationMs(),
+					});
+					return 'killed';
+				}
+			}
+			input.emit('run.mutation-sensor', {
+				file: candidate.file, line: candidate.line, type: candidate.type, command: commands[commands.length - 1],
+				outcome: 'survived', durationMs: durationMs(),
+			});
+			return 'survived';
+		} finally {
+			removeMutationWorktree(runGit, input.cwd, scratch.path);
+		}
 	}
 }

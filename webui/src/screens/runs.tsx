@@ -219,6 +219,8 @@ function roleOfEvent(event: RunEventView): TimelineRole {
 	if (event.kind.startsWith('provider.')) return 'executor';
 	if (event.kind.startsWith('review.')) return 'reviewer';
 	if (event.kind === 'run.review-coverage') return 'reviewer';
+	// GSHIP-893: mutation selection is the reviewer's own read-only step.
+	if (event.kind.startsWith('mutation-sensor.')) return 'reviewer';
 	if (event.kind.startsWith('cycle-question.') || event.kind === 'run.cycle-question') return 'orchestrator';
 	if (event.kind === 'run.cycle-response') return roleOfCycleResponse(event);
 	if (event.kind.startsWith('orchestrator.')) return 'orchestrator';
@@ -261,6 +263,9 @@ function isKnownTimelineKind(kind: string): boolean {
 		'run.verification-failed', 'run.verification-fix-requested', 'run.chain-reconciliation', 'run.chain-paused', 'run.shipped',
 		'verify.started', 'verify.command.started', 'verify.command.completed', 'verify.skipped', 'verify.skipped-equivalent',
 		'full-verify.command.started', 'full-verify.command.completed', 'full-verify.skipped',
+		// GSHIP-893: deterministic mutation-sensor evidence, alongside verify and review.
+		'mutation-sensor.activity', 'mutation-sensor.system', 'mutation-sensor.rate-limit', 'mutation-sensor.result', 'mutation-sensor.usage', 'mutation-sensor.model',
+		'run.mutation-sensor', 'run.mutation-sensor-skipped',
 		'workspace.cleanup-warning', 'workspace.released', 'ship.pr-opened', 'ship.ci-status', 'ship.merged',
 	]).has(kind);
 }
