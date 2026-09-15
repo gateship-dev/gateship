@@ -7,7 +7,7 @@
     "GSHIP-894"
   ],
   "createdAt": "2026-09-14T18:56:26.924Z",
-  "updatedAt": "2026-09-15T12:20:30.318Z",
+  "updatedAt": "2026-09-15T12:20:57.885Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -27,5 +27,9 @@
       "bun test test/runtime/project-verification.test.ts test/runtime/run-runtime.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "f98db207f531d6f977d881cf95d03280f393c8d79e0e18c7f1fc313fdadd3d92",
+    "approvedAt": "2026-09-15T12:20:57.885Z"
   }
 }
