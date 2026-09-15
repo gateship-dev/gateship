@@ -45,15 +45,16 @@ import { canTransition, isTerminalRunState } from './run-state.ts';
 import {
 	type ClaudeUsageWindow,
 	type ProjectBrief,
+	type RecoveryPolicy,
 	type RunCostSummary,
 	type RunEvent,
 	type RunEventClass,
 	type RunEventPage,
 	type RunRecord,
 	RunStore,
-	type RecoveryPolicy,
 	validateRecoveryPolicy,
 } from './run-store.ts';
+import { specCitesTestFile } from './test-integrity.ts';
 
 function commandPayload(payload: Record<string, unknown>, source?: string): Record<string, unknown> {
 	return { ...payload, ...(source === undefined ? {} : { source }) };
@@ -204,6 +205,43 @@ function verificationPassStartIndex(events: readonly RunEvent[], lastIndex: numb
 		if (kind === 'full-verify.command.completed' && event.kind === 'full-verify.command.started' && event.payload['commandIndex'] === 1) return index;
 	}
 	return 0;
+}
+
+/**
+ * One baseline verify command compared against its current-pass counterpart
+ * (GSHIP-895). `null` when neither side has a parseable count, or when
+ * nothing dropped or grew. A dropped total is excused only when every
+ * removed test file this pass observed is cited by the approved spec's own
+ * boundaries or acceptance text; a new skip is never excused.
+ */
+function testIntegrityViolation(
+	baseline: RuntimeTestBaselineCommand,
+	current: RuntimeTestBaselineCommand | undefined,
+	removedTestFiles: readonly string[],
+	approvedContract: string | undefined,
+): { detail: string; payload: Record<string, unknown> } | null {
+	if (baseline.total === undefined || current?.total === undefined) return null;
+	const dropped = current.total < baseline.total;
+	const skipIncreased = (current.skip ?? 0) > (baseline.skip ?? 0);
+	if (!dropped && !skipIncreased) return null;
+	const droppedIsCited = dropped && removedTestFiles.length > 0
+		&& removedTestFiles.every((path) => specCitesTestFile(approvedContract, path));
+	if (dropped && !skipIncreased && droppedIsCited) return null;
+	const parts = [
+		...(dropped ? [`o total de testes caiu de ${baseline.total} para ${current.total}`] : []),
+		...(skipIncreased ? [`os skips subiram de ${baseline.skip ?? 0} para ${current.skip}`] : []),
+	];
+	return {
+		detail: `A guarda de integridade dos testes bloqueou \`${baseline.command}\`: ${parts.join('; ')}.`,
+		payload: {
+			command: baseline.command,
+			commandIndex: baseline.commandIndex,
+			baselineTotal: baseline.total,
+			currentTotal: current.total,
+			baselineSkip: baseline.skip ?? 0,
+			currentSkip: current.skip ?? 0,
+		},
+	};
 }
 
 export interface RuntimeExecutionInput {
@@ -512,6 +550,35 @@ export interface RuntimeEvidenceCheck {
 	check: (input: RuntimeExecutionInput) => Promise<RuntimeVerificationResult>;
 }
 
+/**
+ * One verify command's observed `bun test`-style summary (GSHIP-895):
+ * `total` folds pass+fail+skip together, so a shrinking suite is visible
+ * even when the failures bucket also moved; `skip` is tracked on its own so
+ * a newly introduced skip is visible even without a total drop. Both are
+ * absent when the command's own output exposed no parseable count -- never
+ * fatal, only unattributed.
+ */
+export interface RuntimeTestBaselineCommand {
+	command: string;
+	commandIndex: number;
+	total?: number;
+	skip?: number;
+}
+
+/**
+ * Captures the issue's own verify-command test counts against the clean,
+ * freshly prepared worktree before the executor ever runs (GSHIP-895) -- the
+ * only moment a legitimate "no counts yet" baseline can be taken, since
+ * every later verify pass already carries the executor's own changes.
+ * Unlike `RuntimeVerifier.verify`, a command that exits non-zero here still
+ * contributes whatever counts its own output exposed: the baseline only
+ * cares about the suite's shape, never whether the clean tree happens to
+ * pass.
+ */
+export interface RuntimeTestBaselineRecorder {
+	captureBaseline: (input: RuntimeExecutionInput) => Promise<{ commands: readonly RuntimeTestBaselineCommand[] }>;
+}
+
 /** Verdict of one independent review of the change produced by a run. */
 export type RuntimeReviewResult =
 	| { verdict: 'clean' }
@@ -669,6 +736,16 @@ export interface RunRuntimeOptions {
 	 * pass, unchanged from before this gate existed.
 	 */
 	lintVerifier?: RuntimeVerifier;
+	/**
+	 * Records the issue's own verify-command test counts against the clean
+	 * worktree before the executor ever runs (GSHIP-895), and is read back to
+	 * compare against every later passing verify -- a dropped total or a new
+	 * skip returns the run to the executor through the same fix rounds a
+	 * failed verification already uses. Optional: a project or a test runtime
+	 * with none configured runs no test-integrity guard, unchanged from
+	 * before this gate existed.
+	 */
+	testBaseline?: RuntimeTestBaselineRecorder;
 	shipper?: RuntimeShipper;
 	/** Production git-backed check used only to reject a no-change CI correction. */
 	hasWorkspaceChanges?: (cwd: string) => boolean;
@@ -970,6 +1047,7 @@ export class RunRuntime {
 	readonly #reconciliationWorkspace: RuntimeChainReconciliationWorkspace | undefined;
 	readonly #fullVerifier: RuntimeVerifier | undefined;
 	readonly #lintVerifier: RuntimeVerifier | undefined;
+	readonly #testBaseline: RuntimeTestBaselineRecorder | undefined;
 	readonly #shipper: RuntimeShipper | undefined;
 	readonly #hasWorkspaceChanges: ((cwd: string) => boolean) | undefined;
 	readonly #now: () => string;
@@ -1011,6 +1089,7 @@ export class RunRuntime {
 		this.#reconciliationWorkspace = options.reconciliationWorkspace;
 		this.#fullVerifier = options.fullVerifier;
 		this.#lintVerifier = options.lintVerifier;
+		this.#testBaseline = options.testBaseline;
 		this.#shipper = options.shipper;
 		this.#hasWorkspaceChanges = options.hasWorkspaceChanges;
 		this.#now = options.now ?? (() => new Date().toISOString());
@@ -1879,6 +1958,7 @@ export class RunRuntime {
 				this.#transition(run.id, 'working', resumePhase === 'working' ? resumeKind : 'run.started');
 			}
 			if (await this.#checkEvidence(run, signal, firstAttempt)) return;
+			await this.#captureTestBaseline(run, signal, firstAttempt);
 			await this.#driveImplementation(
 				executor,
 				verifier,
@@ -1919,6 +1999,11 @@ export class RunRuntime {
 				? 'A verificação específica da issue não executou nenhum gate.'
 				: 'A verificação específica da issue falhou novamente.');
 			this.#recordVerificationRetryFailure(run, detail, startedAt, retryPayload);
+			return;
+		}
+		const integrityDetail = this.#checkTestIntegrity(run, this.#executionInput(run, signal, attempt));
+		if (integrityDetail !== null) {
+			this.#recordVerificationRetryFailure(run, integrityDetail, startedAt, retryPayload);
 			return;
 		}
 		this.#emit(run.id, 'run.verification-retry-result', { outcome: 'passed', ...retryPayload });
@@ -2576,6 +2661,181 @@ export class RunRuntime {
 	}
 
 	/**
+	 * Records the issue's own verify-command test counts on the clean
+	 * worktree, before the executor ever runs (GSHIP-895). Gated on a durable
+	 * `run.test-baseline` event so a resume never recaptures it against a
+	 * worktree the executor has since changed. Best-effort in the sense that
+	 * a recorder that throws never fails the run -- the guard it feeds is
+	 * itself optional and non-blocking -- but the failure itself is never
+	 * silent: it is recorded as an empty, failed baseline (so a resume does
+	 * not recapture over a worktree the executor has since changed) and
+	 * surfaced through `run.test-integrity-unknown`, same as any other
+	 * uncounted verify command. Only an aborted signal leaves no event, since
+	 * that is an interruption, not an integrity observation.
+	 */
+	async #captureTestBaseline(run: RunRecord, signal: AbortSignal, attempt: RunAttempt): Promise<void> {
+		const recorder = this.#testBaseline;
+		if (recorder === undefined || this.#testBaselineCaptured(run.id)) return;
+		let captured: { commands: readonly RuntimeTestBaselineCommand[] };
+		try {
+			captured = await recorder.captureBaseline(this.#executionInput(run, signal, attempt));
+		} catch (error) {
+			if (signal.aborted) return;
+			const failure = errorMessage(error);
+			this.#emit(run.id, 'run.test-baseline', { commands: [], failure });
+			this.#emit(run.id, 'run.test-integrity-unknown', {
+				phase: 'baseline',
+				reason: `não foi possível registrar o baseline: ${failure}`,
+			});
+			return;
+		}
+		if (signal.aborted) return;
+		this.#emit(run.id, 'run.test-baseline', { commands: captured.commands });
+	}
+
+	#testBaselineCaptured(runId: string): boolean {
+		return this.#store.listRunDecisionEvents(runId)
+			.some((event) => event.kind === 'run.test-baseline');
+	}
+
+	/** The durable `run.test-baseline` record, parsed defensively since it round-trips through the event store's JSON payload. */
+	#testBaselineRecord(runId: string): { commands: readonly RuntimeTestBaselineCommand[]; failure?: string } {
+		const event = this.#store.listRunDecisionEvents(runId).findLast((event) => event.kind === 'run.test-baseline');
+		const failure = typeof event?.payload['failure'] === 'string' ? event.payload['failure'] as string : undefined;
+		const rawCommands = event?.payload['commands'];
+		const commands = Array.isArray(rawCommands) ? rawCommands.flatMap((entry) => {
+			if (entry === null || typeof entry !== 'object') return [];
+			const record = entry as Record<string, unknown>;
+			if (typeof record['command'] !== 'string' || typeof record['commandIndex'] !== 'number') return [];
+			return [{
+				command: record['command'],
+				commandIndex: record['commandIndex'],
+				...(typeof record['total'] === 'number' ? { total: record['total'] } : {}),
+				...(typeof record['skip'] === 'number' ? { skip: record['skip'] } : {}),
+			}];
+		}) : [];
+		return { commands, ...(failure === undefined ? {} : { failure }) };
+	}
+
+	/**
+	 * The just-finished verify pass's own commands, scoped backward from the
+	 * last `verify.command.completed` event to the nearest `verify.started`
+	 * marker before it -- the same pass-boundary technique
+	 * `#lastVerificationProvenance` already uses for GSHIP-872. `removedTestFiles`
+	 * comes from that same `verify.started` marker, when the pass had any.
+	 */
+	#lastVerifyPass(runId: string): { commands: readonly RuntimeTestBaselineCommand[]; removedTestFiles: readonly string[] } {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const lastIndex = events.findLastIndex((event) => event.kind === 'verify.command.completed');
+		if (lastIndex === -1) return { commands: [], removedTestFiles: [] };
+		const startIndex = verificationPassStartIndex(events, lastIndex, 'verify.command.completed');
+		const marker = events[startIndex];
+		const removed = marker?.kind === 'verify.started' ? marker.payload['removedTestFiles'] : undefined;
+		const commands = events.slice(startIndex, lastIndex + 1)
+			.filter((event) => event.kind === 'verify.command.completed')
+			.map((event) => ({
+				command: typeof event.payload['command'] === 'string' ? event.payload['command'] as string : '',
+				commandIndex: typeof event.payload['commandIndex'] === 'number' ? event.payload['commandIndex'] as number : 0,
+				...(typeof event.payload['testTotal'] === 'number' ? { total: event.payload['testTotal'] as number } : {}),
+				...(typeof event.payload['testSkip'] === 'number' ? { skip: event.payload['testSkip'] as number } : {}),
+			}));
+		return {
+			commands,
+			removedTestFiles: Array.isArray(removed) ? removed.filter((entry): entry is string => typeof entry === 'string') : [],
+		};
+	}
+
+	/**
+	 * Every current-pass command whose output exposed no parseable count
+	 * (GSHIP-895), reported through `run.test-integrity-unknown` -- never
+	 * blocking, only keeping the coverage gap visible. Returns the set of
+	 * flagged command names so the baseline-side check below never reports
+	 * the same command twice in one pass.
+	 */
+	#emitUnknownTestCounts(runId: string, currentCommands: readonly RuntimeTestBaselineCommand[]): Set<string> {
+		const flagged = new Set<string>();
+		for (const current of currentCommands) {
+			if (current.total !== undefined) continue;
+			flagged.add(current.command);
+			this.#emit(runId, 'run.test-integrity-unknown', {
+				command: current.command,
+				commandIndex: current.commandIndex,
+				reason: `o comando \`${current.command}\` não expôs uma contagem de testes reconhecível na saída`,
+			});
+		}
+		return flagged;
+	}
+
+	/**
+	 * Every baseline command this pass could not actually compare against
+	 * (GSHIP-895): one whose own baseline capture exposed no count (unless
+	 * `flaggedCurrent` already reported the current side, so the same
+	 * command is never flagged twice in one pass), or one that simply did
+	 * not run this pass at all. Both are `run.test-integrity-unknown`,
+	 * non-blocking -- the coverage gap is visible, never a reason to fail.
+	 */
+	#emitUncomparableBaselineCommands(
+		runId: string,
+		baselineCommands: readonly RuntimeTestBaselineCommand[],
+		currentCommands: readonly RuntimeTestBaselineCommand[],
+		flaggedCurrent: ReadonlySet<string>,
+	): void {
+		for (const baseline of baselineCommands) {
+			if (baseline.total === undefined) {
+				if (flaggedCurrent.has(baseline.command)) continue;
+				this.#emit(runId, 'run.test-integrity-unknown', {
+					command: baseline.command,
+					commandIndex: baseline.commandIndex,
+					reason: `o baseline de \`${baseline.command}\` não expôs contagem de testes; a comparação não foi feita`,
+				});
+				continue;
+			}
+			if (currentCommands.some((entry) => entry.command === baseline.command)) continue;
+			this.#emit(runId, 'run.test-integrity-unknown', {
+				command: baseline.command,
+				commandIndex: baseline.commandIndex,
+				reason: `o comando \`${baseline.command}\` do baseline não rodou nesta passada de verify; a comparação não foi feita`,
+			});
+		}
+	}
+
+	/**
+	 * The test-integrity guard (GSHIP-895): only active when `testBaseline`
+	 * is configured, so a runtime without it behaves exactly as before this
+	 * gate existed. A baseline command whose total dropped or whose skip grew
+	 * blocks -- unless the drop alone is explained by every removed test file
+	 * this pass observed being cited by the approved spec's own boundaries or
+	 * acceptance text. A baseline that never recorded a usable count -- its
+	 * own capture failed, or it recorded no commands -- or a baseline command
+	 * this pass could not compare against is reported through
+	 * `run.test-integrity-unknown`, never silently skipped. Returns the
+	 * correction detail when blocking, `null` otherwise.
+	 */
+	#checkTestIntegrity(run: RunRecord, executionInput: RuntimeExecutionInput): string | null {
+		if (this.#testBaseline === undefined) return null;
+		const { commands: currentCommands, removedTestFiles } = this.#lastVerifyPass(run.id);
+		const flaggedCurrent = this.#emitUnknownTestCounts(run.id, currentCommands);
+		const baseline = this.#testBaselineRecord(run.id);
+		if (baseline.failure !== undefined || baseline.commands.length === 0) {
+			this.#emit(run.id, 'run.test-integrity-unknown', {
+				reason: baseline.failure !== undefined
+					? `o baseline não foi registrado: ${baseline.failure}`
+					: 'o baseline não registrou nenhum comando com contagem de testes; a comparação não foi feita',
+			});
+			return null;
+		}
+		this.#emitUncomparableBaselineCommands(run.id, baseline.commands, currentCommands, flaggedCurrent);
+		for (const baselineCommand of baseline.commands) {
+			const current = currentCommands.find((entry) => entry.command === baselineCommand.command);
+			const violation = testIntegrityViolation(baselineCommand, current, removedTestFiles, executionInput.approvedContract);
+			if (violation === null) continue;
+			this.#emit(run.id, 'run.test-integrity-failed', violation.payload);
+			return violation.detail;
+		}
+		return null;
+	}
+
+	/**
 	 * Issue verification, then the project's per-round lint (GSHIP-900) when
 	 * one is configured and the issue verification passed -- a lint failure is
 	 * reported exactly like a failed issue verification, so the caller needs
@@ -2641,8 +2901,21 @@ export class RunRuntime {
 			this.#interrupt(run.id);
 			return false;
 		}
-		if (verification.ok) return true;
+		if (verification.ok) {
+			const integrityDetail = this.#checkTestIntegrity(run, executionInput);
+			if (integrityDetail === null) return true;
+			return this.#failVerification(run, integrityDetail, executionInput);
+		}
 		const detail = verification.detail ?? 'A verificação específica da issue falhou.';
+		return this.#failVerification(run, detail, executionInput);
+	}
+
+	/**
+	 * Shared by a failed issue verification and a blocking test-integrity
+	 * result (GSHIP-895): both spend the same one automatic correction round,
+	 * never a category of their own.
+	 */
+	#failVerification(run: RunRecord, detail: string, executionInput: RuntimeExecutionInput): RunAttempt | false {
 		if (this.#recoveryPolicyEnabled(run) || !this.#verificationFixUsed(run.id)) {
 			this.#transition(run.id, 'working', 'run.verification-fix-requested', {
 				payload: { findings: detail },

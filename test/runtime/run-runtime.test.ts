@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { fingerprintSpec, profileSpec, type ResearchContract, type ResearchReceipt } from '../../src/issues/spec.ts';
@@ -9,29 +9,30 @@ import { AgentCycleQuestionResolver } from '../../src/runtime/agent-cycle-questi
 import { AgentExecutorRouter } from '../../src/runtime/agent-executor-router.ts';
 import { AgentReviewerRouter } from '../../src/runtime/agent-reviewer-router.ts';
 import { type AgentSessionInput, ProviderCallError } from '../../src/runtime/agent-session.ts';
-import { type CommandResult, GitEvidenceChecker } from '../../src/runtime/git-runtime.ts';
+import type { CycleObservationReference } from '../../src/runtime/cycle-diagnostic.ts';
+import { type CommandResult, defaultRunGit, GitEvidenceChecker, GitIssueVerifier } from '../../src/runtime/git-runtime.ts';
 import { GithubShipper, type ShipCommandRunner } from '../../src/runtime/github-shipper.ts';
 import { OPERATOR_DECISION_LIMITS, selectOperatorDecisions } from '../../src/runtime/operator-decision.ts';
+import { type ResearchBundle, ResearchFailure, validateResearchBundle } from '../../src/runtime/research.ts';
 import { selectRunRoundOrigins } from '../../src/runtime/round-origin.ts';
 import {
 	RunRuntime as BaseRunRuntime,
 	captureRecoveryProcessIdentity,
-	classifyDarwinProcessLiveness,
 	classifyDarwinProcessInspection,
+	classifyDarwinProcessLiveness,
 	observeRecoveryProcessIdentity,
 	RecoveryBudgetExhaustedError,
+	type RunRuntimeOptions,
 	type RuntimeChainReconciliationInput,
 	type RuntimeCycleQuestionResult,
 	type RuntimeCycleResponse,
-	type RunRuntimeOptions,
 	type RuntimeShipInput,
 	type RuntimeTimer,
 	validateCycleQuestionResult,
 } from '../../src/runtime/run-runtime.ts';
-import type { CycleObservationReference } from '../../src/runtime/cycle-diagnostic.ts';
 import { nextFixRounds } from '../../src/runtime/run-state.ts';
-import { ResearchFailure, type ResearchBundle, validateResearchBundle } from '../../src/runtime/research.ts';
 import { type RunEvent, type RunRecord, RunStore } from '../../src/runtime/run-store.ts';
+import { specCitesTestFile } from '../../src/runtime/test-integrity.ts';
 import { createTestTmpdir } from '../helpers/test-tmpdir.ts';
 
 const SYNTHETIC_SPEC = { version: 2 as const, objective: 'Test objective', acceptance: ['Test acceptance'], verify: ['bun test'] };
@@ -81,6 +82,36 @@ function seedVerificationFailure(store: RunStore, runId: string, issue: IssueEnt
 	store.transition({ runId, toState: 'working', kind: 'run.started', createdAt: '2026-09-12T00:00:01Z' });
 	store.transition({ runId, toState: 'verify', kind: 'run.work-completed', createdAt: '2026-09-12T00:00:02Z' });
 	store.transition({ runId, toState: 'failed', kind: 'run.verification-failed', error: 'timeout', createdAt: '2026-09-12T00:00:03Z' });
+}
+
+// GSHIP-895: the issue whose approved spec's acceptance/boundaries text is
+// what `specCitesTestFile` reads back to decide whether a dropped test count
+// is a legitimate, documented removal.
+function testIntegrityIssue(id: string, acceptance: string[]): IssueEntry {
+	const spec = { version: 2 as const, objective: 'Guard test suite integrity.', acceptance, verify: ['bun test'] };
+	return {
+		id, title: id, stage: 'specified', status: 'open', blockedBy: [],
+		createdAt: '2026-09-15T00:00:00Z', updatedAt: '2026-09-15T00:00:00Z', spec,
+		approval: { fingerprint: fingerprintSpec(spec), approvedAt: '2026-09-15T00:00:00Z' },
+	};
+}
+
+// GSHIP-895: a real temporary Git repository with `origin/main` pointing at
+// the one base commit -- what `GitIssueVerifier`'s own `merge-base`/`diff`
+// calls need to observe a real test-file removal, exercised for real rather
+// than through a stubbed `runGit`.
+function initTestIntegrityWorktree(prefix: string): string {
+	const dir = createTestTmpdir(prefix);
+	const run = (args: string[]) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+	run(['init', '-q']);
+	run(['config', 'user.email', 'guard@example.com']);
+	run(['config', 'user.name', 'Guard']);
+	writeFileSync(join(dir, 'a.test.ts'), '// base test file\n');
+	run(['add', '-A']);
+	run(['commit', '-q', '-m', 'base']);
+	const baseSha = run(['rev-parse', 'HEAD']).stdout.trim();
+	run(['update-ref', 'refs/remotes/origin/main', baseSha]);
+	return dir;
 }
 
 describe('durable run runtime', () => {
@@ -3116,6 +3147,327 @@ describe('evidence check gates the executor', () => {
 
 		await runtime.stop();
 		runtime.close();
+	});
+});
+
+// GSHIP-895: the deterministic test-integrity guard. Real `GitIssueVerifier`
+// against a real temporary Git repository, so the `merge-base`/`diff` removed
+// -test-file detection the citation exception depends on is exercised for
+// real, not through a stubbed `runGit`.
+describe('test-integrity guard (GSHIP-895)', () => {
+	test('a dropped test count blocks through the existing fix round, even after a real file removal, when the spec never cites it', async () => {
+		const dir = initTestIntegrityWorktree('gship-test-integrity-drop-');
+		const issue = testIntegrityIssue('GSHIP-895-drop', ['A suíte deve permanecer íntegra.']);
+		let calls = 0;
+		let executorCalls = 0;
+		const verifier = new GitIssueVerifier({
+			runGit: defaultRunGit,
+			loadIssue: () => JSON.stringify(issue),
+			runCommand: async () => {
+				calls += 1;
+				return calls === 1
+					? { exitCode: 0, stdout: '', stderr: ' 2 pass\n 0 fail\n' }
+					: { exitCode: 0, stdout: '', stderr: ' 1 pass\n 0 fail\n' };
+			},
+		});
+		const runtime = new RunRuntime({
+			cwd: dir, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: {
+				execute: async () => {
+					executorCalls += 1;
+					rmSync(join(dir, 'a.test.ts'), { force: true });
+					return { outcome: 'completed' };
+				},
+			},
+			verifier, testBaseline: verifier,
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => dir, inspect: () => [] },
+		});
+
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		expect(executorCalls).toBe(2);
+		const events = runtime.listRunEvents(run.id);
+		expect(events.find((event) => event.kind === 'run.test-baseline')?.payload).toMatchObject({
+			commands: [{ command: 'bun test', commandIndex: 1, total: 2, skip: 0 }],
+		});
+		expect(events.filter((event) => event.kind === 'run.test-integrity-failed')).toHaveLength(2);
+		expect(events.find((event) => event.kind === 'run.test-integrity-failed')?.payload).toMatchObject({
+			command: 'bun test', baselineTotal: 2, currentTotal: 1, baselineSkip: 0, currentSkip: 0,
+		});
+		expect(runtime.getRun(run.id)?.error).toContain('A guarda de integridade dos testes bloqueou');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a new skip blocks even without a total drop', async () => {
+		const dir = initTestIntegrityWorktree('gship-test-integrity-skip-');
+		const issue = testIntegrityIssue('GSHIP-895-skip', ['A suíte deve permanecer íntegra.']);
+		let calls = 0;
+		let noteCalls = 0;
+		const verifier = new GitIssueVerifier({
+			runGit: defaultRunGit,
+			loadIssue: () => JSON.stringify(issue),
+			runCommand: async () => {
+				calls += 1;
+				return calls === 1
+					? { exitCode: 0, stdout: '', stderr: ' 2 pass\n 0 fail\n' }
+					: { exitCode: 0, stdout: '', stderr: ' 1 pass\n 0 fail\n 1 skip\n' };
+			},
+		});
+		const runtime = new RunRuntime({
+			cwd: dir, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: {
+				execute: async () => {
+					noteCalls += 1;
+					writeFileSync(join(dir, `note-${noteCalls}.txt`), 'x');
+					return { outcome: 'completed' };
+				},
+			},
+			verifier, testBaseline: verifier,
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => dir, inspect: () => [] },
+		});
+
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
+
+		const events = runtime.listRunEvents(run.id);
+		expect(events.find((event) => event.kind === 'run.test-integrity-failed')?.payload).toMatchObject({
+			baselineTotal: 2, currentTotal: 2, baselineSkip: 0, currentSkip: 1,
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a verify command whose output has no parseable count stays unknown and never blocks', async () => {
+		const dir = initTestIntegrityWorktree('gship-test-integrity-unknown-');
+		const issue = testIntegrityIssue('GSHIP-895-unknown', ['A suíte deve permanecer íntegra.']);
+		let noteCalls = 0;
+		const verifier = new GitIssueVerifier({
+			runGit: defaultRunGit,
+			loadIssue: () => JSON.stringify(issue),
+			runCommand: async () => ({ exitCode: 0, stdout: '', stderr: '' }),
+		});
+		const runtime = new RunRuntime({
+			cwd: dir, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: {
+				execute: async () => {
+					noteCalls += 1;
+					writeFileSync(join(dir, `note-${noteCalls}.txt`), 'x');
+					return { outcome: 'completed' };
+				},
+			},
+			verifier, testBaseline: verifier,
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => dir, inspect: () => [] },
+		});
+
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		const events = runtime.listRunEvents(run.id);
+		expect(events.find((event) => event.kind === 'run.test-baseline')?.payload).toMatchObject({
+			commands: [{ command: 'bun test', commandIndex: 1 }],
+		});
+		expect(events.find((event) => event.kind === 'run.test-integrity-unknown')?.payload).toMatchObject({
+			command: 'bun test', commandIndex: 1,
+		});
+		expect(events.some((event) => event.kind === 'run.test-integrity-failed')).toBe(false);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('a real test-file removal cited by the approved spec is accepted, not blocked', async () => {
+		const dir = initTestIntegrityWorktree('gship-test-integrity-cited-');
+		const issue = testIntegrityIssue('GSHIP-895-cited', ['A remoção de a.test.ts está documentada aqui.']);
+		let calls = 0;
+		const verifier = new GitIssueVerifier({
+			runGit: defaultRunGit,
+			loadIssue: () => JSON.stringify(issue),
+			runCommand: async () => {
+				calls += 1;
+				return calls === 1
+					? { exitCode: 0, stdout: '', stderr: ' 2 pass\n 0 fail\n' }
+					: { exitCode: 0, stdout: '', stderr: ' 1 pass\n 0 fail\n' };
+			},
+		});
+		const runtime = new RunRuntime({
+			cwd: dir, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: {
+				execute: async () => {
+					rmSync(join(dir, 'a.test.ts'), { force: true });
+					return { outcome: 'completed' };
+				},
+			},
+			verifier, testBaseline: verifier,
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => dir, inspect: () => [] },
+		});
+
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		const events = runtime.listRunEvents(run.id);
+		expect(events.some((event) => event.kind === 'run.test-integrity-failed')).toBe(false);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// An operator-triggered verification retry is a distinct code path from the
+	// normal executor fix round -- it must not let one uncorrected retry pass
+	// review and ship on a still-dropped test count.
+	test('an operator verification retry cannot bypass the guard without a real correction', async () => {
+		const issue = testIntegrityIssue('GSHIP-895-retry-bypass', ['A suíte deve permanecer íntegra.']);
+		const workspace = createTestTmpdir('gship-test-integrity-retry-bypass-');
+		const store = new RunStore(':memory:');
+		seedVerificationFailure(store, 'run-integrity-retry-bypass', issue, workspace);
+		store.appendEvent({
+			runId: 'run-integrity-retry-bypass', kind: 'run.test-baseline', createdAt: '2026-09-12T00:00:00.500Z',
+			payload: { commands: [{ command: 'bun test', commandIndex: 1, total: 2, skip: 0 }] },
+		});
+		let verificationCalls = 0;
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: workspace, store, listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: {
+				verify: async (input) => {
+					verificationCalls += 1;
+					input.emit('verify.started');
+					input.emit('verify.command.completed', {
+						commandIndex: 1, command: 'bun test', exitCode: 0, verifiedVersion: 'v1', testTotal: 1, testSkip: 0,
+					});
+					return { ok: true };
+				},
+			},
+			testBaseline: { captureBaseline: async () => ({ commands: [] }) },
+			reviewer: { review: async () => { reviews += 1; return { verdict: 'clean' as const }; } },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+
+		runtime.retryVerificationRun('run-integrity-retry-bypass', 'tentativa sem correção real');
+		await waitFor(() => runtime.getRun('run-integrity-retry-bypass')?.state === 'failed'
+			&& runtime.listRunEvents('run-integrity-retry-bypass').some((event) => event.kind === 'run.verification-retry-result'));
+
+		expect(verificationCalls).toBe(1);
+		expect(reviews).toBe(0);
+		const events = runtime.listRunEvents('run-integrity-retry-bypass');
+		expect(events.some((event) => event.kind === 'run.test-integrity-failed')).toBe(true);
+		expect(events.find((event) => event.kind === 'run.verification-retry-result')?.payload).toMatchObject({ outcome: 'failed' });
+		expect(runtime.getRun('run-integrity-retry-bypass')?.error).toContain('A guarda de integridade dos testes bloqueou');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// A verify command the baseline could not count -- e.g. it targets a test
+	// file the executor has not written yet -- must stay visible even once a
+	// later pass does produce a real count, never silently dropped just
+	// because there is nothing to compare it against.
+	test('a baseline command with no parseable count is flagged unknown once the current pass has real counts', async () => {
+		const issue = testIntegrityIssue('GSHIP-895-baseline-unknown', ['A suíte deve permanecer íntegra.']);
+		const workspace = createTestTmpdir('gship-test-integrity-baseline-unknown-');
+		const runtime = new RunRuntime({
+			cwd: workspace, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: {
+				verify: async (input) => {
+					input.emit('verify.started');
+					input.emit('verify.command.completed', {
+						commandIndex: 1, command: 'bun test', exitCode: 0, verifiedVersion: 'v1', testTotal: 2, testSkip: 0,
+					});
+					return { ok: true };
+				},
+			},
+			testBaseline: { captureBaseline: async () => ({ commands: [{ command: 'bun test', commandIndex: 1 }] }) },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		const events = runtime.listRunEvents(run.id);
+		expect(events.find((event) => event.kind === 'run.test-baseline')?.payload).toMatchObject({
+			commands: [{ command: 'bun test', commandIndex: 1 }],
+		});
+		expect(events.find((event) => event.kind === 'run.test-integrity-unknown')?.payload).toMatchObject({
+			command: 'bun test', commandIndex: 1,
+		});
+		expect(events.some((event) => event.kind === 'run.test-integrity-failed')).toBe(false);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// A baseline capture that throws must never fail the run and must never
+	// stay silent: the failure is recorded so a resume never recaptures over a
+	// worktree the executor has since changed, and surfaced through the same
+	// unknown signal as any other uncounted verify command.
+	test('a baseline capture failure is recorded and surfaced, never silent, never failing the run', async () => {
+		const issue = testIntegrityIssue('GSHIP-895-baseline-failure', ['A suíte deve permanecer íntegra.']);
+		const workspace = createTestTmpdir('gship-test-integrity-baseline-failure-');
+		const runtime = new RunRuntime({
+			cwd: workspace, store: new RunStore(':memory:'), listBacklog: () => [issue],
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: {
+				verify: async (input) => {
+					input.emit('verify.started');
+					input.emit('verify.command.completed', {
+						commandIndex: 1, command: 'bun test', exitCode: 0, verifiedVersion: 'v1', testTotal: 2, testSkip: 0,
+					});
+					return { ok: true };
+				},
+			},
+			testBaseline: { captureBaseline: async () => { throw new Error('worktree indisponível'); } },
+			reviewer: { review: async () => ({ verdict: 'clean' as const }) },
+			fullVerifier: { verify: async () => ({ ok: true }) },
+			workspace: { prepare: async () => workspace, inspect: () => [] },
+		});
+
+		const run = await runtime.startRun(issue.id);
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		const events = runtime.listRunEvents(run.id);
+		expect(events.find((event) => event.kind === 'run.test-baseline')?.payload).toMatchObject({
+			commands: [], failure: 'worktree indisponível',
+		});
+		expect(events.find((event) => event.kind === 'run.test-integrity-unknown')?.payload).toMatchObject({
+			phase: 'baseline', reason: expect.stringContaining('worktree indisponível'),
+		});
+		expect(events.some((event) => event.kind === 'run.test-integrity-failed')).toBe(false);
+		await runtime.stop();
+		runtime.close();
+	});
+});
+
+describe('specCitesTestFile (GSHIP-895)', () => {
+	const contract = (acceptance: string[]) => JSON.stringify({ spec: { boundaries: [], acceptance } });
+
+	test('cites an exact bare filename or full relative path, never a substring of a different one', () => {
+		expect(specCitesTestFile(contract(['A remoção de a.test.ts está documentada aqui.']), 'a.test.ts')).toBe(true);
+		expect(specCitesTestFile(contract(['A remoção de test/runtime/a.test.ts está documentada aqui.']), 'test/runtime/a.test.ts')).toBe(true);
+		expect(specCitesTestFile(contract(['A remoção de test/runtime/a.test.ts está documentada aqui.']), 'a.test.ts')).toBe(false);
+	});
+
+	test('does not match a filename that is merely a substring of a longer, unrelated filename', () => {
+		expect(specCitesTestFile(contract(['Removemos data.test.ts, que ficou obsoleto.']), 'a.test.ts')).toBe(false);
+	});
+
+	test('does not match a same-basename file cited under a different directory', () => {
+		expect(specCitesTestFile(contract(['Removemos test/x/foo.test.ts, que ficou obsoleto.']), 'test/y/foo.test.ts')).toBe(false);
+	});
+
+	test('returns false for missing or malformed approved contracts', () => {
+		expect(specCitesTestFile(undefined, 'a.test.ts')).toBe(false);
+		expect(specCitesTestFile('not json', 'a.test.ts')).toBe(false);
+		expect(specCitesTestFile(JSON.stringify({ spec: null }), 'a.test.ts')).toBe(false);
 	});
 });
 
