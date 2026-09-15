@@ -7,7 +7,7 @@
     "GSHIP-899"
   ],
   "createdAt": "2026-09-15T00:00:12.743Z",
-  "updatedAt": "2026-09-15T12:20:30.318Z",
+  "updatedAt": "2026-09-15T12:20:41.924Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -27,5 +27,9 @@
       "bun test test/runtime/run-runtime.test.ts test/runtime/git-workspace.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "0f2a50f6d07415bef16539701c783ebc160bfcf083f0dd6b9490b219d52858ef",
+    "approvedAt": "2026-09-15T12:20:41.924Z"
   }
 }
