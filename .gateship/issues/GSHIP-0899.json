@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-899",
   "title": "Ship: reler a PR apos falha do merge direto antes de declarar ship-failed",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-15T01:11:27.488Z",
-  "updatedAt": "2026-09-15T12:20:33.477Z",
+  "updatedAt": "2026-09-15T13:05:03.209Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

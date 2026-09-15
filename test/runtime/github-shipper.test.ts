@@ -33,6 +33,8 @@ const UPDATED_SHAS = [
 ];
 const PR_URL = 'https://github.com/gateship-dev/gateship/pull/385\n';
 const PROTECTED_BASE_SHA = 'base-1234567890abcdef';
+/** What main advances to while a direct merge is in flight (GSHIP-899). */
+const MOVED_BASE_SHA = 'moved-base-abcdef1234567890';
 
 interface RecordedCall {
 	command: string;
@@ -108,6 +110,26 @@ interface FakeRepo {
 	directMergeUnavailableRemaining: number;
 	/** A decision failure direct squash merge reports immediately, never retried. */
 	directMergeDecisionFailure: string | null;
+	/**
+	 * A decision failure the *first* direct squash merge attempt reports, then
+	 * clears: simulates a real refusal that only holds until whatever caused
+	 * it (an auto-merge race, a base that moved) is resolved, so a later
+	 * attempt on the same pull request succeeds (GSHIP-899).
+	 */
+	directMergeDecisionFailureOnce: string | null;
+	/**
+	 * From the poll right after the first failed direct merge attempt onwards,
+	 * `gh pr view` reports this base and this status instead of
+	 * `PROTECTED_BASE_SHA` and `openMergeState`, until a branch update runs:
+	 * simulates the base moving in the exact window between the poll that
+	 * read CLEAN and the direct merge GitHub then refused (GSHIP-899). Real
+	 * GitHub does not reliably report BEHIND right after that refusal --
+	 * recomputed mergeability for the same moved base can just as easily read
+	 * UNKNOWN, or even stay CLEAN for a repository that does not require an
+	 * up-to-date branch to merge -- so a scenario can set any `mergeStateStatus`
+	 * here, as long as `baseRefOid` itself differs from before.
+	 */
+	movedBaseAfterFailedDirectMerge: { baseRefOid: string; mergeStateStatus: string } | null;
 	/** True while `gh pr view` keeps reporting HTTP 503 (GSHIP-625). */
 	viewUnavailableAlways: boolean;
 	/** `gh pr view` reports HTTP 503 from this poll onwards (GSHIP-632). */
@@ -158,6 +180,8 @@ function createRepo(overrides: Partial<FakeRepo> = {}): FakeRepo {
 		directMergeAttempts: 0,
 		directMergeUnavailableRemaining: 0,
 		directMergeDecisionFailure: null,
+		directMergeDecisionFailureOnce: null,
+		movedBaseAfterFailedDirectMerge: null,
 		viewUnavailableAlways: false,
 		viewUnavailableFromView: Number.POSITIVE_INFINITY,
 		armAttempts: 0,
@@ -266,6 +290,11 @@ function ghMerge(repo: FakeRepo, args: string[]): CommandResult {
 	if (repo.directMergeDecisionFailure !== null) {
 		return result(1, '', repo.directMergeDecisionFailure);
 	}
+	if (repo.directMergeDecisionFailureOnce !== null) {
+		const failure = repo.directMergeDecisionFailureOnce;
+		repo.directMergeDecisionFailureOnce = null;
+		return result(1, '', failure);
+	}
 	if (repo.directMergeUnavailableRemaining > 0) {
 		repo.directMergeUnavailableRemaining -= 1;
 		return result(1, '', 'HTTP 503: Service Unavailable (https://api.github.com/graphql)');
@@ -315,6 +344,18 @@ function resolvePullRequestState(repo: FakeRepo): { state: string; mergeStateSta
 	return { state: 'OPEN', mergeStateStatus: behind ? 'BEHIND' : repo.openMergeState };
 }
 
+/**
+ * GSHIP-899: whether the base moved in the window between the poll that read
+ * CLEAN and the direct merge GitHub then refused, reported only until a
+ * branch update actually runs -- same as a real BEHIND resolving once
+ * updated.
+ */
+function movedBaseActive(repo: FakeRepo): boolean {
+	return repo.movedBaseAfterFailedDirectMerge !== null
+		&& repo.directMergeAttempts > 0
+		&& repo.branchUpdates === 0;
+}
+
 function ghView(repo: FakeRepo): CommandResult {
 	repo.views += 1;
 	if (repo.viewUnavailableAlways || repo.views >= repo.viewUnavailableFromView) {
@@ -333,12 +374,15 @@ function ghView(repo: FakeRepo): CommandResult {
 	// A force-push from outside the service is durable too: the pull
 	// request carries the foreign head from this poll onwards.
 	if (repo.views >= repo.headMovedOnView) repo.prHeadRefOid = FOREIGN_SHA;
-	const { state, mergeStateStatus } = resolvePullRequestState(repo);
+	const movedBase = movedBaseActive(repo) ? repo.movedBaseAfterFailedDirectMerge : null;
+	const { state, mergeStateStatus } = movedBase === null
+		? resolvePullRequestState(repo)
+		: { state: 'OPEN', mergeStateStatus: movedBase.mergeStateStatus };
 	return result(0, JSON.stringify({
 		state,
 		mergeStateStatus,
 		headRefOid: repo.prHeadRefOid,
-		baseRefOid: PROTECTED_BASE_SHA,
+		baseRefOid: movedBase === null ? PROTECTED_BASE_SHA : movedBase.baseRefOid,
 		url: PR_URL.trim(),
 		statusCheckRollup: repo.statusCheckRollups[Math.min(
 			repo.views - 1,
@@ -862,22 +906,121 @@ describe('the GitHub shipper', () => {
 		});
 	});
 
-	test('fails closed when GitHub refuses the direct merge', async () => {
+	test('fails closed when GitHub refuses the direct merge and the reread explains nothing (GSHIP-899)', async () => {
 		const cwd = createWorkspace();
 		const repo = createRepo({
 			mergedOnView: Number.MAX_SAFE_INTEGER,
 			openMergeState: 'CLEAN',
 			directMergeDecisionFailure: 'GraphQL: merge queue is required',
 		});
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
 		const shipped = await new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 })
-			.ship(createShipInput(cwd, [], new AbortController().signal));
+			.ship(createShipInput(cwd, events, new AbortController().signal, payloads));
 
 		expect(shipped).toEqual({
 			outcome: 'failed',
 			detail: 'gh pr merge failed: GraphQL: merge queue is required',
 		});
 		expect(repo.directMergeAttempts).toBe(1);
+		// The reread this issue adds still ends the ship as a real failure once
+		// the pull request explains nothing about the refusal: still open,
+		// still the head this ship published, still CLEAN.
+		expect(payloads.get('ship.merge-race')).toEqual({
+			prNumber: 385,
+			head: HEAD_SHA,
+			error: 'gh pr merge failed: GraphQL: merge queue is required',
+			outcome: 'failed',
+		});
 	});
+
+	test('rereads a refused direct merge and settles merged in the same attempt once auto-merge already landed it (GSHIP-899, runs 807/831/842/889)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			openMergeState: 'CLEAN',
+			// The armed auto-merge lands and closes the pull request right in the
+			// window between the poll that read CLEAN and the direct merge this
+			// ship then attempted: the next `gh pr view` -- the reread this fix
+			// adds -- already reports MERGED with the head this ship published.
+			mergedOnView: 2,
+			directMergeDecisionFailure: 'GraphQL: Pull Request is not mergeable (queue)',
+		});
+		const events: string[] = [];
+		const payloads = new Map<string, Record<string, unknown> | undefined>();
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, events, new AbortController().signal, payloads));
+
+		expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+		// Settled on the very first direct-merge attempt, no resend.
+		expect(repo.directMergeAttempts).toBe(1);
+		expect(events).toContain('ship.merged');
+		expect(payloads.get('ship.merge-race')).toEqual({
+			prNumber: 385,
+			head: HEAD_SHA,
+			error: 'gh pr merge failed: GraphQL: Pull Request is not mergeable (queue)',
+			outcome: 'merged',
+		});
+	});
+
+	test('rereads a refused direct merge and reports the existing head-diverged failure when the merged head is not ours (GSHIP-899)', async () => {
+		const cwd = createWorkspace();
+		const repo = createRepo({
+			openMergeState: 'CLEAN',
+			mergedOnView: 2,
+			headMovedOnView: 2,
+			directMergeDecisionFailure: 'GraphQL: Pull Request is not mergeable (queue)',
+		});
+		const events: string[] = [];
+		const shipped = await new GithubShipper({ runCommand: createRunner(repo, []), pollIntervalMs: 0 })
+			.ship(createShipInput(cwd, events, new AbortController().signal));
+
+		expect(shipped.outcome).toBe('failed');
+		expect(events).toContain('ship.head-diverged');
+		expect(events).not.toContain('ship.merged');
+	});
+
+	// GSHIP-899, run 884: GitHub does not reliably report BEHIND right after
+	// refusing a direct merge over a moved base -- recomputed mergeability for
+	// the same moved base can just as easily read UNKNOWN, or even stay CLEAN
+	// for a repository that does not require an up-to-date branch to merge,
+	// the same way `#confirmBranchUpdate` elsewhere in this file already has
+	// to allow for UNKNOWN right after `update-branch` is requested. Every one
+	// of those must still redo update-branch and the poll instead of failing
+	// the run, as long as the base itself actually moved.
+	for (const staleStatus of ['BEHIND', 'UNKNOWN', 'CLEAN', 'BLOCKED']) {
+		test(`a refused direct merge finding the base moved (${staleStatus}) redoes update-branch and the poll in the same attempt (GSHIP-899, run 884)`, async () => {
+			const cwd = createWorkspace();
+			const repo = createRepo({
+				openMergeState: 'CLEAN',
+				mergedOnView: Number.MAX_SAFE_INTEGER,
+				// GitHub refuses the first direct merge because the base moved; the
+				// reread finds the pull request still OPEN with the head this ship
+				// published, on the new base, reporting `staleStatus` until the
+				// branch is updated.
+				movedBaseAfterFailedDirectMerge: { baseRefOid: MOVED_BASE_SHA, mergeStateStatus: staleStatus },
+				directMergeDecisionFailureOnce: 'GraphQL: Base branch was modified. Review and try the merge again.',
+			});
+			const calls: RecordedCall[] = [];
+			const events: string[] = [];
+			const payloads = new Map<string, Record<string, unknown> | undefined>();
+			const shipped = await new GithubShipper({ runCommand: createRunner(repo, calls), pollIntervalMs: 0 })
+				.ship(createShipInput(cwd, events, new AbortController().signal, payloads));
+
+			expect(shipped).toEqual({ outcome: 'merged', prNumber: 385 });
+			// One refused attempt, one branch update within the same attempt's
+			// budget, then one direct merge that actually lands.
+			expect(repo.directMergeAttempts).toBe(2);
+			expect(repo.branchUpdates).toBe(1);
+			expect(findCall(calls, 'gh', 'pr', 'update-branch')).toHaveLength(1);
+			expect(payloads.get('ship.merge-race')).toEqual({
+				prNumber: 385,
+				head: HEAD_SHA,
+				error: 'gh pr merge failed: GraphQL: Base branch was modified. Review and try the merge again.',
+				outcome: 'retried',
+			});
+			expect(events).not.toContain('ship.head-diverged');
+		});
+	}
 
 	test('never directly merges a non-clean, non-open, unverified, or unfinished PR', async () => {
 		const scenarios: Array<{
