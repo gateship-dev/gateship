@@ -12,7 +12,7 @@
     "GSHIP-872"
   ],
   "createdAt": "2026-09-11T13:10:33.901Z",
-  "updatedAt": "2026-09-14T21:20:48.836Z",
+  "updatedAt": "2026-09-15T12:21:17.947Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -38,5 +38,9 @@
       "bun run typecheck",
       "bun test test/web/ui-client.test.tsx"
     ]
+  },
+  "approval": {
+    "fingerprint": "20d92fb1ace2ebb8f2e913375bf10b3eb39c80a4bf69a34f56b7eec4b3e1b864",
+    "approvedAt": "2026-09-15T12:21:17.947Z"
   }
 }
