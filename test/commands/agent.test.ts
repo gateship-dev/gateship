@@ -57,10 +57,20 @@ describe('canonical agent CLI', () => {
 		expect(result.output).toMatchObject({ ok: true, version: 'v1' });
 		const guide = result.output['guide'];
 		expect(typeof guide).toBe('string');
-		expect(String(guide).length).toBeLessThan(1100);
+		expect(String(guide).length).toBeLessThan(1700);
 		expect(guide).toContain('Never edit .gship directly');
 		expect(guide).toContain('Never invent operator approval');
 		expect(guide).toContain('Prefer issues.create_approved with cited explicit authorization');
+		for (const dimension of [
+			'input bounds', 'partial failure', 'idempotency', 'auth', 'concurrency', 'data lifecycle',
+			'observability', 'external dependency', 'state transition',
+		]) {
+			expect(guide).toContain(dimension);
+		}
+		expect(guide).toContain('N/A and a reason');
+		expect(guide).toContain('mandatory when the issue touches persistence, state, an external call, auth, or a state transition');
+		expect(guide).toContain('optional for a doc-only or pure UI change');
+		expect(guide).toContain('Facts you look up, decisions you ask');
 	});
 
 	test('discovers operation names and formats only on demand', async () => {

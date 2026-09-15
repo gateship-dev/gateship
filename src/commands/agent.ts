@@ -103,6 +103,14 @@ const GUIDE = [
 	'Prefer issues.create_approved with cited explicit authorization',
 	'Use `gship agent operations` for operation names and input formats.',
 	'Call with `gship agent call <operation> --input <json>`.',
+	'When calling issues.create or issues.specify, scan nine implicit dimensions: input bounds, partial '
+		+ 'failure, idempotency, auth, concurrency, data lifecycle, observability, external dependency, state '
+		+ 'transition.',
+	'Turn each dimension into an acceptance item, or drop it with N/A and a reason, inside boundaries.',
+	'This scan is mandatory when the issue touches persistence, state, an external call, auth, or a state '
+		+ 'transition; optional for a doc-only or pure UI change.',
+	'Facts you look up, decisions you ask; never invent a requirement outside the issue boundary to fill the '
+		+ 'list.',
 ].join('\n');
 
 class AgentCliError extends Error {
