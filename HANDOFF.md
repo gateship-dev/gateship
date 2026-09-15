@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-09-14, against the `v0.510.0` tag plus GSHIP-884 (PR #745).
+> Updated: 2026-09-15, against the `v0.510.0` tag plus PRs #745 to #750.
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -140,21 +140,31 @@ different roadmap stage requires its own authorization.
 
 ## Next ordered seams
 
-The approved queue is a linear chain and runs under `chain-runs`:
-GSHIP-888, 889, 890, 891 (telemetry T1 to T4), then GSHIP-872 (observable
-review evidence without wider permissions), GSHIP-864 and GSHIP-874. On
-2026-09-14 the 864 and 874 specifications gained a convergence diagnosis
-(findings per round over the last rounds, and whether the last fix produced a
-new finding) at the recovery limit and in the post-activation report; both need
-re-approval before they become admissible again.
+The approved queue was drained on 2026-09-15: GSHIP-884, 888, 889, 890, 891
+and 872 shipped through PRs #745 to #750 under `chain-runs`, all on Claude
+Code. The chain is paused on `no-admissible-issue`. GSHIP-864 and GSHIP-874
+are specified but need re-approval: on 2026-09-14 both gained a convergence
+diagnosis (findings per round over the last rounds, and whether the last fix
+produced a new finding) at the recovery limit and in the post-activation
+report.
 
-Unapproved proposals filed on 2026-09-14, from a comparison with external
-spec-driven and security-review practice: GSHIP-892 (cycle-question provider
-fallback), GSHIP-893 (mutation sensor as deterministic evidence in full verify),
-GSHIP-894 (per-acceptance verdict with file:line evidence in review), GSHIP-895
-(deterministic test-integrity guard in verify), GSHIP-896 (implicit-requirement
-sweep in the agent guide), and GSHIP-897 (Host validation, security headers and
-body limit on the local web service). They approve nothing by themselves.
+Observed during the drain: the chain reconciler reads the operator's local
+checkout, which is deliberately behind `origin/main`, and returned `material`
+once and `clarified` twice for the same limitation (GSHIP-898); the direct
+`gh pr merge` raced the armed auto-merge on three of six ships and left the run
+in `ready-to-ship` until a manual `runs.ship` (GSHIP-899); four of six runs
+passed verify and review and failed the full verify only on biome complexity
+(GSHIP-900).
+
+Unapproved proposals filed on 2026-09-14 and 2026-09-15: GSHIP-892
+(cycle-question provider fallback), 893 (mutation sensor as deterministic
+evidence in full verify), 894 (per-acceptance verdict with file:line evidence
+in review), 895 (deterministic test-integrity guard in verify), 896
+(implicit-requirement sweep in the agent guide), 897 (Host validation, security
+headers and body limit on the local web service), 898 (chain reconciliation in
+a fresh `origin/main` worktree), 899 (re-read the PR after a failed direct
+merge) and 900 (per-round lint command declared by the project). They approve
+nothing by themselves.
 
 ## Product radar
 
