@@ -92,7 +92,7 @@ describe('ci.yml proportional container verification (GSHIP-877)', () => {
 	});
 
 	test('smokes amd64 health and runs CLI checks under arm64 emulation', () => {
-		expect(workflow).toContain('docker run --rm -d --name gateship-ci -p 127.0.0.1:17777:7777 gateship:ci-amd64');
+		expect(workflow).toContain('docker run --rm -d --name gateship-ci -p 127.0.0.1:17777:7777 -e GATESHIP_PUBLISHED_PORT=17777 gateship:ci-amd64');
 		expect(workflow).toContain('docker run --rm --entrypoint claude gateship:ci-arm64 --version');
 		expect(workflow).toContain('docker run --rm --entrypoint codex gateship:ci-arm64 --version');
 	});
