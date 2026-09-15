@@ -1,13 +1,13 @@
 {
   "id": "GSHIP-900",
   "title": "Verify: comando de lint por rodada declarado no projeto, antes da review",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-898"
   ],
   "createdAt": "2026-09-15T05:58:28.395Z",
-  "updatedAt": "2026-09-15T12:20:45.725Z",
+  "updatedAt": "2026-09-15T14:15:39.756Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

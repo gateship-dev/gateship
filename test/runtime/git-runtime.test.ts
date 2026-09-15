@@ -10,6 +10,7 @@ import {
 	GitEvidenceChecker,
 	GitFullVerifier,
 	GitIssueVerifier,
+	GitLintVerifier,
 	runVerificationCommand,
 	VERIFICATION_COMMAND_TIMEOUT_MS,
 } from '../../src/runtime/git-runtime.ts';
@@ -777,5 +778,99 @@ describe('GitFullVerifier', () => {
 		await Bun.sleep(30);
 		controller.abort();
 		await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+	});
+});
+
+// GSHIP-900: reads the project's per-round lint commands from the same
+// immutable base manifest as GitFullVerifier's `verify`, never inferring one
+// from the stack.
+describe('GitLintVerifier', () => {
+	test('skips without running any command when the base manifest declares no lint', async () => {
+		const verifier = new GitLintVerifier({
+			runGit: fullVerifyGitRunner(),
+			runCommand: () => { throw new Error('must not run any command when the project declares no lint'); },
+		});
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const result = await verifier.verify({
+			...verificationInput,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+		expect(result).toEqual({ ok: true, skipped: true });
+		expect(events).toEqual([{ kind: 'lint.skipped', payload: { reason: 'no-project-lint' } }]);
+	});
+
+	test('runs every declared lint command from the immutable base manifest and emits lifecycle events', async () => {
+		const commands: string[] = [];
+		const verifier = new GitLintVerifier({
+			runGit: (_cwd, args) => args[0] === 'merge-base'
+				? { exitCode: 0, stdout: 'base-sha\n', stderr: '' }
+				: args[0] === 'ls-tree'
+					? { exitCode: 0, stdout: '.gateship/project.json\n', stderr: '' }
+					: args[0] === 'show'
+						? { exitCode: 0, stdout: JSON.stringify({ version: 1, verify: ['bun test'], lint: ['bun run lint'] }), stderr: '' }
+						: { exitCode: 0, stdout: '', stderr: '' },
+			runCommand: async ({ command }) => {
+				commands.push(command);
+				return { exitCode: 0, stdout: '', stderr: '' };
+			},
+		});
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const result = await verifier.verify({
+			...verificationInput,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+		expect(result).toEqual({ ok: true });
+		expect(commands).toEqual(['bun run lint']);
+		expect(events).toEqual([
+			{ kind: 'lint.command.started', payload: { commandIndex: 1 } },
+			{ kind: 'lint.command.completed', payload: { commandIndex: 1, command: 'bun run lint', exitCode: 0, verifiedVersion: 'unknown', durationMs: expect.any(Number) } },
+		]);
+	});
+
+	test('ignores a worktree edit to the manifest and keeps using the base-authorized lint commands', async () => {
+		const dir = createTestTmpdir('gship-lint-immutable-');
+		mkdirSync(join(dir, '.gateship'), { recursive: true });
+		writeFileSync(join(dir, '.gateship/project.json'), JSON.stringify({ version: 1, verify: ['bun test'], lint: ['echo tampered'] }));
+		const commands: string[] = [];
+		const verifier = new GitLintVerifier({
+			runGit: (_cwd, args) => args[0] === 'merge-base'
+				? { exitCode: 0, stdout: 'base-sha\n', stderr: '' }
+				: args[0] === 'ls-tree'
+					? { exitCode: 0, stdout: '.gateship/project.json\n', stderr: '' }
+					: args[0] === 'show'
+						? { exitCode: 0, stdout: JSON.stringify({ version: 1, verify: ['bun test'], lint: ['bun run lint'] }), stderr: '' }
+						: { exitCode: 0, stdout: '', stderr: '' },
+			runCommand: async ({ command }) => {
+				commands.push(command);
+				return { exitCode: 0, stdout: '', stderr: '' };
+			},
+		});
+		const result = await verifier.verify({ ...verificationInput, cwd: dir });
+		expect(result).toEqual({ ok: true });
+		expect(commands).toEqual(['bun run lint']);
+	});
+
+	test('fails with a prefixed detail carrying the command output when a lint command exits non-zero', async () => {
+		const verifier = new GitLintVerifier({
+			runGit: (_cwd, args) => args[0] === 'merge-base'
+				? { exitCode: 0, stdout: 'base-sha\n', stderr: '' }
+				: args[0] === 'ls-tree'
+					? { exitCode: 0, stdout: '.gateship/project.json\n', stderr: '' }
+					: args[0] === 'show'
+						? { exitCode: 0, stdout: JSON.stringify({ version: 1, verify: ['bun test'], lint: ['bun run lint'] }), stderr: '' }
+						: { exitCode: 0, stdout: '', stderr: '' },
+			runCommand: async () => ({ exitCode: 1, stdout: '', stderr: 'complexity too high' }),
+		});
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const result = await verifier.verify({
+			...verificationInput,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+		expect(result.ok).toBe(false);
+		expect(result.detail).toBe('lint failed: complexity too high');
+		expect(events).toEqual([
+			{ kind: 'lint.command.started', payload: { commandIndex: 1 } },
+			{ kind: 'lint.command.completed', payload: { commandIndex: 1, command: 'bun run lint', exitCode: 1, verifiedVersion: 'unknown', durationMs: expect.any(Number) } },
+		]);
 	});
 });

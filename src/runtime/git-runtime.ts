@@ -651,6 +651,55 @@ function projectVerificationCommands(
 		: { commands: [], origin: 'none' };
 }
 
+/** The project's per-round lint commands (GSHIP-900), read from the same immutable base manifest as `verify`, never from `package.json`: absent unless the project declares them explicitly. */
+function projectLintCommands(options: GitRuntimeOptions, inputCwd: string): string[] {
+	const runGit = options.runGit ?? defaultRunGit;
+	const manifest = baseFile(runGit, inputCwd, PROJECT_VERIFICATION_PATH);
+	return manifest === null ? [] : readProjectVerificationManifest(manifest).lint ?? [];
+}
+
+/**
+ * The project's per-round lint gate (GSHIP-900): declared commands run once
+ * after `run.work-completed`, before review, through the same owned,
+ * versioned command path `GitIssueVerifier` and `GitFullVerifier` already
+ * use. A failure reuses the run's existing issue-verification fix round --
+ * never a new round category -- and the project's own `verify` still runs in
+ * full at the ready-to-ship gate regardless. A project that declares no
+ * `lint` commands is skipped, never inferred from the stack.
+ */
+export class GitLintVerifier implements RuntimeVerifier {
+	readonly #options: GitRuntimeOptions;
+	readonly #runCommand: VerificationCommandRunner;
+
+	constructor(options: GitRuntimeOptions = {}) {
+		this.#options = options;
+		this.#runCommand = runtimeVerificationCommandRunner(options);
+	}
+
+	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {
+		const commands = projectLintCommands(this.#options, input.cwd);
+		if (commands.length === 0) {
+			input.emit('lint.skipped', { reason: 'no-project-lint' });
+			return { ok: true, skipped: true };
+		}
+
+		for (const [commandIndex, command] of commands.entries()) {
+			input.emit('lint.command.started', { commandIndex: commandIndex + 1 });
+			const startedAt = performance.now();
+			const { result, verifiedVersion, artifacts } = await runVersionedVerification(this.#runCommand, this.#options.runGit ?? defaultRunGit, { cwd: input.cwd, command, signal: input.signal });
+			const durationMs = Math.max(0, Math.round(performance.now() - startedAt));
+			input.emit('lint.command.completed', {
+				...commandCompletedPayload(commandIndex + 1, command, result.exitCode, verifiedVersion, input.attemptNumber, artifacts),
+				durationMs,
+			});
+			if (result.exitCode !== 0) {
+				return { ok: false, detail: `lint failed: ${outputTail(result)}` };
+			}
+		}
+		return { ok: true };
+	}
+}
+
 function validatePreflightApproval(issueId: string, issue: PreflightIssue): void {
 	if (issue.approval?.fingerprint === undefined) {
 		throw new RuntimePreflightError(
