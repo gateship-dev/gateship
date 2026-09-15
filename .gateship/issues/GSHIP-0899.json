@@ -1,0 +1,29 @@
+{
+  "id": "GSHIP-899",
+  "title": "Ship: reler a PR apos falha do merge direto antes de declarar ship-failed",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-15T01:11:27.488Z",
+  "updatedAt": "2026-09-15T01:11:27.488Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "Quando o auto-merge armado fecha a PR antes do gh pr merge direto, o GitHub devolve 'not mergeable' ou 'base branch was modified' e a run cai em ready-to-ship com run.ship-failed apesar de mergeada, ate um reenvio manual. Reler a PR apos o erro e assentar como merged quando o head bater.",
+    "acceptance": [
+      "Apos falha de gh pr merge, o shipper rele a view da PR antes de retornar: state MERGED com headRefOid igual ao head enviado assenta como merged (ship.merged e run.shipped) na mesma tentativa, sem reenvio; head diferente segue o caminho de head divergente existente.",
+      "Erro de merge com PR ainda OPEN e base movida (base branch was modified) refaz o update-branch e o poll na mesma tentativa, dentro do limite de branchUpdates ja existente, em vez de falhar a run.",
+      "Evento duravel ship.merge-race registra prNumber, head, o erro do gh e o desfecho (merged, retried, failed), preservando run.ship-failed apenas para falha real.",
+      "Regressao coberta com GitHub simulado: auto-merge fecha entre o poll e o merge direto (runs 807, 831, 842, 889); base movida entre update-branch e merge (run 884, 14/09). Ambas terminam done sem runs.ship manual.",
+      "Reconciliacao de runs antigas (GSHIP-883) continua assentando runs presas em ready-to-ship cuja PR ja esta MERGED."
+    ],
+    "boundaries": [
+      "Nao remover o auto-merge armado nem o merge direto; so fechar a corrida entre os dois.",
+      "Nao alterar credenciais, gates ou o caminho de conflito de merge da GSHIP-884."
+    ],
+    "verify": [
+      "bun test test/runtime/github-shipper.test.ts test/runtime/run-runtime.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
