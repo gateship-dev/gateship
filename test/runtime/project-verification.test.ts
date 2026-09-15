@@ -46,4 +46,33 @@ describe('project verification manifest', () => {
 			}))).toThrow('project verification manifest has invalid diagnostic command');
 		}
 	});
+
+	// GSHIP-872: the manifest is the only place a project opts into review
+	// evidence, so it stays project-owned and confined to the worktree.
+	test('accepts relative review evidence report paths and rejects paths that could escape the worktree', () => {
+		expect(readProjectVerificationManifest(JSON.stringify({
+			version: 1,
+			verify: ['bun test'],
+			reviewEvidencePaths: ['test-results/ui-results.json', 'test-results/ui'],
+		}))).toMatchObject({ reviewEvidencePaths: ['test-results/ui-results.json', 'test-results/ui'] });
+
+		for (const reviewEvidencePaths of [
+			null,
+			'test-results',
+			[],
+			[42],
+			[''],
+			['   '],
+			['/etc/passwd'],
+			['~/secrets'],
+			['C:\\secrets'],
+			['../outside-worktree'],
+			['test-results/../../outside'],
+			['test-results/ui-results.json', 'test-results/ui-results.json'],
+		]) {
+			expect(() => readProjectVerificationManifest(JSON.stringify({
+				version: 1, verify: ['bun test'], reviewEvidencePaths,
+			}))).toThrow('project verification manifest has invalid review evidence paths');
+		}
+	});
 });

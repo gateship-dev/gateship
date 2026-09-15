@@ -141,6 +141,70 @@ function cycleObservationResult(payload: Record<string, unknown>): string {
 	return result.trim();
 }
 
+type ParsedVerificationArtifact = { path: string; sizeBytes: number; sha256: string; commandIndex: number; command: string };
+
+/** The declared-evidence artifacts one `verify.command.completed`/`full-verify.command.completed` payload named, normalized and attributed to `commandIndex`/`command`; malformed entries are simply absent, never fatal to the rest. See `RuntimeVerificationProvenance` (GSHIP-872). */
+function parseVerificationArtifacts(rawArtifacts: unknown, commandIndex: number, command: string): ParsedVerificationArtifact[] {
+	if (!Array.isArray(rawArtifacts)) return [];
+	const parsed: ParsedVerificationArtifact[] = [];
+	for (const entry of rawArtifacts) {
+		if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
+		const record = entry as Record<string, unknown>;
+		if (typeof record['path'] === 'string' && typeof record['sizeBytes'] === 'number' && typeof record['sha256'] === 'string') {
+			parsed.push({ path: record['path'], sizeBytes: record['sizeBytes'], sha256: record['sha256'], commandIndex, command });
+		}
+	}
+	return parsed;
+}
+
+/** One command's completion payload, normalized into a trustworthy record, or `null` when it alone rules the whole pass out (a non-clean exit or a missing/malformed field). */
+function normalizedPassCommand(payload: Record<string, unknown>): {
+	commandIndex: number; command: string; attempt: number; verifiedVersion: string; artifacts: ParsedVerificationArtifact[];
+} | null {
+	if (payload['exitCode'] !== 0) return null;
+	const verifiedVersion = payload['verifiedVersion'];
+	const command = payload['command'];
+	const commandIndex = payload['commandIndex'];
+	const attempt = payload['attempt'];
+	if (typeof verifiedVersion !== 'string' || verifiedVersion === 'unknown') return null;
+	if (typeof command !== 'string' || typeof commandIndex !== 'number' || typeof attempt !== 'number') return null;
+	return { commandIndex, command, attempt, verifiedVersion, artifacts: parseVerificationArtifacts(payload['artifacts'], commandIndex, command) };
+}
+
+/**
+ * Folds every command completion of one verification pass into a single
+ * `RuntimeVerificationProvenance`, or `undefined` if any command failed, any
+ * of its own fields were missing or malformed, or the pass's fingerprint was
+ * not the same value across every command (GSHIP-872).
+ */
+function foldVerificationPass(passCompletions: readonly RunEvent[]): RuntimeVerificationProvenance | undefined {
+	const commands: { commandIndex: number; command: string; exitCode: number }[] = [];
+	const artifactsByPath = new Map<string, ParsedVerificationArtifact>();
+	let verifiedVersion: string | undefined;
+	let attempt: number | undefined;
+	for (const event of passCompletions) {
+		const normalized = normalizedPassCommand(event.payload);
+		if (normalized === null) return undefined;
+		if (verifiedVersion !== undefined && verifiedVersion !== normalized.verifiedVersion) return undefined;
+		verifiedVersion = normalized.verifiedVersion;
+		attempt = normalized.attempt;
+		commands.push({ commandIndex: normalized.commandIndex, command: normalized.command, exitCode: 0 });
+		for (const artifact of normalized.artifacts) artifactsByPath.set(artifact.path, artifact);
+	}
+	if (verifiedVersion === undefined || attempt === undefined) return undefined;
+	return { attempt, verifiedVersion, commands, artifacts: [...artifactsByPath.values()] };
+}
+
+/** The index of the nearest pass-start marker at or before `lastIndex`, or `0` (the start of the log) when none is found. See `RuntimeExecutionInput.verificationProvenance` (GSHIP-872). */
+function verificationPassStartIndex(events: readonly RunEvent[], lastIndex: number, kind: string): number {
+	for (let index = lastIndex; index >= 0; index -= 1) {
+		const event = events[index]!;
+		if (kind === 'verify.command.completed' && event.kind === 'verify.started') return index;
+		if (kind === 'full-verify.command.completed' && event.kind === 'full-verify.command.started' && event.payload['commandIndex'] === 1) return index;
+	}
+	return 0;
+}
+
 export interface RuntimeExecutionInput {
 	runId: string;
 	issueId: string;
@@ -199,6 +263,28 @@ export interface RuntimeExecutionInput {
 	/** The immutable approved issue record captured when this run was admitted. */
 	approvedContract?: string;
 	/**
+	 * This round's ordinal within the run (GSHIP-872), one-based off
+	 * `RunRecord.fixRounds` -- the same counter the run already keeps, not a
+	 * new identifier. `GitIssueVerifier`/`GitFullVerifier` attach it to every
+	 * `verify.command.completed`/`full-verify.command.completed` event they
+	 * emit, so evidence recorded at verification time can name which attempt
+	 * produced it.
+	 */
+	attemptNumber?: number;
+	/**
+	 * What this run's most recent successful verification pass actually
+	 * observed (GSHIP-872): which attempt, every command that pass ran with
+	 * its own exit code, the worktree fingerprint that stayed stable across
+	 * all of them, and exactly the declared evidence files that changed
+	 * content hash during one of those commands -- each naming which one. The
+	 * reviewer classifies evidence against `artifacts` by path and hash,
+	 * never by a file's timestamp or its mere presence, so a report no
+	 * recorded command produced -- including one the executor wrote by hand
+	 * -- cannot present itself as verified. `undefined` when no verification
+	 * pass has exited clean yet this run.
+	 */
+	verificationProvenance?: RuntimeVerificationProvenance;
+	/**
 	 * Durable-state-and-diff handoff (GSHIP-722), present only on the one turn
 	 * that opens the alternate provider's brand new native session after the
 	 * primary hit a subscription limit. Never a resume: the alternate has no
@@ -237,6 +323,16 @@ export interface RuntimeExecutionInput {
 	onExecutorHandoff?: (providerId: AgentProviderId) => Pick<RuntimeExecutionInput, 'recoveryDispatchId' | 'onExecutorSpawn' | 'onExecutorExit'>;
 	/** Reconnects to the already-live process named by a recovered reservation. */
 	reconnectRecoveryDispatch?: boolean;
+}
+
+/** See `RuntimeExecutionInput.verificationProvenance` (GSHIP-872). */
+export interface RuntimeVerificationProvenance {
+	attempt: number;
+	verifiedVersion: string;
+	/** Every command of the pass that produced `verifiedVersion`, in order, each already confirmed clean. */
+	commands: readonly { commandIndex: number; command: string; exitCode: number }[];
+	/** Named by whichever command last left its recorded hash on the file; two commands touching the same path keep only the later one. */
+	artifacts: readonly { path: string; sizeBytes: number; sha256: string; commandIndex: number; command: string }[];
 }
 
 /** See `RuntimeExecutionInput.executorHandoff` (GSHIP-722). */
@@ -2657,7 +2753,10 @@ export class RunRuntime {
 				pendingQuestion.origin, executionInput.ciFeedback, executionInput.approvedContract,
 			);
 		}
-		const review = await reviewer.review(executionInput);
+		const verificationProvenance = this.#lastVerificationProvenance(run.id);
+		const review = await reviewer.review(
+			verificationProvenance === undefined ? executionInput : { ...executionInput, verificationProvenance },
+		);
 		if (signal.aborted) {
 			this.#interrupt(run.id);
 			return null;
@@ -2671,9 +2770,14 @@ export class RunRuntime {
 		this.#transition(run.id, 'working', 'run.review-fix-requested', {
 			payload: { findings: review.detail },
 		});
+		// GSHIP-872: the same evidence summary the reviewer received also
+		// reaches the executor here, on the one round that resumes it -- never a
+		// second channel or a stored copy of its own, only this round's findings
+		// carrying one more paragraph.
+		const reviewEvidence = this.#lastReviewEvidenceSummary(run.id);
 		return {
 			resume: true,
-			reviewFeedback: review.detail,
+			reviewFeedback: reviewEvidence === undefined ? review.detail : `${review.detail}\n\n${reviewEvidence}`,
 			...(executionInput.ciFeedback === undefined ? {} : { ciFeedback: executionInput.ciFeedback }),
 		};
 	}
@@ -3152,6 +3256,7 @@ export class RunRuntime {
 			sessionId: run.sessionId,
 			providerId: run.providerId,
 			resume: attempt.resume,
+			attemptNumber: run.fixRounds + 1,
 			...(attempt.recoveryDispatchId === undefined ? {} : { recoveryDispatchId: attempt.recoveryDispatchId }),
 			...(attempt.reconnectRecoveryDispatchId === undefined ? {} : { reconnectRecoveryDispatch: true }),
 			cwd: run.workspacePath.length === 0 ? this.#cwd : run.workspacePath,
@@ -3209,6 +3314,48 @@ export class RunRuntime {
 			};
 		}
 		return null;
+	}
+
+	/**
+	 * What this run's most recent verification *pass* actually observed
+	 * (GSHIP-872) -- every command of that pass, not only its last one, since
+	 * `GitIssueVerifier`/`GitFullVerifier` run several commands per pass and
+	 * an artifact any of them produced still belongs to this attempt. The
+	 * pass is scoped backward from the last `verify.command.completed` or
+	 * `full-verify.command.completed` event to the nearest pass-start marker
+	 * before it (`verify.started`, once per verify pass; the `commandIndex: 1`
+	 * `full-verify.command.started`, once per full-verify pass), or to the
+	 * start of the log if none is found. `undefined` when no completion
+	 * exists yet, or when any command in that pass did not exit clean, left
+	 * an unstable (`unknown`) or inconsistent fingerprint across the pass, or
+	 * omitted its own command text or attempt number -- a failed or
+	 * inconsistent pass confirms nothing about the current code, so it must
+	 * not hand out a fingerprint or an artifact list evidence can present as
+	 * "verified". Read from the durable decision log, not recomputed, so it
+	 * reflects exactly what verification observed rather than the state at
+	 * whatever later moment review evidence happens to be collected.
+	 */
+	#lastVerificationProvenance(runId: string): RuntimeVerificationProvenance | undefined {
+		const events = this.#store.listRunDecisionEvents(runId);
+		const lastIndex = events.findLastIndex((event) => event.kind === 'verify.command.completed' || event.kind === 'full-verify.command.completed');
+		if (lastIndex === -1) return undefined;
+		const kind = events[lastIndex]!.kind;
+		const startIndex = verificationPassStartIndex(events, lastIndex, kind);
+		const passCompletions = events.slice(startIndex, lastIndex + 1).filter((event) => event.kind === kind);
+		return passCompletions.length === 0 ? undefined : foldVerificationPass(passCompletions);
+	}
+
+	/**
+	 * The most recent evidence summary a reviewer delivered this run
+	 * (GSHIP-872), read back from the same durable event `reviewEvidenceForPrompt`
+	 * just emitted. `undefined` when the review carried no evidence -- most
+	 * runs, and every reviewer stub in this suite, since evidence is only ever
+	 * collected from a project that opted in.
+	 */
+	#lastReviewEvidenceSummary(runId: string): string | undefined {
+		const last = this.#store.listRunDecisionEvents(runId).findLast((event) => event.kind === 'review.evidence');
+		const summary = last?.payload['summary'];
+		return typeof summary === 'string' && summary.trim().length > 0 ? summary : undefined;
 	}
 
 	#approvedContract(runId: string): string | undefined {

@@ -1,5 +1,6 @@
 {
   "version": 1,
   "prepare": ["bun install --frozen-lockfile"],
-  "verify": ["bun run verify"]
+  "verify": ["bun run verify"],
+  "reviewEvidencePaths": ["test-results/ui-results.json", "test-results/ui"]
 }

@@ -8,6 +8,7 @@ import { issueFilePath } from '../issues/backlog.ts';
 import { type EvidenceItem, fingerprintSpec, type Spec } from '../issues/spec.ts';
 import { terminateProcessGroup } from './process-group.ts';
 import { readProjectVerificationManifest } from './project-verification.ts';
+import { readReviewEvidencePaths, type ReviewEvidenceFile, snapshotReviewEvidenceFiles } from './review-evidence.ts';
 import { fetchRuntimeSource, RUNTIME_SOURCE_REF } from './source-ref.ts';
 import { buildAllowlistedEnv } from './child-env.ts';
 import { verificationVersion } from './verification-version.ts';
@@ -490,11 +491,39 @@ export class GitEvidenceChecker implements RuntimeEvidenceCheck {
 	}
 }
 
+/**
+ * `artifacts` (GSHIP-872) is the subset of the project's declared evidence
+ * paths that changed content hash during exactly this command -- a file that
+ * already existed before the command and comes out unchanged is never
+ * attributed to it, so a report the executor wrote before this command ran
+ * (or forged outside any recorded command entirely) cannot ride along as if
+ * this command had produced it.
+ */
 async function runVersionedVerification(runCommand: VerificationCommandRunner, runGit: GitCommandRunner, input: VerificationCommandInput) {
 	const before = verificationVersion(input.cwd, runGit);
+	const evidencePaths = readReviewEvidencePaths(input.cwd);
+	const beforeArtifacts = new Map(snapshotReviewEvidenceFiles(input.cwd, evidencePaths).map((file) => [file.path, file.sha256]));
 	const result = await runCommand(input);
 	const after = verificationVersion(input.cwd, runGit);
-	return { result, verifiedVersion: before !== null && before === after ? before : 'unknown' };
+	const artifacts: ReviewEvidenceFile[] = snapshotReviewEvidenceFiles(input.cwd, evidencePaths)
+		.filter((file) => beforeArtifacts.get(file.path) !== file.sha256);
+	return { result, verifiedVersion: before !== null && before === after ? before : 'unknown', artifacts };
+}
+
+/** The `verify.command.completed`/`full-verify.command.completed` payload shape, shared so neither call site's complexity carries the field-by-field assembly. */
+function commandCompletedPayload(
+	commandIndex: number,
+	command: string,
+	exitCode: number,
+	verifiedVersion: string,
+	attemptNumber: number | undefined,
+	artifacts: readonly ReviewEvidenceFile[],
+): Record<string, unknown> {
+	return {
+		commandIndex, command, exitCode, verifiedVersion,
+		...(attemptNumber === undefined ? {} : { attempt: attemptNumber }),
+		...(artifacts.length === 0 ? {} : { artifacts }),
+	};
 }
 
 export class GitIssueVerifier implements RuntimeVerifier {
@@ -510,33 +539,52 @@ export class GitIssueVerifier implements RuntimeVerifier {
 		this.#runCommand = runtimeVerificationCommandRunner(options);
 	}
 
+	#resolveCommands(input: Parameters<RuntimeVerifier['verify']>[0]): { ok: true; commands: string[]; issueContent: string } | { ok: false; detail: string } {
+		try {
+			const issueContent = this.#loadIssue(input.cwd, input.issueId);
+			return { ok: true, commands: verificationCommands(issueContent), issueContent };
+		} catch (error) {
+			return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+		}
+	}
+
+	#overlapsFullVerification(input: Parameters<RuntimeVerifier['verify']>[0], issueContent: string, command: string): VerificationOverlap | null {
+		try {
+			return findVerificationOverlap(this.#options, input.cwd, issueContent, command);
+		} catch {
+			return null; // unknown equivalence
+		}
+	}
+
+	/** One command already known to run: emits its lifecycle events and reports whether it exited clean. */
+	async #runOneCommand(input: Parameters<RuntimeVerifier['verify']>[0], commandIndex: number, command: string): Promise<RuntimeVerificationResult> {
+		input.emit('verify.command.started', { commandIndex: commandIndex + 1 });
+		const { result, verifiedVersion, artifacts } = await runVersionedVerification(this.#runCommand, this.#runGit, { cwd: input.cwd, command, signal: input.signal });
+		input.emit('verify.command.completed', commandCompletedPayload(commandIndex + 1, command, result.exitCode, verifiedVersion, input.attemptNumber, artifacts));
+		return result.exitCode === 0
+			? { ok: true }
+			: { ok: false, detail: `verification command ${commandIndex + 1} exited ${result.exitCode}: ${outputTail(result)}` };
+	}
+
 	async verify(input: Parameters<RuntimeVerifier['verify']>[0]) {
 		const workingTree = verifyWorkingTree(this.#runGit, input.cwd);
 		if (!workingTree.ok) return workingTree;
 
-		let commands: string[];
-		let issueContent: string;
-		try {
-			issueContent = this.#loadIssue(input.cwd, input.issueId);
-			commands = verificationCommands(issueContent);
-		} catch (error) {
-			return { ok: false, detail: error instanceof Error ? error.message : String(error) };
-		}
+		const resolved = this.#resolveCommands(input);
+		if (!resolved.ok) return resolved;
+		const { commands, issueContent } = resolved;
+
 		let executed = 0;
 		for (const [commandIndex, command] of commands.entries()) {
-			let overlap: VerificationOverlap | null = null;
-			try { overlap = findVerificationOverlap(this.#options, input.cwd, issueContent, command); } catch { /* unknown equivalence */ }
+			const overlap = this.#overlapsFullVerification(input, issueContent, command);
 			if (overlap !== null) {
 				input.emit('verify.skipped-equivalent', { focusedCommand: overlap.command, fullCommand: overlap.fullCommand });
 				continue;
 			}
 			executed += 1;
 			if (executed === 1) input.emit('verify.started');
-			input.emit('verify.command.started', { commandIndex: commandIndex + 1 });
-			const { result, verifiedVersion } = await runVersionedVerification(this.#runCommand, this.#runGit, { cwd: input.cwd, command, signal: input.signal });
-			input.emit('verify.command.completed', { commandIndex: commandIndex + 1, exitCode: result.exitCode,
-				verifiedVersion });
-			if (result.exitCode !== 0) return { ok: false, detail: `verification command ${commandIndex + 1} exited ${result.exitCode}: ${outputTail(result)}` };
+			const outcome = await this.#runOneCommand(input, commandIndex, command);
+			if (!outcome.ok) return outcome;
 		}
 		if (executed === 0) {
 			input.emit('verify.skipped');
@@ -669,12 +717,15 @@ export class GitFullVerifier implements RuntimeVerifier {
 				commandIndex: commandIndex + 1,
 				origin: this.#origin,
 			});
-			const { result, verifiedVersion } = await runVersionedVerification(this.#runCommand, this.#options.runGit ?? defaultRunGit, { cwd: input.cwd, command, signal: input.signal });
+			const { result, verifiedVersion, artifacts } = await runVersionedVerification(this.#runCommand, this.#options.runGit ?? defaultRunGit, { cwd: input.cwd, command, signal: input.signal });
 			input.emit('full-verify.command.completed', {
 				commandIndex: commandIndex + 1,
+				command,
 				exitCode: result.exitCode,
 				origin: this.#origin,
 				verifiedVersion,
+				...(input.attemptNumber === undefined ? {} : { attempt: input.attemptNumber }),
+				...(artifacts.length === 0 ? {} : { artifacts }),
 			});
 			if (result.exitCode !== 0) {
 				return { ok: false, detail: `full verification failed: ${outputTail(result)}` };
