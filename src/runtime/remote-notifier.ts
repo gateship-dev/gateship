@@ -60,15 +60,59 @@ function payloadText(event: RunEvent): string | null {
 	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+function payloadIssueId(event: RunEvent): string | undefined {
+	const value = event.payload['issueId'];
+	return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+/**
+ * Who and what an alert is about (GSHIP-864): a safe display name, never a
+ * filesystem path or a worktree, and the run's own issue id. Both are
+ * optional -- a caller with neither still gets a usable, if generic, alert.
+ */
+export interface RemoteNotificationContext {
+	projectLabel?: string;
+	issueId?: string;
+}
+
+/** `Gateship: <project> / <issue>`, omitting only the part that is absent, and falling back to the pre-GSHIP-864 title when both are. */
+function notificationTitle(context: RemoteNotificationContext): string {
+	const parts = [context.projectLabel, context.issueId]
+		.filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
+	return parts.length > 0 ? `Gateship: ${parts.join(' / ')}` : 'Gateship needs you';
+}
+
+const DEFAULT_REASON = 'The run is waiting for an operator decision.';
+
+/**
+ * The one action every waiting-user stop this notifier fires for actually
+ * admits, except `run.recovery-limit`: its own reason already states the real
+ * next step (cancelRun then abandonRun), so repeating a resume instruction
+ * here would be just as misleading as promising an extension that does not
+ * exist.
+ */
+const RESPOND_ACTION_LINE = 'Respond with guidance through the CLI/web flow.';
+
+function notificationBody(event: RunEvent): string {
+	const reason = payloadText(event) ?? DEFAULT_REASON;
+	if (event.kind === 'run.recovery-limit') return reason;
+	return `${reason}\n\n${RESPOND_ACTION_LINE}`;
+}
+
 /**
  * Browser, ntfy and Resend share one eligibility rule: notify only when the
- * runtime has actually entered waiting-user after internal resolution.
+ * runtime has actually entered waiting-user after internal resolution. The
+ * title carries the project and issue this alert is about (GSHIP-864) --
+ * with several projects sharing one global ntfy topic or Resend recipient,
+ * neither the reason nor the CLI/web action line alone says which run needs
+ * attention. `context` is optional so a caller with no project/issue
+ * resolver still gets a safe, generic alert instead of none at all.
  */
-export function remoteNotificationForRunEvent(event: RunEvent): RemoteNotification | null {
+export function remoteNotificationForRunEvent(event: RunEvent, context: RemoteNotificationContext = {}): RemoteNotification | null {
 	if (!needsOperatorNotification(event)) return null;
 	return {
-		title: 'Gateship needs you',
-		body: payloadText(event) ?? 'The run is waiting for an operator decision.',
+		title: notificationTitle(context),
+		body: notificationBody(event),
 	};
 }
 
@@ -160,6 +204,21 @@ export interface RemoteNotifierOptions {
 	stateDir?: string;
 	/** Legacy boot-project state, consulted only when the global file is absent. */
 	legacyStateDir?: string;
+	/**
+	 * A safe display name for this notifier's own project (GSHIP-864) -- the
+	 * registered project name, never `cwd` or any other filesystem path. Read
+	 * once at construction: the composition that builds one `RunRuntime` per
+	 * project already knows its own project for the lifetime of the process.
+	 */
+	projectLabel?: string;
+	/**
+	 * Resolves the event's own run to its issue id for the alert title
+	 * (GSHIP-864), read fresh on every qualifying event rather than cached --
+	 * the same live-read posture every other per-event lookup in this module
+	 * takes. Absent, or returning nothing for this run, falls back to
+	 * `event.payload.issueId` when the event happens to carry one.
+	 */
+	issueIdForRun?: (runId: string) => string | undefined;
 }
 
 /** One ntfy delivery; swallowed after being counted against the request itself (a settled, failed fetch) rather than left an unhandled rejection -- the channel is optional, so its own failure carries no further consequence. */
@@ -209,9 +268,12 @@ export function createRemoteNotifier(options: RemoteNotifierOptions = {}): (even
 	const stateDir = options.stateDir;
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	const projectLabel = options.projectLabel;
+	const issueIdForRun = options.issueIdForRun;
 
 	return (event: RunEvent) => {
-		const notification = remoteNotificationForRunEvent(event);
+		const issueId = issueIdForRun?.(event.runId) ?? payloadIssueId(event);
+		const notification = remoteNotificationForRunEvent(event, { projectLabel, issueId });
 		if (notification === null) return;
 
 		const topicUrl = resolveNtfyTopicUrl(cwd, env, stateDir, options.legacyStateDir);

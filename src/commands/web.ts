@@ -148,6 +148,7 @@ import { parseRunOverviewFilters, readRunOverview } from '../runtime/run-overvie
 import { ProposalTransitionError } from '../runtime/run-proposal.ts';
 import {
 	type ChainPauseView,
+	DEFAULT_RECOVERY_POLICY,
 	RunRuntime,
 	type RunRuntimeOptions,
 	RuntimeConflictError,
@@ -2628,6 +2629,13 @@ export function createDefaultRunRuntimeOptions(
 	 */
 	resolveClaudeCredential: () => string | undefined = () => undefined,
 	agentDefaults: () => AgentDefaults = () => ({}),
+	/**
+	 * GSHIP-864's activated policy for every run this option set creates.
+	 * Existing runs keep whatever policy (or absence of one) they were
+	 * created with -- `RunStore` snapshots it once, at creation, and this
+	 * default only ever reaches runs started from here on.
+	 */
+	recoveryPolicy = DEFAULT_RECOVERY_POLICY,
 ): RunRuntimeOptions {
 	const store = new RunStore(join(stateDir, 'runtime.sqlite'));
 	const model = (providerId: AgentProviderId, role: ModelRole) =>
@@ -2639,6 +2647,7 @@ export function createDefaultRunRuntimeOptions(
 	const issueVerifier = new GitIssueVerifier();
 	return {
 		cwd,
+		recoveryPolicy,
 		store,
 		workflowRevision,
 		executor: new AgentExecutorRouter({
@@ -2964,6 +2973,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		cwd: projectRoot,
 		stateDir: globalNotificationStateDir,
 		legacyStateDir: stateDir,
+		projectLabel: currentProject.name,
+		issueIdForRun: (runId) => runRuntime.getRun(runId)?.issueId,
 	}));
 	const { issueIntake, issueSpecifier, issueApprover, issueAbandoner } =
 		resolveIssueWriters(bootOptions, ensureGitIdentityOnce);
@@ -3024,6 +3035,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 			cwd: project.root,
 			stateDir: globalNotificationStateDir,
 			legacyStateDir: stateDir,
+			projectLabel: project.name,
+			issueIdForRun: (runId) => runtime.getRun(runId)?.issueId,
 		}));
 		const context = {
 			root: project.root,

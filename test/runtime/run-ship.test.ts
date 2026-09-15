@@ -451,6 +451,70 @@ describe('shipping a run', () => {
 		runtime.close();
 	});
 
+	test('GSHIP-864: an explicit recovery policy retries a repeated CI failure instead of stopping at the first repeat', async () => {
+		let ships = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-repeat-budget',
+			newSessionId: () => 'session-ci-repeat-budget',
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 3 },
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => true,
+			shipper: { ship: async () => (++ships < 3
+				? {
+					outcome: 'ci-failed' as const,
+					evidence: {
+						prNumber: 385, headSha: `sha-${ships}`,
+						check: { name: 'ci/build', url: `https://github.com/acme/repo/actions/runs/${ships}` },
+					},
+				}
+				: { outcome: 'merged' as const, prNumber: 385 }),
+			},
+		});
+
+		const run = await runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'done');
+		// Two repeated CI failures on the corrected head each buy another
+		// correction under the policy -- no `run.ci-fix-limit` ends the run at
+		// the first repeat -- until the third ship attempt lands clean.
+		expect(eventKinds(runtime).filter((kind) => kind === 'run.ci-fix-requested')).toHaveLength(2);
+		expect(eventKinds(runtime)).not.toContain('run.ci-fix-limit');
+		expect(ships).toBe(3);
+		await runtime.stop();
+		runtime.close();
+	});
+
+	test('GSHIP-864: an explicit recovery policy retries a CI correction with no change until the budget is exhausted', async () => {
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-ci-no-change-budget',
+			newSessionId: () => 'session-ci-no-change-budget',
+			recoveryPolicy: { version: 1, maxRecoveryDispatches: 2 },
+			executor: { execute: async () => ({ outcome: 'completed' }) },
+			verifier: { verify: async () => ({ ok: true }) },
+			hasWorkspaceChanges: () => false,
+			shipper: { ship: async () => ({
+				outcome: 'ci-failed' as const,
+				evidence: { prNumber: 385, headSha: 'aaaa', check: { name: 'ci/build' } },
+			}) },
+		});
+
+		const run = await runtime.startRun('CAM-583');
+		await waitForCondition(() => runtime.getRun(run.id)?.state === 'waiting-user');
+		// A no-op correction never stops on the first round under the policy --
+		// no `run.ci-fix-no-change` fires -- only the eventual recovery-limit
+		// once every dispatch the budget allows was spent without a diff.
+		expect(eventKinds(runtime)).not.toContain('run.ci-fix-no-change');
+		expect(eventKinds(runtime).at(-1)).toBe('run.recovery-limit');
+		const limit = runtime.listEvents().findLast((event) => event.kind === 'run.recovery-limit');
+		expect(limit?.payload).toMatchObject({ reason: 'recovery-budget-exhausted', maxRecoveryDispatches: 2 });
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('a provider hold during CI correction uses waiting-provider and resumes with the durable CI evidence', async () => {
 		let executions = 0;
 		let ships = 0;

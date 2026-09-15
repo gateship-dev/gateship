@@ -1,7 +1,7 @@
 {
   "id": "GSHIP-864",
   "title": "Notificações: resolver bloqueios técnicos antes de convocar o operador",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-863",
@@ -13,7 +13,7 @@
     "GSHIP-896"
   ],
   "createdAt": "2026-09-11T02:41:26.459Z",
-  "updatedAt": "2026-09-15T12:21:13.624Z",
+  "updatedAt": "2026-09-15T22:37:06.140Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

@@ -322,8 +322,9 @@ operator task
   -> selected Claude/Codex implementation session
   -> acceptance-command verification
   -> independent read-only review through the same provider
-       -> one automatic fix attempt when findings exist
-       -> operator guidance if findings remain
+       -> automatic correction across execution, verification, review, full
+          verification and CI, bounded by an explicit per-run recovery budget
+       -> operator guidance once the budget is spent or a decision is needed
   -> commit + push + pull request
   -> squash auto-merge after CI
   -> refresh origin/main
