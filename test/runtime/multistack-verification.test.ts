@@ -60,7 +60,7 @@ describe('GitFullVerifier multistack integration', () => {
 			expect(result).toEqual({ ok: true });
 			expect(events).toEqual([
 				{ kind: 'full-verify.command.started', payload: { commandIndex: 1, origin: 'manifest' } },
-				{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, exitCode: 0, origin: 'manifest', verifiedVersion: expect.stringMatching(/^worktree-sha256:[a-f0-9]{64}$/) } },
+				{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, command: 'bun test verify.test.js', exitCode: 0, origin: 'manifest', verifiedVersion: expect.stringMatching(/^worktree-sha256:[a-f0-9]{64}$/) } },
 			]);
 		} finally {
 			git(root, ['worktree', 'remove', '--force', worktree]);
@@ -86,7 +86,7 @@ describe('GitFullVerifier multistack integration', () => {
 			expect(events).toEqual([
 				{ kind: 'full-verify.command.started', payload: { commandIndex: 1, origin: 'manifest' } },
 				// Python creates non-ignored __pycache__ files during this command.
-				{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, exitCode: 0, origin: 'manifest', verifiedVersion: 'unknown' } },
+				{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, command: 'python3 -m unittest verify.py', exitCode: 0, origin: 'manifest', verifiedVersion: 'unknown' } },
 			]);
 		} finally {
 			git(root, ['worktree', 'remove', '--force', worktree]);

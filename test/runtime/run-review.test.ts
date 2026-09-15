@@ -267,6 +267,132 @@ describe('independent review stage', () => {
 		runtime.close();
 	});
 
+	// GSHIP-872: the evidence summary a review collects has to reach the
+	// executor too, not only the reviewer that gathered it -- exercised here on
+	// the one round that already carries the review's own findings back.
+	test('evidence a review delivers rides along with its findings into the fix round the executor receives', async () => {
+		const executions: ExecutionCall[] = [];
+		let reviews = 0;
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-evidence',
+			executor: {
+				execute: async (input: RuntimeExecutionInput) => {
+					executions.push({ resume: input.resume, reviewFeedback: input.reviewFeedback });
+					return { outcome: 'completed', summary: 'change written' };
+				},
+			},
+			verifier: { verify: async () => ({ ok: true }) },
+			reviewer: {
+				review: async (input: RuntimeExecutionInput) => {
+					reviews += 1;
+					if (reviews === 1) {
+						input.emit('review.evidence', { summary: 'Verification evidence for run run-evidence: fresh.' });
+						return { verdict: 'findings', detail: '1. src/a.ts: off-by-one in the cursor' };
+					}
+					return { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = await runtime.startRun('CAM-577');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(executions[1]?.reviewFeedback).toBe(
+			'1. src/a.ts: off-by-one in the cursor\n\nVerification evidence for run run-evidence: fresh.',
+		);
+		expect(runtime.listEvents().map((event) => event.kind)).toContain('review.evidence');
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-872: a verify command that did not exit clean must never hand the
+	// reviewer a fingerprint or an artifact list evidence could present as
+	// "this worktree was verified" -- checked here at the boundary the
+	// provenance actually crosses (what the reviewer receives), not by
+	// reaching into a private method.
+	test('a verify command that exited non-zero never hands the reviewer its provenance', async () => {
+		const captured: { provenance?: RuntimeExecutionInput['verificationProvenance']; called: boolean } = { called: false };
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-dirty-exit',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'change written' }) },
+			verifier: {
+				verify: async (input: RuntimeExecutionInput) => {
+					input.emit('verify.command.completed', { commandIndex: 1, command: 'bun run verify', exitCode: 0, verifiedVersion: 'worktree-sha256:v1', attempt: input.attemptNumber });
+					input.emit('verify.command.completed', { commandIndex: 2, command: 'bun run verify', exitCode: 1, verifiedVersion: 'worktree-sha256:v1', attempt: input.attemptNumber });
+					return { ok: true };
+				},
+			},
+			reviewer: {
+				review: async (input: RuntimeExecutionInput) => {
+					captured.provenance = input.verificationProvenance;
+					captured.called = true;
+					return { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = await runtime.startRun('CAM-577');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(captured.called).toBe(true);
+		expect(captured.provenance).toBeUndefined();
+		await runtime.stop();
+		runtime.close();
+	});
+
+	// GSHIP-872: `GitIssueVerifier` runs every command of the spec's verify
+	// array in one pass, so the reviewer needs all of them, each with its own
+	// exit code, and every artifact attributed to the specific command that
+	// produced it -- not only the pass's last command.
+	test('a clean verification pass hands the reviewer every command it ran and the command that produced each artifact', async () => {
+		const captured: { provenance?: RuntimeExecutionInput['verificationProvenance'] } = {};
+		const runtime = new RunRuntime({
+			cwd: '/project',
+			store: new RunStore(':memory:'),
+			newId: () => 'run-clean-exit',
+			executor: { execute: async () => ({ outcome: 'completed', summary: 'change written' }) },
+			verifier: {
+				verify: async (input: RuntimeExecutionInput) => {
+					input.emit('verify.started');
+					input.emit('verify.command.completed', {
+						commandIndex: 1, command: 'bun run verify', exitCode: 0, verifiedVersion: 'worktree-sha256:v1',
+						attempt: input.attemptNumber, artifacts: [{ path: 'test-results/ui-results.json', sizeBytes: 42, sha256: 'abc' }],
+					});
+					input.emit('verify.command.completed', {
+						commandIndex: 2, command: 'bun run test:ui:smoke:fixed', exitCode: 0, verifiedVersion: 'worktree-sha256:v1',
+						attempt: input.attemptNumber,
+					});
+					return { ok: true };
+				},
+			},
+			reviewer: {
+				review: async (input: RuntimeExecutionInput) => {
+					captured.provenance = input.verificationProvenance;
+					return { verdict: 'clean' };
+				},
+			},
+		});
+
+		const run = await runtime.startRun('CAM-577');
+		await waitFor(() => runtime.getRun(run.id)?.state === 'ready-to-ship');
+
+		expect(captured.provenance).toEqual({
+			attempt: 1,
+			verifiedVersion: 'worktree-sha256:v1',
+			commands: [
+				{ commandIndex: 1, command: 'bun run verify', exitCode: 0 },
+				{ commandIndex: 2, command: 'bun run test:ui:smoke:fixed', exitCode: 0 },
+			],
+			artifacts: [{ path: 'test-results/ui-results.json', sizeBytes: 42, sha256: 'abc', commandIndex: 1, command: 'bun run verify' }],
+		});
+		await runtime.stop();
+		runtime.close();
+	});
+
 	test('a run without a configured reviewer still verifies straight to ready-to-ship', async () => {
 		const runtime = new RunRuntime({
 			cwd: '/project',

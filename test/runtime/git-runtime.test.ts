@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { fingerprintSpec } from '../../src/issues/spec.ts';
@@ -183,6 +183,47 @@ describe('git runtime boundary', () => {
 			'verify.command.completed',
 			'verify.command.started',
 			'verify.command.completed',
+		]);
+	});
+
+	// GSHIP-872: `verify.command.completed` names only the declared evidence
+	// files that actually changed content hash during that one command -- a
+	// file already present and unchanged is never attributed to the command
+	// that happened to run next, which is what lets a reviewer tell a report a
+	// command produced from one a prior attempt (or the executor) left behind.
+	test('names only the review evidence file each verify command actually changed', async () => {
+		const dir = createTestTmpdir('gship-verify-provenance-');
+		mkdirSync(join(dir, '.gateship'), { recursive: true });
+		writeFileSync(join(dir, '.gateship', 'project.json'), JSON.stringify({
+			version: 1, verify: ['echo one', 'echo two'], reviewEvidencePaths: ['report.json'],
+		}));
+		// Present before either command runs: must never be attributed to one.
+		writeFileSync(join(dir, 'report.json'), 'stale from a prior attempt');
+
+		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+		const verifier = new GitIssueVerifier({
+			runGit: gitRunner({ status: ' M src/a.ts' }),
+			loadIssue: () => issueWithVerification(['echo one', 'echo two']),
+			runCommand: async ({ command }) => {
+				if (command === 'echo two') writeFileSync(join(dir, 'report.json'), 'produced by echo two');
+				return { exitCode: 0, stdout: '', stderr: '' };
+			},
+		});
+
+		const result = await verifier.verify({
+			...verificationInput,
+			cwd: dir,
+			emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+		});
+
+		expect(result).toEqual({ ok: true });
+		const completions = events.filter((event) => event.kind === 'verify.command.completed');
+		expect(completions).toHaveLength(2);
+		expect(completions[0]?.payload?.['command']).toBe('echo one');
+		expect(completions[0]?.payload?.['artifacts']).toBeUndefined();
+		expect(completions[1]?.payload?.['command']).toBe('echo two');
+		expect(completions[1]?.payload?.['artifacts']).toEqual([
+			{ path: 'report.json', sizeBytes: 'produced by echo two'.length, sha256: expect.any(String) },
 		]);
 	});
 
@@ -582,7 +623,7 @@ describe('GitFullVerifier', () => {
 		expect(commands).toEqual([{ cwd: dir, command: 'bun run verify', timeoutMs: undefined }]);
 		expect(events).toEqual([
 			{ kind: 'full-verify.command.started', payload: { commandIndex: 1, origin: 'package.json' } },
-			{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, exitCode: 0, origin: 'package.json', verifiedVersion: 'unknown' } },
+			{ kind: 'full-verify.command.completed', payload: { commandIndex: 1, command: 'bun run verify', exitCode: 0, origin: 'package.json', verifiedVersion: 'unknown' } },
 		]);
 	});
 

@@ -6,6 +6,7 @@ import {
 	collectChange,
 	parseReviewVerdict,
 	REVIEW_RESULT_SCHEMA,
+	reviewEvidenceForPrompt,
 } from './claude-cli-reviewer.ts';
 import {
 	CodexReviewSession,
@@ -68,7 +69,9 @@ export class CodexCliReviewer implements RuntimeReviewer {
 	async review(input: RuntimeExecutionInput): Promise<RuntimeReviewResult> {
 		const issue = (input.approvedContract ?? this.#options.approvedContract)?.trim();
 		if (issue === undefined || issue.length === 0) throw new Error('approved issue contract is unavailable for this run');
-		const change = collectChange(this.#options.runGit ?? defaultRunGit, input.cwd);
+		const runGit = this.#options.runGit ?? defaultRunGit;
+		const change = collectChange(runGit, input.cwd);
+		const evidence = reviewEvidenceForPrompt(input, runGit);
 		const result = await this.#session.run({
 			sessionId: randomUUID(),
 			resume: false,
@@ -76,6 +79,7 @@ export class CodexCliReviewer implements RuntimeReviewer {
 			prompt: buildReviewPrompt(
 				input.issueId, issue, change, input.operatorDecisions ?? [], input.ciFeedback,
 				input.operatorGuidance, input.operatorGuidanceSource, input.operatorGuidanceAuthorizationEvidence,
+				evidence,
 			),
 			outputSchema: REVIEW_RESULT_SCHEMA,
 			signal: input.signal,
