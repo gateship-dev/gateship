@@ -58,6 +58,8 @@ if (mode === 'wait') {
 			findings: verdict === 'CLEAN'
 				? []
 				: [{ file: 'src/reviewed.ts', summary: 'fixture finding' }],
+			// GSHIP-894: same coverage-injection seam as the Claude fixture.
+			coverage: JSON.parse(fixtureArgument('coverage') ?? '[]'),
 		}
 		: mode === 'invalid-reconciliation'
 			? {

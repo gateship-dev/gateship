@@ -77,6 +77,9 @@ if (mode === 'wait') {
 					file: 'src/reviewed.ts',
 					summary: JSON.stringify({ argv: process.argv.slice(2), prompt: input, env: reviewEnv }),
 				}],
+			// GSHIP-894: lets a test drive the reviewer's coverage map without a
+			// fixture mode of its own, exactly like findings above.
+			coverage: JSON.parse(fixtureArgument('coverage') ?? '[]'),
 		};
 		process.stdout.write(`${JSON.stringify({
 			type: 'result',
