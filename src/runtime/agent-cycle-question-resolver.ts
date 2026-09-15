@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { AgentProviderId, AgentSession } from './agent-session.ts';
+import { ProviderCallError, type AgentProviderId, type AgentSession, type ProviderErrorKind } from './agent-session.ts';
 import { OPERATOR_LANGUAGE_CONTRACT } from './operator-language.ts';
 import type {
 	RuntimeCycleQuestionInput,
@@ -144,6 +144,31 @@ export function buildCycleQuestionPrompt(input: RuntimeCycleQuestionInput): stri
 	].join('\n');
 }
 
+/**
+ * The durable record of one cycle-question fallback (GSHIP-892): where it
+ * came from, where it went, why it was tried and what the attempt produced.
+ * One event per attempt, written once the attempt has settled, so the log
+ * never claims a fallback that has no outcome.
+ */
+export const CYCLE_QUESTION_FALLBACK_EVENT = 'run.cycle-question-fallback';
+
+/**
+ * Only a subscription limit reached before any verdict buys the alternative
+ * provider, exactly as it does for the review fallback (GSHIP-709/721) this
+ * mirrors. Every other failure keeps the question on its own provider.
+ */
+const CYCLE_QUESTION_FALLBACK_REASONS: readonly ProviderErrorKind[] = ['usage-limit', 'rate-limited'];
+
+/** The single alternative each origin may try, in either direction. */
+const CYCLE_QUESTION_FALLBACK: Readonly<Record<AgentProviderId, AgentProviderId>> = {
+	claude: 'codex',
+	codex: 'claude',
+};
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 function parseResult(value: unknown, usage: RuntimeCycleResponseUsage, observations: readonly CycleObservationReference[]): RuntimeCycleQuestionResult {
 	const record = recordOf(value);
 	if (record?.['outcome'] === 'continue') {
@@ -155,7 +180,15 @@ function parseResult(value: unknown, usage: RuntimeCycleResponseUsage, observati
 	return { outcome: 'operator', reason: '', usage, diagnostic: normalizeCycleDiagnostic(null, observations) };
 }
 
-/** Routes each run to its own provider, always as a fresh read-only call. */
+/**
+ * Routes each run to its own provider, always as a fresh read-only call, and
+ * -- only when that provider's own subscription limit is reached -- answers
+ * with exactly one attempt on the alternative (GSHIP-892), the same policy
+ * `AgentReviewerRouter` (GSHIP-709/721) applies to reviews. Both sessions are
+ * already held here (`#sessions`), so the alternative attempt calls its own
+ * `AgentSession` directly, never back through `resolve`: a refusal from it
+ * restores the origin's own error instead of asking the origin again.
+ */
 export class AgentCycleQuestionResolver implements RuntimeCycleQuestionResolver {
 	readonly #sessions: Readonly<Record<AgentProviderId, AgentSession>>;
 
@@ -164,9 +197,20 @@ export class AgentCycleQuestionResolver implements RuntimeCycleQuestionResolver 
 	}
 
 	async resolve(input: RuntimeCycleQuestionInput): Promise<RuntimeCycleQuestionResult> {
+		const providerId = input.providerId;
+		try {
+			return await this.#ask(providerId, input);
+		} catch (error) {
+			const fallback = this.#fallbackProvider(providerId, error, input);
+			if (fallback === null) throw error;
+			return await this.#askWithFallback(input, providerId, fallback, error as ProviderCallError);
+		}
+	}
+
+	async #ask(providerId: AgentProviderId, input: RuntimeCycleQuestionInput): Promise<RuntimeCycleQuestionResult> {
 		let usagePayload: Record<string, unknown> | undefined;
 		let modelPayload: Record<string, unknown> | undefined;
-		const result = await this.#sessions[input.providerId].run({
+		const result = await this.#sessions[providerId].run({
 			sessionId: randomUUID(),
 			resume: false,
 			cwd: input.workspace,
@@ -182,5 +226,66 @@ export class AgentCycleQuestionResolver implements RuntimeCycleQuestionResolver 
 			},
 		});
 		return parseResult(result.structuredOutput, usageOf(usagePayload, modelPayload), input.observations ?? []);
+	}
+
+	/**
+	 * The alternative this failure admits, or `null` to let the original error
+	 * stand. The limit must be the origin's own: a failure carrying another
+	 * provider's name is not evidence that this one is held, and an aborted
+	 * run is left to its own interruption instead of spawning one more child.
+	 */
+	#fallbackProvider(
+		providerId: AgentProviderId,
+		error: unknown,
+		input: RuntimeCycleQuestionInput,
+	): AgentProviderId | null {
+		if (!(error instanceof ProviderCallError)) return null;
+		if (error.provider !== providerId) return null;
+		if (!CYCLE_QUESTION_FALLBACK_REASONS.includes(error.kind)) return null;
+		if (input.signal.aborted) return null;
+		return CYCLE_QUESTION_FALLBACK[providerId];
+	}
+
+	/**
+	 * The one alternative attempt, in a fresh session of its own. Whatever it
+	 * fails with -- its own limit included -- settles as this fallback's
+	 * outcome and restores the origin's error, so the two directions can never
+	 * hand the question back and forth.
+	 */
+	async #askWithFallback(
+		input: RuntimeCycleQuestionInput,
+		origin: AgentProviderId,
+		fallback: AgentProviderId,
+		held: ProviderCallError,
+	): Promise<RuntimeCycleQuestionResult> {
+		try {
+			const result = await this.#ask(fallback, input);
+			this.#emitFallback(input, origin, fallback, held, { outcome: result.outcome });
+			return result;
+		} catch (error) {
+			this.#emitFallback(input, origin, fallback, held, {
+				outcome: 'refused',
+				error: errorMessage(error),
+				...(error instanceof ProviderCallError ? { errorKind: error.kind } : {}),
+			});
+			throw held;
+		}
+	}
+
+	#emitFallback(
+		input: RuntimeCycleQuestionInput,
+		origin: AgentProviderId,
+		fallback: AgentProviderId,
+		held: ProviderCallError,
+		result: Record<string, unknown>,
+	): void {
+		input.emit(CYCLE_QUESTION_FALLBACK_EVENT, {
+			from: origin,
+			to: fallback,
+			reason: held.kind,
+			message: held.message,
+			...(held.retryAt === undefined ? {} : { retryAt: held.retryAt }),
+			...result,
+		});
 	}
 }

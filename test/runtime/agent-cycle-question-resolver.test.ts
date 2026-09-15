@@ -7,14 +7,17 @@
 
 import { describe, expect, test } from 'bun:test';
 
-import type {
-	AgentProviderId,
-	AgentSession,
-	AgentSessionInput,
+import {
+	PROVIDER_ERROR_KINDS,
+	ProviderCallError,
+	type AgentProviderId,
+	type AgentSession,
+	type AgentSessionInput,
 } from '../../src/runtime/agent-session.ts';
 import {
 	AgentCycleQuestionResolver,
 	buildCycleQuestionPrompt,
+	CYCLE_QUESTION_FALLBACK_EVENT,
 	CYCLE_QUESTION_RESULT_SCHEMA,
 } from '../../src/runtime/agent-cycle-question-resolver.ts';
 import { OPERATOR_LANGUAGE_CONTRACT } from '../../src/runtime/operator-language.ts';
@@ -201,4 +204,217 @@ describe('agent cycle question resolver', () => {
 			thinkingTokens: 5,
 		});
 	});
+});
+
+// GSHIP-892: a usage-limit or rate-limited failure on the run's own provider
+// buys exactly one attempt on the alternative, the same policy the review
+// fallback (GSHIP-709/721) already applies, so a cycle question never leaves
+// the run stuck in waiting-provider once the executor and reviewer are
+// already routed to the alternative.
+interface EmittedEvent {
+	kind: string;
+	payload?: Record<string, unknown>;
+}
+
+function session(
+	provider: AgentProviderId,
+	outcome: { outcome: 'continue'; guidance: string } | { outcome: 'operator'; reason: string } | Error,
+): AgentSession {
+	return {
+		provider,
+		run: async () => {
+			if (outcome instanceof Error) throw outcome;
+			return {
+				summary: '',
+				structuredOutput: outcome.outcome === 'continue'
+					? { outcome: 'continue', guidance: outcome.guidance, reason: null }
+					: { outcome: 'operator', guidance: null, reason: outcome.reason },
+			};
+		},
+	};
+}
+
+interface Direction {
+	from: AgentProviderId;
+	to: AgentProviderId;
+	held: ProviderCallError;
+}
+
+const CLAUDE_LIMIT = new ProviderCallError('claude', 'usage-limit', 'Claude usage limit reached.', {
+	retryAt: '2026-09-15T12:00:00.000Z',
+});
+
+const CODEX_LIMIT = new ProviderCallError('codex', 'rate-limited', 'Codex is rate limited.', {
+	retryAt: '2026-09-15T13:00:00.000Z',
+});
+
+const DIRECTIONS: readonly Direction[] = [
+	{ from: 'claude', to: 'codex', held: CLAUDE_LIMIT },
+	{ from: 'codex', to: 'claude', held: CODEX_LIMIT },
+];
+
+const INADMISSIBLE_KINDS = PROVIDER_ERROR_KINDS
+	.filter((kind) => kind !== 'usage-limit' && kind !== 'rate-limited');
+
+for (const direction of DIRECTIONS) {
+	describe(`cycle question fallback from a ${direction.from} limit to ${direction.to}`, () => {
+		test(`tries ${direction.to} once and records origin, target, reason and outcome`, async () => {
+			const events: EmittedEvent[] = [];
+			const resolver = new AgentCycleQuestionResolver(direction.from === 'claude'
+				? { claude: session('claude', direction.held), codex: session('codex', { outcome: 'continue', guidance: 'Prossiga com o merge.' }) }
+				: { claude: session('claude', { outcome: 'continue', guidance: 'Prossiga com o merge.' }), codex: session('codex', direction.held) });
+
+			const result = await resolver.resolve(questionInput({
+				providerId: direction.from,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			}));
+
+			expect(result).toMatchObject({ outcome: 'continue', guidance: 'Prossiga com o merge.' });
+			expect(events).toEqual([{
+				kind: CYCLE_QUESTION_FALLBACK_EVENT,
+				payload: {
+					from: direction.from,
+					to: direction.to,
+					reason: direction.held.kind,
+					message: direction.held.message,
+					retryAt: direction.held.retryAt,
+					outcome: 'continue',
+				},
+			}]);
+		});
+
+		test(`records a refused attempt and keeps the original ${direction.from} hold`, async () => {
+			const events: EmittedEvent[] = [];
+			const refusal = new ProviderCallError(direction.to, 'auth-required', 'Not authenticated.');
+			const resolver = new AgentCycleQuestionResolver(direction.from === 'claude'
+				? { claude: session('claude', direction.held), codex: session('codex', refusal) }
+				: { claude: session('claude', refusal), codex: session('codex', direction.held) });
+
+			await expect(resolver.resolve(questionInput({
+				providerId: direction.from,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			}))).rejects.toThrow(direction.held);
+
+			expect(events).toEqual([{
+				kind: CYCLE_QUESTION_FALLBACK_EVENT,
+				payload: {
+					from: direction.from,
+					to: direction.to,
+					reason: direction.held.kind,
+					message: direction.held.message,
+					retryAt: direction.held.retryAt,
+					outcome: 'refused',
+					error: 'Not authenticated.',
+					errorKind: 'auth-required',
+				},
+			}]);
+		});
+
+		test(`stops at ${direction.to} when the alternative is held too`, async () => {
+			const events: EmittedEvent[] = [];
+			const alternativeLimit = new ProviderCallError(direction.to, 'usage-limit', 'Alternative usage limit reached.');
+			const resolver = new AgentCycleQuestionResolver(direction.from === 'claude'
+				? { claude: session('claude', direction.held), codex: session('codex', alternativeLimit) }
+				: { claude: session('claude', alternativeLimit), codex: session('codex', direction.held) });
+
+			await expect(resolver.resolve(questionInput({
+				providerId: direction.from,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			}))).rejects.toThrow(direction.held);
+
+			expect(events).toHaveLength(1);
+			expect(events[0]?.payload).toMatchObject({
+				from: direction.from,
+				to: direction.to,
+				outcome: 'refused',
+				errorKind: 'usage-limit',
+			});
+		});
+
+		test('leaves an aborted question to its own interruption instead of spawning the alternative', async () => {
+			const events: EmittedEvent[] = [];
+			const controller = new AbortController();
+			const aborting: AgentSession = {
+				provider: direction.from,
+				run: async () => { controller.abort(); throw direction.held; },
+			};
+			const alternative = session(direction.to, { outcome: 'continue', guidance: 'Nunca chamado.' });
+			const resolver = new AgentCycleQuestionResolver(direction.from === 'claude'
+				? { claude: aborting, codex: alternative }
+				: { claude: alternative, codex: aborting });
+
+			await expect(resolver.resolve(questionInput({
+				providerId: direction.from,
+				signal: controller.signal,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			}))).rejects.toThrow(direction.held);
+			expect(events).toEqual([]);
+		});
+
+		test('never answers a failure that is not a subscription limit', async () => {
+			for (const kind of INADMISSIBLE_KINDS) {
+				const events: EmittedEvent[] = [];
+				const failure = new ProviderCallError(direction.from, kind, `${kind} on ${direction.from}.`);
+				const alternative = session(direction.to, { outcome: 'continue', guidance: 'Nunca chamado.' });
+				const resolver = new AgentCycleQuestionResolver(direction.from === 'claude'
+					? { claude: session('claude', failure), codex: alternative }
+					: { claude: alternative, codex: session('codex', failure) });
+
+				await expect(resolver.resolve(questionInput({
+					providerId: direction.from,
+					emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+				}))).rejects.toThrow(failure);
+				expect(events).toEqual([]);
+			}
+		});
+
+		test('never answers a limit reported for another provider', async () => {
+			const events: EmittedEvent[] = [];
+			const foreign = new ProviderCallError(direction.to, 'usage-limit', 'Limit on the other side.');
+			const alternative = session(direction.to, { outcome: 'continue', guidance: 'Nunca chamado.' });
+			const resolver = new AgentCycleQuestionResolver(direction.from === 'claude'
+				? { claude: session('claude', foreign), codex: alternative }
+				: { claude: alternative, codex: session('codex', foreign) });
+
+			await expect(resolver.resolve(questionInput({
+				providerId: direction.from,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			}))).rejects.toThrow(foreign);
+			expect(events).toEqual([]);
+		});
+	});
+}
+
+// GSHIP-892 acceptance criterion 4: run 8b868e4d (GSHIP-884, 2026-09-14).
+// providerId codex, executor already in handoff to claude and reviewer
+// already in fallback to claude; the origin-review cycle question resolves
+// on claude instead of leaving the run stuck on codex's own held limit.
+test('resolves a review-origin cycle question on the alternative when the run\'s own provider is held (run 8b868e4d)', async () => {
+	const events: EmittedEvent[] = [];
+	const resolver = new AgentCycleQuestionResolver({
+		claude: session('claude', { outcome: 'continue', guidance: 'Reduza o handler ao contrato aprovado.' }),
+		codex: session('codex', CODEX_LIMIT),
+	});
+
+	const result = await resolver.resolve(questionInput({
+		runId: 'run-8b868e4d',
+		issueId: 'GSHIP-884',
+		providerId: 'codex',
+		origin: 'review',
+		finding: '1. src/runtime/github-shipper.ts: reconciliar o merge conflict recovery',
+		emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+	}));
+
+	expect(result).toMatchObject({ outcome: 'continue', guidance: 'Reduza o handler ao contrato aprovado.' });
+	expect(events).toEqual([{
+		kind: CYCLE_QUESTION_FALLBACK_EVENT,
+		payload: {
+			from: 'codex',
+			to: 'claude',
+			reason: 'rate-limited',
+			message: CODEX_LIMIT.message,
+			retryAt: CODEX_LIMIT.retryAt,
+			outcome: 'continue',
+		},
+	}]);
 });

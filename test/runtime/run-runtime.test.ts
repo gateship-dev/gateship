@@ -568,7 +568,11 @@ describe('durable run runtime', () => {
 		await waitFor(() => runtime.getRun(run.id)?.state === 'failed');
 		const recovery = store.getUnfinishedRecoveryDispatch(run.id);
 		expect(recovery).toMatchObject({ status: 'started' });
-		expect(recovery?.processIdentity).toContain(':pid-321');
+		// pid 321 is fabricated: on a host where it happens to name a real
+		// process, captureRecoveryProcessIdentity reports that process's own
+		// procfs/darwin identity instead of the synthetic pid-321 fallback, so
+		// this only pins the pid it carries, not which scheme produced it.
+		expect(recovery?.processIdentity).toMatch(/(?::|-)321(?::|$)/);
 		expect(runtime.listRunEvents(run.id).filter((event) => event.kind === 'run.recovery-dispatch-finished')).toHaveLength(0);
 		runtime.close();
 	});
