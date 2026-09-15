@@ -7,7 +7,7 @@
     "GSHIP-898"
   ],
   "createdAt": "2026-09-15T05:58:28.395Z",
-  "updatedAt": "2026-09-15T12:20:30.318Z",
+  "updatedAt": "2026-09-15T12:20:45.725Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -27,5 +27,9 @@
       "bun test test/runtime/project-verification.test.ts test/runtime/multistack-verification.test.ts test/runtime/run-runtime.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "9c122b4d132fd3e50ac65283f0f61f5d715cfdc8e4ebd63f2e73006b603b84fb",
+    "approvedAt": "2026-09-15T12:20:45.725Z"
   }
 }
