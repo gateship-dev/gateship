@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-902",
   "title": "Web: validar so o hostname do Host, sem comparar porta",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-16T08:26:01.742Z",
-  "updatedAt": "2026-09-16T08:26:05.427Z",
+  "updatedAt": "2026-09-16T08:39:10.837Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

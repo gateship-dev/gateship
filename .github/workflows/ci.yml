@@ -85,7 +85,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
-          docker run --rm -d --name gateship-ci -p 127.0.0.1:17777:7777 -e GATESHIP_PUBLISHED_PORT=17777 gateship:ci-amd64
+          docker run --rm -d --name gateship-ci -p 127.0.0.1:17777:7777 gateship:ci-amd64
           trap 'docker rm -f gateship-ci >/dev/null 2>&1 || true' EXIT
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:17777/api/snapshot >/dev/null; then
