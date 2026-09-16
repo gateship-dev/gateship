@@ -748,6 +748,23 @@ export function RunCardContent({
 	);
 }
 
+function SpecFactsRecovery({
+	catalog,
+	recovery,
+}: { catalog: RunInspectorCatalog; recovery: NonNullable<RunView['evaluation']>['recovery'] }): React.ReactElement | null {
+	if (recovery === undefined) return null;
+	return (
+		<>
+			<dt className="text-muted-foreground">{catalog.specFacts.recovery}</dt>
+			<dd>{recovery.policy === null ? catalog.specFacts.recoveryNoPolicy : catalog.specFacts.recoveryCounts(recovery.policy.maxRecoveryDispatches, recovery.reserved, recovery.finished)}</dd>
+			{recovery.limitReached ? <>
+				<dt className="text-muted-foreground">{catalog.specFacts.recoveryLimitReached}</dt>
+				<dd>{recovery.convergence === null ? catalog.specFacts.unknown : catalog.specFacts.recoveryConvergenceSummary(recovery.convergence.rounds.length, recovery.convergence.lastRoundIsNewFinding)}</dd>
+			</> : null}
+		</>
+	);
+}
+
 function SpecFactsPanel({
 	catalog,
 	evaluation,
@@ -767,6 +784,7 @@ function SpecFactsPanel({
 				<dt className="text-muted-foreground">{catalog.specFacts.reconciliations}</dt><dd>{catalog.specFacts.reconciliationCounts(reconciliations.unchanged, reconciliations.adapted, reconciliations['contract-change-required'], reconciliations.total)}</dd>
 				{evaluation.dispatches === undefined ? null : <><dt className="text-muted-foreground">{catalog.specFacts.dispatches}</dt><dd>{catalog.specFacts.dispatchCounts(evaluation.dispatches.executor, evaluation.dispatches.reviewer, evaluation.dispatches.orchestrator, evaluation.dispatches.total, evaluation.dispatches.unknown)}</dd></>}
 				{evaluation.guidance === undefined ? null : <><dt className="text-muted-foreground">{catalog.specFacts.guidance}</dt><dd>{catalog.specFacts.guidanceCounts(evaluation.guidance.channels.web, evaluation.guidance.channels['agent-cli'], evaluation.guidance.channels.other, evaluation.guidance.channels.unknown)}</dd><dt className="text-muted-foreground">{catalog.specFacts.authorization}</dt><dd>{catalog.specFacts.authorizationCounts(evaluation.guidance.authorization.observed, evaluation.guidance.authorization.absent, evaluation.guidance.authorization.unknown)}</dd></>}
+				<SpecFactsRecovery catalog={catalog} recovery={evaluation.recovery} />
 			</dl>
 			<div className="mt-4 border-t pt-3">
 				<h3 className="text-sm font-medium">{catalog.specFacts.durationTitle}</h3>

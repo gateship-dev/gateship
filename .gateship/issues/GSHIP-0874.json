@@ -1,7 +1,7 @@
 {
   "id": "GSHIP-874",
   "title": "Autonomia: verificar integração e comparar resultados após a ativação",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [
     "GSHIP-873",
@@ -12,7 +12,7 @@
     "GSHIP-872"
   ],
   "createdAt": "2026-09-11T13:10:33.901Z",
-  "updatedAt": "2026-09-15T12:21:17.947Z",
+  "updatedAt": "2026-09-16T01:34:53.084Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

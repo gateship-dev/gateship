@@ -73,7 +73,7 @@ describe('replayable run evaluation', () => {
 			corrections: { verification: 0, review: 0, fullVerify: 0, ci: 0, total: 0 },
 			cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 },
 			reconciliations: { unchanged: 0, adapted: 0, 'contract-change-required': 0, total: 0 },
-			recovery: { policy: null, reserved: 0, finished: 0 },
+			recovery: { policy: null, reserved: 0, finished: 0, limitReached: false, convergence: null },
 			dispatches: { total: 4, executor: 3, reviewer: 1, orchestrator: 0, unknown: 0 },
 			dispatchMethodologyVersion: 'cli-process-v1',
 			guidance: { channels: { web: 0, 'agent-cli': 0, other: 0, unknown: 2 }, authorization: { observed: 0, absent: 0, unknown: 2 } },
@@ -117,6 +117,42 @@ describe('replayable run evaluation', () => {
 		expect(evaluation.corrections).toEqual({ verification: 1, review: 1, fullVerify: 1, ci: 1, total: 4 });
 		expect(evaluation.cycleQuestions).toEqual({ executor: 1, review: 1, fullVerify: 0, total: 2 });
 		expect(evaluation.reconciliations).toEqual({ unchanged: 1, adapted: 1, 'contract-change-required': 1, total: 3 });
+	});
+
+	test('GSHIP-874: reports a recovery-limit cutoff with its own convergence diagnosis, idempotently', () => {
+		const runWithPolicy: RunRecord = { ...RUN, recoveryPolicy: { version: 1, maxRecoveryDispatches: 3 } };
+		const events = [
+			event('run.created', null, 'queued', {}),
+			event('run.ci-fix-requested', 'ready-to-ship', 'working', { findings: 'ci/build failing' }),
+			event('run.recovery-dispatch-reserved', 'working', 'working', { dispatchId: 'd1' }),
+			event('run.recovery-dispatch-finished', 'working', 'working', { dispatchId: 'd1' }),
+			event('run.ci-fix-no-change-retry', 'ready-to-ship', 'working', { origin: 'ci', evidence: { check: { name: 'ci/build' } } }),
+			event('run.recovery-dispatch-reserved', 'working', 'working', { dispatchId: 'd2' }),
+			event('run.recovery-dispatch-finished', 'working', 'working', { dispatchId: 'd2' }),
+			event('run.ci-fix-no-change-retry', 'ready-to-ship', 'working', { origin: 'ci', evidence: { check: { name: 'ci/build' } } }),
+			event('run.recovery-dispatch-reserved', 'working', 'working', { dispatchId: 'd3' }),
+			event('run.recovery-limit', 'working', 'waiting-user', {
+				reason: 'recovery-budget-exhausted', maxRecoveryDispatches: 3,
+			}),
+		];
+		const expected = {
+			policy: { version: 1 as const, maxRecoveryDispatches: 3 },
+			reserved: 3,
+			finished: 2,
+			limitReached: true,
+			convergence: {
+				rounds: [
+					{ origin: 'ci' as const, finding: 'ci/build failing' },
+					{ origin: 'ci' as const, finding: 'ci/build' },
+					{ origin: 'ci' as const, finding: 'ci/build' },
+				],
+				lastRoundIsNewFinding: false,
+			},
+		};
+		expect(evaluateRun(runWithPolicy, events).recovery).toEqual(expected);
+		// GSHIP-874 (T5): the same replay over the same durable log must land on
+		// the exact same values every time -- never a fresh guess, never drift.
+		expect(evaluateRun(runWithPolicy, events).recovery).toEqual(expected);
 	});
 
 	test('counts full verifier passes from command index one, not command count', () => {

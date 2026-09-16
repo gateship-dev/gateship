@@ -1,6 +1,7 @@
 import { EXECUTOR_HANDOFF_EVENT } from './agent-executor-router.ts';
 import { REVIEW_FALLBACK_EVENT } from './agent-reviewer-router.ts';
 import type { AgentProviderId } from './agent-session.ts';
+import { recoveryConvergenceDiagnosis, type RecoveryConvergenceDiagnosis } from './recovery-convergence.ts';
 import { isTerminalRunState } from './run-state.ts';
 import type { RunState } from './run-state.ts';
 import type { RunCostRole, RunEvent, RunRecord } from './run-store.ts';
@@ -96,7 +97,29 @@ export interface RunEvaluation {
 	 * same way.
 	 */
 	dispatchMethodologyVersion: DispatchMethodologyVersion;
-	recovery?: { policy: { version: 1; maxRecoveryDispatches: number } | null; reserved: number; finished: number };
+	recovery?: {
+		policy: { version: 1; maxRecoveryDispatches: number } | null;
+		reserved: number;
+		finished: number;
+		/**
+		 * Whether this run actually stopped at `run.recovery-limit` (GSHIP-874): a
+		 * spent budget alone (`reserved` reaching `policy.maxRecoveryDispatches`)
+		 * is not the same claim -- a run that is still open, or one that shipped
+		 * with an exactly-spent budget and no further dispatch cause, never
+		 * reached this stop.
+		 */
+		limitReached: boolean;
+		/**
+		 * The same convergence diagnosis `run.recovery-limit` itself reported,
+		 * replayed identically from the durable log (GSHIP-874) -- so a report
+		 * over historical runs can tell an unproductive loop apart from a run
+		 * that was still uncovering fresh findings when its budget ran out,
+		 * without re-deriving that judgment from raw events. `null` whenever
+		 * `limitReached` is `false`: there is no cutoff to ask whether the run
+		 * was still converging before.
+		 */
+		convergence: RecoveryConvergenceDiagnosis | null;
+	};
 	guidance?: RunGuidanceEvidence;
 	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
 	reconciliations: { unchanged: number; adapted: number; 'contract-change-required': number; total: number };
@@ -579,12 +602,18 @@ export function evaluateRun(run: RunRecord, events: readonly RunEvent[]): RunEva
 		? { focused: { executed: focusedExecuted, skipped: focusedSkipped }, full: { executed: fullExecuted, skipped: fullSkipped } }
 		: undefined;
 	const recoveryCountsValue = recoveryCounts(events);
+	const recoveryLimitReached = events.some((recordedEvent) => recordedEvent.kind === 'run.recovery-limit');
 	return {
 		specProfile: specProfileOf(events),
 		corrections,
 		dispatches: dispatchesOf(events),
 		dispatchMethodologyVersion: DISPATCH_METHODOLOGY_VERSION,
-		recovery: { policy: run.recoveryPolicy ?? null, ...recoveryCountsValue },
+		recovery: {
+			policy: run.recoveryPolicy ?? null,
+			...recoveryCountsValue,
+			limitReached: recoveryLimitReached,
+			convergence: recoveryLimitReached ? recoveryConvergenceDiagnosis(events) : null,
+		},
 		guidance: guidanceEvidence(events),
 		cycleQuestions: { ...cycleQuestions, total: Object.values(cycleQuestions).reduce((sum, count) => sum + count, 0) },
 		reconciliations: { ...reconciliations, total: Object.values(reconciliations).reduce((sum, count) => sum + count, 0) },
