@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-09-15, against the `v0.510.0` tag plus PRs #745 to #750.
+> Updated: 2026-09-16, against the `v0.523.0` tag plus PRs #758 to #761.
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -145,31 +145,32 @@ different roadmap stage requires its own authorization.
 
 ## Next ordered seams
 
-The approved queue was drained on 2026-09-15: GSHIP-884, 888, 889, 890, 891
-and 872 shipped through PRs #745 to #750 under `chain-runs`, all on Claude
-Code. The chain is paused on `no-admissible-issue`. GSHIP-864 and GSHIP-874
-are approved, both carrying the convergence diagnosis (findings per round over
-the last rounds, and whether the last fix produced a new finding) added on
-2026-09-14 at the recovery limit and in the post-activation report. GSHIP-874's
-own post-activation validation is next.
+No approved issue is waiting. Between 2026-09-14 and 2026-09-16 the whole
+approved queue shipped under `chain-runs` on Claude Code: GSHIP-884, 888, 889,
+890, 891 and 872 (PRs #745 to #750), then the proposals filed during that drain
+and approved by the operator on 2026-09-15, in dependency order: GSHIP-899
+(re-read the PR after a failed direct merge), 898 (chain reconciliation in a
+fresh `origin/main` worktree), 900 (per-round lint declared by the project),
+892 (cycle-question provider fallback), 894 (per-acceptance verdict with
+file:line evidence), 895 (test-integrity guard), 893 (mutation sensor in full
+verify), 897 (Host validation, security headers, body limit), 896
+(implicit-requirement sweep in the agent guide), 864 (recovery policy before
+notifying the operator, `maxRecoveryDispatches=10`) and 874 (post-activation
+validation), PRs #751 to #761.
 
-Observed during the drain: the chain reconciler reads the operator's local
-checkout, which is deliberately behind `origin/main`, and returned `material`
-once and `clarified` twice for the same limitation (GSHIP-898); the direct
-`gh pr merge` raced the armed auto-merge on three of six ships and left the run
-in `ready-to-ship` until a manual `runs.ship` (GSHIP-899); four of six runs
-passed verify and review and failed the full verify only on biome complexity
-(GSHIP-900).
+`v0.523.0` (published 2026-09-15) carries everything up to GSHIP-893; 896, 897,
+864 and 874 sit in the draft releases v0.524.0 to v0.526.0. The service that
+ran the drain stayed on `v0.510.0` the whole time, so the fixes for the
+merge race, the stale-checkout reconciliation and the per-round lint were
+observed but not yet exercised in production; the automatic self-update was
+deferred while runs were active and applies on its next idle check.
 
-Unapproved proposals filed on 2026-09-14 and 2026-09-15: GSHIP-892
-(cycle-question provider fallback), 893 (mutation sensor as deterministic
-evidence in full verify), 894 (per-acceptance verdict with file:line evidence
-in review), 895 (deterministic test-integrity guard in verify), 896
-(implicit-requirement sweep in the agent guide), 897 (Host validation, security
-headers and body limit on the local web service), 898 (chain reconciliation in
-a fresh `origin/main` worktree), 899 (re-read the PR after a failed direct
-merge) and 900 (per-round lint command declared by the project). They approve
-nothing by themselves.
+Observed during the second drain: the Claude CLI twice exited 1 after a valid
+result and the runtime marked the run `failed` with the finished work left as a
+dirty leftover (GSHIP-901, unapproved proposal); three of eleven ships needed a
+manual `runs.ship` after the auto-merge race; every run born before the 900
+release failed the full verify once on biome complexity; `chain-runs` was found
+disabled when GSHIP-874 finished, with no event recording who turned it off.
 
 ## Product radar
 
