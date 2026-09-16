@@ -1,0 +1,28 @@
+{
+  "id": "GSHIP-902",
+  "title": "Web: validar so o hostname do Host, sem comparar porta",
+  "stage": "specified",
+  "status": "open",
+  "blockedBy": [],
+  "createdAt": "2026-09-16T08:26:01.742Z",
+  "updatedAt": "2026-09-16T08:26:01.742Z",
+  "specSource": "operator",
+  "spec": {
+    "version": 2,
+    "objective": "A validacao de Host da GSHIP-897 compara tambem a porta e devolve 421 quando o servico roda atras de mapeamento de porta (docker -p 17778:7777), o que quebrou o smoke de release desde a v0.524.0 e deixa as releases em draft. Porta nao protege contra DNS rebinding; comparar so o hostname.",
+    "acceptance": [
+      "isTrustedServiceHost aceita qualquer porta (ou ausencia dela) quando o hostname do Host e localhost ou 127.0.0.1, e continua devolvendo 421 para qualquer outro hostname, com ou sem porta. Remover resolvePublishedPort e qualquer variavel de ambiente que so existia para esse fallback.",
+      "Testes em test/web cobrem: Host 127.0.0.1:17778 com servico em 7777 aceito; localhost sem porta aceito; hostname externo com a porta certa rejeitado; GET e POST; asset estatico.",
+      "Cenario de release coberto: docker run -p 127.0.0.1:17778:7777 seguido de curl http://127.0.0.1:17778/api/snapshot responde 200; a acceptance da 897 sobre headers e limite de body permanece.",
+      "Docs que citam a validacao de Host ou a variavel removida sao atualizados no mesmo commit."
+    ],
+    "boundaries": [
+      "Nao alterar o smoke de release nem o Dockerfile para contornar; a correcao e no servico.",
+      "Nao mexer na checagem de Origin das mutacoes."
+    ],
+    "verify": [
+      "bun test test/web/launch.test.ts test/web/project-status-api.test.ts",
+      "bun run typecheck"
+    ]
+  }
+}
