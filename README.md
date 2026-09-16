@@ -418,13 +418,13 @@ unauthenticated read route to the network. Adding authentication is a
 separate, deliberate decision, not a byproduct of this packaging.
 
 Every request must also present a `Host` naming `127.0.0.1` or `localhost`,
-on no port, this process's own bind port, or the port declared through
-`GATESHIP_PUBLISHED_PORT`; anything else gets 421 before any route runs. This
-closes DNS rebinding (a page served from an attacker's own hostname, resolved
-by DNS to 127.0.0.1) and is independent of the same-origin check above --
-`compose.yaml` sets `GATESHIP_PUBLISHED_PORT` to the same value as
-`GATESHIP_PORT` so this check keeps working when the container's fixed
-internal 7777 is published on a different host port.
+on any port or none at all; anything else gets 421 before any route runs.
+This closes DNS rebinding (a page served from an attacker's own hostname,
+resolved by DNS to 127.0.0.1) and is independent of the same-origin check
+above. The port itself is not compared -- it protects against nothing here,
+and Docker's published-port mapping (`docker run -p 127.0.0.1:17778:7777`)
+routinely puts a different port in front of this process than the one it
+actually binds.
 
 The implementer is intentionally write-capable inside the isolated worktree.
 In native mode, the selected Claude Code or Codex process therefore has the

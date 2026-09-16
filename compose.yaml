@@ -55,15 +55,6 @@ services:
       - /tmp:rw,nosuid,nodev,mode=1777
     ports:
       - "127.0.0.1:${GATESHIP_PORT:-7777}:7777"
-    # Docker's NAT keeps GATESHIP_PORT itself from ever reaching this
-    # container: the service binds the fixed internal 7777 above regardless of
-    # what host port that gets published on. GATESHIP_PUBLISHED_PORT restates
-    # that published port explicitly, so the service's Host-header guard
-    # (isTrustedServiceHost, GSHIP-897) can accept a browser request addressed
-    # to it instead of 421-ing every request whenever GATESHIP_PORT differs
-    # from 7777.
-    environment:
-      GATESHIP_PUBLISHED_PORT: ${GATESHIP_PORT:-7777}
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:7777/api/snapshot >/dev/null"]

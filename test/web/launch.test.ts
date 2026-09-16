@@ -20,7 +20,6 @@ import {
 	isTrustedCommandOrigin,
 	isTrustedServiceHost,
 	MAX_REQUEST_BODY_BYTES,
-	PUBLISHED_PORT_ENV_VAR,
 	resolveBindHostname,
 	startWebServer,
 	WEB_HOSTNAME,
@@ -346,40 +345,30 @@ describe('GATESHIP_BIND_HOST (container bind address)', () => {
 // 127.0.0.1, and the browser keeps sending that attacker hostname as `Host`
 // regardless of what DNS resolved it to. This check runs ahead of and
 // independent of the trusted-origin check above.
-describe('isTrustedServiceHost (GSHIP-897)', () => {
+//
+// GSHIP-902: the port carries no trust signal -- it does not stop DNS
+// rebinding, and Docker's published-port mapping (`docker run -p
+// 127.0.0.1:17778:7777`) routinely puts a different port in front of this
+// process than the one it actually binds. Only the hostname is compared.
+describe('isTrustedServiceHost (GSHIP-897, GSHIP-902)', () => {
 	const request = (host: string | null) => new Request('http://ignored/', {
 		headers: host === null ? {} : { host },
 	});
 
-	test("accepts 127.0.0.1 and localhost, with no port or the service's bind port", () => {
-		expect(isTrustedServiceHost(request('127.0.0.1:7777'), 7777)).toBe(true);
-		expect(isTrustedServiceHost(request('127.0.0.1'), 7777)).toBe(true);
-		expect(isTrustedServiceHost(request('localhost:7777'), 7777)).toBe(true);
-		expect(isTrustedServiceHost(request('localhost'), 7777)).toBe(true);
+	test('accepts 127.0.0.1 on any port, or no port at all', () => {
+		expect(isTrustedServiceHost(request('127.0.0.1:17778'))).toBe(true);
+		expect(isTrustedServiceHost(request('127.0.0.1'))).toBe(true);
 	});
 
-	// compose.yaml publishes the container's fixed internal 7777 on an
-	// operator-chosen GATESHIP_PORT and declares that same value as
-	// GATESHIP_PUBLISHED_PORT, since Docker's NAT never lets this process see
-	// GATESHIP_PORT itself. The browser then legitimately sends Host with the
-	// published port while this process still binds 7777.
-	test('accepts the explicitly declared GATESHIP_PUBLISHED_PORT even when it differs from the bind port', () => {
-		const previous = process.env[PUBLISHED_PORT_ENV_VAR];
-		process.env[PUBLISHED_PORT_ENV_VAR] = '9999';
-		try {
-			expect(isTrustedServiceHost(request('127.0.0.1:9999'), 7777)).toBe(true);
-			expect(isTrustedServiceHost(request('localhost:9999'), 7777)).toBe(true);
-		} finally {
-			if (previous === undefined) delete process.env[PUBLISHED_PORT_ENV_VAR];
-			else process.env[PUBLISHED_PORT_ENV_VAR] = previous;
-		}
+	test('accepts localhost on any port, or no port at all', () => {
+		expect(isTrustedServiceHost(request('localhost:9999'))).toBe(true);
+		expect(isTrustedServiceHost(request('localhost'))).toBe(true);
 	});
 
-	test('refuses a different hostname, a port that is neither the bind port nor a declared published port, or a missing Host header', () => {
-		expect(isTrustedServiceHost(request('evil.example'), 7777)).toBe(false);
-		expect(isTrustedServiceHost(request('evil.example:7777'), 7777)).toBe(false);
-		expect(isTrustedServiceHost(request('127.0.0.1:9999'), 7777)).toBe(false);
-		expect(isTrustedServiceHost(request(null), 7777)).toBe(false);
+	test('refuses a different hostname regardless of port, and a missing Host header', () => {
+		expect(isTrustedServiceHost(request('evil.example'))).toBe(false);
+		expect(isTrustedServiceHost(request('evil.example:7777'))).toBe(false);
+		expect(isTrustedServiceHost(request(null))).toBe(false);
 	});
 });
 
@@ -407,7 +396,7 @@ describe('Host guard and security headers (GSHIP-897)', () => {
 		}
 	});
 
-	test('a valid Host is accepted with and without an explicit port', async () => {
+	test('a valid Host is accepted with any port, or none at all', async () => {
 		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-valid-') });
 		try {
 			const base = `http://${handle.hostname}:${handle.port}/api/snapshot`;
@@ -422,36 +411,39 @@ describe('Host guard and security headers (GSHIP-897)', () => {
 		}
 	});
 
-	test('a Host port that is neither the bind port nor a declared published port is refused with 421', async () => {
-		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-unpublished-') });
+	// GSHIP-902: `docker run -p 127.0.0.1:17778:7777` publishes this service's
+	// fixed internal port under a host port the process never binds and cannot
+	// see through Docker's NAT; the browser (or curl, as in the release smoke)
+	// legitimately sends that published port as Host regardless of what this
+	// process actually bound. Port comparison offers no security benefit here
+	// -- only the hostname does -- so any port on 127.0.0.1 is accepted, on
+	// GET and POST alike.
+	test('a Host naming 127.0.0.1 on a port other than the bind port is still accepted, on GET and POST', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-published-ip-') });
 		try {
-			const base = `http://${handle.hostname}:${handle.port}/api/snapshot`;
 			const otherPort = handle.port > 1024 ? handle.port - 1 : handle.port + 1;
-			const response = await fetch(base, { headers: { host: `${handle.hostname}:${otherPort}` } });
-			expect(response.status).toBe(421);
+			const host = `${handle.hostname}:${otherPort}`;
+			const get = await fetch(`http://${handle.hostname}:${handle.port}/api/snapshot`, { headers: { host } });
+			expect(get.status).toBe(200);
+			const post = await fetch(`http://${handle.hostname}:${handle.port}/api/runs`, {
+				method: 'POST',
+				headers: { host, 'content-type': 'application/json' },
+				body: JSON.stringify({ issueId: 'GSHIP-1' }),
+			});
+			expect(post.status).not.toBe(421);
 		} finally {
 			await handle.stop();
 		}
 	});
 
-	// compose.yaml publishes this process's fixed internal port on a separate,
-	// operator-chosen GATESHIP_PORT (127.0.0.1:${GATESHIP_PORT:-7777}:7777) and
-	// declares that same value as GATESHIP_PUBLISHED_PORT for this process to
-	// read, since Docker's NAT never lets it see GATESHIP_PORT itself.
-	test('a Host on the declared GATESHIP_PUBLISHED_PORT is accepted even when it differs from the bind port', async () => {
-		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-published-') });
+	test('a Host naming localhost on a port other than the bind port is still accepted, for a static asset', async () => {
+		const handle = startWebServer({ port: 0, cwd: createTestTmpdir('gship-web-host-guard-published-localhost-') });
 		try {
-			const base = `http://${handle.hostname}:${handle.port}/api/snapshot`;
-			const publishedPort = handle.port > 1024 ? handle.port - 1 : handle.port + 1;
-			const previous = process.env[PUBLISHED_PORT_ENV_VAR];
-			process.env[PUBLISHED_PORT_ENV_VAR] = String(publishedPort);
-			try {
-				const response = await fetch(base, { headers: { host: `${handle.hostname}:${publishedPort}` } });
-				expect(response.status).toBe(200);
-			} finally {
-				if (previous === undefined) delete process.env[PUBLISHED_PORT_ENV_VAR];
-				else process.env[PUBLISHED_PORT_ENV_VAR] = previous;
-			}
+			const otherPort = handle.port > 1024 ? handle.port - 1 : handle.port + 1;
+			const response = await fetch(`http://${handle.hostname}:${handle.port}/app.js`, {
+				headers: { host: `localhost:${otherPort}` },
+			});
+			expect(response.status).toBe(200);
 		} finally {
 			await handle.stop();
 		}

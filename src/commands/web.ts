@@ -2259,51 +2259,25 @@ export function isTrustedCommandOrigin(request: Request): boolean {
 }
 
 /**
- * Docker's published-port mapping (`compose.yaml`: `127.0.0.1:${GATESHIP_PORT:-7777}:7777`)
- * puts a different port in front of this process than the one it actually
- * binds -- the container always binds 7777, and NAT keeps `GATESHIP_PORT`
- * from ever reaching this process, so `server.port` alone cannot describe
- * "the port the operator reaches this service on" there. `compose.yaml`
- * declares that published port explicitly through this variable instead of
- * leaving it implicit; native (non-container) use never sets it, since there
- * `server.port` already is the port the operator reaches. This is distinct
- * from `GATESHIP_PORT`, which `src/commands/doctor.ts` reads on the host to
- * test connectivity into the container and which never reaches this process.
- */
-export const PUBLISHED_PORT_ENV_VAR = 'GATESHIP_PUBLISHED_PORT';
-
-function resolvePublishedPort(env: Record<string, string | undefined> = process.env): number | undefined {
-	const raw = env[PUBLISHED_PORT_ENV_VAR]?.trim();
-	if (raw === undefined || raw.length === 0) return undefined;
-	const parsed = Number(raw);
-	return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-/**
  * Closes DNS rebinding: an attacker's page, loaded over the attacker's own
  * hostname, can be resolved to 127.0.0.1 by DNS and still reach this
  * loopback-only service, but the browser keeps sending that attacker
  * hostname as `Host` regardless of what DNS resolved. This check runs ahead
  * of and independent of `isTrustedCommandOrigin` -- it has no Origin header
- * to depend on -- and accepts only `127.0.0.1` or `localhost`, on the
- * service's own port: no port at all, `port` (this process's resolved bind
- * port, which also covers the Dockerfile and compose healthchecks that both
- * hit `127.0.0.1:7777` directly), or the explicitly declared
- * `GATESHIP_PUBLISHED_PORT` (see `resolvePublishedPort` above). A `Host`
- * naming any other hostname, or any other port, is refused.
+ * to depend on -- and accepts only `127.0.0.1` or `localhost`, on any port or
+ * none at all. The port carries no trust signal: it does not stop DNS
+ * rebinding (the attacker's hostname can resolve to 127.0.0.1 on whatever
+ * port it names) and Docker's published-port mapping (`docker run -p
+ * 127.0.0.1:17778:7777`, `compose.yaml`) routinely puts a different port in
+ * front of this process than the one it actually binds. A `Host` naming any
+ * other hostname is refused regardless of port.
  */
-export function isTrustedServiceHost(request: Request, port: number): boolean {
+export function isTrustedServiceHost(request: Request): boolean {
 	const rawHost = request.headers.get('host');
 	if (rawHost === null) return false;
 	const separatorIndex = rawHost.lastIndexOf(':');
 	const hostname = separatorIndex === -1 ? rawHost : rawHost.slice(0, separatorIndex);
-	if (hostname !== WEB_HOSTNAME && hostname !== 'localhost') return false;
-	const portPart = separatorIndex === -1 ? undefined : rawHost.slice(separatorIndex + 1);
-	if (portPart === undefined) return true;
-	const numericPort = Number(portPart);
-	if (numericPort === port) return true;
-	const publishedPort = resolvePublishedPort();
-	return publishedPort !== undefined && numericPort === publishedPort;
+	return hostname === WEB_HOSTNAME || hostname === 'localhost';
 }
 
 function invalidHostResponse(): Response {
@@ -2344,7 +2318,7 @@ function guard<Req extends Request, S extends Bun.Server<unknown>, Res extends R
 	handler: (request: Req, server: S) => MaybePromise<Res>,
 ): (request: Req, server: S) => Promise<Response> {
 	return async (request, server) => {
-		if (!isTrustedServiceHost(request, server.port ?? 0)) return invalidHostResponse();
+		if (!isTrustedServiceHost(request)) return invalidHostResponse();
 		return withSecurityHeaders(await handler(request, server));
 	};
 }
@@ -3791,8 +3765,8 @@ export function startWebServer(options: WebServerOptions): WebServerHandle {
 		// here instead of leaving Bun's own unguarded default response. The Host
 		// guard and security headers apply here exactly like they do inside
 		// `guard` above, so nothing this service answers skips either one.
-		fetch(request, requestServer) {
-			if (!isTrustedServiceHost(request, requestServer.port ?? 0)) return invalidHostResponse();
+		fetch(request) {
+			if (!isTrustedServiceHost(request)) return invalidHostResponse();
 			return withSecurityHeaders(new Response(null, { status: 404 }));
 		},
 		// A route handler that throws reaches here instead of Bun's own
