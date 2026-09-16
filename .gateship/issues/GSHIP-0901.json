@@ -5,7 +5,7 @@
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-15T20:17:38.893Z",
-  "updatedAt": "2026-09-15T20:17:38.893Z",
+  "updatedAt": "2026-09-16T07:55:29.068Z",
   "specSource": "operator",
   "spec": {
     "version": 2,
@@ -24,5 +24,9 @@
       "bun test test/runtime/claude-cli-executor.test.ts test/runtime/run-runtime.test.ts",
       "bun run typecheck"
     ]
+  },
+  "approval": {
+    "fingerprint": "7f0ff6b7f3620591476574c3bef8282e7893f9fe206b8e722989010f13e5570e",
+    "approvedAt": "2026-09-16T07:55:29.068Z"
   }
 }
