@@ -358,6 +358,19 @@ export function ProjectSwitcher({
 	const statusId = useId();
 	const shortcut = selectedShortcut === undefined ? null : shortcutLabel('project', selectedShortcut, presentationPlatform());
 	const tooltipContent = projectSwitcherTooltipText(catalog, selectedName, shortcut, status);
+	/*
+	 * GSHIP-874: Tooltip.Trigger and Menu.Trigger share one DOM node here, so
+	 * both write the same `data-popup-open` attribute onto it -- a hover-only
+	 * tooltip and an open menu are indistinguishable from that attribute
+	 * alone. `disabled={menuOpen}` covers the direction that matters (the
+	 * tooltip never shows, so it never sets the attribute, once the menu is
+	 * open); the reverse -- the tooltip open while the menu stays closed,
+	 * which still carries `data-popup-open` from the hover alone -- is the
+	 * deliberate baseline, the same hover highlight any other trigger gets,
+	 * never a sign the menu opened. A diagnosis reading a DOM dump or
+	 * screenshot for "is the menu open" must not read this shared attribute
+	 * on its own as that answer.
+	 */
 	return (
 		<>
 			<Tooltip.Root disabled={menuOpen}>
@@ -374,7 +387,7 @@ export function ProjectSwitcher({
 				<ProjectSwitcherMenu catalog={catalog} projects={projects} selection={selection} />
 				</Menu.Root>
 				{status === null ? null : <span className="sr-only" id={statusId}>{status.label}</span>}
-				<Tooltip.Portal><Tooltip.Positioner className="z-50" side="right" sideOffset={8}><Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5">{tooltipContent}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal>
+				<Tooltip.Portal><Tooltip.Positioner className="z-50" side="right" sideOffset={8}><Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5" data-slot="project-switcher-tooltip">{tooltipContent}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal>
 			</Tooltip.Root>
 		{/* The registry as plain links (sr-only): a portal never reaches the
 		 * static render, so without this nav the closed menu would drop

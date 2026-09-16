@@ -177,6 +177,17 @@ export interface RunEvaluationView {
 	corrections: { verification: number; review: number; fullVerify: number; ci: number; total: number };
 	dispatches?: { total: number; executor: number; reviewer: number; orchestrator: number; unknown: number };
 	guidance?: { channels: Record<'web' | 'agent-cli' | 'other' | 'unknown', number>; authorization: Record<'observed' | 'absent' | 'unknown', number> };
+	/** GSHIP-874: whether this run was cut by its own recovery ceiling, and -- only then -- whether it was still converging when that happened. */
+	recovery?: {
+		policy: { version: 1; maxRecoveryDispatches: number } | null;
+		reserved: number;
+		finished: number;
+		limitReached: boolean;
+		convergence: {
+			rounds: Array<{ origin: 'verification' | 'review' | 'full-verify' | 'ci'; finding: string }>;
+			lastRoundIsNewFinding: boolean | null;
+		} | null;
+	};
 	cycleQuestions: { executor: number; review: number; fullVerify: number; total: number };
 	reconciliations: { unchanged: number; adapted: number; 'contract-change-required': number; total: number };
 	workflowRevision: string | null;

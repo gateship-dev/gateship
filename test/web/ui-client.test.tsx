@@ -1423,6 +1423,47 @@ describe('runs surface', () => {
 		expect(facts).toContain('contract-change-required 1/3');
 	});
 
+	// GSHIP-874: a run cut by its own recovery ceiling reports whether it was
+	// still converging (a fresh finding on the last round) or stagnant (a
+	// repeated one) -- never left for the operator to re-derive from raw events.
+	test('the run detail reports a recovery-limit cutoff and whether it was still converging', () => {
+		const html = runsPage({ locale: 'pt-BR',
+			runs: [runIn('done', {
+				evaluation: evaluation('revision-recovery', 'incomplete', {
+					recovery: {
+						policy: { version: 1, maxRecoveryDispatches: 3 },
+						reserved: 3,
+						finished: 2,
+						limitReached: true,
+						convergence: {
+							rounds: [
+								{ origin: 'ci', finding: 'ci/build' },
+								{ origin: 'ci', finding: 'ci/build' },
+							],
+							lastRoundIsNewFinding: false,
+						},
+					},
+				}),
+			})],
+		});
+		const facts = panel(html, 'Fatos da especificação');
+		expect(facts).toContain('teto 3, reservados 3, concluídos 2');
+		expect(facts).toContain('Parou no limite de recuperação');
+		expect(facts).toContain('a última repetiu o achado anterior');
+
+		// No recovery policy on record: the sentence names that plainly, never a
+		// fabricated ceiling.
+		const noPolicyFacts = panel(runsPage({ locale: 'pt-BR',
+			runs: [runIn('done', {
+				evaluation: evaluation('revision-recovery-none', 'shipped', {
+					recovery: { policy: null, reserved: 0, finished: 0, limitReached: false, convergence: null },
+				}),
+			})],
+		}), 'Fatos da especificação');
+		expect(noPolicyFacts).toContain('sem política de recuperação');
+		expect(noPolicyFacts).not.toContain('Parou no limite de recuperação');
+	});
+
 	// GSHIP-628: effort and thinking are properties of the invocation, not of
 	// any one model in it, so they sit on the role heading above its model
 	// rows -- never on a model row itself -- and only when that role's

@@ -223,6 +223,9 @@ export interface RunInspectorCatalog {
 		dispatchCounts: (executor: number, reviewer: number, orchestrator: number, total: number, unknown: number) => string;
 		guidanceCounts: (web: number, agentCli: number, other: number, unknown: number) => string;
 		authorizationCounts: (observed: number, absent: number, unknown: number) => string;
+		recovery: string; recoveryNoPolicy: string; recoveryLimitReached: string;
+		recoveryCounts: (maxRecoveryDispatches: number, reserved: number, finished: number) => string;
+		recoveryConvergenceSummary: (rounds: number, lastRoundIsNewFinding: boolean | null) => string;
 	};
 	pullRequestLabel: (number: number) => string;
 	ciCorrectionLabel: (checkName: string) => string;
@@ -783,6 +786,10 @@ export const LOCALE_CATALOG = {
 				correctionCounts: (verification, review, fullVerify, ci, total) => `verification ${verification}/${total}, review ${review}/${total}, full verify ${fullVerify}/${total}, CI ${ci}/${total}`,
 				questionCounts: (executor, review, fullVerify, total) => `executor ${executor}/${total}, review ${review}/${total}, full verify ${fullVerify}/${total}`,
 				reconciliationCounts: (unchanged, adapted, contractChange, total) => `unchanged ${unchanged}/${total}, adapted ${adapted}/${total}, contract-change-required ${contractChange}/${total}`,
+				recovery: 'Recovery budget', recoveryNoPolicy: 'no recovery policy', recoveryLimitReached: 'Stopped at the recovery limit',
+				recoveryCounts: (maxRecoveryDispatches, reserved, finished) => `ceiling ${maxRecoveryDispatches}, reserved ${reserved}, finished ${finished}`,
+				recoveryConvergenceSummary: (rounds, lastRoundIsNewFinding) => `${rounds} corrective ${rounds === 1 ? 'round' : 'rounds'} reviewed, `
+					+ (lastRoundIsNewFinding === null ? 'not enough rounds to compare' : lastRoundIsNewFinding ? 'the last one found something new' : 'the last one repeated the prior finding'),
 			},
 			pullRequestLabel: (number) => `PR #${number}`,
 			ciCorrectionLabel: (checkName) => `CI correction: ${checkName}`,
@@ -1256,6 +1263,10 @@ export const LOCALE_CATALOG = {
 				correctionCounts: (verification, review, fullVerify, ci, total) => `verification ${verification}/${total}, revisão ${review}/${total}, full verify ${fullVerify}/${total}, CI ${ci}/${total}`,
 				questionCounts: (executor, review, fullVerify, total) => `executor ${executor}/${total}, revisão ${review}/${total}, full verify ${fullVerify}/${total}`,
 				reconciliationCounts: (unchanged, adapted, contractChange, total) => `unchanged ${unchanged}/${total}, adapted ${adapted}/${total}, contract-change-required ${contractChange}/${total}`,
+				recovery: 'Orçamento de recuperação', recoveryNoPolicy: 'sem política de recuperação', recoveryLimitReached: 'Parou no limite de recuperação',
+				recoveryCounts: (maxRecoveryDispatches, reserved, finished) => `teto ${maxRecoveryDispatches}, reservados ${reserved}, concluídos ${finished}`,
+				recoveryConvergenceSummary: (rounds, lastRoundIsNewFinding) => `${rounds} rodada${rounds === 1 ? '' : 's'} corretiva${rounds === 1 ? '' : 's'} revisada${rounds === 1 ? '' : 's'}, `
+					+ (lastRoundIsNewFinding === null ? 'rodadas insuficientes para comparar' : lastRoundIsNewFinding ? 'a última encontrou algo novo' : 'a última repetiu o achado anterior'),
 			},
 			pullRequestLabel: (number) => `PR #${number}`,
 			ciCorrectionLabel: (checkName) => `Correção de CI: ${checkName}`,

@@ -82,8 +82,24 @@ test.describe('@smoke Central invariants', () => {
 		await page.getByRole('button', { name: 'tooltip-open', exact: true }).click();
 		await page.locator('[data-slot=global-navigation] a[aria-label]').first().hover();
 		await expect(page.locator('[data-slot=sidebar-tooltip]:visible')).toHaveCount(1);
-		await page.locator('[data-slot=project-switcher]').click();
+		const switcher = page.locator('[data-slot=project-switcher]');
+		await switcher.click();
 		await expect(page.locator('[data-slot=sidebar-tooltip]:visible')).toHaveCount(0);
 		await expect(page.getByRole('menu')).toBeVisible();
+
+		// GSHIP-874: Tooltip.Trigger and Menu.Trigger share this one trigger node,
+		// so both write the same `data-popup-open` attribute onto it. Close the
+		// menu, then hover the trigger with no click: the tooltip alone sets the
+		// attribute again, with the menu genuinely closed. A diagnosis reading
+		// that shared attribute must never read it, on its own, as "the menu is
+		// open" -- this is the deliberate baseline, the same hover highlight any
+		// other trigger gets.
+		await page.keyboard.press('Escape');
+		await expect(page.getByRole('menu')).toBeHidden();
+		await page.mouse.move(0, 0);
+		await switcher.hover();
+		await expect(switcher).toHaveAttribute('data-popup-open', '');
+		await expect(page.getByRole('menu')).toBeHidden();
+		await expect(page.locator('[data-slot=project-switcher-tooltip]:visible')).toHaveCount(1);
 	});
 });

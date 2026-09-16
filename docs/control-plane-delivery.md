@@ -139,6 +139,40 @@ orquestrador, operador ou agent-cli -- e mostra um evento legado sem
 Nenhuma dessas correções declara melhora causal de modelo ou de provider --
 apenas separa quem originou cada resposta.
 
+## Verificação da recuperação integrada e comparação com baseline
+
+`RunEvaluation.recovery` expõe, para uma run cortada pelo próprio teto de
+recuperação (`run.recovery-limit`), o mesmo diagnóstico de convergência que o
+evento já registrou: até três rodadas corretivas anteriores ao corte e se
+a última encontrou um achado novo ou repetiu o anterior. Uma run ainda aberta,
+ou que entregou com o orçamento exatamente esgotado mas sem nova causa de
+despacho, nunca é lida como "cortada pelo teto" só por ter o orçamento zerado.
+O relatório e a UI seguem consultivos: sem score composto, gate ou troca
+automática de modelo, efeito ou provider.
+
+A comparação com a evidência agregada de autonomia (`autonomyEvidence`,
+`dispatchCeilings`) preserva workflow, modelo, esforço, exposição a falhas
+(`outcomes`) e origem da atenção (`guidance.channels`, `guidance.authorization`)
+do período selecionado. Um baseline anterior medido sob outra metodologia de
+contagem de despachos (`dispatchMethodologyVersion` distinta) não é diretamente
+comparável ao período atual; comparar através dessa fronteira exige registrar
+as duas versões, nunca somar como se fossem a mesma medida. Ausência de amostra
+nova no período é "indisponível" (`missing`), nunca lida como zero nem como
+autorização para criar runs só para preencher a comparação.
+
+Uma verificação com mocks e fixtures determinísticas prova que o runtime --
+máquina de estados, orçamento de recuperação, notificações -- se comporta como
+o contrato descreve. Ela não é evidência de que o modelo por trás do Luna
+raciocina melhor ou pior: nenhuma correção medida aqui declara melhora causal
+de modelo, esforço ou provider. Um experimento pareado que meça isso exigiria
+o mesmo modelo e esforço, o mesmo commit, a mesma tarefa, as mesmas
+ferramentas, o mesmo orçamento e um número de repetições suficiente para
+separar sinal de ruído -- e depende de autorização própria para rodar contra
+provedores reais, nunca implícita nesta entrega. Um replay sobre o histórico
+persistido não chama provedor algum; ele só reconstitui o que uma amostra
+natural já existente registrou, e essa amostra já é evidência válida para
+formar a próxima coleta, mesmo sem o experimento pareado.
+
 ## Envelope de adaptação autônoma
 
 Uma adaptação técnica durante a execução é válida somente quando permanece
