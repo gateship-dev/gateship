@@ -694,6 +694,74 @@ describe('Claude CLI runtime executor', () => {
 		});
 	});
 
+	// GSHIP-901: exit 1 after a complete, valid result is a CLI-side quirk,
+	// not a failed turn -- the run must still reach verify with that result.
+	describe('executor exit-code mismatch (GSHIP-901)', () => {
+		test('proceeds with the streamed result when the CLI exits non-zero after a valid result', async () => {
+			const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+			const executor = new ClaudeCliExecutor({
+				command: ['bun', FIXTURE, '--fixture-exit-code=1', '--fixture-stderr=noisy but harmless'],
+				approvedContract: '{"id":"CAM-901"}',
+			});
+			const result = await executor.execute({
+				runId: 'run-901-mismatch',
+				issueId: 'CAM-901',
+				sessionId: 'session-901-mismatch',
+				resume: false,
+				cwd: createTestTmpdir('gship-claude-exit-mismatch-'),
+				signal: new AbortController().signal,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			});
+
+			expect(result.outcome).toBe('completed');
+			expect(events).toContainEqual({
+				kind: 'run.executor-exit-mismatch',
+				payload: { exitCode: 1, stderr: 'noisy but harmless' },
+			});
+		});
+
+		test('still fails through the existing technical-failure path when exit 1 carries no valid result', async () => {
+			const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+			const executor = new ClaudeCliExecutor({
+				command: ['bun', FIXTURE, '--fixture-mode=no-result-exit', '--fixture-stderr=boom'],
+				approvedContract: '{"id":"CAM-901"}',
+			});
+			const run = executor.execute({
+				runId: 'run-901-no-result',
+				issueId: 'CAM-901',
+				sessionId: 'session-901-no-result',
+				resume: false,
+				cwd: createTestTmpdir('gship-claude-exit-no-result-'),
+				signal: new AbortController().signal,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			});
+			await expect(run).rejects.toBeInstanceOf(ProviderCallError);
+			await expect(run).rejects.toMatchObject({ provider: 'claude' });
+			await expect(run).rejects.toThrow('boom');
+			expect(events.find((event) => event.kind === 'run.executor-exit-mismatch')).toBeUndefined();
+		});
+
+		test('leaves a clean exit unaffected', async () => {
+			const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
+			const executor = new ClaudeCliExecutor({
+				command: ['bun', FIXTURE],
+				approvedContract: '{"id":"CAM-901"}',
+			});
+			const result = await executor.execute({
+				runId: 'run-901-clean',
+				issueId: 'CAM-901',
+				sessionId: 'session-901-clean',
+				resume: false,
+				cwd: createTestTmpdir('gship-claude-exit-clean-'),
+				signal: new AbortController().signal,
+				emit: (kind, payload) => events.push({ kind, ...(payload === undefined ? {} : { payload }) }),
+			});
+
+			expect(result.outcome).toBe('completed');
+			expect(events.find((event) => event.kind === 'run.executor-exit-mismatch')).toBeUndefined();
+		});
+	});
+
 	test('captures usage already reported before an invalid structured response', async () => {
 		const events: Array<{ kind: string; payload?: Record<string, unknown> }> = [];
 		const executor = new ClaudeCliExecutor({

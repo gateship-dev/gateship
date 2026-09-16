@@ -8,7 +8,13 @@ const input = await Bun.stdin.text();
 
 process.stdout.write(`${JSON.stringify({ type: 'system', subtype: 'init' })}\n`);
 
-if (mode === 'wait') {
+if (mode === 'no-result-exit') {
+	// GSHIP-901 regression: the CLI exits non-zero without ever streaming a
+	// result event -- the existing technical-failure path (GSHIP-885) must
+	// still apply, exit-mismatch recovery only covers a *valid* result.
+	process.stderr.write(fixtureArgument('stderr') ?? 'fixture crash, no result');
+	process.exitCode = Number(fixtureArgument('exit-code') ?? '1');
+} else if (mode === 'wait') {
 	process.on('SIGTERM', () => process.exit(0));
 	await new Promise(() => {});
 } else if (mode === 'error') {
@@ -205,5 +211,13 @@ if (mode === 'wait') {
 			total_cost_usd: 0.01,
 			usage: { input_tokens: 5, output_tokens: 2 },
 		})}\n`);
+	}
+	// GSHIP-901: lets a test simulate the CLI reporting a complete, valid
+	// result and still exiting non-zero -- a real observed quirk, not a
+	// protocol error.
+	const exitCode = fixtureArgument('exit-code');
+	if (exitCode !== undefined) {
+		process.stderr.write(fixtureArgument('stderr') ?? 'fixture exit code mismatch');
+		process.exitCode = Number(exitCode);
 	}
 }

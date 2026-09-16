@@ -1,11 +1,11 @@
 {
   "id": "GSHIP-901",
   "title": "Executor: exit 1 do CLI apos resultado valido nao pode falhar a run",
-  "stage": "specified",
+  "stage": "shipped",
   "status": "open",
   "blockedBy": [],
   "createdAt": "2026-09-15T20:17:38.893Z",
-  "updatedAt": "2026-09-16T07:55:29.068Z",
+  "updatedAt": "2026-09-16T08:11:11.652Z",
   "specSource": "operator",
   "spec": {
     "version": 2,

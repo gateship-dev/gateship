@@ -351,10 +351,27 @@ function emitUsage(
 	});
 }
 
+const MAX_EXIT_MISMATCH_STDERR = 1_000;
+
+/**
+ * GSHIP-901: the executor's own child sometimes exits non-zero after already
+ * streaming a complete, non-error result -- a CLI-side quirk, not a failed
+ * turn. Only the implementer role (`eventPrefix === 'provider'`) may recover
+ * from this; the reviewer, mutation-sensor and model-probe roles keep the
+ * unconditional exit-code check this shares, per this issue's boundary.
+ */
+function hasRecoverableExitMismatch(input: ClaudeCliRunInput, state: ClaudeStreamState): boolean {
+	return input.eventPrefix === 'provider'
+		&& state.resultSeen
+		&& !state.resultIsError
+		&& state.summary.trim().length > 0;
+}
+
 /**
  * Run one headless Claude CLI turn and return its final result text. Throws on
- * a non-zero exit, a missing result event, an error result, or cancellation --
- * and never resolves before the child process group has actually settled.
+ * a non-zero exit without a valid result, a missing result event, an error
+ * result, or cancellation -- and never resolves before the child process
+ * group has actually settled.
  */
 export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliResult> {
 	const message = JSON.stringify({
@@ -397,11 +414,17 @@ export async function runClaudeCli(input: ClaudeCliRunInput): Promise<ClaudeCliR
 	}
 	if (state.rateLimitFailure !== undefined) throw state.rateLimitFailure;
 	if (processResult.exitCode !== 0) {
-		throw providerErrorFromMessage(
-			'claude',
-			`Claude CLI exited with ${processResult.exitCode}: ${processResult.stderr.trim().slice(-1_000)}`,
-			'unknown',
-		);
+		if (!hasRecoverableExitMismatch(input, state)) {
+			throw providerErrorFromMessage(
+				'claude',
+				`Claude CLI exited with ${processResult.exitCode}: ${processResult.stderr.trim().slice(-1_000)}`,
+				'unknown',
+			);
+		}
+		input.emit('run.executor-exit-mismatch', {
+			exitCode: processResult.exitCode,
+			stderr: processResult.stderr.trim().slice(-MAX_EXIT_MISMATCH_STDERR),
+		}, 'activity');
 	}
 	if (!state.resultSeen) {
 		throw new ProviderCallError('claude', 'protocol-invalid', 'Claude CLI exited without a result event.');
