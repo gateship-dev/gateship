@@ -1,6 +1,6 @@
 # Gateship current checkpoint
 
-> Updated: 2026-09-16, against the `v0.523.0` tag plus PRs #758 to #761.
+> Updated: 2026-09-16, against the `v0.529.0` tag.
 > Source metadata remains `0.0.0-dev` by design; release builds receive their
 > version and source revision at build time.
 
@@ -158,12 +158,14 @@ verify), 897 (Host validation, security headers, body limit), 896
 notifying the operator, `maxRecoveryDispatches=10`) and 874 (post-activation
 validation), PRs #751 to #761.
 
-`v0.523.0` (published 2026-09-15) carries everything up to GSHIP-893; 896, 897,
-864 and 874 sit in the draft releases v0.524.0 to v0.526.0. The service that
-ran the drain stayed on `v0.510.0` the whole time, so the fixes for the
-merge race, the stale-checkout reconciliation and the per-round lint were
-observed but not yet exercised in production; the automatic self-update was
-deferred while runs were active and applies on its next idle check.
+`v0.529.0` (published 2026-09-16) carries the whole drain plus GSHIP-901
+(a valid executor result followed by a non-zero CLI exit no longer fails the
+run) and GSHIP-902 (the Host check compares only the hostname). Releases
+v0.524.0 to v0.528.0 stayed drafts because GSHIP-897's port comparison made the
+container smoke fail behind port mapping; 902 repaired it and the release
+workflow published again on its own. The service that ran the drain stayed on
+`v0.510.0` until the queue was empty, then was upgraded by the installer to
+`v0.523.0` and `v0.529.0`.
 
 Observed during the second drain: the Claude CLI twice exited 1 after a valid
 result and the runtime marked the run `failed` with the finished work left as a
