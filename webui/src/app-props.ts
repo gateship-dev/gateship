@@ -39,6 +39,8 @@ export interface AppProps {
 	operationalLoaded?: OperationalLoaded;
 	operationalPending?: OperationalPending;
 	onNavigate?: (destination: string) => void;
+	/** Clears the persisted project filter when the operator picks every project. */
+	onSelectAllProjects?: () => void;
 	route: OperatorRoute;
 	surfaceRoute?: OperatorRoute;
 	/** Persisted context for overview navigation; it never scopes operational reads. */

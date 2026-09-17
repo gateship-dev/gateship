@@ -62,9 +62,13 @@ export interface ShellCatalog {
 	projectNavigationLabel: string;
 	manageProjectsLabel: string;
 	switcherPlaceholder: string;
+	allProjectsLabel: string;
+	projectSettingsLabel: string;
 	skipLinkLabel: string;
 	languageLabel: string;
 	routeLabels: {
+		now: string;
+		queue: string;
 		overview: string;
 		overviewRuns: string;
 		overviewQueues: string;
@@ -650,6 +654,8 @@ export const LOCALE_CATALOG = {
 			projectNavigationLabel: 'Projects',
 			manageProjectsLabel: 'Manage projects',
 			switcherPlaceholder: 'Select a project',
+			allProjectsLabel: 'All projects',
+			projectSettingsLabel: 'Project settings',
 			skipLinkLabel: 'Skip to content',
 			themeToggle: { label: 'Theme', light: 'Light theme', dark: 'Dark theme' },
 			widthToggle: { wide: 'Wide layout', compact: 'Centered layout' },
@@ -658,6 +664,8 @@ export const LOCALE_CATALOG = {
 			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
 			languageLabel: 'Language',
 			 routeLabels: {
+				now: 'Now',
+				queue: 'Queue',
 				overview: 'Overview',
 				overviewRuns: 'Runs',
 				overviewQueues: 'Queues',
@@ -1127,6 +1135,8 @@ export const LOCALE_CATALOG = {
 			projectNavigationLabel: 'Projetos',
 			manageProjectsLabel: 'Gerenciar projetos',
 			switcherPlaceholder: 'Selecionar projeto',
+			allProjectsLabel: 'Todos os projetos',
+			projectSettingsLabel: 'Ajustes do projeto',
 			skipLinkLabel: 'Pular para o conteúdo',
 			themeToggle: { label: 'Tema', light: 'Tema claro', dark: 'Tema escuro' },
 			widthToggle: { wide: 'Layout largo', compact: 'Layout centralizado' },
@@ -1135,6 +1145,8 @@ export const LOCALE_CATALOG = {
 			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
 			languageLabel: 'Idioma',
 			 routeLabels: {
+				now: 'Agora',
+				queue: 'Fila',
 				overview: 'Visão geral',
 				overviewRuns: 'Execuções',
 				overviewQueues: 'Filas',

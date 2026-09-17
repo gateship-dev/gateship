@@ -9,16 +9,16 @@ import { Button, buttonVariants } from '../components/ui/button.tsx';
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunInspectorCatalog, ShellCatalog } from '../locale.ts';
-import { PROJECT_SURFACES as SURFACES, routeSelection } from '../routes.ts';
+import { routeSelection } from '../routes.ts';
 import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import { Tooltip } from '@base-ui/react/tooltip';
-import { Activity01Icon, Alert02Icon, DashboardSquare01Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 
 const SHELL_ICON_SIZE = 16;
@@ -37,26 +37,12 @@ function ShellIcon({
 	return <HugeiconsIcon aria-hidden={ariaHidden} className={cn(SHELL_ICON_CLASS, 'shrink-0', className)} icon={icon} size={SHELL_ICON_SIZE} strokeWidth={SHELL_ICON_STROKE_WIDTH} />;
 }
 
-/* Both parent groups (control center, selected project) indent their
- * children by the same step, and only while the sidebar is expanded. */
-const CHILD_INDENT_CLASS = 'lg:pl-4';
-
 export const NAV_LINK_CLASS =
-	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:min-h-0 ' +
+	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:h-9 lg:min-h-0 lg:py-0 ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
 	'aria-[current=page]:text-sidebar-accent-foreground';
-
-/* The rail tile is a 32px square centred on the rail axis. The rail is 88px
- * wide so that axis (44px) is the same x the expanded top-level icons sit on:
- * collapsing never moves an icon sideways, and no expanded indent or padding
- * survives into the rail. */
-const RAIL_NAV_ITEM_CLASS =
-	'mx-auto flex size-8 min-h-0 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ' +
-	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
-	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
-	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
 
 export interface NotificationItem { id: string; title: string; detail: string; severity: string; actionable: boolean; href?: string }
 
@@ -184,7 +170,6 @@ export function humanVersionOf(version: string): string {
  * held to one 16px slot so rows lane-align.
  */
 export const NAV_GLYPHS = {
-	controlCenter: DashboardSquare01Icon,
 	overview: Grid2X2Icon,
 	runs: Activity01Icon,
 	work: ListViewIcon,
@@ -202,19 +187,6 @@ export function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.Rea
 			size={16}
 			strokeWidth={2.25}
 		/>
-	);
-}
-
-function SidebarTooltip({ children, content, disabled = false }: { children: React.ReactElement; content: React.ReactNode; disabled?: boolean }): React.ReactElement {
-	return (
-		<Tooltip.Root disabled={disabled}>
-			<Tooltip.Trigger render={children} />
-			<Tooltip.Portal>
-				<Tooltip.Positioner className="z-50" side="right" sideOffset={8}>
-					<Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5" data-slot="sidebar-tooltip">{content}</Tooltip.Popup>
-				</Tooltip.Positioner>
-			</Tooltip.Portal>
-		</Tooltip.Root>
 	);
 }
 
@@ -259,25 +231,25 @@ interface ProjectSwitcherProps {
 	selection: ReturnType<typeof routeSelection>;
 	status: ShellStatus | null;
 	catalog: ShellCatalog;
+	/** Clears the persisted project filter; the link itself still routes. */
+	onSelectAllProjects?: (() => void) | undefined;
 }
 
 function ProjectSwitcherTrigger({
 	selected,
 	status,
 	catalog,
-	open,
 }: Pick<ProjectSwitcherProps, 'status' | 'catalog'> & {
 	selected: AppProps['projects'][number] | null;
-	open: boolean;
 }): React.ReactElement {
 	return (
 		<>
 			{selected === null
 				? <span data-slot="project-switcher-placeholder"><ShellIcon className="opacity-70" icon={FolderManagementIcon} /></span>
 				: <ProjectStatusIcon status={status} />}
-			{!open ? null : <><span className="grid min-w-0 flex-1 leading-tight">
-				<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
-					{selected?.name ?? catalog.switcherPlaceholder}
+			<span className="grid min-w-0 flex-1 leading-tight">
+				<span className="overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">
+					{selected?.name ?? catalog.allProjectsLabel}
 				</span>
 				{selected === null || status === null ? null : (
 					<span className="flex items-center gap-1.5 text-muted-foreground text-xs">
@@ -286,7 +258,7 @@ function ProjectSwitcherTrigger({
 					</span>
 				)}
 			</span>
-			<span><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span></>}
+			<span><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
 			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
 		</>
 	);
@@ -296,7 +268,8 @@ function ProjectSwitcherMenu({
 	projects,
 	selection,
 	catalog,
-}: Pick<ProjectSwitcherProps, 'projects' | 'selection' | 'catalog'>): React.ReactElement {
+	onSelectAllProjects,
+}: Pick<ProjectSwitcherProps, 'projects' | 'selection' | 'catalog' | 'onSelectAllProjects'>): React.ReactElement {
 	return (
 		<Menu.Portal>
 			<Menu.Positioner align="start" className="z-50" sideOffset={6}>
@@ -304,6 +277,20 @@ function ProjectSwitcherMenu({
 					<div className="type-eyebrow px-2 pt-1.5 pb-1 text-muted-foreground">
 						{catalog.projectNavigationLabel}
 					</div>
+					<Menu.Item
+						aria-current={selection.projectId === null ? 'page' : undefined}
+						className={SWITCHER_ITEM_CLASS}
+						data-slot="project-switcher-all"
+						onClick={(event) => {
+							if (onSelectAllProjects === undefined) return;
+							event.preventDefault();
+							onSelectAllProjects();
+						}}
+						render={<a href="/overview" />}
+					>
+						<ProjectShortcut index={undefined} />
+						<span className="min-w-0 flex-1">{catalog.allProjectsLabel}</span>
+					</Menu.Item>
 					{projects.map((project, index) => (
 						<Menu.Item
 							aria-keyshortcuts={index < 9 ? projectShortcutAria(index) : undefined}
@@ -318,8 +305,19 @@ function ProjectSwitcherMenu({
 							</span>
 						</Menu.Item>
 					))}
+					{selection.projectId === null ? null : (
+						<Menu.Item
+							aria-current={selection.surface === 'settings' ? 'page' : undefined}
+							className={cn(SWITCHER_ITEM_CLASS, 'mt-1')}
+							data-slot="project-switcher-settings"
+							render={<a href={`/projects/${encodeURIComponent(selection.projectId)}/settings`} />}
+						>
+							<HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={Settings01Icon} size={16} strokeWidth={2.25} />
+							<span className="min-w-0 flex-1">{catalog.projectSettingsLabel}</span>
+						</Menu.Item>
+					)}
 					<Menu.Item
-						className={cn(SWITCHER_ITEM_CLASS, 'mt-1')}
+						className={cn(SWITCHER_ITEM_CLASS, selection.projectId === null && 'mt-1')}
 						render={<a href="/projects" />}
 					>
 						<HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={FolderManagementIcon} size={16} strokeWidth={2.25} />
@@ -355,14 +353,12 @@ export function ProjectSwitcher({
 	selection,
 	status,
 	catalog,
-	compact = false,
-}: ProjectSwitcherProps & {
-	compact?: boolean;
-}): React.ReactElement {
+	onSelectAllProjects,
+}: ProjectSwitcherProps): React.ReactElement {
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
 	const selectedIndex = selected === null ? undefined : projects.indexOf(selected);
 	const selectedShortcut = selectedIndex === undefined || selectedIndex > 8 ? undefined : selectedIndex;
-	const selectedName = selected?.name ?? catalog.switcherPlaceholder;
+	const selectedName = selected?.name ?? catalog.allProjectsLabel;
 	const [menuOpen, setMenuOpen] = useState(false);
 	const statusId = useId();
 	const shortcut = selectedShortcut === undefined ? null : shortcutLabel('project', selectedShortcut, presentationPlatform());
@@ -385,15 +381,14 @@ export function ProjectSwitcher({
 			<Tooltip.Root disabled={menuOpen}>
 				<Menu.Root onOpenChange={setMenuOpen}>
 					<Tooltip.Trigger render={<Menu.Trigger
-					aria-label={compact ? selectedName : undefined}
 					aria-describedby={status === null ? undefined : statusId}
 					aria-keyshortcuts={selectedShortcut === undefined ? undefined : projectShortcutAria(selectedShortcut)}
-					className={cn(compact ? RAIL_NAV_ITEM_CLASS : cn(NAV_LINK_CLASS, 'w-full text-left'), 'relative data-[popup-open]:bg-sidebar-accent')}
+					className={cn(NAV_LINK_CLASS, 'relative w-full text-left lg:h-12 data-[popup-open]:bg-sidebar-accent')}
 					data-slot="project-switcher"
 					/>}>
-					<ProjectSwitcherTrigger catalog={catalog} open={!compact} selected={selected} status={status} />
+					<ProjectSwitcherTrigger catalog={catalog} selected={selected} status={status} />
 					</Tooltip.Trigger>
-				<ProjectSwitcherMenu catalog={catalog} projects={projects} selection={selection} />
+				<ProjectSwitcherMenu catalog={catalog} onSelectAllProjects={onSelectAllProjects} projects={projects} selection={selection} />
 				</Menu.Root>
 				{status === null ? null : <span className="sr-only" id={statusId}>{status.label}</span>}
 				<Tooltip.Portal><Tooltip.Positioner className="z-50" side="right" sideOffset={8}><Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5" data-slot="project-switcher-tooltip">{tooltipContent}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal>
@@ -407,23 +402,19 @@ export function ProjectSwitcher({
 	);
 }
 
-const CONTROL_CENTER_ITEMS = [
-	{ href: '/overview', label: 'overview', glyph: 'overview', surface: 'overview' },
-	{ href: '/overview/runs', label: 'overviewRuns', glyph: 'runs', surface: 'overview-runs' },
-	{ href: '/overview/queues', label: 'overviewQueues', glyph: 'overviewQueues', surface: 'overview-queues' },
-	{ href: '/overview/insights', label: 'overviewInsights', glyph: 'overviewInsights', surface: 'overview-insights' },
-] as const;
-
-function ControlCenterSubnavigation({ catalog, open, selection }: { catalog: ShellCatalog; open: boolean; selection: ReturnType<typeof routeSelection> }): React.ReactElement {
-	return <ul className={cn('flex flex-col gap-0.5', open && CHILD_INDENT_CLASS)} data-slot="control-center-subnavigation">
-		{CONTROL_CENTER_ITEMS.map((item) => <li className="shrink-0" key={item.href}>
-			<SidebarTooltip content={catalog.routeLabels[item.label]} disabled={open}>
-				<a aria-label={open ? undefined : catalog.routeLabels[item.label]} aria-current={selection.surface === item.surface ? 'page' : undefined} aria-keyshortcuts={item.surface === 'overview' ? KEYBOARD_SHORTCUTS.overview.aria : undefined} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, selection.surface === item.surface && 'bg-sidebar-accent text-sidebar-accent-foreground')} data-sidebar-id={item.href} href={item.href}>
-					<NavGlyph name={item.glyph} />{open ? <span>{catalog.routeLabels[item.label]}</span> : null}
-				</a>
-			</SidebarTooltip>
-		</li>)}
-	</ul>;
+/* One stable list of destinations. The project switcher above it is a filter,
+ * not a second tree: with a project selected, Runs and Queue open that
+ * project's own surfaces; with every project in view they open the control
+ * center aggregates. Now and Insights are always global. No label appears
+ * twice and no item changes position when the filter changes. */
+function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; shortcut?: string }[] {
+	const project = selection.projectId === null ? null : `/projects/${encodeURIComponent(selection.projectId)}`;
+	return [
+		{ id: 'now', href: '/overview', label: catalog.routeLabels.now, glyph: 'overview', active: selection.surface === 'overview', shortcut: KEYBOARD_SHORTCUTS.overview.aria },
+		{ id: 'runs', href: project === null ? '/overview/runs' : `${project}/runs`, label: catalog.routeLabels.overviewRuns, glyph: 'runs', active: selection.surface === 'overview-runs' || selection.surface === 'runs' },
+		{ id: 'queue', href: project === null ? '/overview/queues' : `${project}/work`, label: catalog.routeLabels.queue, glyph: 'overviewQueues', active: selection.surface === 'overview-queues' || selection.surface === 'work' },
+		{ id: 'insights', href: '/overview/insights', label: catalog.routeLabels.overviewInsights, glyph: 'overviewInsights', active: selection.surface === 'overview-insights' },
+	];
 }
 
 export function ShellNavigation({
@@ -431,98 +422,35 @@ export function ShellNavigation({
 	projects,
 	selection,
 	status,
-	open,
+	onSelectAllProjects,
 }: {
 	catalog: ShellCatalog;
 	projects: AppProps['projects'];
 	selection: ReturnType<typeof routeSelection>;
 	status: ShellStatus | null;
-	open: boolean;
+	onSelectAllProjects?: () => void;
 }): React.ReactElement {
-	const [desktopViewport, setDesktopViewport] = useState(() => panelRuntime().matchMedia?.('(min-width: 1024px)').matches ?? false);
-	const [mobileExpanded, setMobileExpanded] = useState(true);
-	useEffect(() => {
-		const query = panelRuntime().matchMedia?.('(min-width: 1024px)');
-		if (query === undefined) return;
-		const update = (): void => setDesktopViewport(query.matches);
-		update();
-		query.addEventListener?.('change', update);
-		return () => query.removeEventListener?.('change', update);
-	}, []);
-	const controlCenterOpen = desktopViewport || mobileExpanded;
-	const toggleControlCenter = (event: React.MouseEvent<HTMLElement>): void => {
-		event.preventDefault();
-		if (!desktopViewport) setMobileExpanded((expanded) => nextControlCenterDisclosureState(expanded, false));
-	};
-	/* The control center is a semantic group. Its disclosure stays open by
-	 * default so desktop and the compact rail keep identical destinations; on
-	 * mobile the native details/summary pair also gives the group a keyboard-
-	 * accessible collapse affordance. */
 	return (
 		<nav aria-label={catalog.operatorNavigationLabel} className="lg:flex lg:flex-1 lg:flex-col">
-			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
-				<li className="w-full min-w-0" data-slot="control-center-navigation">
-					<details aria-label={catalog.controlCenter} open={controlCenterOpen}>
-						<SidebarTooltip content={catalog.controlCenter} disabled={open}>
-							<summary aria-expanded={controlCenterOpen} aria-label={open ? undefined : catalog.controlCenter} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, 'list-none marker:hidden', (selection.surface.startsWith('overview') && 'font-medium text-sidebar-accent-foreground'))} onClick={toggleControlCenter}>
-								<NavGlyph name="controlCenter" />{open ? <span>{catalog.controlCenter}</span> : null}
-							</summary>
-						</SidebarTooltip>
-						<ControlCenterSubnavigation catalog={catalog} open={open} selection={selection} />
-					</details>
+			<div data-slot="project-switcher-item">
+				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} projects={projects} selection={selection} status={status} />
+			</div>
+			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
+				{navigationItems(selection, catalog).map((item) => (
+					<li className="shrink-0" key={item.id}>
+						<a aria-current={item.active ? 'page' : undefined} aria-keyshortcuts={item.shortcut} className={NAV_LINK_CLASS} data-sidebar-id={item.href} href={item.href}>
+							<NavGlyph name={item.glyph} /><span>{item.label}</span>
+						</a>
+					</li>
+				))}
+			</ul>
+			<ul className="mt-1 flex flex-wrap gap-1 lg:mt-auto lg:flex-col lg:flex-nowrap" data-slot="settings-navigation">
+				<li className="shrink-0">
+					<a aria-current={selection.surface === 'global-settings' ? 'page' : undefined} className={NAV_LINK_CLASS} data-sidebar-id="/settings" href="/settings">
+						<NavGlyph name="globalSettings" /><span>{catalog.routeLabels.globalSettings}</span>
+					</a>
 				</li>
 			</ul>
-			<div className="mt-3 lg:mt-5 lg:flex lg:flex-1 lg:flex-col" data-slot="project-navigation">
-				<ul className="flex flex-wrap gap-1 lg:flex lg:flex-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
-				<li className="w-full min-w-0" data-slot="project-switcher-item">
-					<ProjectSwitcher
-						catalog={catalog}
-						projects={projects}
-						selection={selection}
-						status={status}
-						compact={!open}
-					/>
-					{selection.projectId === null ? null : (
-						<ul className={cn('flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5', open && CHILD_INDENT_CLASS)} data-slot="project-surface-navigation">
-							{SURFACES.map((surface) => (
-								<li className="shrink-0" key={surface.surface}>
-									<SidebarTooltip content={catalog.routeLabels[surface.label]}>
-									<a
-										aria-label={open ? undefined : catalog.routeLabels[surface.label]}
-										aria-current={surface.surface === selection.surface ? 'page' : undefined}
-										data-sidebar-id={`/projects/${selection.projectId ?? ''}${surface.suffix}`}
-										className={cn(
-											open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
-											surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
-										)}
-										href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
-									>
-										<NavGlyph name={surface.surface} />{open ? <span>{catalog.routeLabels[surface.label]}</span> : null}
-									</a>
-									</SidebarTooltip>
-								</li>
-							))}
-						</ul>
-					)}
-				</li>
-				<li className={cn('shrink-0', open ? 'lg:mt-auto' : 'lg:mt-auto')}>
-					<SidebarTooltip content={catalog.routeLabels.globalSettings}>
-					<a
-						aria-label={open ? undefined : catalog.routeLabels.globalSettings}
-						aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
-						data-sidebar-id="/settings"
-						className={cn(
-							open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
-							selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground',
-						)}
-						href="/settings"
-					>
-						<NavGlyph name="globalSettings" />{open ? <span>{catalog.routeLabels.globalSettings}</span> : null}
-					</a>
-					</SidebarTooltip>
-				</li>
-				</ul>
-			</div>
 		</nav>
 	);
 }
@@ -760,7 +688,8 @@ export function ShellSidebar({
 	runInspectorCatalog,
 	version,
 	open,
-}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'projects' | 'staleService' | 'workspaceNotices'> & {
+	onSelectAllProjects,
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectAllProjects' | 'projects' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
 	selectedProjectId: string | null;
@@ -779,9 +708,11 @@ export function ShellSidebar({
 	const humanVersion = humanVersionOf(version);
 	const status = shellStatus(projects.find((project) => project.id === selection.projectId) ?? null, run, runInspectorCatalog);
 	/* The outer shell shares the global --sidebar canvas with html and body;
-	 * the content panel provides the deliberate surface contrast. */
+	 * the content panel provides the deliberate surface contrast. Collapsing
+	 * hides the sidebar on desktop instead of swapping to an icon rail: there
+	 * is one navigation layout to keep correct, and the panel takes the width. */
 	return (
-		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-22 lg:gap-4')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
+		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', 'lg:w-64 lg:gap-4', !open && 'lg:hidden')} data-slot="sidebar" data-state={open ? 'expanded' : 'hidden'}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
@@ -791,14 +722,14 @@ export function ShellSidebar({
 				projects={projects}
 				selection={selection}
 				status={status}
-				open={open}
+				onSelectAllProjects={onSelectAllProjects}
 			/>
 							<div className="hidden items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />
-				{!open ? null : <span className="flex items-center gap-2">
+				<span className="flex items-center gap-2">
 					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
 					{version === '' ? null : <span className="font-mono text-xs text-sidebar-foreground/50">v{humanVersion}</span>}
-				</span>}
+				</span>
 			</div>
 		</header>
 	);

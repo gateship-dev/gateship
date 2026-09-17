@@ -1022,6 +1022,10 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			project={project}
 			projects={projects}
 			selectedProjectId={selectedProjectId}
+			/* Route and filter change in one update: clearing the filter while the
+			 * path still names a project would let the reconcile effect above
+			 * re-select it from the route before the navigation lands. */
+			onSelectAllProjects={() => { navigate('/overview'); setSelectedProjectId(null); writeProjectSelection(window.localStorage, null); }}
 			operatorProfile={operatorProfile}
 			runEventsHasPrevious={runEventsHasPrevious}
 			runEventsLoading={runEventsLoading}
