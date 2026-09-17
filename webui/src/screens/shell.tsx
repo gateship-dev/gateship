@@ -44,12 +44,13 @@ export const NAV_LINK_CLASS =
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
 	'aria-[current=page]:text-sidebar-accent-foreground';
 
-/* Collapsed, the sidebar is an icon rail. Every tile is a 32px square centred
- * on x=44, the axis the expanded icons already sit on, so collapsing moves no
- * icon sideways. The rail is 76px wide because the sidebar's right inset is
- * half its left one (see ShellSidebar). */
+/* Collapsed, the sidebar is an icon rail. Every tile keeps the expanded row's
+ * height (36px, the switcher 48px) and is centred on x=44, the axis the
+ * expanded icons already sit on, so collapsing moves no icon in either
+ * direction. The rail is 76px wide because the sidebar's right inset is half
+ * its left one (see ShellSidebar). */
 const RAIL_NAV_ITEM_CLASS =
-	'mx-auto flex size-8 items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
+	'mx-auto flex h-9 w-8 items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
@@ -427,7 +428,7 @@ export function ProjectSwitcher({
 						aria-describedby={status === null ? undefined : statusId}
 						aria-keyshortcuts={key.aria}
 						aria-label={open ? undefined : selectedName}
-						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left lg:h-12') : RAIL_NAV_ITEM_CLASS, 'relative data-[popup-open]:bg-sidebar-accent')}
+						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left lg:h-12') : cn(RAIL_NAV_ITEM_CLASS, 'h-12'), 'relative data-[popup-open]:bg-sidebar-accent')}
 						data-slot="project-switcher"
 					>
 						<ProjectSwitcherTrigger catalog={catalog} keyLabel={key.label} open={open} selected={selected} status={status} />
