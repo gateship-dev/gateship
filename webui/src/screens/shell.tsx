@@ -16,7 +16,7 @@ import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { Popover } from '@base-ui/react/popover';
 import { Tooltip } from '@base-ui/react/tooltip';
-import { Activity01Icon, Alert02Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, DashboardSquare01Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useEffect, useId, useState } from 'react';
 import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
@@ -37,6 +37,10 @@ function ShellIcon({
 	return <HugeiconsIcon aria-hidden={ariaHidden} className={cn(SHELL_ICON_CLASS, 'shrink-0', className)} icon={icon} size={SHELL_ICON_SIZE} strokeWidth={SHELL_ICON_STROKE_WIDTH} />;
 }
 
+/* Both parent groups (control center, selected project) indent their
+ * children by the same step, and only while the sidebar is expanded. */
+const CHILD_INDENT_CLASS = 'lg:pl-4';
+
 export const NAV_LINK_CLASS =
 	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:min-h-0 ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
@@ -44,8 +48,12 @@ export const NAV_LINK_CLASS =
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
 	'aria-[current=page]:text-sidebar-accent-foreground';
 
+/* The rail tile is a 32px square centred on the rail axis. The rail is 88px
+ * wide so that axis (44px) is the same x the expanded top-level icons sit on:
+ * collapsing never moves an icon sideways, and no expanded indent or padding
+ * survives into the rail. */
 const RAIL_NAV_ITEM_CLASS =
-	'flex h-8 w-full min-h-0 items-center justify-start rounded-md px-3 py-2 text-sidebar-foreground outline-none ' +
+	'mx-auto flex size-8 min-h-0 items-center justify-center rounded-md p-0 text-sidebar-foreground outline-none ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
@@ -176,12 +184,13 @@ export function humanVersionOf(version: string): string {
  * held to one 16px slot so rows lane-align.
  */
 export const NAV_GLYPHS = {
+	controlCenter: DashboardSquare01Icon,
 	overview: Grid2X2Icon,
 	runs: Activity01Icon,
 	work: ListViewIcon,
 	settings: Settings01Icon,
 	globalSettings: Globe02Icon,
-	overviewQueues: ListViewIcon,
+	overviewQueues: Queue01Icon,
 	overviewInsights: ChartAnalysisIcon,
 } as const;
 
@@ -266,7 +275,7 @@ function ProjectSwitcherTrigger({
 			{selected === null
 				? <span data-slot="project-switcher-placeholder"><ShellIcon className="opacity-70" icon={FolderManagementIcon} /></span>
 				: <ProjectStatusIcon status={status} />}
-			<span className={cn('grid min-w-0 flex-1 leading-tight', !open && 'opacity-0')}>
+			{!open ? null : <><span className="grid min-w-0 flex-1 leading-tight">
 				<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
 					{selected?.name ?? catalog.switcherPlaceholder}
 				</span>
@@ -277,7 +286,7 @@ function ProjectSwitcherTrigger({
 					</span>
 				)}
 			</span>
-			<span className={cn(!open && 'opacity-0')}><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
+			<span><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span></>}
 			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
 		</>
 	);
@@ -379,7 +388,7 @@ export function ProjectSwitcher({
 					aria-label={compact ? selectedName : undefined}
 					aria-describedby={status === null ? undefined : statusId}
 					aria-keyshortcuts={selectedShortcut === undefined ? undefined : projectShortcutAria(selectedShortcut)}
-					className={cn(NAV_LINK_CLASS, 'relative data-[popup-open]:bg-sidebar-accent')}
+					className={cn(compact ? RAIL_NAV_ITEM_CLASS : cn(NAV_LINK_CLASS, 'w-full text-left'), 'relative data-[popup-open]:bg-sidebar-accent')}
 					data-slot="project-switcher"
 					/>}>
 					<ProjectSwitcherTrigger catalog={catalog} open={!compact} selected={selected} status={status} />
@@ -406,7 +415,7 @@ const CONTROL_CENTER_ITEMS = [
 ] as const;
 
 function ControlCenterSubnavigation({ catalog, open, selection }: { catalog: ShellCatalog; open: boolean; selection: ReturnType<typeof routeSelection> }): React.ReactElement {
-	return <ul className="flex flex-col gap-0.5 lg:pl-4" data-slot="control-center-subnavigation">
+	return <ul className={cn('flex flex-col gap-0.5', open && CHILD_INDENT_CLASS)} data-slot="control-center-subnavigation">
 		{CONTROL_CENTER_ITEMS.map((item) => <li className="shrink-0" key={item.href}>
 			<SidebarTooltip content={catalog.routeLabels[item.label]} disabled={open}>
 				<a aria-label={open ? undefined : catalog.routeLabels[item.label]} aria-current={selection.surface === item.surface ? 'page' : undefined} aria-keyshortcuts={item.surface === 'overview' ? KEYBOARD_SHORTCUTS.overview.aria : undefined} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, selection.surface === item.surface && 'bg-sidebar-accent text-sidebar-accent-foreground')} data-sidebar-id={item.href} href={item.href}>
@@ -455,8 +464,8 @@ export function ShellNavigation({
 				<li className="w-full min-w-0" data-slot="control-center-navigation">
 					<details aria-label={catalog.controlCenter} open={controlCenterOpen}>
 						<SidebarTooltip content={catalog.controlCenter} disabled={open}>
-							<summary aria-expanded={controlCenterOpen} aria-label={open ? undefined : catalog.controlCenter} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, 'list-none marker:hidden', (selection.surface.startsWith('overview') && 'bg-sidebar-accent text-sidebar-accent-foreground'))} onClick={toggleControlCenter}>
-								<NavGlyph name="overview" />{open ? <span>{catalog.controlCenter}</span> : null}
+							<summary aria-expanded={controlCenterOpen} aria-label={open ? undefined : catalog.controlCenter} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, 'list-none marker:hidden', (selection.surface.startsWith('overview') && 'font-medium text-sidebar-accent-foreground'))} onClick={toggleControlCenter}>
+								<NavGlyph name="controlCenter" />{open ? <span>{catalog.controlCenter}</span> : null}
 							</summary>
 						</SidebarTooltip>
 						<ControlCenterSubnavigation catalog={catalog} open={open} selection={selection} />
@@ -474,7 +483,7 @@ export function ShellNavigation({
 						compact={!open}
 					/>
 					{selection.projectId === null ? null : (
-						<ul className="flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5 lg:pl-2" data-slot="project-surface-navigation">
+						<ul className={cn('flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5', open && CHILD_INDENT_CLASS)} data-slot="project-surface-navigation">
 							{SURFACES.map((surface) => (
 								<li className="shrink-0" key={surface.surface}>
 									<SidebarTooltip content={catalog.routeLabels[surface.label]}>
@@ -772,7 +781,7 @@ export function ShellSidebar({
 	/* The outer shell shares the global --sidebar canvas with html and body;
 	 * the content panel provides the deliberate surface contrast. */
 	return (
-		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-18 lg:gap-4')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
+		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-22 lg:gap-4')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
@@ -784,12 +793,12 @@ export function ShellSidebar({
 				status={status}
 				open={open}
 			/>
-							<div className="hidden items-center gap-2 px-3 lg:mt-auto lg:flex" data-slot="sidebar-signature">
+							<div className="hidden items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />
-				<span className={cn('flex items-center gap-2', !open && 'opacity-0')}>
+				{!open ? null : <span className="flex items-center gap-2">
 					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
-					{version === '' ? null : <span className="font-mono text-[10px] text-sidebar-foreground/50">v{humanVersion}</span>}
-				</span>
+					{version === '' ? null : <span className="font-mono text-xs text-sidebar-foreground/50">v{humanVersion}</span>}
+				</span>}
 			</div>
 		</header>
 	);
