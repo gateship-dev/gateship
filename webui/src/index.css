@@ -69,6 +69,9 @@ html.gship-harness-reduced-motion *::after {
 	--color-card-foreground: var(--card-foreground);
 	--color-popover: var(--popover);
 	--color-popover-foreground: var(--popover-foreground);
+	--color-tooltip: var(--tooltip);
+	--color-tooltip-foreground: var(--tooltip-foreground);
+	--color-tooltip-border: var(--tooltip-border);
 	--color-primary: var(--primary);
 	--color-primary-foreground: var(--primary-foreground);
 	--color-secondary: var(--secondary);
@@ -230,6 +233,11 @@ html.gship-harness-reduced-motion *::after {
 	/* The inset content panel (App shell): one step lighter than the chrome
 	 * it floats on. */
 	--shell-panel: var(--color-neutral-50);
+	/* Hint tooltip: the inverted high-contrast bubble. The border matches the
+	 * fill, so light shows no edge. */
+	--tooltip: var(--color-neutral-800);
+	--tooltip-foreground: var(--color-neutral-50);
+	--tooltip-border: var(--color-neutral-800);
 
 	/*
 	 * Run state families. A supervision screen has to be able to say advancing,
@@ -311,6 +319,11 @@ html.gship-harness-reduced-motion *::after {
 	--logo-portal: var(--attention-surface);
 	--logo-stair: var(--color-white);
 	--shell-panel: color-mix(in srgb, var(--color-neutral-950) 96%, var(--color-white));
+	/* Not inverted in dark: a white bubble glares on this chrome, so the
+	 * tooltip is a raised neutral with a hairline that separates it. */
+	--tooltip: var(--color-neutral-800);
+	--tooltip-foreground: var(--color-neutral-100);
+	--tooltip-border: --alpha(var(--color-white) / 12%);
 
 	/* State hues hold; their foreground moves to the lighter step that
 	 * survives a dark background. */

@@ -14,8 +14,8 @@ import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
+import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Tooltip } from '@base-ui/react/tooltip';
 import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState } from 'react';
@@ -43,6 +43,16 @@ export const NAV_LINK_CLASS =
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
 	'aria-[current=page]:text-sidebar-accent-foreground';
+
+/* Collapsed, the sidebar is an icon rail. Every tile is a 32px square centred
+ * on x=44, the axis the expanded icons already sit on, so collapsing moves no
+ * icon sideways. The rail is 76px wide because the sidebar's right inset is
+ * half its left one (see ShellSidebar). */
+const RAIL_NAV_ITEM_CLASS =
+	'mx-auto flex size-8 items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
+	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
+	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
+	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
 
 export interface NotificationItem { id: string; title: string; detail: string; severity: string; actionable: boolean; href?: string }
 
@@ -214,17 +224,26 @@ function ProjectShortcut({ index, allProjects = false }: { index: number | undef
 	);
 }
 
-function ProjectStateIcon({ attention }: { attention: OperatorAttention }): React.ReactElement {
-	return <ShellIcon aria-hidden="true" className="opacity-70" icon={attention === 'Working' ? Activity01Icon : Moon02Icon} />;
+/* The project's state is a dot. Expanded it sits beside the state's name;
+ * on the rail it is the dot alone, and the tile's tooltip and its described-by
+ * text still carry the name, so colour is never the only channel. Acid is the
+ * operator's turn, blue is work advancing, grey is idle. */
+const STATE_DOT_CLASS: Record<OperatorAttention, string> = {
+	'Needs you': 'bg-attention',
+	Working: 'bg-info',
+	Idle: 'bg-muted-foreground/40',
+};
+
+function StateDot({ attention, className }: { attention: OperatorAttention; className?: string }): React.ReactElement {
+	return <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT_CLASS[attention], className)} data-slot="project-state-dot" data-state={attention} />;
 }
 
-function ProjectStatusIcon({ status }: { status: ShellStatus | null }): React.ReactElement {
-	return status === null ? <ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} /> : <ProjectStateIcon attention={status.attention} />;
-}
-
-export function projectSwitcherTooltipText(catalog: ShellCatalog, name: string, shortcut: string | null, status: ShellStatus | null): string {
-	const action = catalog.projectNavigationLabel === 'Projetos' ? 'acessar projeto' : 'open project';
-	return [name, shortcut === null ? null : `${shortcut}: ${action}`, status?.label ?? null].filter((part): part is string => part !== null).join(' · ');
+/* The leading slot of the switcher is the shortcut that selects what it shows.
+ * The chip is centred on the icon axis: it is wider than a 16px glyph, so it
+ * overhangs its slot by 6px on each side. */
+function SwitcherKey({ label }: { label: string | null }): React.ReactElement {
+	if (label === null) return <ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} />;
+	return <span className="-mx-1.5 flex w-7 shrink-0 justify-center"><kbd className="rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground" data-slot="switcher-key">{label}</kbd></span>;
 }
 
 interface ShellStatus { attention: OperatorAttention; label: string; acid: boolean }
@@ -242,27 +261,37 @@ function ProjectSwitcherTrigger({
 	selected,
 	status,
 	catalog,
+	keyLabel,
+	open,
 }: Pick<ProjectSwitcherProps, 'status' | 'catalog'> & {
 	selected: AppProps['projects'][number] | null;
+	keyLabel: string | null;
+	open: boolean;
 }): React.ReactElement {
+	const state = selected === null ? null : status;
+	if (!open) {
+		return (
+			<>
+				<SwitcherKey label={keyLabel} />
+				{state === null ? null : <StateDot attention={state.attention} className="absolute top-1 right-1" />}
+			</>
+		);
+	}
 	return (
 		<>
-			{selected === null
-				? <span data-slot="project-switcher-placeholder"><ShellIcon className="opacity-70" icon={FolderManagementIcon} /></span>
-				: <ProjectStatusIcon status={status} />}
+			<SwitcherKey label={keyLabel} />
 			<span className="grid min-w-0 flex-1 leading-tight">
 				<span className="overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">
 					{selected?.name ?? catalog.allProjectsLabel}
 				</span>
-				{selected === null || status === null ? null : (
+				{state === null ? null : (
 					<span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-						{status.acid ? <span className="size-1.5 shrink-0 rounded-full bg-attention" /> : null}
-						<span className="overflow-hidden text-ellipsis whitespace-nowrap">{status.label}</span>
+						<StateDot attention={state.attention} />
+						<span className="overflow-hidden text-ellipsis whitespace-nowrap">{state.label}</span>
 					</span>
 				)}
 			</span>
 			<span><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
-			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
 		</>
 	);
 }
@@ -352,21 +381,29 @@ function ProjectSwitcherRegistry({
 	);
 }
 
+/* Every project in view owns the first digit; a registered project owns its
+ * own; a project past the digits has no key to show. */
+function switcherKey(selected: AppProps['projects'][number] | null, projects: AppProps['projects']): { label: string | null; aria: string | undefined } {
+	const platform = presentationPlatform();
+	if (selected === null) return { label: shortcutLabel('overview', undefined, platform), aria: KEYBOARD_SHORTCUTS.overview.aria };
+	const index = projects.indexOf(selected);
+	if (index >= PROJECT_SHORTCUT_COUNT) return { label: null, aria: undefined };
+	return { label: shortcutLabel('project', index, platform), aria: projectShortcutAria(index) };
+}
+
 export function ProjectSwitcher({
 	projects,
 	selection,
 	status,
 	catalog,
 	onSelectAllProjects,
-}: ProjectSwitcherProps): React.ReactElement {
+	open = true,
+}: ProjectSwitcherProps & { open?: boolean }): React.ReactElement {
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
-	const selectedIndex = selected === null ? undefined : projects.indexOf(selected);
-	const selectedShortcut = selectedIndex === undefined || selectedIndex >= PROJECT_SHORTCUT_COUNT ? undefined : selectedIndex;
 	const selectedName = selected?.name ?? catalog.allProjectsLabel;
 	const [menuOpen, setMenuOpen] = useState(false);
 	const statusId = useId();
-	const shortcut = selectedShortcut === undefined ? null : shortcutLabel('project', selectedShortcut, presentationPlatform());
-	const tooltipContent = projectSwitcherTooltipText(catalog, selectedName, shortcut, status);
+	const key = switcherKey(selected, projects);
 	/*
 	 * GSHIP-874: Tooltip.Trigger and Menu.Trigger share one DOM node here, so
 	 * both write the same `data-popup-open` attribute onto it -- a hover-only
@@ -382,21 +419,23 @@ export function ProjectSwitcher({
 	 */
 	return (
 		<>
-			<Tooltip.Root disabled={menuOpen}>
-				<Menu.Root onOpenChange={setMenuOpen}>
-					<Tooltip.Trigger render={<Menu.Trigger
-					aria-describedby={status === null ? undefined : statusId}
-					aria-keyshortcuts={selectedShortcut === undefined ? undefined : projectShortcutAria(selectedShortcut)}
-					className={cn(NAV_LINK_CLASS, 'relative w-full text-left lg:h-12 data-[popup-open]:bg-sidebar-accent')}
-					data-slot="project-switcher"
-					/>}>
-					<ProjectSwitcherTrigger catalog={catalog} selected={selected} status={status} />
-					</Tooltip.Trigger>
+			<Menu.Root onOpenChange={setMenuOpen}>
+				{/* The hint only names the tile on the rail; expanded, the name,
+				 * the state and the key are already on screen. */}
+				<HintTooltip detail={selected === null ? undefined : status?.label} disabled={open || menuOpen} label={selectedName} shortcut={key.label ?? undefined}>
+					<Menu.Trigger
+						aria-describedby={status === null ? undefined : statusId}
+						aria-keyshortcuts={key.aria}
+						aria-label={open ? undefined : selectedName}
+						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left lg:h-12') : RAIL_NAV_ITEM_CLASS, 'relative data-[popup-open]:bg-sidebar-accent')}
+						data-slot="project-switcher"
+					>
+						<ProjectSwitcherTrigger catalog={catalog} keyLabel={key.label} open={open} selected={selected} status={status} />
+					</Menu.Trigger>
+				</HintTooltip>
 				<ProjectSwitcherMenu catalog={catalog} onSelectAllProjects={onSelectAllProjects} projects={projects} selection={selection} />
-				</Menu.Root>
-				{status === null ? null : <span className="sr-only" id={statusId}>{status.label}</span>}
-				<Tooltip.Portal><Tooltip.Positioner className="z-50" side="right" sideOffset={8}><Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5" data-slot="project-switcher-tooltip">{tooltipContent}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal>
-			</Tooltip.Root>
+			</Menu.Root>
+			{status === null ? null : <span className="sr-only" id={statusId}>{status.label}</span>}
 		{/* The registry as plain links (sr-only): a portal never reaches the
 		 * static render, so without this nav the closed menu would drop
 		 * every registry link from the no-JS document and from keyboard
@@ -426,36 +465,45 @@ export function ShellNavigation({
 	projects,
 	selection,
 	status,
+	open,
 	onSelectAllProjects,
 }: {
 	catalog: ShellCatalog;
 	projects: AppProps['projects'];
 	selection: ReturnType<typeof routeSelection>;
 	status: ShellStatus | null;
+	open: boolean;
 	onSelectAllProjects?: () => void;
 }): React.ReactElement {
+	const itemClass = open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS;
 	return (
+		<TooltipGroup>
 		<nav aria-label={catalog.operatorNavigationLabel} className="lg:flex lg:flex-1 lg:flex-col">
 			<div data-slot="project-switcher-item">
-				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} projects={projects} selection={selection} status={status} />
+				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} open={open} projects={projects} selection={selection} status={status} />
 			</div>
 			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
 				{navigationItems(selection, catalog).map((item) => (
 					<li className="shrink-0" key={item.id}>
-						<a aria-current={item.active ? 'page' : undefined} className={NAV_LINK_CLASS} data-sidebar-id={item.href} href={item.href}>
-							<NavGlyph name={item.glyph} /><span>{item.label}</span>
-						</a>
+						<HintTooltip disabled={open} label={item.label}>
+							<a aria-current={item.active ? 'page' : undefined} aria-label={open ? undefined : item.label} className={itemClass} data-sidebar-id={item.href} href={item.href}>
+								<NavGlyph name={item.glyph} />{open ? <span>{item.label}</span> : null}
+							</a>
+						</HintTooltip>
 					</li>
 				))}
 			</ul>
 			<ul className="mt-1 flex flex-wrap gap-1 lg:mt-auto lg:flex-col lg:flex-nowrap" data-slot="settings-navigation">
 				<li className="shrink-0">
-					<a aria-current={selection.surface === 'global-settings' ? 'page' : undefined} className={NAV_LINK_CLASS} data-sidebar-id="/settings" href="/settings">
-						<NavGlyph name="globalSettings" /><span>{catalog.routeLabels.globalSettings}</span>
-					</a>
+					<HintTooltip disabled={open} label={catalog.routeLabels.globalSettings}>
+						<a aria-current={selection.surface === 'global-settings' ? 'page' : undefined} aria-label={open ? undefined : catalog.routeLabels.globalSettings} className={itemClass} data-sidebar-id="/settings" href="/settings">
+							<NavGlyph name="globalSettings" />{open ? <span>{catalog.routeLabels.globalSettings}</span> : null}
+						</a>
+					</HintTooltip>
 				</li>
 			</ul>
 		</nav>
+		</TooltipGroup>
 	);
 }
 
@@ -712,11 +760,13 @@ export function ShellSidebar({
 	const humanVersion = humanVersionOf(version);
 	const status = shellStatus(projects.find((project) => project.id === selection.projectId) ?? null, run, runInspectorCatalog);
 	/* The outer shell shares the global --sidebar canvas with html and body;
-	 * the content panel provides the deliberate surface contrast. Collapsing
-	 * hides the sidebar on desktop instead of swapping to an icon rail: there
-	 * is one navigation layout to keep correct, and the panel takes the width. */
+	 * the content panel provides the deliberate surface contrast. The right
+	 * inset is half the left one on purpose: the panel adds its own 12px
+	 * margin, so a row's fill sits 24px from the viewport edge on one side and
+	 * 24px from the panel border on the other. Collapsed, the same list becomes
+	 * an icon rail on the same axis. */
 	return (
-		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', 'lg:w-64 lg:gap-4', !open && 'lg:hidden')} data-slot="sidebar" data-state={open ? 'expanded' : 'hidden'}>
+		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
@@ -726,14 +776,15 @@ export function ShellSidebar({
 				projects={projects}
 				selection={selection}
 				status={status}
+				open={open}
 				onSelectAllProjects={onSelectAllProjects}
 			/>
 							<div className="hidden items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />
-				<span className="flex items-center gap-2">
+				{!open ? null : <span className="flex items-center gap-2">
 					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
 					{version === '' ? null : <span className="font-mono text-xs text-sidebar-foreground/50">v{humanVersion}</span>}
-				</span>
+				</span>}
 			</div>
 		</header>
 	);
