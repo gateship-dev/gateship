@@ -54,10 +54,12 @@ export function handleProjectShortcut(
 	return true;
 }
 
-export function handleOverviewShortcut(event: PanelKeyEvent, runtime = panelRuntime(), navigate?: (destination: string) => void): boolean {
+export function handleOverviewShortcut(event: PanelKeyEvent, runtime = panelRuntime(), navigate?: (destination: string) => void, selectAllProjects?: () => void): boolean {
 	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.overview)) return false;
 	event.preventDefault();
-	if (navigate === undefined) runtime.location?.assign('/overview');
+	/* Same action as the switcher's first choice: every project in view. */
+	if (selectAllProjects !== undefined) selectAllProjects();
+	else if (navigate === undefined) runtime.location?.assign('/overview');
 	else navigate('/overview');
 	return true;
 }
@@ -89,14 +91,14 @@ export function App(props: AppProps): React.ReactElement {
 	useEffect(() => {
 		const runtime = panelRuntime();
 		const onKeyDown = (event: PanelKeyEvent): void => {
-			if (handleOverviewShortcut(event, runtime, props.onNavigate)) {
+			if (handleOverviewShortcut(event, runtime, props.onNavigate, props.onSelectAllProjects)) {
 				return;
 			}
 			handleProjectShortcut(event, props.projects, runtime, props.onNavigate);
 		};
 		runtime.addEventListener?.('keydown', onKeyDown);
 		return () => runtime.removeEventListener?.('keydown', onKeyDown);
-	}, [props.projects, toggleSidebar]);
+	}, [props.projects, props.onSelectAllProjects, toggleSidebar]);
 	return (
 		<AppShell
 			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} notifications={notifications} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}

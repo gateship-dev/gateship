@@ -19,16 +19,21 @@ export function presentationPlatform(signals?: PlatformSignals): PresentationPla
 
 type Modifier = 'alt' | 'control' | 'meta';
 
+/* The switcher's choices take the digits in menu order, one hand on the
+ * left of the row: 1 is every project, the registered projects follow from 2.
+ * Eight projects carry a shortcut; the rest stay reachable from the menu. */
 export const KEYBOARD_SHORTCUTS = {
-	overview: { code: 'Digit0', key: '0', modifiers: ['alt'] as const, aria: 'Alt+0' },
+	overview: { code: 'Digit1', key: '1', modifiers: ['alt'] as const, aria: 'Alt+1' },
 	projects: [
-		{ code: 'Digit1', key: '1', modifiers: ['alt'] as const }, { code: 'Digit2', key: '2', modifiers: ['alt'] as const },
-		{ code: 'Digit3', key: '3', modifiers: ['alt'] as const }, { code: 'Digit4', key: '4', modifiers: ['alt'] as const },
-		{ code: 'Digit5', key: '5', modifiers: ['alt'] as const }, { code: 'Digit6', key: '6', modifiers: ['alt'] as const },
-		{ code: 'Digit7', key: '7', modifiers: ['alt'] as const }, { code: 'Digit8', key: '8', modifiers: ['alt'] as const },
-		{ code: 'Digit9', key: '9', modifiers: ['alt'] as const },
+		{ code: 'Digit2', key: '2', modifiers: ['alt'] as const }, { code: 'Digit3', key: '3', modifiers: ['alt'] as const },
+		{ code: 'Digit4', key: '4', modifiers: ['alt'] as const }, { code: 'Digit5', key: '5', modifiers: ['alt'] as const },
+		{ code: 'Digit6', key: '6', modifiers: ['alt'] as const }, { code: 'Digit7', key: '7', modifiers: ['alt'] as const },
+		{ code: 'Digit8', key: '8', modifiers: ['alt'] as const }, { code: 'Digit9', key: '9', modifiers: ['alt'] as const },
 	],
 } as const;
+
+/** How many registered projects carry a digit (2 to 9). */
+export const PROJECT_SHORTCUT_COUNT = KEYBOARD_SHORTCUTS.projects.length;
 
 export type ShortcutEvent = { key: string; code?: string; altKey: boolean; metaKey: boolean; ctrlKey: boolean; shiftKey?: boolean };
 
@@ -45,8 +50,8 @@ export function matchesShortcut(event: ShortcutEvent, shortcut: { code: string; 
 }
 
 export function shortcutLabel(kind: 'overview' | 'project', index: number | undefined, platform: PresentationPlatform): string {
-	if (kind === 'project' && index !== undefined) return platform === 'macOS' ? `⌥${index + 1}` : `Alt+${index + 1}`;
-	return platform === 'macOS' ? '⌥0' : 'Alt+0';
+	if (kind === 'project' && index !== undefined) return platform === 'macOS' ? `⌥${index + 2}` : `Alt+${index + 2}`;
+	return platform === 'macOS' ? '⌥1' : 'Alt+1';
 }
 
-export function projectShortcutAria(index: number): string { return `Alt+${index + 1}`; }
+export function projectShortcutAria(index: number): string { return `Alt+${index + 2}`; }

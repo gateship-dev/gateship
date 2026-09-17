@@ -19,7 +19,7 @@ import { Tooltip } from '@base-ui/react/tooltip';
 import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState } from 'react';
-import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
+import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 
 const SHELL_ICON_SIZE = 16;
 const SHELL_ICON_CLASS = 'size-4';
@@ -202,8 +202,11 @@ export const SWITCHER_ITEM_CLASS =
 	'data-highlighted:bg-accent data-highlighted:text-accent-foreground ' +
 	'aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground';
 
-function ProjectShortcut({ index }: { index: number | undefined }): React.ReactElement {
+function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement {
 	const platform = presentationPlatform();
+	if (allProjects) {
+		return <span className="flex w-10 shrink-0 justify-center"><kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</kbd></span>;
+	}
 	return (
 		<span className="flex w-10 shrink-0 justify-center">
 			{index === undefined ? null : <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>}
@@ -279,6 +282,7 @@ function ProjectSwitcherMenu({
 					</div>
 					<Menu.Item
 						aria-current={selection.projectId === null ? 'page' : undefined}
+						aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria}
 						className={SWITCHER_ITEM_CLASS}
 						data-slot="project-switcher-all"
 						onClick={(event) => {
@@ -288,18 +292,18 @@ function ProjectSwitcherMenu({
 						}}
 						render={<a href="/overview" />}
 					>
-						<ProjectShortcut index={undefined} />
+						<ProjectShortcut allProjects index={undefined} />
 						<span className="min-w-0 flex-1">{catalog.allProjectsLabel}</span>
 					</Menu.Item>
 					{projects.map((project, index) => (
 						<Menu.Item
-							aria-keyshortcuts={index < 9 ? projectShortcutAria(index) : undefined}
+							aria-keyshortcuts={index < PROJECT_SHORTCUT_COUNT ? projectShortcutAria(index) : undefined}
 							aria-current={project.id === selection.projectId ? 'page' : undefined}
 							className={SWITCHER_ITEM_CLASS}
 							key={project.id}
 							render={<a href={`/projects/${encodeURIComponent(project.id)}`} />}
 						>
-							<ProjectShortcut index={index < 9 ? index : undefined} />
+							<ProjectShortcut index={index < PROJECT_SHORTCUT_COUNT ? index : undefined} />
 							<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 								{project.name}
 							</span>
@@ -339,7 +343,7 @@ function ProjectSwitcherRegistry({
 			<ul>
 				{projects.map((project, index) => (
 					<li key={project.id}>
-						<a aria-current={project.id === selection.projectId ? 'page' : undefined} aria-keyshortcuts={index < 9 ? projectShortcutAria(index) : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < 9 ? index : undefined} />{project.name}</a>
+						<a aria-current={project.id === selection.projectId ? 'page' : undefined} aria-keyshortcuts={index < PROJECT_SHORTCUT_COUNT ? projectShortcutAria(index) : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < PROJECT_SHORTCUT_COUNT ? index : undefined} />{project.name}</a>
 					</li>
 				))}
 				<li><a href="/projects">{catalog.manageProjectsLabel}</a></li>
@@ -357,7 +361,7 @@ export function ProjectSwitcher({
 }: ProjectSwitcherProps): React.ReactElement {
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
 	const selectedIndex = selected === null ? undefined : projects.indexOf(selected);
-	const selectedShortcut = selectedIndex === undefined || selectedIndex > 8 ? undefined : selectedIndex;
+	const selectedShortcut = selectedIndex === undefined || selectedIndex >= PROJECT_SHORTCUT_COUNT ? undefined : selectedIndex;
 	const selectedName = selected?.name ?? catalog.allProjectsLabel;
 	const [menuOpen, setMenuOpen] = useState(false);
 	const statusId = useId();
@@ -407,10 +411,10 @@ export function ProjectSwitcher({
  * project's own surfaces; with every project in view they open the control
  * center aggregates. Now and Insights are always global. No label appears
  * twice and no item changes position when the filter changes. */
-function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; shortcut?: string }[] {
+function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean }[] {
 	const project = selection.projectId === null ? null : `/projects/${encodeURIComponent(selection.projectId)}`;
 	return [
-		{ id: 'now', href: '/overview', label: catalog.routeLabels.now, glyph: 'overview', active: selection.surface === 'overview', shortcut: KEYBOARD_SHORTCUTS.overview.aria },
+		{ id: 'now', href: '/overview', label: catalog.routeLabels.now, glyph: 'overview', active: selection.surface === 'overview' },
 		{ id: 'runs', href: project === null ? '/overview/runs' : `${project}/runs`, label: catalog.routeLabels.overviewRuns, glyph: 'runs', active: selection.surface === 'overview-runs' || selection.surface === 'runs' },
 		{ id: 'queue', href: project === null ? '/overview/queues' : `${project}/work`, label: catalog.routeLabels.queue, glyph: 'overviewQueues', active: selection.surface === 'overview-queues' || selection.surface === 'work' },
 		{ id: 'insights', href: '/overview/insights', label: catalog.routeLabels.overviewInsights, glyph: 'overviewInsights', active: selection.surface === 'overview-insights' },
@@ -438,7 +442,7 @@ export function ShellNavigation({
 			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
 				{navigationItems(selection, catalog).map((item) => (
 					<li className="shrink-0" key={item.id}>
-						<a aria-current={item.active ? 'page' : undefined} aria-keyshortcuts={item.shortcut} className={NAV_LINK_CLASS} data-sidebar-id={item.href} href={item.href}>
+						<a aria-current={item.active ? 'page' : undefined} className={NAV_LINK_CLASS} data-sidebar-id={item.href} href={item.href}>
 							<NavGlyph name={item.glyph} /><span>{item.label}</span>
 						</a>
 					</li>
