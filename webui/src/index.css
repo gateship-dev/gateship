@@ -188,8 +188,15 @@ html.gship-harness-reduced-motion *::after {
 	--chart-4: #3d3d3d;
 	--chart-5: #232323;
 	--radius: 0.625rem;
-	--sidebar: var(--color-neutral-50);
-	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 64%, var(--sidebar));
+	/* The shell chrome (html, body and the outer shell all read this one
+	 * token, so the viewport gutter can never show a second fill) sits one
+	 * step deeper than the inset content panel: the sidebar separates from
+	 * the content by fill, not only by the panel hairline. */
+	--sidebar: var(--color-neutral-100);
+	/* 66%, not the dark theme's 64%: the mix is taken against --sidebar, so
+	 * the deeper light chrome needs two more points of ink to hold AA (4.5:1)
+	 * for 13px idle navigation. Measured in the browser, not estimated. */
+	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-800) 66%, var(--sidebar));
 	--sidebar-primary: var(--color-neutral-800);
 	--sidebar-primary-foreground: var(--color-neutral-50);
 	--sidebar-accent: --alpha(var(--color-black) / 4%);
@@ -281,7 +288,9 @@ html.gship-harness-reduced-motion *::after {
 	--chart-3: #737373;
 	--chart-4: #4a4a4a;
 	--chart-5: #232323;
-	--sidebar: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
+	/* Dark is not light inverted: the chrome goes to the floor of the ramp
+	 * and the panel lifts off it, so the step reads without a brighter fill. */
+	--sidebar: var(--color-neutral-950);
 	--sidebar-foreground: color-mix(in srgb, var(--color-neutral-100) 64%, var(--sidebar));
 	--sidebar-primary: var(--color-neutral-100);
 	--sidebar-primary-foreground: var(--color-neutral-800);
