@@ -38,19 +38,19 @@ function ShellIcon({
 }
 
 export const NAV_LINK_CLASS =
-	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:h-9 lg:min-h-0 lg:py-0 ' +
+	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:h-8 lg:min-h-0 lg:py-0 ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
 	'aria-[current=page]:text-sidebar-accent-foreground';
 
-/* Collapsed, the sidebar is an icon rail. Every tile keeps the expanded row's
- * height (36px, the switcher 48px) and is centred on x=44, the axis the
- * expanded icons already sit on, so collapsing moves no icon in either
- * direction. The rail is 76px wide because the sidebar's right inset is half
- * its left one (see ShellSidebar). */
+/* Collapsed, the sidebar is an icon rail. Every tile is a 32px square, the
+ * expanded row's height, centred on x=44, the axis the expanded icons already
+ * sit on, so collapsing moves no icon in either direction. The rail is 76px
+ * wide because the sidebar's right inset is half its left one (see
+ * ShellSidebar). */
 const RAIL_NAV_ITEM_CLASS =
-	'mx-auto flex h-9 w-8 items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
+	'mx-auto flex size-8 items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
@@ -239,21 +239,16 @@ function StateDot({ attention, className }: { attention: OperatorAttention; clas
 	return <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT_CLASS[attention], className)} data-slot="project-state-dot" data-state={attention} />;
 }
 
-/* The leading slot of the switcher is the shortcut that selects what it shows,
- * with the state dot under it. Both sit on the icon axis: the chip is wider
- * than a 16px glyph, so it overhangs its slot by 6px on each side. The chip
- * owns the first 32px, the line the content panel's controls share, and the
- * dot the 16px state line below it, so neither moves when the sidebar
- * collapses to the rail. */
-function SwitcherLead({ label, state }: { label: string | null; state: ShellStatus | null }): React.ReactElement {
+/* The leading slot of the switcher is the shortcut that selects what it shows.
+ * The chip is centred on the icon axis: it is wider than a 16px glyph, so it
+ * overhangs its slot by 6px on each side. On the rail the state has no text
+ * column left, so its dot docks on the chip's corner as a presence badge. */
+function SwitcherKey({ label, badge }: { label: string | null; badge: ShellStatus | null }): React.ReactElement {
+	const dot = badge === null ? null : <StateDot attention={badge.attention} className="-top-0.5 -right-0.5 absolute ring-2 ring-sidebar" />;
+	if (label === null) return <span className="relative flex shrink-0"><ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} />{dot}</span>;
 	return (
-		<span className="-mx-1.5 flex w-7 shrink-0 items-center justify-center gap-1.5 lg:flex-col lg:gap-0">
-			<span className="flex items-center lg:h-8">
-				{label === null
-					? <ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} />
-					: <kbd className="rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground" data-slot="switcher-key">{label}</kbd>}
-			</span>
-			{state === null ? null : <span className="flex items-center lg:h-4"><StateDot attention={state.attention} /></span>}
+		<span className="-mx-1.5 flex w-7 shrink-0 justify-center">
+			<span className="relative flex"><kbd className="rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground" data-slot="switcher-key">{label}</kbd>{dot}</span>
 		</span>
 	);
 }
@@ -281,19 +276,18 @@ function ProjectSwitcherTrigger({
 	open: boolean;
 }): React.ReactElement {
 	const state = selected === null ? null : status;
-	if (!open) return <SwitcherLead label={keyLabel} state={state} />;
+	if (!open) return <SwitcherKey badge={state} label={keyLabel} />;
 	return (
 		<>
-			<SwitcherLead label={keyLabel} state={state} />
-			<span className="flex min-w-0 flex-1 flex-col leading-tight">
-				<span className="flex items-center overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm lg:h-8">
-					{selected?.name ?? catalog.allProjectsLabel}
+			<SwitcherKey badge={null} label={keyLabel} />
+			<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">{selected?.name ?? catalog.allProjectsLabel}</span>
+			{state === null ? null : (
+				<span className="flex shrink-0 items-center gap-1.5 text-muted-foreground text-xs">
+					<StateDot attention={state.attention} />
+					<span>{state.label}</span>
 				</span>
-				{state === null ? null : (
-					<span className="flex items-center overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground text-xs lg:h-4">{state.label}</span>
-				)}
-			</span>
-			<span className="flex items-center lg:h-8"><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
+			)}
+			<ShellIcon className="opacity-70" icon={UnfoldMoreIcon} />
 		</>
 	);
 }
@@ -429,7 +423,7 @@ export function ProjectSwitcher({
 						aria-describedby={status === null ? undefined : statusId}
 						aria-keyshortcuts={key.aria}
 						aria-label={open ? undefined : selectedName}
-						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left lg:h-12 lg:items-start') : cn(RAIL_NAV_ITEM_CLASS, 'h-12 items-start'), 'data-[popup-open]:bg-sidebar-accent')}
+						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left') : RAIL_NAV_ITEM_CLASS, 'data-[popup-open]:bg-sidebar-accent')}
 						data-slot="project-switcher"
 					>
 						<ProjectSwitcherTrigger catalog={catalog} keyLabel={key.label} open={open} selected={selected} status={status} />
@@ -484,7 +478,7 @@ export function ShellNavigation({
 			<div data-slot="project-switcher-item">
 				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} open={open} projects={projects} selection={selection} status={status} />
 			</div>
-			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
+			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap" data-slot="global-navigation">
 				{navigationItems(selection, catalog).map((item) => (
 					<li className="shrink-0" key={item.id}>
 						<HintTooltip disabled={open} label={item.label}>
@@ -784,7 +778,7 @@ export function ShellSidebar({
 				open={open}
 				onSelectAllProjects={onSelectAllProjects}
 			/>
-							<div className="hidden items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
+							<div className="hidden h-8 items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />
 				{!open ? null : <span className="flex items-center gap-2">
 					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
