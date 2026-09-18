@@ -33,7 +33,6 @@ export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 						onSetSelfUpdate={props.onSetSelfUpdate}
 						pending={props.pending}
 						selfUpdate={props.selfUpdate}
-						version={props.version}
 					/></OperationalReadPanel>
 			<OperationalReadPanel detail={failed('Notifications')} loaded={loaded('Notifications')} locale={props.locale} pending={pending('Notifications')} resource="Notifications"><NotificationsPanel
 						catalog={catalog}

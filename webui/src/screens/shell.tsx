@@ -762,6 +762,7 @@ export function ShellSidebar({
 	projects,
 	run,
 	runInspectorCatalog,
+	version,
 	open,
 	onSelectAllProjects,
 }: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectAllProjects' | 'projects' | 'staleService' | 'workspaceNotices'> & {
@@ -769,6 +770,7 @@ export function ShellSidebar({
 	route: OperatorRoute;
 	selectedProjectId: string | null;
 	run: RunView | null;
+	version: string;
 	open: boolean;
 }): React.ReactElement {
 	// The header answers one question -- is Gateship waiting on the operator --
@@ -803,10 +805,12 @@ export function ShellSidebar({
 				open={open}
 				onSelectAllProjects={onSelectAllProjects}
 			/>
-			{/* The foot carries the mark alone: the wordmark is the mobile h1 and
-			 * the installed version lives in the updates panel. */}
-			<div className="hidden h-8 items-center px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
+			<div className="hidden h-8 items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />
+				{!open ? null : <span className="flex items-center gap-2">
+					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
+					{version === '' ? null : <span className="font-mono text-xs text-sidebar-foreground/50">v{humanVersionOf(version)}</span>}
+				</span>}
 			</div>
 		</header>
 	);
