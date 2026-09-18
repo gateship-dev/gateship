@@ -68,7 +68,6 @@ export interface ShellCatalog {
 	languageLabel: string;
 	routeLabels: {
 		now: string;
-		queue: string;
 		overview: string;
 		overviewRuns: string;
 		overviewQueues: string;
@@ -665,14 +664,13 @@ export const LOCALE_CATALOG = {
 			languageLabel: 'Language',
 			 routeLabels: {
 				now: 'Now',
-				queue: 'Queue',
 				overview: 'Overview',
 				overviewRuns: 'Runs',
 				overviewQueues: 'Queues',
 				overviewInsights: 'Insights',
 				projects: 'Projects',
 				runs: 'Runs',
-				work: 'Work',
+				work: 'Queue',
 				settings: 'Settings',
 				globalSettings: 'Global settings',
 			},
@@ -1146,14 +1144,13 @@ export const LOCALE_CATALOG = {
 			languageLabel: 'Idioma',
 			 routeLabels: {
 				now: 'Agora',
-				queue: 'Fila',
 				overview: 'Visão geral',
 				overviewRuns: 'Execuções',
 				overviewQueues: 'Filas',
 				overviewInsights: 'Análises',
 				projects: 'Projetos',
 				runs: 'Runs',
-				work: 'Trabalho',
+				work: 'Fila',
 				settings: 'Ajustes',
 				globalSettings: 'Ajustes globais',
 			},

@@ -20,6 +20,8 @@ import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrin
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
+import { navigationCounts } from '../overview-counts.ts';
+import type { NavigationCounts } from '../overview-counts.ts';
 
 const SHELL_ICON_SIZE = 16;
 const SHELL_ICON_CLASS = 'size-4';
@@ -447,14 +449,23 @@ export function ProjectSwitcher({
  * project's own surfaces; with every project in view they open the control
  * center aggregates. Now and Insights are always global. No label appears
  * twice and no item changes position when the filter changes. */
-function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean }[] {
+function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog, counts: NavigationCounts | null): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; count: number | null }[] {
 	const project = selection.projectId === null ? null : `/projects/${encodeURIComponent(selection.projectId)}`;
 	return [
-		{ id: 'now', href: '/overview', label: catalog.routeLabels.now, glyph: 'overview', active: selection.surface === 'overview' },
-		{ id: 'runs', href: project === null ? '/overview/runs' : `${project}/runs`, label: catalog.routeLabels.overviewRuns, glyph: 'runs', active: selection.surface === 'overview-runs' || selection.surface === 'runs' },
-		{ id: 'queue', href: project === null ? '/overview/queues' : `${project}/work`, label: catalog.routeLabels.queue, glyph: 'overviewQueues', active: selection.surface === 'overview-queues' || selection.surface === 'work' },
-		{ id: 'insights', href: '/overview/insights', label: catalog.routeLabels.overviewInsights, glyph: 'overviewInsights', active: selection.surface === 'overview-insights' },
+		{ id: 'now', href: '/overview', label: catalog.routeLabels.now, glyph: 'overview', active: selection.surface === 'overview', count: counts?.now ?? null },
+		{ id: 'runs', href: project === null ? '/overview/runs' : `${project}/runs`, label: catalog.routeLabels.overviewRuns, glyph: 'runs', active: selection.surface === 'overview-runs' || selection.surface === 'runs', count: counts?.runs ?? null },
+		{ id: 'queue', href: project === null ? '/overview/queues' : `${project}/work`, label: catalog.routeLabels.work, glyph: 'overviewQueues', active: selection.surface === 'overview-queues' || selection.surface === 'work', count: counts?.queue ?? null },
+		{ id: 'insights', href: '/overview/insights', label: catalog.routeLabels.overviewInsights, glyph: 'overviewInsights', active: selection.surface === 'overview-insights', count: null },
 	];
+}
+
+/* A row's figure is quiet mono in the sidebar's own grey, whatever it counts:
+ * the acid family is reserved for the surface that asks for the operator's
+ * turn, and a number beside a link is orientation, not a call. Unknown
+ * renders as nothing, never as a zero the service did not report. */
+function NavCount({ value }: { value: number | null }): React.ReactElement | null {
+	if (value === null) return null;
+	return <span className="ml-auto font-mono text-xs tabular-nums text-sidebar-foreground/70" data-slot="navigation-count">{value}</span>;
 }
 
 export function ShellNavigation({
@@ -464,6 +475,7 @@ export function ShellNavigation({
 	status,
 	open,
 	onSelectAllProjects,
+	counts,
 }: {
 	catalog: ShellCatalog;
 	projects: AppProps['projects'];
@@ -471,6 +483,7 @@ export function ShellNavigation({
 	status: ShellStatus | null;
 	open: boolean;
 	onSelectAllProjects?: () => void;
+	counts: NavigationCounts | null;
 }): React.ReactElement {
 	const itemClass = open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS;
 	return (
@@ -480,11 +493,11 @@ export function ShellNavigation({
 				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} open={open} projects={projects} selection={selection} status={status} />
 			</div>
 			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap" data-slot="global-navigation">
-				{navigationItems(selection, catalog).map((item) => (
+				{navigationItems(selection, catalog, counts).map((item) => (
 					<li className="shrink-0" key={item.id}>
 						<HintTooltip disabled={open} label={item.label}>
 							<a aria-current={item.active ? 'page' : undefined} aria-label={open ? undefined : item.label} className={itemClass} data-sidebar-id={item.href} href={item.href}>
-								<NavGlyph name={item.glyph} />{open ? <span>{item.label}</span> : null}
+								<NavGlyph name={item.glyph} />{open ? <><span>{item.label}</span><NavCount value={item.count} /></> : null}
 							</a>
 						</HintTooltip>
 					</li>
@@ -765,7 +778,8 @@ export function ShellSidebar({
 	version,
 	open,
 	onSelectAllProjects,
-}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectAllProjects' | 'projects' | 'staleService' | 'workspaceNotices'> & {
+	overview = null,
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectAllProjects' | 'overview' | 'projects' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
 	selectedProjectId: string | null;
@@ -804,6 +818,7 @@ export function ShellSidebar({
 				status={status}
 				open={open}
 				onSelectAllProjects={onSelectAllProjects}
+				counts={navigationCounts(overview, selection.projectId)}
 			/>
 			<div className="hidden h-8 items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />

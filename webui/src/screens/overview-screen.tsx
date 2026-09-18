@@ -18,6 +18,7 @@ import type { RunState } from '../run-view.ts';
 import { toneOf } from '../run-view.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { formatRunTimestamp } from './runs.tsx';
+import { overviewAttention } from '../overview-counts.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 
 export const READINESS_TONE: Readonly<Record<RegisteredProjectView['readiness'], BadgeVariant>> = {
@@ -96,8 +97,7 @@ export function OverviewData({ props, overview, catalog, attention }: { props: A
 export function OverviewSurface(props: AppProps): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].overview;
 	const overview = props.overview ?? null;
-	const attention = overview?.projects.filter((project) => project.project.readiness === 'needs-attention'
-		|| project.activeRun?.state === 'waiting-user' || project.activeRun?.state === 'interrupted').length ?? 0;
+	const attention = overview === null ? 0 : overviewAttention(overview);
 	return <SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.routeLabels.overview} status={props.status}>
 		{props.overviewLoading && overview === null ? <div role="status" aria-label={catalog.loading}><Skeleton className="h-20 w-full" /><span className="sr-only">{catalog.loading}</span></div> : null}
 		{overview === null && props.overviewError !== null && props.overviewError !== undefined ? <Card><CardPanel><p role="alert">{catalog.error}</p><p className="text-muted-foreground text-xs">{props.overviewError}</p></CardPanel></Card> : null}

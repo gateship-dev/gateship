@@ -308,7 +308,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const [claudeCredentialError, setClaudeCredentialError] = useState<string | null>(null);
 	const [version, setVersion] = useState('');
 	const [overview, setOverview] = useState<ProjectOperationalOverviewView | null>(null);
-	const [overviewLoading, setOverviewLoading] = useState(routeOf(pathname) === '/overview');
+	const [overviewLoading, setOverviewLoading] = useState(true);
 	const [overviewError, setOverviewError] = useState<string | null>(null);
 	const [snapshotLoading, setSnapshotLoading] = useState(true);
 	const [snapshotError, setSnapshotError] = useState<string | null>(null);
@@ -552,11 +552,9 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		}
 	}, [historicalEvents, liveGapBefore, runEventsHasPrevious, runEventsLoading, scope, selectedRunId]);
 
+	// The overview feeds the sidebar counts on every route, not only its own
+	// surface, so it polls for the document's whole life.
 	useEffect(() => {
-		if (routeOf(pathname) !== '/overview') {
-			setOverviewLoading(false);
-			return;
-		}
 		const controller = new AbortController();
 		let first = true;
 		let disposed = false;
@@ -591,7 +589,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 			controller.abort();
 			if (timeout !== undefined) clearTimeout(timeout);
 		};
-	}, [pathname]);
+	}, []);
 
 	// One subscription, bound to the project this document is about. A selection
 	// the registry does not report ready has no runtime to stream, and opening it
