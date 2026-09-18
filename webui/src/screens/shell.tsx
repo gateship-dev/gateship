@@ -16,7 +16,7 @@ import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
@@ -212,19 +212,31 @@ export function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.Rea
  */
 export const SWITCHER_ITEM_CLASS =
 	'flex w-full cursor-default select-none items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm outline-none ' +
-	'data-highlighted:bg-accent data-highlighted:text-accent-foreground ' +
-	'aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground';
+	'data-highlighted:bg-accent data-highlighted:text-accent-foreground';
+
+/* The leading slot every switcher row shares, in the trigger and in its menu:
+ * 16px net on the icon axis, so a key chip (wider than a glyph, overhanging
+ * 6px each side) and a 16px icon centre on the same x. */
+const LEAD_SLOT_CLASS = '-mx-1.5 flex w-7 shrink-0 justify-center';
+const KEY_CHIP_CLASS = 'rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground';
 
 function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement {
 	const platform = presentationPlatform();
 	if (allProjects) {
-		return <span className="flex w-10 shrink-0 justify-center"><kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</kbd></span>;
+		return <span className={LEAD_SLOT_CLASS}><kbd className={KEY_CHIP_CLASS} data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</kbd></span>;
 	}
 	return (
-		<span className="flex w-10 shrink-0 justify-center">
-			{index === undefined ? null : <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>}
+		<span className={LEAD_SLOT_CLASS}>
+			{index === undefined ? null : <kbd className={KEY_CHIP_CLASS} data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>}
 		</span>
 	);
+}
+
+/* The row the switcher currently shows carries a check at the trailing edge,
+ * the chevron's column; the fill is left to hover and keyboard focus so one
+ * row lights at a time. */
+function CurrentMark({ current }: { current: boolean }): React.ReactElement | null {
+	return current ? <ShellIcon aria-hidden="true" className="opacity-70" icon={Tick02Icon} /> : null;
 }
 
 /* The project's state is a dot. Expanded it sits beside the state's name;
@@ -250,8 +262,8 @@ function SwitcherKey({ label, badge }: { label: string | null; badge: ShellStatu
 	const dot = badge === null ? null : <StateDot attention={badge.attention} className="-top-0.5 -right-0.5 absolute ring-2 ring-sidebar" />;
 	if (label === null) return <span className="relative flex shrink-0"><ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} />{dot}</span>;
 	return (
-		<span className="-mx-1.5 flex w-7 shrink-0 justify-center">
-			<span className="relative flex"><kbd className="rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground" data-slot="switcher-key">{label}</kbd>{dot}</span>
+		<span className={LEAD_SLOT_CLASS}>
+			<span className="relative flex"><kbd className={KEY_CHIP_CLASS} data-slot="switcher-key">{label}</kbd>{dot}</span>
 		</span>
 	);
 }
@@ -303,8 +315,10 @@ function ProjectSwitcherMenu({
 }: Pick<ProjectSwitcherProps, 'projects' | 'selection' | 'catalog' | 'onSelectAllProjects'>): React.ReactElement {
 	return (
 		<Menu.Portal>
-			<Menu.Positioner align="start" className="z-50" sideOffset={6}>
-				<Menu.Popup className="relative min-w-(--anchor-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 motion-safe:duration-100 motion-reduce:animate-none motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+			{/* One pixel out on each side so the popup's border sits outside the
+			 * trigger's edge and every row inside lines up with the trigger. */}
+			<Menu.Positioner align="start" alignOffset={-1} className="z-50" sideOffset={6}>
+				<Menu.Popup className="relative min-w-[calc(var(--anchor-width)+2px)] origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 motion-safe:duration-100 motion-reduce:animate-none motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
 					<div className="type-eyebrow px-2 pt-1.5 pb-1 text-muted-foreground">
 						{catalog.projectNavigationLabel}
 					</div>
@@ -322,6 +336,7 @@ function ProjectSwitcherMenu({
 					>
 						<ProjectShortcut allProjects index={undefined} />
 						<span className="min-w-0 flex-1">{catalog.allProjectsLabel}</span>
+						<CurrentMark current={selection.projectId === null} />
 					</Menu.Item>
 					{projects.map((project, index) => (
 						<Menu.Item
@@ -335,24 +350,27 @@ function ProjectSwitcherMenu({
 							<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 								{project.name}
 							</span>
+							<CurrentMark current={project.id === selection.projectId} />
 						</Menu.Item>
 					))}
+					<Menu.Separator className="-mx-1 my-1 h-px bg-border" />
 					{selection.projectId === null ? null : (
 						<Menu.Item
 							aria-current={selection.surface === 'settings' ? 'page' : undefined}
-							className={cn(SWITCHER_ITEM_CLASS, 'mt-1')}
+							className={SWITCHER_ITEM_CLASS}
 							data-slot="project-switcher-settings"
 							render={<a href={`/projects/${encodeURIComponent(selection.projectId)}/settings`} />}
 						>
-							<HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={Settings01Icon} size={16} strokeWidth={2.25} />
+							<span className={LEAD_SLOT_CLASS}><ShellIcon aria-hidden="true" className="opacity-70" icon={Settings01Icon} /></span>
 							<span className="min-w-0 flex-1">{catalog.projectSettingsLabel}</span>
+							<CurrentMark current={selection.surface === 'settings'} />
 						</Menu.Item>
 					)}
 					<Menu.Item
-						className={cn(SWITCHER_ITEM_CLASS, selection.projectId === null && 'mt-1')}
+						className={SWITCHER_ITEM_CLASS}
 						render={<a href="/projects" />}
 					>
-						<HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={FolderManagementIcon} size={16} strokeWidth={2.25} />
+						<span className={LEAD_SLOT_CLASS}><ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} /></span>
 						<span className="min-w-0 flex-1">{catalog.manageProjectsLabel}</span>
 					</Menu.Item>
 				</Menu.Popup>
@@ -465,7 +483,7 @@ function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: 
  * renders as nothing, never as a zero the service did not report. */
 function NavCount({ value }: { value: number | null }): React.ReactElement | null {
 	if (value === null) return null;
-	return <span className="ml-auto font-mono text-xs tabular-nums text-sidebar-foreground/70" data-slot="navigation-count">{value}</span>;
+	return <span className="ml-auto min-w-4 text-center font-mono text-xs tabular-nums text-sidebar-foreground/70" data-slot="navigation-count">{value}</span>;
 }
 
 export function ShellNavigation({
