@@ -12,6 +12,7 @@ import { SelectField } from '../components/ui/select.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, SettingsCatalog } from '../locale.ts';
+import { humanVersionOf } from './shell.tsx';
 import type { ProviderUsageView, ProviderUsageWindowView } from '../run-view.ts';
 import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
@@ -707,7 +708,8 @@ export function SelfUpdatePanel({
 	onSetSelfUpdate,
 	catalog,
 	locale,
-}: Pick<AppProps, 'selfUpdate' | 'pending' | 'onSetSelfUpdate'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
+	version,
+}: Pick<AppProps, 'selfUpdate' | 'pending' | 'onSetSelfUpdate' | 'version'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	const unavailable = selfUpdate.availability.kind !== 'native';
 	return (
 		<ContextPanel
@@ -732,6 +734,7 @@ export function SelfUpdatePanel({
 			{unavailable ? (
 				<p className="text-muted-foreground text-sm">{selfUpdate.availability.reason}</p>
 			) : null}
+			{version === '' ? null : <p className="text-sm">{catalog.updates.installed}: <span className="font-mono">v{humanVersionOf(version)}</span></p>}
 			{selfUpdate.available !== null ? (
 				<p className="text-sm">{catalog.updates.available}: v{selfUpdate.available.version} ({selfUpdate.available.commit})</p>
 			) : null}

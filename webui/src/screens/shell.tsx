@@ -18,7 +18,7 @@ import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
 import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { useCallback, useId, useState } from 'react';
+import { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 
 const SHELL_ICON_SIZE = 16;
@@ -228,11 +228,12 @@ function ProjectShortcut({ index, allProjects = false }: { index: number | undef
 /* The project's state is a dot. Expanded it sits beside the state's name;
  * on the rail it is the dot alone, and the tile's tooltip and its described-by
  * text still carry the name, so colour is never the only channel. Acid is the
- * operator's turn, blue is work advancing, grey is idle. */
+ * operator's turn, blue is work advancing, and idle is a hollow ring: nothing
+ * is happening, so nothing is filled. */
 const STATE_DOT_CLASS: Record<OperatorAttention, string> = {
 	'Needs you': 'bg-attention',
 	Working: 'bg-info',
-	Idle: 'bg-muted-foreground/40',
+	Idle: 'border border-muted-foreground/70',
 };
 
 function StateDot({ attention, className }: { attention: OperatorAttention; className?: string }): React.ReactElement {
@@ -550,6 +551,32 @@ export function useStoredOpen(key: string): [boolean, () => void] {
 	return [open, toggle];
 }
 
+const LARGE_VIEWPORT = '(min-width: 64rem)';
+
+/**
+ * Whether the viewport is at Tailwind's `lg` breakpoint, where the sidebar is
+ * a column. Below it the sidebar is a horizontal header, so the stored
+ * collapse preference must not apply there; a static render (tests, no-JS)
+ * reports large so it sees the desktop layout.
+ */
+function useLargeViewport(): boolean {
+	const subscribe = useCallback((onChange: () => void) => {
+		const media = panelRuntime().matchMedia?.(LARGE_VIEWPORT);
+		media?.addEventListener?.('change', onChange);
+		return () => media?.removeEventListener?.('change', onChange);
+	}, []);
+	const read = (): boolean => panelRuntime().matchMedia?.(LARGE_VIEWPORT).matches ?? true;
+	return useSyncExternalStore(subscribe, read, read);
+}
+
+/* The stored collapse preference only means something where the sidebar is a
+ * column; the horizontal header below `lg` always shows its labels. */
+export function useSidebarOpen(): [boolean, () => void] {
+	const [stored, toggle] = useStoredOpen('gship-sidebar');
+	const large = useLargeViewport();
+	return [stored || !large, toggle];
+}
+
 /**
  * The shell's persistent preferences, one row at the top right of the
  * content area (operator decision, 2026-08-25, replacing the segmented
@@ -621,6 +648,7 @@ export function ShellControls({
 					<Button
 						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
 						aria-expanded={sidebarOpen}
+						className="max-lg:hidden"
 						data-slot="sidebar-toggle"
 						onClick={onToggleSidebar}
 						size="icon"
@@ -734,7 +762,6 @@ export function ShellSidebar({
 	projects,
 	run,
 	runInspectorCatalog,
-	version,
 	open,
 	onSelectAllProjects,
 }: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectAllProjects' | 'projects' | 'staleService' | 'workspaceNotices'> & {
@@ -742,7 +769,6 @@ export function ShellSidebar({
 	route: OperatorRoute;
 	selectedProjectId: string | null;
 	run: RunView | null;
-	version: string;
 	open: boolean;
 }): React.ReactElement {
 	// The header answers one question -- is Gateship waiting on the operator --
@@ -753,7 +779,6 @@ export function ShellSidebar({
 	const catalog = LOCALE_CATALOG[locale].shell;
 	const currentId = projects.find((project) => project.current)?.id ?? null;
 	const selection = routeSelection(route, currentId, selectedProjectId);
-	const humanVersion = humanVersionOf(version);
 	const status = shellStatus(projects.find((project) => project.id === selection.projectId) ?? null, run, runInspectorCatalog);
 	/* The outer shell shares the global --sidebar canvas with html and body;
 	 * the content panel provides the deliberate surface contrast. The right
@@ -778,12 +803,10 @@ export function ShellSidebar({
 				open={open}
 				onSelectAllProjects={onSelectAllProjects}
 			/>
-							<div className="hidden h-8 items-center gap-2 px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
+			{/* The foot carries the mark alone: the wordmark is the mobile h1 and
+			 * the installed version lives in the updates panel. */}
+			<div className="hidden h-8 items-center px-2.5 lg:mt-auto lg:flex" data-slot="sidebar-signature">
 				<GateshipMark className="size-5" portal />
-				{!open ? null : <span className="flex items-center gap-2">
-					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
-					{version === '' ? null : <span className="font-mono text-xs text-sidebar-foreground/50">v{humanVersion}</span>}
-				</span>}
 			</div>
 		</header>
 	);
