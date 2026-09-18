@@ -350,6 +350,11 @@ html.gship-harness-reduced-motion *::after {
  */
 :root {
 	--content-measure: 80rem;
+	/* Distance from the viewport edge to the content panel's controls row:
+	 * the panel's margin (spacing 3), its 1px border and the controls'
+	 * padding (spacing 3). The sidebar uses it as its vertical inset so its
+	 * first row and the panel's controls share one line. */
+	--shell-inset: calc(--spacing(6) + 1px);
 }
 
 :root.gship-wide {

@@ -239,12 +239,23 @@ function StateDot({ attention, className }: { attention: OperatorAttention; clas
 	return <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT_CLASS[attention], className)} data-slot="project-state-dot" data-state={attention} />;
 }
 
-/* The leading slot of the switcher is the shortcut that selects what it shows.
- * The chip is centred on the icon axis: it is wider than a 16px glyph, so it
- * overhangs its slot by 6px on each side. */
-function SwitcherKey({ label }: { label: string | null }): React.ReactElement {
-	if (label === null) return <ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} />;
-	return <span className="-mx-1.5 flex w-7 shrink-0 justify-center"><kbd className="rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground" data-slot="switcher-key">{label}</kbd></span>;
+/* The leading slot of the switcher is the shortcut that selects what it shows,
+ * with the state dot under it. Both sit on the icon axis: the chip is wider
+ * than a 16px glyph, so it overhangs its slot by 6px on each side. The chip
+ * owns the first 32px, the line the content panel's controls share, and the
+ * dot the 16px state line below it, so neither moves when the sidebar
+ * collapses to the rail. */
+function SwitcherLead({ label, state }: { label: string | null; state: ShellStatus | null }): React.ReactElement {
+	return (
+		<span className="-mx-1.5 flex w-7 shrink-0 items-center justify-center gap-1.5 lg:flex-col lg:gap-0">
+			<span className="flex items-center lg:h-8">
+				{label === null
+					? <ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} />
+					: <kbd className="rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground" data-slot="switcher-key">{label}</kbd>}
+			</span>
+			{state === null ? null : <span className="flex items-center lg:h-4"><StateDot attention={state.attention} /></span>}
+		</span>
+	);
 }
 
 interface ShellStatus { attention: OperatorAttention; label: string; acid: boolean }
@@ -270,29 +281,19 @@ function ProjectSwitcherTrigger({
 	open: boolean;
 }): React.ReactElement {
 	const state = selected === null ? null : status;
-	if (!open) {
-		return (
-			<>
-				<SwitcherKey label={keyLabel} />
-				{state === null ? null : <StateDot attention={state.attention} className="absolute top-1 right-1" />}
-			</>
-		);
-	}
+	if (!open) return <SwitcherLead label={keyLabel} state={state} />;
 	return (
 		<>
-			<SwitcherKey label={keyLabel} />
-			<span className="grid min-w-0 flex-1 leading-tight">
-				<span className="overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">
+			<SwitcherLead label={keyLabel} state={state} />
+			<span className="flex min-w-0 flex-1 flex-col leading-tight">
+				<span className="flex items-center overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm lg:h-8">
 					{selected?.name ?? catalog.allProjectsLabel}
 				</span>
 				{state === null ? null : (
-					<span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-						<StateDot attention={state.attention} />
-						<span className="overflow-hidden text-ellipsis whitespace-nowrap">{state.label}</span>
-					</span>
+					<span className="flex items-center overflow-hidden text-ellipsis whitespace-nowrap text-muted-foreground text-xs lg:h-4">{state.label}</span>
 				)}
 			</span>
-			<span><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
+			<span className="flex items-center lg:h-8"><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
 		</>
 	);
 }
@@ -428,7 +429,7 @@ export function ProjectSwitcher({
 						aria-describedby={status === null ? undefined : statusId}
 						aria-keyshortcuts={key.aria}
 						aria-label={open ? undefined : selectedName}
-						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left lg:h-12') : cn(RAIL_NAV_ITEM_CLASS, 'h-12'), 'relative data-[popup-open]:bg-sidebar-accent')}
+						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left lg:h-12 lg:items-start') : cn(RAIL_NAV_ITEM_CLASS, 'h-12 items-start'), 'data-[popup-open]:bg-sidebar-accent')}
 						data-slot="project-switcher"
 					>
 						<ProjectSwitcherTrigger catalog={catalog} keyLabel={key.label} open={open} selected={selected} status={status} />
@@ -764,10 +765,13 @@ export function ShellSidebar({
 	 * the content panel provides the deliberate surface contrast. The right
 	 * inset is half the left one on purpose: the panel adds its own 12px
 	 * margin, so a row's fill sits 24px from the viewport edge on one side and
-	 * 24px from the panel border on the other. Collapsed, the same list becomes
-	 * an icon rail on the same axis. */
+	 * 24px from the panel border on the other. The vertical inset is
+	 * --shell-inset, the distance from the viewport edge to the panel's
+	 * controls row, so the switcher's first line and the sidebar toggle share
+	 * one line. Collapsed, the same list becomes an icon rail on the same
+	 * axis. */
 	return (
-		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
+		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:py-(--shell-inset)', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
