@@ -120,7 +120,7 @@ export function QueueRow({ queue, catalog, locale }: { queue: ProjectQueueView; 
 	const projectHref = `/projects/${encodeURIComponent(queue.project.id)}`;
 	const status = queueStatus(queue);
 	return (
-		<section aria-label={queue.project.name} className={cn('overflow-hidden rounded-lg border bg-card', status === 'needs-you' && 'shadow-[inset_2px_0_0_var(--color-attention)]')} data-slot="queue" data-status={status}>
+		<section aria-label={queue.project.name} className={cn('overflow-hidden rounded-lg border bg-card', status === 'needs-you' && 'shadow-attention-rule')} data-slot="queue" data-status={status}>
 			<header className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
 				<h2 className="type-editorial-title min-w-32 text-base"><a className={TITLE_LINK_CLASS} href={`${projectHref}/work`}>{queue.project.name}</a></h2>
 				<QueueStatusLine catalog={catalog} locale={locale} projectHref={projectHref} queue={queue} status={status} />

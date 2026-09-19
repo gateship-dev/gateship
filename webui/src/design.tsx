@@ -12,7 +12,6 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './components/ui/alert.tsx';
-import { AttentionCard } from './components/ui/attention-card.tsx';
 import { Badge, type BadgeVariant } from './components/ui/badge.tsx';
 import { Button } from './components/ui/button.tsx';
 import { Callout, type CalloutTone } from './components/ui/callout.tsx';
@@ -294,7 +293,7 @@ function TableSample({ status }: { status: DataTableStatus }): React.ReactElemen
 				<DataTableFilter className="sm:max-w-64" placeholder="Search" table={table} />
 				<DataTableViewOptions table={table} />
 			</DataTableToolbar>
-			<DataTable emptyState="No runs match." rowClassName={(row) => row.state === 'attention' ? '[&>td:first-child]:shadow-[inset_2px_0_0_var(--color-attention)]' : undefined} status={status} table={table} />
+			<DataTable emptyState="No runs match." needsOperator={(row) => row.state === 'attention'} status={status} table={table} />
 			<DataTablePagination table={table} />
 		</div>
 	);
@@ -347,10 +346,10 @@ function Components(): React.ReactElement {
 					<Progress label="Recovery budget" value={40} />
 				</Block>
 			</div>
-			<Block rule="Stat is a figure with a mono eyebrow. AttentionCard is the only acid surface and appears only while work waits on you." spec={['stat', 'attention-card', 'callout']} title="Stat, attention, callout">
+			<Block rule="Stat is a figure with a mono eyebrow, and a link when a list sits behind it. Its attention tone is the only acid surface and appears only while work waits on you." spec={['stat', 'callout']} title="Stat, attention, callout">
 				<CardGrid className="sm:grid-cols-2 xl:grid-cols-4" compact equalHeight>
 					<Stat label="Active runs" value={2} />
-					<AttentionCard title="Needs attention"><p className="type-data text-2xl">1</p></AttentionCard>
+					<Stat label="Needs attention" tone="attention" value={1} />
 					{CALLOUT_TONES.slice(0, 2).map((tone) => <Callout key={tone} title={tone} tone={tone}>Callout body in the {tone} tone.</Callout>)}
 				</CardGrid>
 			</Block>

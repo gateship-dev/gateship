@@ -9,7 +9,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { AttentionCard } from '../../webui/src/components/ui/attention-card.tsx';
 import { Badge } from '../../webui/src/components/ui/badge.tsx';
 import {
 	CardDisclosure,
@@ -193,15 +192,16 @@ describe('ui primitives', () => {
 		expect(renderToStaticMarkup(<Badge>ocioso</Badge>)).toContain('bg-primary');
 	});
 
-	test('the attention card is the acid surface and announces its title', () => {
-		const html = renderToStaticMarkup(
-			<AttentionCard title="O executor tem uma pergunta">corpo</AttentionCard>,
-		);
+	test('the attention stat is the acid surface, and a stat with a list behind it is a link', () => {
+		const html = renderToStaticMarkup(<Stat label="Requer atenção" tone="attention" value={1} />);
 		// The family, not the exact wash: acid marks what waits on the operator.
 		expect(html).toContain('bg-attention-surface');
 		expect(html).toContain('border-attention-ui');
-		expect(html).toContain('O executor tem uma pergunta');
-		expect(html).toContain('corpo');
+		expect(html).toContain('Requer atenção');
+		expect(renderToStaticMarkup(<Stat label="Runs ativas" value={0} />)).not.toContain('attention');
+		const link = renderToStaticMarkup(<Stat href="/overview/queues" label="Issues aprovadas" value={2} />);
+		expect(link).toMatch(/^<a [^>]*href="\/overview\/queues"/);
+		expect(link).toContain('focus-visible:ring-2');
 	});
 
 	test('tabs keep every label in a named horizontal scroller with reduced motion support', () => {

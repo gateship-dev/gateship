@@ -49,7 +49,7 @@ Tailwind v4, `tailwind.config` deve ficar vazio.
 | Base UI primitives | Button, Input, Select e Tabs locais | não há lacuna comportamental identificada | reutilizar |
 | Hugeicons | `HugeiconsIcon` e ícones em `shell.tsx`/`select.tsx` | não usar Lucide ou Radix | reutilizar |
 | Chart library | gráfico CSS factual em `OutcomeTrend` | biblioteca de charts não é necessária | não criar dependência |
-| Atenção | `AttentionCard` e tokens `attention-*` | acid deve continuar exclusivo de espera do operador | reutilizar e adaptar |
+| Atenção | `Stat` com `tone="attention"` e tokens `attention-*` | acid deve continuar exclusivo de espera do operador | reutilizar e adaptar |
 
 ## Regras para novas composições
 

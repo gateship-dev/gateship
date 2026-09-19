@@ -740,7 +740,7 @@ export function shellSurfaceTitle(
 	selection: ReturnType<typeof routeSelection>,
 	catalog: ShellCatalog,
 ): string {
-	if (selection.surface === 'overview') return catalog.routeLabels.overview;
+	if (selection.surface === 'overview') return catalog.routeLabels.now;
 	if (selection.surface === 'overview-runs') return catalog.routeLabels.overviewRuns;
 	if (selection.surface === 'overview-queues') return catalog.routeLabels.overviewQueues;
 	if (selection.surface === 'overview-insights') return catalog.routeLabels.overviewInsights;

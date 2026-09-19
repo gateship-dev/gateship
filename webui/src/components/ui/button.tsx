@@ -45,7 +45,8 @@ export const buttonVariants = cva(
 				destructive:
 					'not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-destructive bg-destructive text-white shadow-destructive/24 shadow-xs hover:bg-destructive/90 data-pressed:bg-destructive/90 [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none',
 				ghost:
-					'border-transparent text-foreground hover:bg-accent data-pressed:bg-accent',
+					/* A trigger whose popup is open reads as pressed. */
+					'border-transparent text-foreground hover:bg-accent data-popup-open:bg-accent data-pressed:bg-accent',
 				/* Raised controls stay white on light and use the input tint on dark. */
 				outline:
 					'border-input bg-white not-dark:bg-clip-padding text-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] hover:bg-accent/50 data-pressed:bg-accent/50 dark:bg-input/32 dark:data-pressed:bg-input/64 dark:hover:bg-input/64 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none',

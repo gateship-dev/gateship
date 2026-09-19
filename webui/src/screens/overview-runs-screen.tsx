@@ -68,11 +68,11 @@ function useOverviewRunsPage(query: OverviewRunsQuery, revision: number): { page
 function duration(ms: number | null): string { if (ms === null || !Number.isFinite(ms)) return '—'; const seconds = Math.round(ms / 1000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
 function readPreferences(): Record<string, boolean> { try { const value: unknown = JSON.parse(globalThis.localStorage?.getItem(TABLE_PREFERENCES_KEY) ?? 'null'); const stored = value !== null && typeof value === 'object' ? (value as { columnVisibility?: Record<string, boolean> }).columnVisibility : undefined; return stored ?? DEFAULT_VISIBILITY; } catch { return DEFAULT_VISIBILITY; } }
 function runHref(run: RunRow): string { return `/projects/${encodeURIComponent(run.projectId)}/runs/${encodeURIComponent(run.runId)}`; }
-function formatDate(value: string, locale: Locale): string {
+export function formatDate(value: string, locale: Locale): string {
 	const date = new Date(value);
 	return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
 }
-function formatTime(value: string, locale: Locale): string {
+export function formatTime(value: string, locale: Locale): string {
 	const date = new Date(value);
 	return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' });
 }
@@ -104,7 +104,7 @@ function StateBadge({ run, catalog, inspector }: { run: RunRow; catalog: Overvie
 function RowActions({ run, catalog }: { run: RunRow; catalog: OverviewRunsCatalog }): React.ReactElement {
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button aria-label={catalog.actions} className="size-6 text-muted-foreground data-popup-open:bg-accent sm:size-6" size="icon" type="button" variant="ghost" />}>
+			<DropdownMenuTrigger render={<Button aria-label={catalog.actions} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" />}>
 				<HugeiconsIcon aria-hidden="true" icon={MoreHorizontalIcon} size={16} strokeWidth={2.25} />
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="min-w-44">
@@ -244,7 +244,7 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 				emptyDetail={catalog.emptyDetail}
 				emptyState={catalog.empty}
 				locale={props.locale}
-				rowClassName={(run) => NEEDS_YOU.has(run.state) ? '[&>td:first-child]:shadow-[inset_2px_0_0_var(--color-attention)]' : undefined}
+				needsOperator={(run) => NEEDS_YOU.has(run.state)}
 				status={status}
 				table={table}
 			/>

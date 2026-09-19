@@ -63,7 +63,8 @@ export type GateshipTable<TData extends RowData> = ReactTable<GateshipTableFeatu
  * a width), where it aligns (the header follows), and the label its menus
  * use. Header text keeps the table's sans voice whatever the cells wear.
  */
-export interface GateshipColumnMeta { className?: string; align?: 'start' | 'end'; label?: string }
+/** `hideBelow` drops a secondary column, head and cells alike, under that breakpoint: a narrow screen keeps what the row is about. */
+export interface GateshipColumnMeta { className?: string; align?: 'start' | 'end'; label?: string; hideBelow?: 'sm' | 'md' }
 
 export function useGateshipTable<TData extends RowData>(options: GateshipTableOptions<TData>): GateshipTable<TData> {
 	return useTable(options);
@@ -122,8 +123,11 @@ function metaOf<TData extends RowData>(column: GateshipColumn<TData>): GateshipC
 	return (column.columnDef.meta ?? {}) as GateshipColumnMeta;
 }
 
+const HIDE_BELOW = { sm: 'hidden sm:table-cell', md: 'hidden md:table-cell' } as const;
+/** What a column imposes on its head and its cells alike: alignment, and the breakpoint it shows from. */
 function alignClass<TData extends RowData>(column: GateshipColumn<TData>): string | undefined {
-	return metaOf(column).align === 'end' ? 'text-right' : undefined;
+	const meta = metaOf(column);
+	return cn(meta.align === 'end' ? 'text-right' : undefined, meta.hideBelow === undefined ? undefined : HIDE_BELOW[meta.hideBelow]) || undefined;
 }
 
 function columnLabel<TData extends RowData>(column: GateshipColumn<TData>): string {
@@ -292,6 +296,9 @@ export function DataTablePagination<TData extends RowData>({
 	);
 }
 
+/** The acid rule on a row that waits on the operator: the one mark every list shares, so the table owns it. */
+const ATTENTION_ROW_CLASS = '[&>td:first-child]:shadow-attention-rule';
+
 export type DataTableStatus = 'ready' | 'loading' | 'updating' | 'error';
 
 /**
@@ -310,7 +317,7 @@ export function DataTable<TData extends RowData>({
 	emptyDetail,
 	emptyAction,
 	skeletonRows = 5,
-	rowClassName,
+	needsOperator,
 	className,
 }: TableControlProps<TData> & {
 	status?: DataTableStatus;
@@ -318,8 +325,8 @@ export function DataTable<TData extends RowData>({
 	emptyDetail?: React.ReactNode;
 	emptyAction?: React.ReactNode;
 	skeletonRows?: number;
-	/** Extra classes for one row, from its data: how a screen marks the rows that wait on the operator. */
-	rowClassName?: (row: TData) => string | undefined;
+	/** Which rows wait on the operator. The table draws the acid rule; a screen never styles a row. */
+	needsOperator?: (row: TData) => boolean;
 }): React.ReactElement {
 	const text = copy[locale];
 	const rows = table.getRowModel().rows;
@@ -333,7 +340,7 @@ export function DataTable<TData extends RowData>({
 					{table.getHeaderGroups().map((headerGroup) => (
 						<TableRow key={headerGroup.id}>
 							{headerGroup.headers.map((header) => (
-								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={cn('font-sans', alignClass(header.column))} key={header.id}>
+								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={alignClass(header.column)} key={header.id}>
 									{header.isPlaceholder ? null : typeof header.column.columnDef.header === 'string'
 										? <DataTableColumnHeader column={header.column} locale={locale} title={header.column.columnDef.header} />
 										: <FlexRender header={header} />}
@@ -350,7 +357,7 @@ export function DataTable<TData extends RowData>({
 							</TableRow>
 						))
 						: rows.map((row) => (
-							<TableRow className={rowClassName?.(row.original)} key={row.id}>
+							<TableRow className={needsOperator?.(row.original) ? ATTENTION_ROW_CLASS : undefined} data-attention={needsOperator?.(row.original) ? '' : undefined} key={row.id}>
 								{row.getVisibleCells().map((cell) => <TableCell className={cn(metaOf(cell.column).className, alignClass(cell.column))} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
 							</TableRow>
 						))}

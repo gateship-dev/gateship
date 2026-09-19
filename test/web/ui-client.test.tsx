@@ -3987,8 +3987,8 @@ describe('operator shell', () => {
 
 	test('overview renders four metrics and compact project collections without management forms', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, label: 'Overview', current: 'served by this instance', readiness: 'Readiness' },
-			{ locale: 'pt-BR' as const, label: 'Visão geral', current: 'servido por esta instância', readiness: 'Prontidão' },
+			{ locale: 'en-US' as const, label: 'Now', current: 'served by this instance', readiness: 'Readiness' },
+			{ locale: 'pt-BR' as const, label: 'Agora', current: 'servido por esta instância', readiness: 'Prontidão' },
 		]) {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
 			expect(html).toContain(`aria-label="${expected.label}"`);
@@ -4088,12 +4088,41 @@ describe('operator shell', () => {
 		});
 		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
 		const noActive = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, history)]) });
-		expect(noActive).toContain('No active or blocked work.');
+		// One list: an idle project says so in its own row, with no second block above the table.
+		expect(noActive).toContain('No active run');
+		expect(noActive).not.toContain('data-tone="attention"');
+		expect((noActive.match(/data-slot="data-table"/g) ?? []).length).toBe(1);
 			const active = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry({ id: 'run-active', issueId: 'CAM-900', state: 'working', providerId: 'claude', createdAt: '', updatedAt: '' }, history)]) });
 		expect(active).toContain('>1</p>');
 		const unavailable = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, null)]) });
 		expect(unavailable).toContain('>0</p>');
 		expect(unavailable).not.toContain('Some project data is unavailable.');
+	});
+
+	test('overview lists projects by urgency, marks the ones waiting on the operator and links each figure to its list', () => {
+		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
+		const entry = (project: typeof CURRENT_PROJECT, activeRun: NonNullable<AppProps['overview']>['projects'][number]['activeRun']) => ({
+			project, root: { state: 'available' as const }, backlog: { state: 'available' as const, counts: { idea: 0, specified: 0, planned: 1 } },
+			database: { state: 'available' as const, path: '/state/runtime.sqlite' }, overview: { overview: history }, activeRun, latestRun: null, latestRunOutcome: null, recentRuns: [],
+		});
+		const run = (id: string, state: string) => ({ id, issueId: id.toUpperCase(), state, providerId: 'claude', createdAt: '', updatedAt: '' }) as NonNullable<NonNullable<AppProps['overview']>['projects'][number]['activeRun']>;
+		const idle = { ...OTHER_PROJECT, id: 'project-idle', name: 'idle-product' };
+		const working = { ...OTHER_PROJECT, id: 'project-working', name: 'working-product' };
+		const waiting = { ...OTHER_PROJECT, id: 'project-waiting', name: 'waiting-product' };
+		const projects = [entry(idle, null), entry(working, run('run-working', 'working')), entry(waiting, run('run-waiting', 'waiting-user'))];
+		const html = renderAt('/overview', { projects: [idle, working, waiting], overview: {
+			window: '7d', overview: history, projects,
+			summary: { totalProjects: 3, readyProjects: 3, unavailableProjects: 0, nonTerminalRuns: 2, backlog: { idea: 0, specified: 0, planned: 3 } },
+		} });
+		const rows = html.slice(html.indexOf('data-slot="data-table"')).split('<tr').slice(2);
+		expect(rows.map((row) => row.match(/(waiting|working|idle)-product/)?.[0])).toEqual(['waiting-product', 'working-product', 'idle-product']);
+		// The acid rule sits on the row that waits on the operator and on no other.
+		expect(rows[0]).toContain('data-attention=""');
+		expect(rows[0]).toContain('shadow-attention-rule');
+		expect(rows[1]).not.toContain('data-attention');
+		expect(rows[0]).toContain('href="/projects/project-waiting/runs/run-waiting"');
+		expect(html).toContain('data-tone="attention"');
+		for (const href of ['/overview/runs', '/overview/queues', '/overview/runs?group=shipped&amp;period=7d']) expect(html).toMatch(new RegExp(`<a [^>]*data-slot="stat"[^>]*href="${href.replace('?', '\\?')}"`));
 	});
 
 	test('overview uses the active run provider instead of historical configuration', () => {
@@ -4201,7 +4230,7 @@ describe('operator shell', () => {
 		});
 		// The stat renders label first, value under it; the pairing is the
 		// claim, not the type classes.
-		expect(html).toMatch(/>Deliveries, last 7 days<\/p><p[^>]*>0<\/p>/s);
+		expect(html).toMatch(/>Deliveries, 7 days<\/p><p[^>]*>0<\/p>/s);
 	});
 
 	test('overview keeps the activity count without rendering a decorative line chart', () => {
@@ -4243,8 +4272,8 @@ describe('operator shell', () => {
 
 		expect(html).toMatch(/>Active runs<\/p><p[^>]*>1<\/p>/s);
 		expect(html).toMatch(/>Approved issues<\/p><p[^>]*>2<\/p>/s);
-		expect(html).toMatch(/>Deliveries, last 7 days<\/p><p[^>]*>2<\/p>/s);
-		expect(html).toContain('overview-active-work');
+		expect(html).toMatch(/>Deliveries, 7 days<\/p><p[^>]*>2<\/p>/s);
+		expect(html).toContain('overview-project-status');
 		expect(html).not.toContain('<polyline');
 		expect(html).not.toContain('preserveAspectRatio="none"');
 	});

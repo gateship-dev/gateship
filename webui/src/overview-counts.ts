@@ -2,10 +2,22 @@
 
 import type { ProjectOperationalOverviewView } from './client.ts';
 
-/** Projects waiting on the operator: registry attention or a run that stopped for them. */
+type ProjectEntry = ProjectOperationalOverviewView['projects'][number];
+
+/** A project waits on the operator when its registry needs attention or its run stopped for them. */
+export function projectNeedsOperator(entry: ProjectEntry): boolean {
+	return entry.project.readiness === 'needs-attention' || entry.activeRun?.state === 'waiting-user' || entry.activeRun?.state === 'interrupted';
+}
+
+/** Projects waiting on the operator: the number Now shows, and the rows it marks. */
 export function overviewAttention(overview: ProjectOperationalOverviewView): number {
-	return overview.projects.filter((project) => project.project.readiness === 'needs-attention'
-		|| project.activeRun?.state === 'waiting-user' || project.activeRun?.state === 'interrupted').length;
+	return overview.projects.filter(projectNeedsOperator).length;
+}
+
+/** Urgency first: what waits on the operator, then what is running, then the rest, each in the order it came. */
+export function sortProjectsByUrgency(projects: readonly ProjectEntry[]): ProjectEntry[] {
+	const rank = (entry: ProjectEntry): number => projectNeedsOperator(entry) ? 0 : entry.activeRun !== null ? 1 : 2;
+	return projects.map((entry, index) => ({ entry, index })).sort((a, b) => rank(a.entry) - rank(b.entry) || a.index - b.index).map(({ entry }) => entry);
 }
 
 export interface NavigationCounts { now: number; runs: number | null; queue: number | null }

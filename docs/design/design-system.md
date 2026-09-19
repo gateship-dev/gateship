@@ -30,7 +30,7 @@ the web UI.
 - `CardHeader` uses 24px horizontal and 16px vertical inset. `CardPanel` uses
   24px inset and its 16px internal stack; `CardFooter` uses a muted surface,
   top border and the same 24px horizontal / 16px vertical inset, stacking
-  actions on narrow screens. `Stat`, `AttentionCard` and compact
+  actions on narrow screens. `Stat` (its attention tone included) and compact
   operational states use 16px inset. The shared card ring remains 7px.
 - Keep one centered content measure by default. The width preference may release
   that cap, but content must remain readable and grids must still collapse.

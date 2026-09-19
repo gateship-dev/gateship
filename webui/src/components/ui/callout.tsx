@@ -5,7 +5,7 @@
 // staying the surface's ink -- the frame carries the state, the words stay
 // readable. Tones map to the state families; neutral is for facts that are
 // not states. Never acid: what waits on the operator has its own surface
-// (attention-card.tsx).
+// (the attention tone of stat.tsx).
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';

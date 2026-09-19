@@ -120,6 +120,8 @@ html.gship-harness-reduced-motion *::after {
 	 * -ui and -text are the darkened ramps that keep AA on light surfaces.
 	 */
 	--color-attention: var(--attention);
+	/* The acid rule on the leading edge of whatever waits on the operator: one mark, one token. */
+	--shadow-attention-rule: inset 2px 0 0 var(--color-attention);
 	--color-attention-foreground: var(--attention-foreground);
 	--color-attention-ui: var(--attention-ui);
 	--color-attention-text: var(--attention-text);
