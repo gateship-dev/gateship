@@ -22,7 +22,8 @@ for (const [name, route, scenario] of cases) {
 			});
 			expect(styled.sheets).toBeGreaterThan(0);
 			expect(styled.font).toContain('sans-serif');
-			await expect(page).toHaveScreenshot(`${name}-${width}-${locale}-${theme}.png`);
+			// The product, not the harness controls above it: at 390px those fill the viewport.
+			await expect(page.locator('[data-harness-app]')).toHaveScreenshot(`${name}-${width}-${locale}-${theme}.png`);
 		});
 	}
 }
