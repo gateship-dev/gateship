@@ -95,6 +95,18 @@ describe('readRunOverview', () => {
 		expect(readRunOverview([project('one')], { sortBy: 'cost', sortDirection: 'asc', offset: 2, limit: 2 }, options).runs.map((run) => run.runId)).toEqual(['first']);
 	});
 
+	test('mede a duração ativa sem a espera pelo operador e ordena por ela', () => {
+		const quick = history('quick', '2026-09-02T00:00:00.000Z');
+		quick.evaluation.wallTimeMs = 5_000;
+		const slowButWaiting = history('waiting', '2026-09-03T00:00:00.000Z');
+		slowButWaiting.evaluation.wallTimeMs = 60_000;
+		slowButWaiting.evaluation.phaseDurations['waiting-user'] = { durationMs: 58_000, entries: 1 };
+		const unknown = history('unknown', '2026-09-04T00:00:00.000Z');
+		unknown.evaluation.wallTimeMs = null;
+		const result = readRunOverview([project('one')], { sortBy: 'duration', sortDirection: 'asc' }, { readHistory: () => [quick, slowButWaiting, unknown] });
+		expect(result.runs.map((run) => [run.runId, run.activeDurationMs])).toEqual([['waiting', 2_000], ['quick', 5_000], ['unknown', null]]);
+	});
+
 	test('filtra por grupo operacional com o mesmo mapa de atenção da shell', () => {
 		const working = history('working-run', '2026-09-04T00:00:00.000Z');
 		working.run.state = 'working';

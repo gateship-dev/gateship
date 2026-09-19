@@ -56,6 +56,12 @@ export interface RunOverviewRow {
 	providerId: 'claude' | 'codex';
 	/** The run's recorded failure, so a failed row can say why without opening it. */
 	error: string | null;
+	/**
+	 * Wall time minus the time the run sat waiting on the operator: how long
+	 * the run itself took, which is what a duration column compares. Null
+	 * when the wall time is unknown.
+	 */
+	activeDurationMs: number | null;
 	evaluation: PersistedRunHistory['evaluation'];
 	cost: PersistedRunHistory['cost'];
 	roles: PersistedRunHistory['evaluation']['roles'];
@@ -137,11 +143,16 @@ function compareRuns(left: RunOverviewRow, right: RunOverviewRow, sortBy: RunOve
 			case 'issueId': return row.issueId;
 			case 'state': return row.state;
 			case 'providerId': return row.providerId;
-			case 'duration': return row.evaluation.wallTimeMs;
+			case 'duration': return row.activeDurationMs;
 			case 'cost': return row.cost.totalCostUsd;
 		}
 	};
 	return compareNullable(value(left), value(right), direction) || left.projectId.localeCompare(right.projectId) || left.runId.localeCompare(right.runId);
+}
+
+function activeDurationOf(evaluation: PersistedRunHistory['evaluation']): number | null {
+	if (evaluation.wallTimeMs === null) return null;
+	return Math.max(0, evaluation.wallTimeMs - (evaluation.phaseDurations['waiting-user'].durationMs ?? 0));
 }
 
 function coverageOf(item: PersistedRunHistory): RunOverviewRow['coverage'] {
@@ -166,6 +177,7 @@ function projectRun(project: RegisteredProject, item: PersistedRunHistory): RunO
 		updatedAt: item.run.updatedAt,
 		providerId: item.run.providerId,
 		error: item.run.error,
+		activeDurationMs: activeDurationOf(item.evaluation),
 		evaluation: item.evaluation,
 		cost: item.cost,
 		roles: item.evaluation.roles,

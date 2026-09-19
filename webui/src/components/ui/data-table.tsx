@@ -58,8 +58,12 @@ export type GateshipTableFeatures = typeof gateshipTableFeatures;
 export type GateshipTableOptions<TData extends RowData> = TableOptions<GateshipTableFeatures, TData>;
 export type GateshipColumnDef<TData extends RowData, TValue = unknown> = ColumnDef<GateshipTableFeatures, TData, TValue>;
 export type GateshipTable<TData extends RowData> = ReactTable<GateshipTableFeatures, TData>;
-/** What a column may say about its own cells: classes for header and cells alike, and the label its menus use. */
-export interface GateshipColumnMeta { className?: string; label?: string }
+/**
+ * What a column may say about itself: classes for its cells (a mono voice,
+ * a width), where it aligns (the header follows), and the label its menus
+ * use. Header text keeps the table's sans voice whatever the cells wear.
+ */
+export interface GateshipColumnMeta { className?: string; align?: 'start' | 'end'; label?: string }
 
 export function useGateshipTable<TData extends RowData>(options: GateshipTableOptions<TData>): GateshipTable<TData> {
 	return useTable(options);
@@ -73,7 +77,7 @@ const copy = {
 		noResultsDetail: 'Nothing matches the current filters.',
 		loading: 'Loading…',
 		updating: 'Updating…',
-		view: 'View',
+		view: 'Columns',
 		toggleColumns: 'Toggle columns',
 		reset: 'Reset columns',
 		ascending: 'Ascending',
@@ -118,6 +122,10 @@ function metaOf<TData extends RowData>(column: GateshipColumn<TData>): GateshipC
 	return (column.columnDef.meta ?? {}) as GateshipColumnMeta;
 }
 
+function alignClass<TData extends RowData>(column: GateshipColumn<TData>): string | undefined {
+	return metaOf(column).align === 'end' ? 'text-right' : undefined;
+}
+
 function columnLabel<TData extends RowData>(column: GateshipColumn<TData>): string {
 	const header = column.columnDef.header;
 	return metaOf(column).label ?? (typeof header === 'string' || typeof header === 'number' ? String(header) : column.id);
@@ -142,7 +150,7 @@ export function DataTableFilter<TData extends RowData>({
 	return (
 		<Input
 			aria-label={label ?? placeholder ?? text.filterPlaceholder}
-			className={cn('w-full max-w-sm', className)}
+			className={cn('min-w-40 flex-1 sm:max-w-sm', className)}
 			data-slot="data-table-filter"
 			placeholder={placeholder ?? text.filterPlaceholder}
 			type="search"
@@ -175,10 +183,11 @@ export function DataTableColumnHeader<TData extends RowData>({
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
-				render={<Button aria-label={`${title}, ${state}`} className={cn('-ml-2.5 h-7 gap-1 px-2 font-medium text-muted-foreground data-popup-open:bg-accent', className)} size="sm" type="button" variant="ghost" />}
+				render={<Button aria-label={column.getCanSort() ? `${title}, ${state}` : title} className={cn('-mx-2.5 h-7 gap-1 px-2 font-medium font-sans text-muted-foreground data-popup-open:bg-accent', className)} size="sm" type="button" variant="ghost" />}
 			>
 				{title}
-				<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-70" icon={icon} size={14} strokeWidth={2.5} />
+				{/* The glyph promises a sort; a column that only hides gets none. */}
+				{column.getCanSort() ? <HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-70" icon={icon} size={14} strokeWidth={2.5} /> : null}
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="min-w-40">
 				{column.getCanSort() ? (
@@ -200,7 +209,7 @@ export function DataTableViewOptions<TData extends RowData>({ table, locale = 'e
 	const columns = table.getAllLeafColumns().filter((column) => column.getCanHide());
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button className={cn('ml-auto', className)} size="sm" type="button" variant="outline" />}>
+			<DropdownMenuTrigger render={<Button className={cn('ml-auto', className)} type="button" variant="outline" />}>
 				<HugeiconsIcon aria-hidden="true" icon={Settings02Icon} size={16} strokeWidth={2.25} />
 				{text.view}
 			</DropdownMenuTrigger>
@@ -324,7 +333,7 @@ export function DataTable<TData extends RowData>({
 					{table.getHeaderGroups().map((headerGroup) => (
 						<TableRow key={headerGroup.id}>
 							{headerGroup.headers.map((header) => (
-								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={metaOf(header.column).className} key={header.id}>
+								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={cn('font-sans', alignClass(header.column))} key={header.id}>
 									{header.isPlaceholder ? null : typeof header.column.columnDef.header === 'string'
 										? <DataTableColumnHeader column={header.column} locale={locale} title={header.column.columnDef.header} />
 										: <FlexRender header={header} />}
@@ -337,12 +346,12 @@ export function DataTable<TData extends RowData>({
 					{status === 'loading' && rows.length === 0
 						? Array.from({ length: skeletonRows }, (_, index) => (
 							<TableRow key={`skeleton-${index}`}>
-								{columns.map((column) => <TableCell className={metaOf(column).className} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
+								{columns.map((column) => <TableCell className={cn(metaOf(column).className, alignClass(column))} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
 							</TableRow>
 						))
 						: rows.map((row) => (
 							<TableRow className={rowClassName?.(row.original)} key={row.id}>
-								{row.getVisibleCells().map((cell) => <TableCell className={metaOf(cell.column).className} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
+								{row.getVisibleCells().map((cell) => <TableCell className={cn(metaOf(cell.column).className, alignClass(cell.column))} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
 							</TableRow>
 						))}
 					{rows.length === 0 && status !== 'loading' ? (

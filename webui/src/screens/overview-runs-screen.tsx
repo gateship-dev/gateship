@@ -25,7 +25,7 @@ import { LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, OverviewRunsCatalog, RunInspectorCatalog } from '../locale.ts';
 import { toneOf, type RunState } from '../run-view.ts';
 import { SurfaceColumn } from './surface-column.tsx';
-import { ciBadgeVariant, formatCostUsd, formatRunTimestamp } from './runs.tsx';
+import { ciBadgeVariant, formatCostUsd } from './runs.tsx';
 
 interface BrowserRuntime { location?: { search: string }; history?: { pushState: (data: null, unused: string, url: string) => void }; addEventListener?: (type: 'popstate', listener: () => void) => void; removeEventListener?: (type: 'popstate', listener: () => void) => void }
 function browserRuntime(): BrowserRuntime { return globalThis as unknown as BrowserRuntime; }
@@ -34,9 +34,9 @@ const RUN_GROUPS = ['active', 'needs-you', 'shipped', 'failed'] as const;
 const RUN_SORT_FIELDS = new Set(['updatedAt', 'createdAt', 'projectName', 'issueId', 'state', 'providerId', 'duration', 'cost']);
 /* Mirrors the `needs-you` group in src/runtime/run-overview.ts and the shell's attention map. */
 const NEEDS_YOU: ReadonlySet<string> = new Set(['ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted']);
-const TABLE_PREFERENCES_KEY = 'gateship:overview-runs:table:v2';
+const TABLE_PREFERENCES_KEY = 'gateship:overview-runs:table:v3';
 /* Lean by default: the audit columns are one menu away. */
-const DEFAULT_VISIBILITY: Record<string, boolean> = { providerId: false, rounds: false, interventions: false, cost: false, runId: false };
+const DEFAULT_VISIBILITY: Record<string, boolean> = { providerId: false, orchestratorModels: false, executorModels: false, reviewerModels: false, rounds: false, interventions: false, cost: false, runId: false };
 type RunRow = OverviewRunsPageView['runs'][number];
 type Update = (changes: Partial<OverviewRunsQuery>) => void;
 
@@ -68,12 +68,27 @@ function useOverviewRunsPage(query: OverviewRunsQuery, revision: number): { page
 function duration(ms: number | null): string { if (ms === null || !Number.isFinite(ms)) return '—'; const seconds = Math.round(ms / 1000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
 function readPreferences(): Record<string, boolean> { try { const value: unknown = JSON.parse(globalThis.localStorage?.getItem(TABLE_PREFERENCES_KEY) ?? 'null'); const stored = value !== null && typeof value === 'object' ? (value as { columnVisibility?: Record<string, boolean> }).columnVisibility : undefined; return stored ?? DEFAULT_VISIBILITY; } catch { return DEFAULT_VISIBILITY; } }
 function runHref(run: RunRow): string { return `/projects/${encodeURIComponent(run.projectId)}/runs/${encodeURIComponent(run.runId)}`; }
-/** "Claude · sonnet-5": the provider and the distinct models, without the vendor prefix the provider already names. */
-function providerSummary(run: RunRow): { short: string; full: string } {
-	const provider = run.providerId === 'claude' ? 'Claude Code' : 'Codex';
-	const models = [...new Set(run.roles.flatMap((role) => role.models))];
-	const short = models.map((model) => model.replace(/^claude-/, '')).join(', ');
-	return { short: short === '' ? provider : `${provider.split(' ')[0]} · ${short}`, full: models.length === 0 ? provider : `${provider} / ${models.join(', ')}` };
+function formatDate(value: string, locale: Locale): string {
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
+}
+function formatTime(value: string, locale: Locale): string {
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' });
+}
+/**
+ * The server computes the active duration; a service older than that field
+ * still sends the evaluation, so the row derives the same figure from it
+ * rather than showing nothing.
+ */
+function activeDuration(run: RunRow): number | null {
+	if (run.activeDurationMs !== undefined) return run.activeDurationMs;
+	const wall = run.evaluation.wallTimeMs;
+	return wall === null ? null : Math.max(0, wall - (run.evaluation.phaseDurations['waiting-user']?.durationMs ?? 0));
+}
+/** The models one role ran, as the provider names them; a run before role tracking says nothing. */
+function roleModels(run: RunRow, role: RunRow['roles'][number]['role']): string {
+	return [...new Set(run.roles.filter((entry) => entry.role === role).flatMap((entry) => entry.models))].join(', ');
 }
 
 /* One badge per row (H4): the merge is the outcome, so a merged run says
@@ -104,19 +119,29 @@ function RowActions({ run, catalog }: { run: RunRow; catalog: OverviewRunsCatalo
 
 function overviewRunsColumns(catalog: OverviewRunsCatalog, inspector: RunInspectorCatalog, locale: Locale): GateshipColumnDef<RunRow>[] {
 	const mono = 'font-mono tabular-nums';
+	const muted = <span className="text-muted-foreground">—</span>;
+	const models = (role: RunRow['roles'][number]['role'], header: string): GateshipColumnDef<RunRow> => ({ id: `${role}Models`, accessorFn: (row) => roleModels(row, role), header, enableSorting: false, meta: { className: 'font-mono text-xs' }, cell: ({ row }) => roleModels(row.original, role) || muted });
 	return [
-		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, enableHiding: false, cell: ({ row }) => <span className="inline-flex items-baseline gap-2"><a className="font-medium font-mono underline-offset-4 hover:underline" href={runHref(row.original)}>{row.original.issueId}</a><span className="font-mono text-muted-foreground text-xs">{row.original.runId.slice(0, 8)}</span></span> },
+		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, enableHiding: false, cell: ({ row }) => <a className="font-medium font-mono underline-offset-4 hover:underline" href={runHref(row.original)}>{row.original.issueId}</a> },
+		/* The short id is what an operator reads aloud or pastes; the whole id is one column away. */
+		{ id: 'run', accessorKey: 'runId', header: catalog.run, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs' }, cell: ({ row }) => <span title={row.original.runId}>{row.original.runId.slice(0, 8)}</span> },
 		{ id: 'state', accessorKey: 'state', header: catalog.state, enableSorting: true, cell: ({ row }) => <StateBadge catalog={catalog} inspector={inspector} run={row.original} /> },
 		{ id: 'projectName', accessorKey: 'projectName', header: catalog.project, enableSorting: true },
-		{ id: 'delivery', header: catalog.delivery, enableSorting: false, cell: ({ row }) => row.original.pullRequest ? <span className="inline-flex items-center gap-2"><a className="inline-flex items-center gap-1 underline-offset-4 hover:underline" href={row.original.pullRequest.url} rel="noreferrer" target="_blank">PR #{row.original.pullRequest.prNumber}<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-60" icon={LinkSquare02Icon} size={14} strokeWidth={2.25} /></a>{row.original.ci ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : null}</span> : <span className="text-muted-foreground">—</span> },
-		{ id: 'duration', accessorFn: (row) => row.evaluation.wallTimeMs ?? -1, header: catalog.duration, enableSorting: true, meta: { className: `${mono} text-right` }, cell: ({ row }) => duration(row.original.evaluation.wallTimeMs) },
-		{ id: 'updatedAt', accessorKey: 'updatedAt', header: catalog.updated, enableSorting: true, meta: { className: `${mono} text-muted-foreground` }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatRunTimestamp(row.original.updatedAt, locale)}</time> },
-		{ id: 'providerId', accessorKey: 'providerId', header: catalog.model, enableSorting: true, cell: ({ row }) => { const summary = providerSummary(row.original); return <span title={summary.full}>{summary.short}</span>; } },
-		{ id: 'rounds', accessorFn: (row) => row.evaluation.corrections.total, header: catalog.rounds, enableSorting: false, meta: { className: `${mono} text-right` } },
-		{ id: 'interventions', accessorFn: (row) => row.evaluation.operatorInterventions, header: catalog.interventions, enableSorting: false, meta: { className: `${mono} text-right` } },
-		{ id: 'cost', accessorFn: (row) => row.cost.totalCostUsd ?? -1, header: catalog.cost, enableSorting: true, meta: { className: `${mono} text-right` }, cell: ({ row }) => row.original.cost.totalCostUsd === null ? <span className="text-muted-foreground">—</span> : formatCostUsd(row.original.cost.totalCostUsd, locale, 2) },
+		/* A merged pull request already passed CI; the badge only says something while the PR is open. */
+		{ id: 'delivery', header: catalog.delivery, enableSorting: false, cell: ({ row }) => row.original.pullRequest ? <span className="inline-flex items-center gap-2"><a className="inline-flex items-center gap-1 underline-offset-4 hover:underline" href={row.original.pullRequest.url} rel="noreferrer" target="_blank">PR #{row.original.pullRequest.prNumber}<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-60" icon={LinkSquare02Icon} size={14} strokeWidth={2.25} /></a>{row.original.ci && !row.original.merge ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : null}</span> : muted },
+		/* Active time: the wall clock minus the wait on the operator, computed by the server so the sort agrees. */
+		{ id: 'duration', accessorFn: (row) => activeDuration(row) ?? -1, header: catalog.duration, enableSorting: true, meta: { className: mono, align: 'end' }, cell: ({ row }) => duration(activeDuration(row.original)) },
+		{ id: 'updatedAt', accessorKey: 'updatedAt', header: catalog.date, enableSorting: true, meta: { className: `${mono} text-muted-foreground` }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatDate(row.original.updatedAt, locale)}</time> },
+		{ id: 'updatedTime', accessorKey: 'updatedAt', header: catalog.time, enableSorting: false, meta: { className: `${mono} text-muted-foreground` }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatTime(row.original.updatedAt, locale)}</time> },
+		{ id: 'providerId', accessorKey: 'providerId', header: catalog.provider, enableSorting: true, cell: ({ row }) => row.original.providerId === 'claude' ? 'Claude Code' : 'Codex' },
+		models('orchestrator', catalog.roles.orchestrator),
+		models('executor', catalog.roles.executor),
+		models('reviewer', catalog.roles.reviewer),
+		{ id: 'rounds', accessorFn: (row) => row.evaluation.corrections.total, header: catalog.rounds, enableSorting: false, meta: { className: mono, align: 'end' } },
+		{ id: 'interventions', accessorFn: (row) => row.evaluation.operatorInterventions, header: catalog.interventions, enableSorting: false, meta: { className: mono, align: 'end' } },
+		{ id: 'cost', accessorFn: (row) => row.cost.totalCostUsd ?? -1, header: catalog.cost, enableSorting: true, meta: { className: mono, align: 'end' }, cell: ({ row }) => row.original.cost.totalCostUsd === null ? muted : formatCostUsd(row.original.cost.totalCostUsd, locale, 2) },
 		{ id: 'runId', accessorKey: 'runId', header: catalog.runId, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs' } },
-		{ id: 'actions', header: () => <span className="sr-only">{catalog.actions}</span>, enableSorting: false, enableHiding: false, meta: { className: 'w-10 text-right' }, cell: ({ row }) => <RowActions catalog={catalog} run={row.original} /> },
+		{ id: 'actions', header: () => <span className="sr-only">{catalog.actions}</span>, enableSorting: false, enableHiding: false, meta: { className: 'w-10', align: 'end' }, cell: ({ row }) => <RowActions catalog={catalog} run={row.original} /> },
 	];
 }
 
@@ -133,7 +158,7 @@ function OverviewRunsFilters({ props, query, update, catalog, inspector }: { pro
 			<SelectField aria-label={catalog.provider} className={select} items={[{ value: '', label: catalog.provider }, { value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} value={query.providerId ?? ''} onValueChange={(value) => update({ providerId: (value || undefined) as OverviewRunsQuery['providerId'] })} />
 			<SelectField aria-label={catalog.period} className={select} items={[{ value: 'all', label: catalog.all }, { value: '7d', label: catalog.last7d }, { value: '30d', label: catalog.last30d }]} value={query.period ?? 'all'} onValueChange={(value) => update({ period: value as OverviewRunsQuery['period'] })} />
 			{hasFilters(query) ? (
-				<Button size="sm" type="button" variant="ghost" onClick={() => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined })}>
+				<Button type="button" variant="ghost" onClick={() => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined })}>
 					{catalog.clearFilters}<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={14} strokeWidth={2.5} />
 				</Button>
 			) : null}
@@ -146,7 +171,7 @@ function QuickViews({ query, update, catalog }: { query: OverviewRunsQuery; upda
 		{ value: 'all', label: catalog.views.all }, { value: 'active', label: catalog.views.active }, { value: 'needs-you', label: catalog.views.needsYou }, { value: 'shipped', label: catalog.views.shipped }, { value: 'failed', label: catalog.views.failed },
 	];
 	return (
-		<ToggleGroup aria-label={catalog.viewsLabel} data-slot="overview-runs-views" size="sm" spacing={1} value={[query.group ?? 'all']} variant="outline" onValueChange={(value) => { const next = value[0]; if (next !== undefined) update({ group: next === 'all' ? undefined : next as OverviewRunsQuery['group'] }); }}>
+		<ToggleGroup aria-label={catalog.viewsLabel} data-slot="overview-runs-views" spacing={1} value={[query.group ?? 'all']} variant="outline" onValueChange={(value) => { const next = value[0]; if (next !== undefined) update({ group: next === 'all' ? undefined : next as OverviewRunsQuery['group'] }); }}>
 			{views.map((view) => <ToggleGroupItem aria-label={view.label} key={view.value} value={view.value ?? 'all'}>{view.label}</ToggleGroupItem>)}
 		</ToggleGroup>
 	);

@@ -264,6 +264,8 @@ export interface OverviewRunsPageView {
 		repository?: string;
 		runId: string;
 		error: string | null;
+		/** Wall time minus the wait on the operator; see RunOverviewRow. Absent from services older than the field. */
+		activeDurationMs?: number | null;
 		roles: RunEvaluationView['roles'];
 		evaluation: RunEvaluationView;
 		cost: RunCostView;
