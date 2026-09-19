@@ -33,7 +33,7 @@ import { cn } from '../../webui/src/lib/cn.ts';
 import { ContextPanel } from '../../webui/src/screens/operator-controls.tsx';
 import {
 	DataTable,
-	DataTableColumnVisibility,
+	DataTableViewOptions,
 	DataTablePagination,
 	gateshipTableFeatures,
 	useGateshipTable,
@@ -42,11 +42,11 @@ import {
 
 type TableFixtureRow = { id: string; name: string; state: string; execution?: string; providerId?: string };
 const TABLE_FIXTURE_COLUMNS: GateshipColumnDef<TableFixtureRow>[] = [
-	{ accessorKey: 'name', header: 'Name', minSize: 160 },
-	{ accessorKey: 'state', header: 'State', minSize: 120 },
+	{ accessorKey: 'name', header: 'Name' },
+	{ accessorKey: 'state', header: 'State', meta: { className: 'font-mono', align: 'end' } },
 ];
 
-function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, server = false, loading = false, pageSize = 1, rowCount = 4 }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; pinned?: boolean; server?: boolean; loading?: boolean; pageSize?: number; rowCount?: number }): React.ReactElement {
+function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, server = false, loading = false, pageSize = 1, rowCount = 4 }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; server?: boolean; loading?: boolean; pageSize?: number; rowCount?: number }): React.ReactElement {
 	const table = useGateshipTable({
 		columns,
 		data,
@@ -58,7 +58,6 @@ function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, s
 		rowCount: server ? rowCount : undefined,
 		state: {
 			pagination: { pageIndex: server ? 1 : 0, pageSize },
-			...(pinned ? { columnPinning: { start: ['name'], end: [] } } : {}),
 			...(server ? { globalFilter: 'not applied locally', sorting: [{ desc: true, id: 'name' }] } : {}),
 		},
 	});
@@ -68,7 +67,7 @@ function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, s
 function TableControlsFixture(): React.ReactElement {
 	const columns: GateshipColumnDef<TableFixtureRow>[] = [{ accessorKey: 'execution', header: 'Execução', enableSorting: false }, { accessorKey: 'providerId', header: 'Provider / modelo' }, ...TABLE_FIXTURE_COLUMNS];
 	const table = useGateshipTable({ columns, data: [{ id: 'a', name: 'Nome', state: 'Pronto', execution: 'run-1', providerId: 'Claude Code / modelo' }], features: gateshipTableFeatures, getRowId: (row) => row.id, rowCount: 1, state: { sorting: [], pagination: { pageIndex: 0, pageSize: 1 } } });
-	return <><DataTable table={table} locale="pt-BR" /><DataTablePagination table={table} locale="pt-BR" /><DataTableColumnVisibility defaultOpen table={table} locale="pt-BR" /></>;
+	return <><DataTable table={table} locale="pt-BR" /><DataTablePagination table={table} locale="pt-BR" /><DataTableViewOptions table={table} locale="pt-BR" /></>;
 }
 
 describe('ui primitives', () => {
@@ -78,7 +77,7 @@ describe('ui primitives', () => {
 		expect(html).toContain('data-slot="data-table"');
 		expect(html).toContain('data-slot="table-container"');
 		expect(html).toContain('aria-sort="none"');
-		expect(html).toContain('Página 1 / 2');
+		expect(html).toContain('Página 1 de 2');
 		expect(html).toContain('Próxima página');
 		expect(other).toContain('Estado');
 	});
@@ -90,31 +89,33 @@ describe('ui primitives', () => {
 		expect(html).toContain('Carregando…');
 	});
 
-	test('data tables preserve pinned columns and server-owned row processing', () => {
-		const html = renderToStaticMarkup(<TableFixture pinned data={[{ id: 'a', name: 'Nome fixado', state: 'Pronto' }]} />);
+	test('data tables leave row processing to the server and keep header voice apart from cell voice', () => {
+		const html = renderToStaticMarkup(<TableFixture data={[{ id: 'a', name: 'Nome', state: 'Pronto' }]} />);
 		const server = renderToStaticMarkup(<TableFixture server data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }, { id: 'b', name: 'Resposta do servidor B', state: 'Em fila' }]} />);
-		expect(html).toContain('position:sticky');
-		expect((html.match(/position:sticky/g) ?? []).length).toBeGreaterThanOrEqual(2);
-		expect(html).toContain('background-color:var(--background)');
-		expect(html).toContain('inset-inline-start:0');
+		// A column's classes reach its cells; its header keeps the sans voice and only follows the alignment.
+		const stateHead = html.slice(html.lastIndexOf('<th', html.indexOf('State')), html.indexOf('State'));
+		expect(stateHead).toContain('font-sans');
+		expect(stateHead).toContain('text-right');
+		expect(stateHead).not.toContain('font-mono');
+		expect(html).toMatch(/<td[^>]*class="[^"]*font-mono[^"]*text-right/);
+		// The global filter and the sort are not applied locally: both rows arrive as the server sent them.
 		expect(server).toContain('Resposta do servidor A');
 		expect(server).toContain('Resposta do servidor B');
-		expect(server).toContain('Página 2 / 4');
+		expect(server).toContain('Página 2 de 4');
 		const server25 = renderToStaticMarkup(<TableFixture server pageSize={25} rowCount={100} data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }]} />);
-		expect(server25).toContain('Página 2 / 4');
+		expect(server25).toContain('Página 2 de 4');
 	});
 
 	test('data table controls name their column and localize sorting and ranges', () => {
 		const html = renderToStaticMarkup(<TableControlsFixture />);
-		expect(html).toContain('aria-label="Colunas: Name"');
-		expect(html).toContain('aria-label="Fixar no início: Name"');
-		expect(html).toContain('aria-label="Tamanho: Name"');
-		expect(html).toContain('aria-label="Restaurar tamanho: Name"');
-		expect(html).toContain('Execução');
+		// A sortable header announces its state; one that only hides names itself and promises no sort.
+		expect(html).toContain('aria-label="Name, sem ordenação"');
+		expect(html).toContain('aria-label="Execução"');
+		expect(html).not.toContain('aria-label="Execução, ');
 		expect(html).toContain('Provider / modelo');
-		expect(html).toContain('aria-label="Colunas: Provider / modelo"');
-		expect(html).not.toContain('title="Ordenar Execução');
-		expect(html).toContain('title="Ordenar Name, sem ordenação"');
+		expect(html).toContain('>Colunas</button>');
+		expect(html).toContain('aria-label="Linhas por página"');
+		expect(html).toContain('aria-label="Próxima página"');
 		expect(html).toContain('1–1 de 1');
 		expect(html).not.toContain(' of ');
 	});
@@ -220,9 +221,6 @@ describe('ui primitives', () => {
 		expect(html).toContain('overflow-x-auto');
 		expect(html).toContain('scroll-container');
 		expect(html).toContain('pr-8');
-		expect(html).toContain('sm:pr-0.5');
-		expect(html).toContain('py-0.5');
-		expect(html).toContain('pl-0.5');
 		expect(html).toContain('aria-label="Work"');
 		for (const label of ['Queue', 'Approval', 'Ideas', 'Suggestions']) {
 			expect(html).toContain(`>${label}</button>`);

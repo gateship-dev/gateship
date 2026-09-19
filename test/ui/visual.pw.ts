@@ -14,6 +14,14 @@ for (const [name, route, scenario] of cases) {
 			await page.goto(`/harness.html?frame=${width}&route=${route}&scenario=${scenario}&locale=${locale}&theme=${theme}&motion=reduced`);
 			await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
 			await page.waitForTimeout(250);
+			// A baseline of bare HTML compares equal to itself forever. The page
+			// must carry the product's stylesheet before its picture means anything.
+			const styled = await page.evaluate(() => {
+				const browser = globalThis as unknown as { document: { styleSheets: { length: number }; body: object }; getComputedStyle: (node: object) => { fontFamily: string } };
+				return { sheets: browser.document.styleSheets.length, font: browser.getComputedStyle(browser.document.body).fontFamily };
+			});
+			expect(styled.sheets).toBeGreaterThan(0);
+			expect(styled.font).toContain('sans-serif');
 			await expect(page).toHaveScreenshot(`${name}-${width}-${locale}-${theme}.png`);
 		});
 	}

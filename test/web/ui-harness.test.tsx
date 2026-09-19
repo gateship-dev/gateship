@@ -68,13 +68,13 @@ describe('development UI harness', () => {
 				await page.getByRole('button', { name: 'dense', exact: true }).click({ timeout: 1000 });
 				await page.locator('tbody tr').first().waitFor({ state: 'visible' });
 				const denseRows = await page.locator('tbody tr').count();
-				const columnMenu = page.locator('details[data-slot=data-table-column-visibility]');
-				await columnMenu.locator('summary').click({ timeout: 1000 });
-				await columnMenu.locator('input').first().waitFor({ state: 'visible' });
-				const columnMenuOpened = await columnMenu.evaluate(node => node.hasAttribute('open') && node.querySelectorAll('input').length > 0);
-				await columnMenu.locator('summary').click({ timeout: 1000 });
-				await columnMenu.locator('input').first().waitFor({ state: 'hidden' });
-				const columnMenuClosed = await columnMenu.evaluate(node => !node.hasAttribute('open'));
+				const columnMenu = page.locator('[data-slot=data-table-view-options]');
+				await page.getByRole('button', { name: 'Colunas', exact: true }).click({ timeout: 1000 });
+				await columnMenu.waitFor({ state: 'visible' });
+				const columnMenuOpened = await columnMenu.locator('[role=menuitemcheckbox]').count() > 0;
+				await page.keyboard.press('Escape');
+				await columnMenu.waitFor({ state: 'hidden' });
+				const columnMenuClosed = await columnMenu.count() === 0;
 				const catalog = await page.locator('[data-fixture-catalog=visible-catalog]').innerText();
 				const firstPageIds = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => row.textContent ?? ''));
 				const firstPageLabel = await page.locator('span[aria-live=polite]:not(.sr-only)').innerText();
@@ -117,9 +117,9 @@ describe('development UI harness', () => {
 						await page.waitForFunction(() => document.querySelector('[data-slot=project-switcher]')?.getAttribute('aria-expanded') !== 'true');
 					}
 					await page.getByRole('button', { name: state, exact: true }).click({ timeout: 1000 });
-					if (state === 'tooltip-open') { await page.locator('[data-slot=global-navigation] a[aria-label]').first().hover(); await page.locator('[data-slot=sidebar-tooltip]:visible').first().waitFor({ state: 'visible' }); }
+					if (state === 'tooltip-open') { await page.locator('[data-slot=global-navigation] a[aria-label]').first().hover(); await page.locator('[data-slot=tooltip]:visible').first().waitFor({ state: 'visible' }); }
 					if (state === 'selector-open') { await page.getByRole('menu').waitFor({ state: 'visible' }); await page.getByRole('menuitem').first().focus(); }
-					scenarioStates.push([state, await page.locator('[data-slot=sidebar-toggle]').getAttribute('aria-expanded'), await page.locator('[data-slot=sidebar-tooltip]:visible').count(), await page.getByRole('menuitem').count()]);
+					scenarioStates.push([state, await page.locator('[data-slot=sidebar-toggle]').getAttribute('aria-expanded'), await page.locator('[data-slot=tooltip]:visible').count(), await page.getByRole('menuitem').count()]);
 				}
 				const queueStates = {};
 				for (const state of ['usual', 'attention', 'empty', 'unavailable', 'error']) {
@@ -269,7 +269,7 @@ describe('development UI harness', () => {
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) { try { if ((await fetch('http://127.0.0.1:4177/harness.html')).ok) break; } catch { /* server is starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
 			await cli('open', 'http://127.0.0.1:4177/harness.html?frame=1440&scenario=dense');
-			const result = await cli('run-code', "async page => { await page.getByRole('button', { name: 'Central/runs' }).click(); await page.waitForTimeout(150); const read = async () => { await page.waitForTimeout(500); return [await page.locator('tbody tr').count(), await page.locator('span[aria-live=polite]:not(.sr-only)').innerText(), await page.evaluate(() => window.location.search)]; }; const usual = await read(); await page.getByRole('textbox').fill('GSHIP-906'); await page.getByLabel('Estado').selectOption('done'); await page.getByLabel('Provider').selectOption('codex'); await page.getByLabel('Período').selectOption('7d'); const filtered = await read(); await page.goto('http://127.0.0.1:4177/harness.html?frame=1440&scenario=dense&projectId=missing'); await page.getByRole('button', { name: 'Central/runs' }).click(); const projectFiltered = await read(); return JSON.stringify({ usual, filtered, projectFiltered }); }");
+			const result = await cli('run-code', "async page => { await page.getByRole('button', { name: 'Central/runs' }).click(); await page.waitForTimeout(150); const read = async () => { await page.waitForTimeout(500); return [await page.locator('tbody tr').count(), await page.locator('span[aria-live=polite]:not(.sr-only)').innerText(), await page.evaluate(() => window.location.search)]; }; const usual = await read(); const choose = async (label, option) => { await page.locator('[data-slot=select-trigger][aria-label=' + label + ']').click(); await page.getByRole('option', { name: option, exact: true }).click(); }; await page.getByRole('searchbox').fill('GSHIP-906'); await choose('Estado', 'concluída'); await choose('Provider', 'Codex'); await choose('Período', 'Últimos 7 dias'); const filtered = await read(); await page.goto('http://127.0.0.1:4177/harness.html?frame=1440&scenario=dense&projectId=missing'); await page.getByRole('button', { name: 'Central/runs' }).click(); const projectFiltered = await read(); return JSON.stringify({ usual, filtered, projectFiltered }); }");
 			const normalized = result.replaceAll('\\', '');
 			expect(normalized).toContain('"filtered":[1');
 			expect(normalized).toContain('search=GSHIP-906');

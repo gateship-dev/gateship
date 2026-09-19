@@ -8,6 +8,9 @@ import { Button } from './components/ui/button.tsx';
 import type { Locale } from './locale.ts';
 import type { OperatorRoute } from './routes.ts';
 import type { RunView } from './run-view.ts';
+/* The harness is its own Vite entry: without this import it renders the real
+ * routes with no stylesheet at all, and every screenshot of it is of bare HTML. */
+import './index.css';
 
 type Theme = 'light' | 'dark';
 type Motion = 'full' | 'reduced';

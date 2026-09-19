@@ -18,7 +18,10 @@ export interface NavigationCounts { now: number; runs: number | null; queue: num
  * global because the row is.
  */
 export function navigationCounts(overview: ProjectOperationalOverviewView | null, projectId: string | null): NavigationCounts | null {
-	if (overview === null) return null;
+	/* The client casts the payload rather than validating it, and a surface may
+	 * hold a partial one (Insights carries the history alone). Without the
+	 * project list there is nothing to count, so the rows say nothing. */
+	if (overview === null || !Array.isArray(overview.projects) || overview.summary === undefined) return null;
 	const now = overviewAttention(overview);
 	if (projectId === null) return { now, runs: overview.summary.nonTerminalRuns, queue: overview.summary.backlog.planned };
 	const entry = overview.projects.find((project) => project.project.id === projectId);

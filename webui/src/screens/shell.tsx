@@ -319,7 +319,7 @@ function ProjectSwitcherMenu({
 			{/* One pixel out on each side so the popup's border sits outside the
 			 * trigger's edge and every row inside lines up with the trigger. */}
 			<Menu.Positioner align="start" alignOffset={-1} className="z-50" sideOffset={6}>
-				<Menu.Popup className="relative min-w-[calc(var(--anchor-width)+2px)] origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 motion-safe:duration-100 motion-reduce:animate-none motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+				<Menu.Popup className="relative min-w-[calc(var(--anchor-width)+2px)] origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 motion-safe:duration-100 motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
 					<div className="type-eyebrow px-2 pt-2 pb-1 text-muted-foreground">
 						{catalog.projectNavigationLabel}
 					</div>
@@ -388,11 +388,13 @@ function ProjectSwitcherRegistry({
 	return (
 		<div aria-label={catalog.projectNavigationLabel} className="sr-only">
 			<ul>
+				<li><a aria-current={selection.projectId === null ? 'page' : undefined} aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria} href="/overview"><ProjectShortcut allProjects index={undefined} />{catalog.allProjectsLabel}</a></li>
 				{projects.map((project, index) => (
 					<li key={project.id}>
 						<a aria-current={project.id === selection.projectId ? 'page' : undefined} aria-keyshortcuts={index < PROJECT_SHORTCUT_COUNT ? projectShortcutAria(index) : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < PROJECT_SHORTCUT_COUNT ? index : undefined} />{project.name}</a>
 					</li>
 				))}
+				{selection.projectId === null ? null : <li><a aria-current={selection.surface === 'settings' ? 'page' : undefined} href={`/projects/${encodeURIComponent(selection.projectId)}/settings`}>{catalog.projectSettingsLabel}</a></li>}
 				<li><a href="/projects">{catalog.manageProjectsLabel}</a></li>
 			</ul>
 		</div>
@@ -468,8 +470,11 @@ export function ProjectSwitcher({
  * project's own surfaces; with every project in view they open the control
  * center aggregates. Now and Insights are always global. No label appears
  * twice and no item changes position when the filter changes. */
-function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog, counts: NavigationCounts | null): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; count: number | null }[] {
-	const project = selection.projectId === null ? null : `/projects/${encodeURIComponent(selection.projectId)}`;
+function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog, counts: NavigationCounts | null, projects: AppProps['projects']): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; count: number | null }[] {
+	/* An id the registry does not know filters nothing: the switcher says
+	 * "every project", so the rows must link where it says. */
+	const known = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId);
+	const project = known && selection.projectId !== null ? `/projects/${encodeURIComponent(selection.projectId)}` : null;
 	return [
 		{ id: 'now', href: '/overview', label: catalog.routeLabels.now, glyph: 'overview', active: selection.surface === 'overview', count: counts?.now ?? null },
 		{ id: 'runs', href: project === null ? '/overview/runs' : `${project}/runs`, label: catalog.routeLabels.overviewRuns, glyph: 'runs', active: selection.surface === 'overview-runs' || selection.surface === 'runs', count: counts?.runs ?? null },
@@ -512,7 +517,7 @@ export function ShellNavigation({
 				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} open={open} projects={projects} selection={selection} status={status} />
 			</div>
 			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap" data-slot="global-navigation">
-				{navigationItems(selection, catalog, counts).map((item) => (
+				{navigationItems(selection, catalog, counts, projects).map((item) => (
 					<li className="shrink-0" key={item.id}>
 						<HintTooltip disabled={open} label={item.label}>
 							<a aria-current={item.active ? 'page' : undefined} aria-label={open ? undefined : item.label} className={itemClass} data-sidebar-id={item.href} href={item.href}>
@@ -534,10 +539,6 @@ export function ShellNavigation({
 		</nav>
 		</TooltipGroup>
 	);
-}
-
-export function nextControlCenterDisclosureState(expanded: boolean, desktopViewport: boolean): boolean {
-	return desktopViewport ? true : !expanded;
 }
 
 /*

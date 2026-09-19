@@ -50,7 +50,8 @@ export function DropdownMenuContent({
 					className={cn(
 						'scroll-container relative max-h-(--available-height) min-w-32 origin-(--transform-origin) overflow-y-auto p-1 outline-none',
 						POPUP_CHROME,
-						'motion-safe:duration-100 motion-reduce:animate-none data-open:fade-in-0 data-open:zoom-in-95 data-open:animate-in data-closed:fade-out-0 data-closed:zoom-out-95 data-closed:animate-out',
+						/* The entrance only exists where motion is welcome: `motion-reduce:animate-none` loses to a `data-open:` utility, so the animation itself sits behind `motion-safe`. */
+						'motion-safe:duration-100 motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-95 motion-safe:data-open:animate-in motion-safe:data-closed:fade-out-0 motion-safe:data-closed:zoom-out-95 motion-safe:data-closed:animate-out',
 						className,
 					)}
 					data-slot="dropdown-menu-content"

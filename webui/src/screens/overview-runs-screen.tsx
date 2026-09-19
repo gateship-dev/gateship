@@ -111,7 +111,7 @@ function RowActions({ run, catalog }: { run: RunRow; catalog: OverviewRunsCatalo
 				<DropdownMenuItem render={<a href={runHref(run)} />}>{catalog.openRun}</DropdownMenuItem>
 				{run.pullRequest ? <DropdownMenuItem render={<a href={run.pullRequest.url} rel="noreferrer" target="_blank" />}>{catalog.openPullRequest}<HugeiconsIcon aria-hidden="true" className="ml-auto opacity-70" icon={LinkSquare02Icon} size={16} strokeWidth={2.25} /></DropdownMenuItem> : null}
 				<DropdownMenuSeparator />
-				<DropdownMenuItem onClick={() => { void globalThis.navigator?.clipboard?.writeText(run.runId); }}><HugeiconsIcon icon={Copy01Icon} size={16} strokeWidth={2.25} />{catalog.copyRunId}<span className="ml-auto font-mono text-muted-foreground text-xs">{run.runId.slice(0, 8)}</span></DropdownMenuItem>
+				<DropdownMenuItem onClick={() => { void (globalThis as unknown as { navigator?: { clipboard?: { writeText: (text: string) => Promise<void> } } }).navigator?.clipboard?.writeText(run.runId); }}><HugeiconsIcon icon={Copy01Icon} size={16} strokeWidth={2.25} />{catalog.copyRunId}<span className="ml-auto font-mono text-muted-foreground text-xs">{run.runId.slice(0, 8)}</span></DropdownMenuItem>
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);

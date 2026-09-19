@@ -158,7 +158,7 @@ import {
 import { queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
 import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
 import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
-import { type NotificationItem, NotificationsPopover, nextControlCenterDisclosureState, notificationItems, type PanelKeyEvent, PanelToggleGlyph, projectSwitcherTooltipText, ShellSidebar } from '../../webui/src/screens/shell.tsx';
+import { type NotificationItem, NotificationsPopover, notificationItems, type PanelKeyEvent, PanelToggleGlyph, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
 const BACKLOG = [
 	{ id: 'CAM-900', title: 'primeira issue plannable' },
@@ -715,7 +715,6 @@ test('a project root is Runs, keeps the explicit Runs address, and omits Convers
 			expect(html).toContain('href="/projects/project-current"');
 			expect(html).toContain('href="/projects/project-current/runs"');
 			expect(html).toContain('href="/projects/project-current/work"');
-			expect(html).toContain('href="/projects/project-current/settings"');
 			expect(html).not.toContain(`>${conversationLabel}</span>`);
 		}
 		expect(settings).toContain(locale === 'en-US' ? 'Cycle resolver' : 'Resolvedor do ciclo');
@@ -792,6 +791,20 @@ function elementWith(html: string, attribute: string): string {
 /** The shell header alone, which only the human state is allowed to reach. */
 function shellHeader(html: string): string {
 	return html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+}
+
+/** One sidebar list alone, found by its slot and cut at its closing tag. */
+function navigationList(html: string, slot: 'global-navigation' | 'settings-navigation'): string {
+	const start = html.indexOf(`data-slot="${slot}"`);
+	if (start < 0) throw new Error(`no ${slot} list in the sidebar`);
+	return html.slice(start, html.indexOf('</ul>', start));
+}
+
+/** The project switcher trigger alone, opening tag to closing tag. */
+function switcherTrigger(html: string): string {
+	const slot = html.indexOf('data-slot="project-switcher"');
+	if (slot < 0) throw new Error('no project switcher in the sidebar');
+	return html.slice(html.lastIndexOf('<button', slot), html.indexOf('</button>', slot));
 }
 
 /** One disclosed panel alone, cut at the disclosure that carries it. */
@@ -3536,7 +3549,11 @@ function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: R
 	expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
 	expect(firstPage).toContain(`aria-label="${locale === 'en-US' ? 'Previous page' : 'Página anterior'}"`);
 	expect(lastPage).toContain(`aria-label="${locale === 'en-US' ? 'Next page' : 'Próxima página'}"`);
-	expect(onePage.match(/disabled=""/g)?.length).toBe(4);
+	for (const label of locale === 'en-US' ? ['Previous page', 'Next page'] : ['Página anterior', 'Próxima página']) {
+		const buttons = openingTags(onePage).filter((tag) => tag.startsWith('<button') && tag.includes(`aria-label="${label}"`));
+		expect(buttons.length).toBeGreaterThan(0);
+		for (const button of buttons) expect(button).toContain('disabled=""');
+	}
 }
 
 test('distingue os quatro resultados do gráfico por padrões não cromáticos em ambos os locales', () => {
@@ -3920,42 +3937,33 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('control center keeps four localized destinations in the sidebar group', () => {
-		for (const [locale, labels] of [['en-US', ['Control center', 'Overview', 'Runs', 'Queues', 'Insights']], ['pt-BR', ['Central de controle', 'Visão geral', 'Execuções', 'Filas', 'Análises']]] as const) {
+	test('navigation keeps four localized destinations in one flat list on every control center route', () => {
+		for (const [locale, labels] of [['en-US', ['Now', 'Runs', 'Queue', 'Insights']], ['pt-BR', ['Agora', 'Execuções', 'Fila', 'Análises']]] as const) {
 			for (const route of ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const) {
-				const html = renderAt(route, { locale });
-				for (const label of labels) expect(html).toContain(`>${label}</span>`);
-				expect(html).not.toContain('border-b-2');
+				const list = navigationList(renderAt(route, { locale }), 'global-navigation');
+				const links = openingTags(list).filter((tag) => tag.startsWith('<a'));
+				expect([...list.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1])).toEqual([...labels]);
+				expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/overview', '/overview/runs', '/overview/queues', '/overview/insights']);
+				expect(links.filter((tag) => tag.includes('aria-current="page"'))).toEqual([links.find((tag) => tag.includes(`href="${route}"`))!]);
+				expect(list).not.toContain('data-slot="navigation-count"');
 			}
 		}
 	});
 
-	test('control center disclosure stays open for desktop click and keyboard activation, and toggles on mobile', () => {
-		for (const interaction of ['click', 'keyboard'] as const) {
-			expect(nextControlCenterDisclosureState(false, true), interaction).toBe(true);
-			expect(nextControlCenterDisclosureState(true, true), interaction).toBe(true);
-		}
-		expect(nextControlCenterDisclosureState(true, false)).toBe(false);
-		expect(nextControlCenterDisclosureState(false, false)).toBe(true);
+	test('navigation identifies Runs as current on the control center Runs route in both sidebar modes', () => {
 		for (const open of [true, false]) {
-			const html = renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />);
-			expect(html).toContain('aria-expanded="true"');
-			expect(html).toContain('data-slot="control-center-subnavigation"');
+			const everyProject = renderToStaticMarkup(
+				<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={null} staleService={null} version="" workspaceNotices={[]} />,
+			);
+			const filtered = renderToStaticMarkup(
+				<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />,
+			);
+			for (const [html, href] of [[everyProject, '/overview/runs'], [filtered, '/projects/project-current/runs']] as const) {
+				const current = openingTags(navigationList(html, 'global-navigation')).filter((tag) => tag.includes('aria-current="page"'));
+				expect(current).toHaveLength(1);
+				expect(current[0]).toContain(`href="${href}"`);
+			}
 		}
-	});
-
-	test('global navigation identifies Control center as current throughout its Runs route', () => {
-		const html = renderAt('/overview/runs');
-		const sidebarStart = html.indexOf('<nav aria-label="Navigation"');
-		const sidebar = html.slice(sidebarStart, html.indexOf('</nav>', sidebarStart));
-		const sidebarRuns = openingTags(sidebar).find((tag) => tag.includes('href="/overview/runs"'));
-		expect(sidebarRuns).toContain('aria-current="page"');
-
-		const rail = renderToStaticMarkup(
-			<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={false} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />,
-		);
-		const railRuns = openingTags(rail).find((tag) => tag.includes('href="/overview/runs"'));
-		expect(railRuns).toContain('aria-current="page"');
 	});
 
 	test('overview localizes delivered runs and keeps non-delivery explicit', () => {
@@ -4556,93 +4564,67 @@ describe('operator shell', () => {
 		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
 	});
 
-	test('navigation keeps Control Center global and separates the project switcher only by space', () => {
+	test('navigation keeps the project switcher above one stable list on every project surface', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
 			const start = html.indexOf('<nav aria-label="Navigation"');
 			const nav = html.slice(start, html.indexOf('</nav>', start));
-			const activeRoute = route === '/projects/project-current'
-				? '/projects/project-current/runs'
-				: route;
-			const active = openingTags(nav).find((tag) =>
-				tag.includes(`href="${activeRoute}"`) && tag.includes('aria-current="page"'));
-			const switcher = elementWith(html, 'data-slot="project-switcher"');
-			const switcherItem = elementWith(html, 'data-slot="project-switcher-item"');
-			const projectSurfaceNavigation = elementWith(html, 'data-slot="project-surface-navigation"');
-			const globalStart = nav.indexOf('data-slot="global-navigation"');
-			const projectStart = nav.indexOf('data-slot="project-navigation"');
-			const globalGroup = nav.slice(globalStart, projectStart);
-			const switcherStart = html.indexOf('data-slot="project-switcher"');
-			const switcherEnd = html.indexOf('</button>', switcherStart);
-			const switcherMarkup = html.slice(switcherStart, switcherEnd);
+			const list = navigationList(nav, 'global-navigation');
+			const links = openingTags(list).filter((tag) => tag.startsWith('<a'));
+			const currentHref = route === '/projects/project-current/settings'
+				? []
+				: [route === '/projects/project-current' ? '/projects/project-current/runs' : route];
+			const trigger = switcherTrigger(nav);
 
-			expect(nav).toContain('aria-label="Navigation"');
-			for (const label of ['Control center', 'Runs', 'Work', 'Settings']) {
-				expect(nav).toContain(`>${label}</span>`);
-			}
-			expect(nav).toContain('flex-wrap');
-			expect(nav).not.toContain('overflow-x-auto');
-			expect(nav).toContain('href="/overview"');
-			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
-			expect(globalGroup).toContain('href="/overview"');
-			expect(globalGroup).not.toContain('data-slot="project-switcher"');
-			expect(globalGroup).toContain('</ul><div');
-			expect(nav).not.toContain('data-slot="navigation-divider"');
-			expect(nav).not.toContain('data-slot="project-context-label"');
-			expect(projectStart).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-			expect(elementWith(html, 'data-slot="project-navigation"')).toContain('mt-3');
-			expect(elementWith(html, 'data-slot="project-navigation"')).toContain('lg:mt-5');
-			expect(projectSurfaceNavigation).toContain('lg:pl-2');
-			expect(projectSurfaceNavigation).toContain('lg:mt-1');
-			expect(projectSurfaceNavigation).not.toContain('border-l');
-			expect(projectSurfaceNavigation).not.toContain('border-sidebar-border');
-			expect(projectSurfaceNavigation).not.toContain(' pl-2');
-			expect(projectSurfaceNavigation).not.toContain('pt-1');
-			expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf(`href="${activeRoute}"`));
-			expect(nav.match(/href="\/overview"/g)).toHaveLength(1);
-			expect(switcher).toContain('rounded-md');
-			expect(switcher).toContain('px-3');
-			expect(switcher).toContain('focus-visible:ring-2');
-			expect(switcherItem).toContain('w-full');
-			expect(switcherItem).toContain('min-w-0');
-			expect(switcherItem).not.toContain('shrink-0');
-			expect(switcherMarkup).not.toContain('w-10');
-			expect(switcherMarkup).toContain('data-base-ui-tooltip-trigger');
-			expect(switcherMarkup).not.toContain('size-8');
-			expect(active).toContain('aria-current="page"');
-			expect(nav.split('aria-current="page"')).toHaveLength(3);
+			expect(start).toBeGreaterThanOrEqual(0);
+			expect([...list.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1])).toEqual(['Now', 'Runs', 'Queue', 'Insights']);
+			expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual([
+				'/overview',
+				'/projects/project-current/runs',
+				'/projects/project-current/work',
+				'/overview/insights',
+			]);
+			expect(links.filter((tag) => tag.includes('aria-current="page"')).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(currentHref);
+			expect(nav.indexOf('data-slot="project-switcher-item"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
+			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('data-slot="global-navigation"'));
+			expect(nav.indexOf('data-slot="global-navigation"')).toBeLessThan(nav.indexOf('data-slot="settings-navigation"'));
+			// One visible Now row; the sr-only registry adds the every-project link the menu carries.
+			expect(navigationList(nav, 'global-navigation').match(/href="\/overview"/g)).toHaveLength(1);
+			expect(trigger).toContain(`>${CURRENT_PROJECT.name}<`);
+			expect(trigger).toContain('aria-keyshortcuts="Alt+2"');
 			// Navigation itself stays on served paths. The shell-level skip link is
 			// the one deliberate in-page anchor.
 			expect(nav).not.toContain('href="#');
 		}
 	});
 
-	test('navigation keeps the localized global settings footer on desktop', () => {
+	test('navigation keeps localized global settings in its own list after the destinations', () => {
 		for (const expected of [
 			{ locale: 'en-US' as const, globalSettings: 'Global settings' },
 			{ locale: 'pt-BR' as const, globalSettings: 'Ajustes globais' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
-			const footerStart = html.indexOf('href="/settings"');
-			const footer = html.slice(html.lastIndexOf('<li', footerStart), html.indexOf('</li>', footerStart));
+			const settings = navigationList(html, 'settings-navigation');
 
-			expect(footer).toContain('lg:mt-auto');
-			expect(footer).toContain('href="/settings"');
-			expect(footer).toContain(`>${expected.globalSettings}</span>`);
+			expect(html.indexOf('data-slot="global-navigation"')).toBeLessThan(html.indexOf('data-slot="settings-navigation"'));
+			expect(openingTags(settings).filter((tag) => tag.startsWith('<a'))).toHaveLength(1);
+			expect(settings).toContain('href="/settings"');
+			expect(settings).toContain(`>${expected.globalSettings}</span>`);
+			expect(settings).not.toContain('aria-current="page"');
+			expect(navigationList(globalSettingsPage({ locale: expected.locale }), 'settings-navigation')).toContain('aria-current="page"');
 		}
 	});
 
-	test('navigation localizes the global destination and project-management menu action', () => {
+	test('navigation localizes the Now destination and the project-management registry link', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, overview: 'Control center', manage: 'Manage projects' },
-			{ locale: 'pt-BR' as const, overview: 'Central de controle', manage: 'Gerenciar projetos' },
+			{ locale: 'en-US' as const, now: 'Now', manage: 'Manage projects' },
+			{ locale: 'pt-BR' as const, now: 'Agora', manage: 'Gerenciar projetos' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
-			const start = html.indexOf('<nav aria-label=');
-			const nav = html.slice(start, html.indexOf('</nav>', start));
+			const list = navigationList(html, 'global-navigation');
+			const nowStart = list.indexOf('href="/overview"');
 
-			expect(nav).toContain(`>${expected.overview}</span>`);
+			expect(list.slice(nowStart, list.indexOf('</a>', nowStart))).toContain(`>${expected.now}</span>`);
 			expect(html).toContain(`href="/projects">${expected.manage}</a>`);
 		}
 	});
@@ -4656,33 +4638,38 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('navigation keeps only the project switcher in its contextual group without a selected project', () => {
-		const html = renderAt('/overview', { projects: [] });
-		const start = html.indexOf('<nav aria-label="Navigation"');
-		const nav = html.slice(start, html.indexOf('</nav>', start));
+	test('navigation shows every project and links Runs and Queue to the aggregates without a selected project', () => {
+		for (const [locale, allProjects] of [['en-US', 'All projects'], ['pt-BR', 'Todos os projetos']] as const) {
+			const html = renderAt('/overview', { locale, projects: [] });
+			const list = navigationList(html, 'global-navigation');
+			const trigger = switcherTrigger(html);
 
-		expect(nav).toContain('data-slot="project-switcher"');
-		expect(nav).not.toContain('data-slot="project-surface-navigation"');
+			expect(trigger).toContain(`>${allProjects}<`);
+			expect(trigger).not.toContain('data-slot="project-state-dot"');
+			expect(openingTags(list).filter((tag) => tag.startsWith('<a')).map((tag) => tag.match(/href="([^"]+)"/)?.[1]))
+				.toEqual(['/overview', '/overview/runs', '/overview/queues', '/overview/insights']);
+		}
 	});
 
-	test('overview retains a registered project only for contextual navigation in both locales', () => {
+	test('overview retains a registered project as the navigation filter in both locales', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview', {
 				locale,
 				projects: [CURRENT_PROJECT, OTHER_PROJECT],
 				selectedProjectId: OTHER_PROJECT.id,
 			});
-			const navStart = html.indexOf('<nav aria-label=');
-			const nav = html.slice(navStart, html.indexOf('</nav>', navStart));
-			const triggerStart = html.indexOf('data-slot="project-switcher"');
-			const trigger = html.slice(triggerStart, html.indexOf('</button>', triggerStart));
+			const list = navigationList(html, 'global-navigation');
+			const links = openingTags(list).filter((tag) => tag.startsWith('<a'));
 
-			expect(trigger).toContain(`>${OTHER_PROJECT.name}<`);
-			for (const suffix of ['', '/runs', '/work', '/settings']) {
-				expect(nav).toContain(`href="/projects/${OTHER_PROJECT.id}${suffix}"`);
-			}
-			const overviewLink = openingTags(nav).find((tag) => tag.includes('href="/overview"'));
-			expect(overviewLink).toContain('aria-current="page"');
+			expect(switcherTrigger(html)).toContain(`>${OTHER_PROJECT.name}<`);
+			expect(html).toContain(`href="/projects/${OTHER_PROJECT.id}"`);
+			expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual([
+				'/overview',
+				`/projects/${OTHER_PROJECT.id}/runs`,
+				`/projects/${OTHER_PROJECT.id}/work`,
+				'/overview/insights',
+			]);
+			expect(links.filter((tag) => tag.includes('aria-current="page"'))).toEqual([links[0]!]);
 		}
 	});
 
@@ -4729,48 +4716,53 @@ describe('operator shell', () => {
 		});
 	});
 
-	test('project switcher renders Alt shortcuts in the leading column and marks the selection', () => {
+	test('project switcher gives the first eight projects Alt shortcuts and shows the selected key on its trigger', () => {
 		const projects = Array.from({ length: 10 }, (_, index) => ({
 			...CURRENT_PROJECT,
 			id: `project-${index + 1}`,
 			name: `Project ${index + 1}`,
 			current: index === 0,
 		}));
+		const platform = presentationPlatform();
 		const html = renderAt('/overview', { projects });
 		const selectedHtml = renderAt('/projects/project-1', { projects });
-		const triggerStart = selectedHtml.indexOf('data-slot="project-switcher"');
-		const trigger = selectedHtml.slice(triggerStart, selectedHtml.indexOf('</button>', triggerStart));
+		const pastDigitsHtml = renderAt('/projects/project-9', { projects });
 		const shortcuts = [...html.matchAll(/<kbd[^>]*data-slot="shortcut-project"[^>]*>([^<]+)<\/kbd>/g)].map((match) => match[1]);
+		const registryLink = (markup: string, id: string): string => openingTags(markup).find((tag) => tag.startsWith('<a') && tag.includes(`href="/projects/${id}"`))!;
 
-		expect(shortcuts).toEqual(Array.from({ length: 9 }, (_, index) => shortcutLabel('project', index, presentationPlatform())));
-		expect(trigger).not.toContain(shortcutLabel('project', 0, presentationPlatform()));
-		expect(trigger).toContain('data-base-ui-tooltip-trigger');
-		expect(selectedHtml).toContain('aria-current="page"');
-		expect(html).toContain('href="/projects/project-9"');
-		expect(html).toContain('href="/projects/project-10"');
+		expect(shortcuts).toEqual(Array.from({ length: 8 }, (_, index) => shortcutLabel('project', index, platform)));
+		expect(registryLink(html, 'project-1')).toContain('aria-keyshortcuts="Alt+2"');
+		expect(registryLink(html, 'project-8')).toContain('aria-keyshortcuts="Alt+9"');
+		expect(registryLink(html, 'project-9')).not.toContain('aria-keyshortcuts');
+		expect(registryLink(html, 'project-10')).not.toContain('aria-keyshortcuts');
 		expect(html).not.toContain('Alt+10');
-		expect(projectSwitcherTooltipText(LOCALE_CATALOG['en-US'].shell, 'Project 1', 'Alt+1', { attention: 'Idle', label: 'Idle', acid: false })).toBe('Project 1 · Alt+1: open project · Idle');
-		expect(projectSwitcherTooltipText(LOCALE_CATALOG['pt-BR'].shell, 'Projeto 1', '⌥1', { attention: 'Idle', label: 'Ocioso', acid: false })).toBe('Projeto 1 · ⌥1: acessar projeto · Ocioso');
-		expect(projectSwitcherTooltipText(LOCALE_CATALOG['en-US'].shell, 'Project 10', null, null)).toBe('Project 10');
+		expect(switcherTrigger(html)).toContain(`>${shortcutLabel('overview', undefined, platform)}</kbd>`);
+		expect(switcherTrigger(html)).toContain('aria-keyshortcuts="Alt+1"');
+		expect(switcherTrigger(selectedHtml)).toContain(`>${shortcutLabel('project', 0, platform)}</kbd>`);
+		expect(switcherTrigger(selectedHtml)).toContain('aria-keyshortcuts="Alt+2"');
+		expect(registryLink(selectedHtml, 'project-1')).toContain('aria-current="page"');
+		expect(registryLink(selectedHtml, 'project-2')).not.toContain('aria-current');
+		expect(switcherTrigger(pastDigitsHtml)).toContain('>Project 9<');
+		expect(switcherTrigger(pastDigitsHtml)).not.toContain('<kbd');
+		expect(switcherTrigger(pastDigitsHtml)).not.toContain('aria-keyshortcuts');
 	});
 
-	test('project switcher uses a glyph-sized spacer when its selection does not resolve', () => {
-		const emptySelectionHtml = renderAt('/projects/project-missing');
-		const emptyTriggerStart = emptySelectionHtml.indexOf('data-slot="project-switcher"');
-		const emptyTrigger = emptySelectionHtml.slice(emptyTriggerStart, emptySelectionHtml.indexOf('</button>', emptyTriggerStart));
-		const selectedHtml = renderAt('/projects/project-current');
-		const selectedTriggerStart = selectedHtml.indexOf('data-slot="project-switcher"');
-		const selectedTrigger = selectedHtml.slice(selectedTriggerStart, selectedHtml.indexOf('</button>', selectedTriggerStart));
+	test('project switcher names the project with its state, and every project when the selection does not resolve', () => {
+		const unresolved = switcherTrigger(renderAt('/projects/project-missing'));
+		const selected = switcherTrigger(renderAt('/projects/project-current'));
+		const idle = LOCALE_CATALOG['en-US'].runInspector.attentionLabels.Idle;
 
-		expect(emptyTrigger).toContain('>Select a project<');
-		expect(emptyTrigger).toContain('data-slot="project-switcher-placeholder"');
-		expect(emptyTrigger).not.toContain('w-10');
-		expect(emptyTrigger).not.toContain('<kbd');
-		expect(selectedTrigger).not.toContain('w-10');
-		expect(selectedTrigger).not.toContain(shortcutLabel('project', 0, presentationPlatform()));
+		expect(unresolved).toContain('>All projects<');
+		expect(unresolved).toContain('aria-keyshortcuts="Alt+1"');
+		expect(unresolved).not.toContain('data-slot="project-state-dot"');
+		expect(selected).toContain(`>${CURRENT_PROJECT.name}<`);
+		expect(elementWith(selected, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
+		expect(selected).toContain(`>${idle}</span>`);
+		expect(selected.indexOf('data-slot="switcher-key"')).toBeLessThan(selected.indexOf(`>${CURRENT_PROJECT.name}<`));
+		expect(selected.indexOf(`>${CURRENT_PROJECT.name}<`)).toBeLessThan(selected.indexOf('data-slot="project-state-dot"'));
 	});
 
-	test('project shortcuts navigate with Alt+Digit1 through Alt+Digit9 and reject other combinations', () => {
+	test('project shortcuts navigate with Alt+Digit2 through Alt+Digit9 and reject other combinations', () => {
 		const projects = Array.from({ length: 10 }, (_, index) => ({
 			...CURRENT_PROJECT,
 			id: `project-${index + 1}`,
@@ -4787,24 +4779,26 @@ describe('operator shell', () => {
 			return { handled, prevented };
 		};
 
-		expect(invoke('&', 'Digit1', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('é', 'Digit2', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(invoke('(', 'Digit9', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
-		expect(locations).toEqual(['/projects/project-1', '/projects/project-9']);
-		expect(invoke('1', undefined, { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
-		expect(invoke('2', '', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-8']);
+		expect(invoke('2', undefined, { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('3', '', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(invoke('3', 'Numpad3', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
-		expect(invoke('1', 'Digit1', { altKey: false, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
-		expect(invoke('1', 'Digit1', { altKey: true, metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('2', 'Digit2', { altKey: false, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('2', 'Digit2', { altKey: true, metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
 		expect(invoke('9', 'Digit9', { altKey: true, metaKey: false, ctrlKey: true })).toEqual({ handled: false, prevented: false });
 		expect(invoke('0', 'Digit0', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		// Alt+1 belongs to every project, never to the first registered one.
+		expect(invoke('1', 'Digit1', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
 		let missingPrevented = false;
 		expect(handleProjectShortcut(
-			{ key: '3', code: 'Digit3', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
+			{ key: '4', code: 'Digit4', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
 			projects.slice(0, 2),
 			{ location: { assign: (url) => { locations.push(url); } } },
 		)).toBe(false);
 		expect(missingPrevented).toBe(false);
-		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-1', '/projects/project-2']);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-8', '/projects/project-1', '/projects/project-2']);
 	});
 
 		test('shortcut presentation follows platform signals while commands stay canonical', () => {
@@ -4814,25 +4808,36 @@ describe('operator shell', () => {
 		expect(presentationPlatform({ platform: 'Android' })).toBe('unknown');
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview', { locale });
-			const overviewLink = elementWith(html, 'aria-keyshortcuts="Alt+0"');
-			const sidebarToggle = elementWith(html, 'data-slot="sidebar-toggle"');
-			expect(overviewLink).toContain('href="/overview"');
+			const everyProject = elementWith(html, 'aria-keyshortcuts="Alt+1"');
+			const toggleStart = html.indexOf('data-slot="sidebar-toggle"');
+			const sidebarToggle = html.slice(html.lastIndexOf('<button', toggleStart), html.indexOf('</button>', toggleStart));
+			expect(everyProject).toContain('data-slot="project-switcher"');
+			expect(html).not.toContain('Alt+0');
 			expect(sidebarToggle).toContain(`aria-label="${LOCALE_CATALOG[locale].shell.sidebarToggle.collapse}"`);
-			expect(overviewLink).toContain('data-base-ui-tooltip-trigger');
-			expect(html).not.toContain('data-slot="shortcut-overview"');
+			expect(sidebarToggle).toContain('max-lg:hidden');
 			expect(sidebarToggle).not.toContain('aria-keyshortcuts');
 			expect(sidebarToggle).not.toContain('<kbd');
-			expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥0');
-			expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥1');
-			expect(shortcutLabel('overview', undefined, 'Windows')).toBe('Alt+0');
-			expect(shortcutLabel('project', 8, 'Linux')).toBe('Alt+9');
-			expect(shortcutLabel('overview', undefined, 'unknown')).toBe('Alt+0');
 		}
-		let toggles = 0;
-		let prevented = false;
-		expect(handleOverviewShortcut({ key: '0', code: 'Digit0', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { prevented = true; } }, { location: { assign: () => { toggles += 1; } } })).toBe(true);
-		expect({ toggles, prevented }).toEqual({ toggles: 1, prevented: true });
-		expect(handleOverviewShortcut({ key: '0', code: 'Digit0', altKey: false, metaKey: false, ctrlKey: false, preventDefault: () => { prevented = true; } }, { location: { assign: () => { toggles += 1; } } })).toBe(false);
+		expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥1');
+		expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥2');
+		expect(shortcutLabel('overview', undefined, 'Windows')).toBe('Alt+1');
+		expect(shortcutLabel('project', 7, 'Linux')).toBe('Alt+9');
+		expect(shortcutLabel('overview', undefined, 'unknown')).toBe('Alt+1');
+		const event = (code: string, altKey: boolean, onPrevent: () => void): PanelKeyEvent => ({ key: code.slice(-1), code, altKey, metaKey: false, ctrlKey: false, preventDefault: onPrevent });
+		const assigned: string[] = [];
+		const runtime = { location: { assign: (url: string) => { assigned.push(url); } } };
+		let prevented = 0;
+		expect(handleOverviewShortcut(event('Digit1', true, () => { prevented += 1; }), runtime)).toBe(true);
+		expect({ assigned, prevented }).toEqual({ assigned: ['/overview'], prevented: 1 });
+		// With the app's handler the shortcut is the switcher's first choice: it
+		// clears the project filter instead of only routing.
+		let cleared = 0;
+		const navigated: string[] = [];
+		expect(handleOverviewShortcut(event('Digit1', true, () => { prevented += 1; }), runtime, (destination) => { navigated.push(destination); }, () => { cleared += 1; })).toBe(true);
+		expect({ assigned, navigated, cleared, prevented }).toEqual({ assigned: ['/overview'], navigated: [], cleared: 1, prevented: 2 });
+		expect(handleOverviewShortcut(event('Digit1', false, () => { prevented += 1; }), runtime)).toBe(false);
+		expect(handleOverviewShortcut(event('Digit0', true, () => { prevented += 1; }), runtime)).toBe(false);
+		expect({ assigned, prevented }).toEqual({ assigned: ['/overview'], prevented: 2 });
 	});
 
 	test('keeps the composite sidebar control intrinsically sized and shell icons optically uniform', () => {
@@ -4850,9 +4855,7 @@ describe('operator shell', () => {
 		expect(sidebarToggle).not.toContain('h-9');
 		expect(notifications).toContain('size-9');
 		expect(notifications).toContain('sm:size-8');
-		expect(html).toContain('aria-keyshortcuts="Alt+0"');
 		expect(sidebarToggle).not.toContain('aria-keyshortcuts');
-		expect(sidebarToggle).not.toContain('<kbd');
 		expect(interactiveIcons.length).toBeGreaterThan(0);
 		for (const icon of interactiveIcons) {
 			expect(icon).toContain('class="size-4');
@@ -4875,7 +4878,7 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('overview shortcut occupies the leading slot in both sidebar modes', () => {
+	test('the every-project shortcut rides the switcher key chip in both sidebar modes, never the Now link', () => {
 		const props = {
 			chainRuns: EMPTY_CHAIN_RUNS,
 			gitIdentity: null,
@@ -4893,15 +4896,23 @@ describe('operator shell', () => {
 		const collapsed = renderToStaticMarkup(<ShellSidebar {...props} open={false} />);
 
 		for (const html of [expanded, collapsed]) {
-			const overviewTag = openingTags(html).find((tag) => tag.includes('href="/overview"'))!;
-			const overviewStart = html.indexOf('href="/overview"');
-			const overview = html.slice(overviewStart, html.indexOf('</a>', overviewStart));
-			expect(overviewTag).toContain('aria-current="page"');
-			expect(overview).toContain('data-base-ui-tooltip-trigger');
-			expect(overview).toContain('<svg');
-			expect(overview).not.toContain('<kbd');
+			// The visible Now row, not the sr-only registry's every-project link.
+			const list = navigationList(html, 'global-navigation');
+			const nowTag = openingTags(list).find((tag) => tag.includes('href="/overview"'))!;
+			const nowStart = list.indexOf('href="/overview"');
+			const now = list.slice(nowStart, list.indexOf('</a>', nowStart));
+			const trigger = switcherTrigger(html);
+			expect(nowTag).toContain('aria-current="page"');
+			expect(nowTag).not.toContain('aria-keyshortcuts');
+			expect(now).toContain('<svg');
+			expect(now).not.toContain('<kbd');
+			expect(trigger).toContain('aria-keyshortcuts="Alt+1"');
+			expect(elementWith(trigger, 'data-slot="switcher-key"')).toContain('<kbd');
+			expect(trigger).toContain(`>${shortcutLabel('overview', undefined, presentationPlatform())}</kbd>`);
 		}
-		expect(openingTags(collapsed).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Overview"');
+		expect(openingTags(navigationList(collapsed, 'global-navigation')).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Now"');
+		expect(switcherTrigger(collapsed)).toContain('aria-label="All projects"');
+		expect(switcherTrigger(expanded)).toContain('>All projects<');
 	});
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
@@ -4910,9 +4921,10 @@ describe('operator shell', () => {
 		const nav = html.slice(start, html.indexOf('</nav>', start));
 
 		expect(nav).toContain('aria-label="Navegação"');
-		for (const label of ['Central de controle', 'Runs', 'Trabalho', 'Ajustes']) {
+		for (const label of ['Agora', 'Execuções', 'Fila', 'Análises', 'Ajustes globais']) {
 			expect(nav).toContain(`>${label}</span>`);
 		}
+		expect(switcherTrigger(nav)).toContain(`>${CURRENT_PROJECT.name}<`);
 		expect(html).toContain('>Pular para o conteúdo</a>');
 		expect(html).toContain('Execução mais recente');
 		expect(html).toContain('Nenhuma execução registrada ainda.');
@@ -5052,85 +5064,99 @@ describe('operator shell', () => {
 	test('the sidebar reserves the brand for its quiet desktop footer signature', () => {
 		const html = shellHeader(runsPage({ runs: [runIn('failed')], version: '0.292.0' }));
 		const signatureStart = html.indexOf('data-slot="sidebar-signature"');
-		const signature = html.slice(signatureStart, html.indexOf('</div>', signatureStart));
-		const settingsStart = html.indexOf('<nav aria-label="Global settings"');
-		const settingsEnd = html.indexOf('</nav>', settingsStart);
+		const signature = html.slice(signatureStart);
 		const compactHeader = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
 
 		expect(compactHeader).toContain('lg:hidden');
 		expect(compactHeader).toContain('viewBox="3250 0 10187 2750"');
-		expect(html.indexOf('>Control center</span>')).toBeLessThan(html.indexOf('data-slot="project-navigation"'));
-		expect(settingsEnd).toBeLessThan(signatureStart);
+		expect(html.indexOf('data-slot="settings-navigation"')).toBeLessThan(signatureStart);
+		expect(html.indexOf('</nav>')).toBeLessThan(signatureStart);
 		expect(signature).toContain('viewBox="3250 0 10187 2750"');
-		expect(signature).toContain('h-4');
-		expect(signature).toContain('text-foreground');
 		expect(signature).toContain('viewBox="0 0 2750 2750"');
 		expect(signature).not.toContain('>Gateship</span>');
-		expect(signature).not.toContain('text-sidebar-foreground/60');
 		expect(signature).toContain('>v0.292.0</span>');
-		expect(signature).toContain('text-sidebar-foreground/50');
 	});
 
-	test('the collapsed rail is compact operational navigation with a centered footer mark', () => {
-		const sidebar = (open: boolean) => renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/projects/project-current/work" run={runIn('waiting-user')} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={NOTICES} />);
+	test('the collapsed rail keeps the same destinations as labelled icon tiles with the mark alone in its footer', () => {
+		const sidebar = (open: boolean) => renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/projects/project-current/work" run={runIn('waiting-user')} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="0.292.0" workspaceNotices={NOTICES} />);
 		const rail = sidebar(false);
 		const expanded = sidebar(true);
-		const signatureStart = rail.indexOf('data-slot="sidebar-signature"');
-		const signature = rail.slice(rail.lastIndexOf('<div', signatureStart), rail.indexOf('</div>', signatureStart));
+		const signature = (html: string): string => html.slice(html.indexOf('data-slot="sidebar-signature"'));
 		const navStart = rail.indexOf('<nav aria-label="Navigation"');
 		const nav = rail.slice(navStart, rail.indexOf('</nav>', navStart));
+		const hrefs = (html: string): (string | undefined)[] => openingTags(html).filter((tag) => tag.startsWith('<a') && tag.includes('data-sidebar-id')).map((tag) => tag.match(/href="([^"]+)"/)?.[1]);
 
-		expect(rail).toContain('lg:w-18');
-		expect(nav).toContain('lg:flex-1');
-		expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-		expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('href="/projects/project-current/runs"'));
-		expect(nav.indexOf('href="/projects/project-current/runs"')).toBeLessThan(nav.indexOf('href="/projects/project-current/work"'));
-		expect(nav.indexOf('href="/projects/project-current/work"')).toBeLessThan(nav.indexOf('href="/projects/project-current/settings"'));
-		expect(nav.indexOf('href="/projects/project-current/settings"')).toBeLessThan(nav.indexOf('href="/settings"'));
+		expect(elementWith(rail, 'data-slot="sidebar"')).toContain('data-state="collapsed"');
+		expect(elementWith(expanded, 'data-slot="sidebar"')).toContain('data-state="expanded"');
+		expect(hrefs(rail)).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights', '/settings']);
+		expect(hrefs(rail)).toEqual(hrefs(expanded));
+		expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('data-slot="global-navigation"'));
 		for (const [href, label] of [
-			['/overview', 'Overview'],
+			['/overview', 'Now'],
 			['/projects/project-current/runs', 'Runs'],
-			['/projects/project-current/work', 'Work'],
-			['/projects/project-current/settings', 'Settings'],
+			['/projects/project-current/work', 'Queue'],
+			['/overview/insights', 'Insights'],
 			['/settings', 'Global settings'],
 		]) {
-			const link = openingTags(nav).find((tag) => tag.includes(`href="${href}"`));
+			const link = openingTags(nav).find((tag) => tag.includes(`data-sidebar-id="${href}"`));
 			expect(link).toContain(`aria-label="${label}"`);
 			expect(link).not.toContain(`title="${label}"`);
+			expect(nav).not.toContain(`>${label}</span>`);
+			expect(openingTags(expanded).find((tag) => tag.includes(`data-sidebar-id="${href}"`))).not.toContain('aria-label=');
+			expect(expanded).toContain(`>${label}</span>`);
 		}
-		const switcherStart = nav.indexOf('data-slot="project-switcher"');
-		const switcher = nav.slice(nav.lastIndexOf('<button', switcherStart), nav.indexOf('</button>', switcherStart));
+		const switcher = switcherTrigger(nav);
 		expect(switcher).toContain('aria-label="gateship"');
 		expect(switcher).not.toContain('title="gateship"');
-		expect(switcher).toContain('aria-keyshortcuts="Alt+1"');
-		expect(switcher).toContain('data-base-ui-tooltip-trigger');
+		expect(switcher).not.toContain('>gateship<');
+		expect(switcher).toContain('aria-keyshortcuts="Alt+2"');
+		expect(switcher).toContain('data-slot="switcher-key"');
+		expect(elementWith(switcher, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
 		expect(nav).not.toContain('data-slot="sidebar-attention"');
 		expect(openingTags(nav).find((tag) => tag.includes('href="/projects/project-current/work"'))).toContain('aria-current="page"');
-		expect(signature).toContain('size-5');
-		expect(signature).toContain('viewBox="0 0 2750 2750"');
-		expect(signature).toContain('lg:mt-auto');
-		expect(signature).toContain('items-center');
-		expect(signature).toContain('px-3');
-		expect(signatureStart).toBeGreaterThan(navStart);
-		expect((rail.match(/data-base-ui-tooltip-trigger/g) ?? [])).toHaveLength((expanded.match(/data-base-ui-tooltip-trigger/g) ?? []).length);
-		expect((rail.match(/href="\/settings"/g) ?? [])).toHaveLength(1);
-		expect((expanded.match(/href="\/settings"/g) ?? [])).toHaveLength(1);
+		expect(signature(rail)).toContain('viewBox="0 0 2750 2750"');
+		expect(signature(rail)).not.toContain('viewBox="3250 0 10187 2750"');
+		expect(signature(rail)).not.toContain('>v0.292.0<');
+		expect(signature(expanded)).toContain('viewBox="3250 0 10187 2750"');
+		expect(signature(expanded)).toContain('>v0.292.0<');
+		expect(rail.indexOf('data-slot="sidebar-signature"')).toBeGreaterThan(rail.indexOf('</nav>', navStart));
 	});
 
-	test('the collapsed rail keeps the project selector but hides project surfaces without selection', () => {
+	test('the collapsed rail shows every project on the switcher and links Runs and Queue to the aggregates without selection', () => {
 		const rail = renderToStaticMarkup(
 			<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={false} projects={[CURRENT_PROJECT]} route="/overview" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={null} staleService={null} version="" workspaceNotices={[]} />,
 		);
 		const navStart = rail.indexOf('<nav aria-label="Navigation"');
 		const nav = rail.slice(navStart, rail.indexOf('</nav>', navStart));
+		const list = navigationList(nav, 'global-navigation');
 
-		expect(elementWith(nav, 'data-slot="project-switcher"')).toContain('aria-label="Select a project"');
-		expect(nav).toContain('data-slot="project-switcher"');
-		expect(nav).toContain('data-slot="project-switcher-placeholder"');
-		expect(nav).not.toContain('href="/projects/project-current/runs"');
-		expect(nav).not.toContain('href="/projects/project-current/work"');
-		expect(nav).not.toContain('href="/projects/project-current/settings"');
+		expect(elementWith(nav, 'data-slot="project-switcher"')).toContain('aria-label="All projects"');
+		expect(switcherTrigger(nav)).not.toContain('data-slot="project-state-dot"');
+		expect(list).toContain('href="/overview/runs"');
+		expect(list).toContain('href="/overview/queues"');
+		expect(list).not.toContain('href="/projects/project-current/runs"');
+		expect(list).not.toContain('href="/projects/project-current/work"');
 		expect(nav).toContain('href="/settings"');
+	});
+
+	test('navigation rows carry counts scoped to the switcher filter only when an overview is loaded', () => {
+		const overview = {
+			summary: { totalProjects: 2, readyProjects: 2, unavailableProjects: 0, nonTerminalRuns: 3, backlog: { idea: 0, specified: 0, planned: 7 } },
+			projects: [
+				{ project: CURRENT_PROJECT, activeRun: { state: 'waiting-user' }, backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 2 } } },
+				{ project: OTHER_PROJECT, activeRun: null, backlog: { state: 'unavailable' } },
+			],
+		} as unknown as NonNullable<AppProps['overview']>;
+		const counts = (selectedProjectId: string | null, loaded: AppProps['overview'] | undefined): (string | undefined)[] => {
+			const html = renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open overview={loaded} projects={[CURRENT_PROJECT, OTHER_PROJECT]} route="/overview" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={selectedProjectId} staleService={null} version="" workspaceNotices={[]} />);
+			return [...html.matchAll(/data-slot="navigation-count">([^<]*)</g)].map((match) => match[1]);
+		};
+
+		expect(counts(null, undefined)).toEqual([]);
+		expect(counts(null, overview)).toEqual(['1', '3', '7']);
+		expect(counts(CURRENT_PROJECT.id, overview)).toEqual(['1', '1', '2']);
+		// An unknown backlog renders nothing, never a fabricated zero.
+		expect(counts(OTHER_PROJECT.id, overview)).toEqual(['1', '0']);
 	});
 
 	test('the technical run state stays on the run card and never reaches the header', () => {

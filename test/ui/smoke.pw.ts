@@ -66,12 +66,14 @@ test.describe('@smoke Central invariants', () => {
 		for (let index = 0; index < expanded.length; index += 1) for (let part = 0; part < 4; part += 1) expect(Math.abs(expanded[index]![part]! - collapsed[index]![part]!)).toBeLessThanOrEqual(1);
 
 		await toggle.click();
-		const columnMenu = page.locator('details[data-slot=data-table-column-visibility]');
-		await columnMenu.locator('summary').click();
-		await expect(columnMenu.locator('input').first()).toBeVisible();
-		await columnMenu.locator('summary').click();
-		await expect(columnMenu.locator('input').first()).toBeHidden();
+		const columnMenu = page.locator('[data-slot=data-table-view-options]');
+		await page.getByRole('button', { name: 'Columns', exact: true }).click();
+		await expect(columnMenu.locator('[role=menuitemcheckbox]').first()).toBeVisible();
+		await page.keyboard.press('Escape');
+		await expect(columnMenu).toBeHidden();
+		// A header opens its column menu; sorting is an item in it.
 		await page.locator('[data-slot=data-table] th button').first().click();
+		await page.getByRole('menuitem').first().click();
 		await expect(page.locator('tbody tr').first()).toBeVisible();
 		await page.getByRole('button', { name: 'Next page' }).click();
 		await expect(page.locator('span[aria-live=polite]:not(.sr-only)')).toContainText('21–40');
@@ -81,10 +83,10 @@ test.describe('@smoke Central invariants', () => {
 		await page.goto('/harness.html?frame=1440&route=/overview&scenario=tooltip-open&locale=en-US&theme=light');
 		await page.getByRole('button', { name: 'tooltip-open', exact: true }).click();
 		await page.locator('[data-slot=global-navigation] a[aria-label]').first().hover();
-		await expect(page.locator('[data-slot=sidebar-tooltip]:visible')).toHaveCount(1);
+		await expect(page.locator('[data-slot=tooltip]:visible')).toHaveCount(1);
 		const switcher = page.locator('[data-slot=project-switcher]');
 		await switcher.click();
-		await expect(page.locator('[data-slot=sidebar-tooltip]:visible')).toHaveCount(0);
+		await expect(page.locator('[data-slot=tooltip]:visible')).toHaveCount(0);
 		await expect(page.getByRole('menu')).toBeVisible();
 
 		// GSHIP-874: Tooltip.Trigger and Menu.Trigger share this one trigger node,

@@ -33,7 +33,6 @@ export function applyLocalePreference(
 }
 
 export interface ShellCatalog {
-	controlCenter: string;
 	themeToggle: { label: string; light: string; dark: string };
 	widthToggle: { wide: string; compact: string };
 	sidebarToggle: { collapse: string; expand: string };
@@ -652,7 +651,6 @@ export interface LocaleCatalog {
 export const LOCALE_CATALOG = {
 	'en-US': {
 		shell: {
-			controlCenter: 'Control center',
 			operatorNavigationLabel: 'Navigation',
 			projectNavigationLabel: 'Projects',
 			manageProjectsLabel: 'Manage projects',
@@ -1132,7 +1130,6 @@ export const LOCALE_CATALOG = {
 	},
 	'pt-BR': {
 		shell: {
-			controlCenter: 'Central de controle',
 			operatorNavigationLabel: 'Navegação',
 			projectNavigationLabel: 'Projetos',
 			manageProjectsLabel: 'Gerenciar projetos',
