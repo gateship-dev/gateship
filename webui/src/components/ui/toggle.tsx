@@ -21,7 +21,8 @@ export const toggleVariants = cva(
 				outline: 'border border-input bg-transparent text-muted-foreground hover:bg-muted',
 			},
 			size: {
-				default: 'h-8 min-w-8 px-3',
+				/* The kit's control row: 36px under `sm` for touch, 32px above it, as Button and Input. */
+				default: 'h-9 min-w-9 px-3 sm:h-8 sm:min-w-8',
 			},
 		},
 		defaultVariants: { variant: 'default', size: 'default' },

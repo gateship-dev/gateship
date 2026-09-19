@@ -483,13 +483,17 @@ function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: 
 	];
 }
 
-/* A row's figure is quiet mono in the sidebar's own grey, whatever it counts:
+/* A row's figure is quiet by being small and mono, not by being faint: the
+ * sidebar's own grey already sits at the AA floor (4.82:1), so any opacity on
+ * top of it fails. It sets no colour of its own, so it follows its row (grey
+ * at rest, the accent foreground when the row is current or hovered) and
+ * wears that whatever it counts:
  * the acid family is reserved for the surface that asks for the operator's
  * turn, and a number beside a link is orientation, not a call. Unknown
  * renders as nothing, never as a zero the service did not report. */
 function NavCount({ value }: { value: number | null }): React.ReactElement | null {
 	if (value === null) return null;
-	return <span className="ml-auto min-w-4 text-center font-mono text-xs tabular-nums text-sidebar-foreground/70" data-slot="navigation-count">{value}</span>;
+	return <span className="ml-auto min-w-4 text-center font-mono text-xs tabular-nums" data-slot="navigation-count">{value}</span>;
 }
 
 export function ShellNavigation({
@@ -845,7 +849,7 @@ export function ShellSidebar({
 				<span className="flex w-4 shrink-0 justify-center"><GateshipMark className="size-5 shrink-0" portal /></span>
 				{!open ? null : <span className="flex items-center gap-2">
 					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
-					{version === '' ? null : <span className="font-mono text-xs text-sidebar-foreground/50">v{humanVersionOf(version)}</span>}
+					{version === '' ? null : <span className="font-mono text-sidebar-foreground text-xs">v{humanVersionOf(version)}</span>}
 				</span>}
 			</div>
 		</header>

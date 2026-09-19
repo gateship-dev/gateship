@@ -295,7 +295,9 @@ html.gship-harness-reduced-motion *::after {
 	--secondary: --alpha(var(--color-white) / 4%);
 	--secondary-foreground: var(--color-neutral-100);
 	--muted: --alpha(var(--color-white) / 4%);
-	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+	/* 85%, not the light theme's 90%: on the dark theme's tinted surfaces (table
+	 * heads, select values over --input) 90% measured 4.32:1, under AA. */
+	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 85%, var(--color-white));
 	--accent: --alpha(var(--color-white) / 4%);
 	--accent-foreground: var(--color-neutral-100);
 	--destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));

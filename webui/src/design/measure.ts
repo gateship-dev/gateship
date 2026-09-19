@@ -46,27 +46,39 @@ function ownText(element: Element): string {
 	return Array.from(element.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent ?? '').join('').trim();
 }
 
-function parseColor(value: string): [number, number, number, number] | null {
-	const rgb = /rgba?\(([^)]+)\)/.exec(value);
-	if (rgb !== null) {
-		const parts = rgb[1]!.split(/[\s,/]+/).filter(Boolean).map(Number);
-		return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0, parts[3] ?? 1];
-	}
-	return null;
+type Rgba = [number, number, number, number];
+type ColorReader = (value: string) => Rgba;
+
+/**
+ * Reads any CSS colour as RGBA by painting it. Computed colours come back in
+ * whatever space they were written in (`oklch(...)`, `oklab(...)`,
+ * `color-mix(...)`), so parsing `rgb()` alone would skip every token this
+ * product defines and report a clean sheet for measuring nothing.
+ */
+function colorReader(document: Document): ColorReader {
+	const canvas = document.createElement('canvas');
+	canvas.width = 1;
+	canvas.height = 1;
+	const context = canvas.getContext('2d', { willReadFrequently: true });
+	const cache = new Map<string, Rgba>();
+	return (value) => {
+		const known = cache.get(value);
+		if (known !== undefined) return known;
+		let color: Rgba = [0, 0, 0, 0];
+		if (context !== null) {
+			context.clearRect(0, 0, 1, 1);
+			context.fillStyle = '#000';
+			context.fillStyle = value;
+			context.fillRect(0, 0, 1, 1);
+			const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+			color = [r ?? 0, g ?? 0, b ?? 0, (a ?? 0) / 255];
+		}
+		cache.set(value, color);
+		return color;
+	};
 }
 
-/** Resolves a colour through a probe so oklch, color-mix and named values all come back as rgb(). */
-export function resolveColor(document: Document, value: string): [number, number, number, number] | null {
-	const probe = document.createElement('span');
-	probe.style.color = value;
-	probe.style.display = 'none';
-	document.body.appendChild(probe);
-	const resolved = parseColor(browserOf(document).getComputedStyle(probe).color);
-	probe.remove();
-	return resolved;
-}
-
-function luminance([r, g, b]: [number, number, number, number]): number {
+function luminance([r, g, b]: Rgba): number {
 	const channel = (c: number): number => {
 		const s = c / 255;
 		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
@@ -75,29 +87,29 @@ function luminance([r, g, b]: [number, number, number, number]): number {
 }
 
 /** WCAG contrast ratio between two opaque colours. */
-export function contrastRatio(foreground: [number, number, number, number], background: [number, number, number, number]): number {
+export function contrastRatio(foreground: Rgba, background: Rgba): number {
 	const [l1, l2] = [luminance(foreground), luminance(background)].sort((a, b) => b - a) as [number, number];
 	return (l1 + 0.05) / (l2 + 0.05);
 }
 
-function blend(top: [number, number, number, number], under: [number, number, number, number]): [number, number, number, number] {
+function blend(top: Rgba, under: Rgba): Rgba {
 	const a = top[3];
 	return [top[0] * a + under[0] * (1 - a), top[1] * a + under[1] * (1 - a), top[2] * a + under[2] * (1 - a), 1];
 }
 
 /** The colour a piece of text actually sits on: ancestors' backgrounds composited bottom-up. */
-export function effectiveBackground(element: Element, browser: Browser): [number, number, number, number] {
-	const layers: [number, number, number, number][] = [];
+function effectiveBackground(element: Element, browser: Browser, read: ColorReader): Rgba {
+	const layers: Rgba[] = [];
 	let current: Element | null = element;
 	while (current !== null) {
-		const color = parseColor(browser.getComputedStyle(current).backgroundColor);
-		if (color !== null && color[3] > 0) {
+		const color = read(browser.getComputedStyle(current).backgroundColor);
+		if (color[3] > 0) {
 			layers.push(color);
 			if (color[3] === 1) break;
 		}
 		current = current.parentElement;
 	}
-	let result: [number, number, number, number] = [255, 255, 255, 1];
+	let result: Rgba = [255, 255, 255, 1];
 	for (const layer of layers.reverse()) result = blend(layer, result);
 	return result;
 }
@@ -106,14 +118,14 @@ const TEXT_SELECTOR = 'p, span, a, button, td, th, li, label, h1, h2, h3, h4, dt
 
 export function measureContrast(root: ParentNode, document: Document, minimum = 4.5): ContrastFinding[] {
 	const browser = browserOf(document);
+	const read = colorReader(document);
 	const findings: ContrastFinding[] = [];
 	for (const element of root.querySelectorAll(TEXT_SELECTOR)) {
 		const text = ownText(element);
 		if (text === '' || !visible(element, browser)) continue;
 		const style = browser.getComputedStyle(element);
-		const color = parseColor(style.color);
-		if (color === null) continue;
-		const background = effectiveBackground(element, browser);
+		const color = read(style.color);
+		const background = effectiveBackground(element, browser, read);
 		const ratio = contrastRatio(blend(color, background), background);
 		const size = Number.parseFloat(style.fontSize);
 		const bold = Number.parseInt(style.fontWeight, 10) >= 600;
@@ -123,13 +135,22 @@ export function measureContrast(root: ParentNode, document: Document, minimum = 
 	return findings;
 }
 
-export function measureOverflow(root: ParentNode, document: Document): OverflowFinding[] {
+/**
+ * Content that spills out of its box where it can be seen. A few pixels are
+ * optics, not overflow (a card's ring, a badge on a button's corner, a glyph
+ * centred over a narrower slot), so only a spill past `tolerance` counts.
+ */
+export function measureOverflow(root: ParentNode, document: Document, tolerance = 8): OverflowFinding[] {
 	const browser = browserOf(document);
 	const findings: OverflowFinding[] = [];
 	for (const element of root.querySelectorAll<HTMLElement>('*')) {
-		if (element.scrollWidth <= element.clientWidth + 1 || !visible(element, browser)) continue;
-		const overflowX = browser.getComputedStyle(element).overflowX;
-		if (overflowX === 'auto' || overflowX === 'scroll') continue;
+		/* A 1px box is the inside of an sr-only block, clipped by its parent. */
+		/* SVG reports no meaningful scroll box: a chart's `<text>` is positioned, not flowed. */
+		if (element.namespaceURI === 'http://www.w3.org/2000/svg') continue;
+		if (element.clientWidth <= 1 || element.scrollWidth <= element.clientWidth + tolerance || !visible(element, browser)) continue;
+		/* Only content that spills where it can be seen: a scroll container scrolls
+		 * on purpose, and `hidden`/`clip` is a decision to cut (truncation, sr-only). */
+		if (browser.getComputedStyle(element).overflowX !== 'visible') continue;
 		findings.push({ slot: element.getAttribute('data-slot') ?? element.tagName.toLowerCase(), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth });
 	}
 	return findings;

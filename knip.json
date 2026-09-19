@@ -5,6 +5,7 @@
     "test/**/*.ts",
     "webui/src/main.tsx",
     "webui/src/design.tsx",
+    "webui/src/design/harness-hook.ts",
     "webui/vite.config.ts"
   ],
   "project": [
