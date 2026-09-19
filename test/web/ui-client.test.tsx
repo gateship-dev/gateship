@@ -156,7 +156,7 @@ import {
 	summarizeWorkflowCohorts,
 } from '../../webui/src/run-view.ts';
 import { queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
-import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
+import { QueueEmptyState, QueueRow, queueErrorsForFilter, queueStatus, sortQueuesByUrgency } from '../../webui/src/screens/overview-queues-screen.tsx';
 import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
 import { type NotificationItem, NotificationsPopover, notificationItems, type PanelKeyEvent, PanelToggleGlyph, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
@@ -3748,10 +3748,9 @@ describe('operator shell', () => {
 	test('queue empty states distinguish no projects, an unknown filter and an unavailable filtered project in both locales', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const catalog = LOCALE_CATALOG[locale].overview.queues;
+			// The sidebar switcher is the project filter: this surface carries no second one.
 			const surface = renderAt('/overview/queues', { locale, projects: [CURRENT_PROJECT] });
-			expect(surface).toContain('data-slot="select-trigger"');
-			expect(surface).toContain(catalog.allProjects);
-			expect(surface).toContain(CURRENT_PROJECT.name);
+			expect(surface).not.toContain('data-slot="select-trigger"');
 			expect(surface).not.toContain('<select');
 			const empty = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter={undefined} locale={locale} projectCount={0} queues={[]} />);
 			const unknownFilter = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter="missing" locale={locale} projectCount={1} queues={[]} />);
@@ -3762,24 +3761,42 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('queue filtering keeps only the selected alert and queue details retain dl semantics', () => {
+	test('queue filtering keeps only the selected alert, and a queue says what it is doing with its ordered work in view', () => {
 		const errors = [
 			{ projectId: 'project-1', projectName: 'One', code: 'project-unavailable', message: 'Project queue is unavailable.' },
 			{ projectId: 'project-2', projectName: 'Two', code: 'project-unavailable', message: 'Project queue is unavailable.' },
 		] as const;
 		expect(queueErrorsForFilter([...errors], 'project-2').map((error) => error.projectId)).toEqual(['project-2']);
 		expect(queueErrorsForFilter([...errors], undefined)).toHaveLength(2);
-		const queue = { project: { id: 'project-1', name: 'One' }, readiness: 'ready', chainEnabled: true, pause: null, currentRun: null, currentIssue: null, plannedIssues: [], nextIssue: null, lastDelivery: { state: 'unavailable' } } as never;
-		const html = renderToStaticMarkup(<QueueRow catalog={LOCALE_CATALOG['en-US'].overview.queues} locale="en-US" queue={queue} />);
-		expect((html.match(/>One</g) ?? []).length).toBe(1);
-		expect(html).toContain('<dl');
-		expect(html).toContain('<dt');
-		expect(html).toContain('<dd');
-		expect(html).toContain('Delivery history unavailable.');
-		expect(html).not.toContain('No delivery yet');
-		expect(html).not.toContain('open=""');
-		const planned = { ...(queue as Record<string, unknown>), plannedIssues: [{ id: 'GSHIP-856', title: 'Preserve queue expansion' }] } as never;
-		expect(renderToStaticMarkup(<QueueRow catalog={LOCALE_CATALOG['en-US'].overview.queues} locale="en-US" queue={planned} />)).toContain('open=""');
+		const catalog = LOCALE_CATALOG['en-US'].overview.queues;
+		const queue = { project: { id: 'project-1', name: 'One' }, readiness: 'ready', chainEnabled: true, pause: null, currentRun: null, currentIssue: null, plannedIssues: [], nextIssue: null, lastDelivery: { state: 'unavailable' } };
+		const empty = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={queue as never} />);
+		expect((empty.match(/>One</g) ?? []).length).toBe(1);
+		expect(empty).toContain('data-status="empty"');
+		expect(empty).toContain('href="/projects/project-1/work"');
+		expect(empty).toContain('<dl');
+		expect(empty).toContain('Delivery history unavailable.');
+		expect(empty).not.toContain('No delivery yet');
+		expect(empty).not.toContain('<ol');
+		// The title is the row, not an aside for screen readers, and nothing hides the sequence.
+		const planned = { ...queue, plannedIssues: [{ id: 'GSHIP-856', title: 'Preserve queue order' }, { id: 'GSHIP-857', title: 'Second' }], nextIssue: { id: 'GSHIP-856', title: 'Preserve queue order' } };
+		const ready = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={planned as never} />);
+		expect(ready).toContain('data-status="ready"');
+		expect(ready).toContain('>Preserve queue order</span>');
+		expect(ready).toContain(`>${catalog.next}<`);
+		expect(ready).toContain('2 queued');
+		expect(ready).not.toContain('<details');
+		// What stops a queue is said where the queue is named; only what needs the operator is marked for them.
+		const paused = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...planned, pause: { reason: 'previous-run-not-done', createdAt: '2026-09-10T12:00:00.000Z' } } as never} />);
+		expect(paused).toContain('data-status="paused"');
+		expect(paused).toContain('the previous run is not done · will resume automatically');
+		const off = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...planned, chainEnabled: false, pause: { reason: 'chain-disabled', createdAt: '2026-09-10T12:00:00.000Z' } } as never} />);
+		expect(off).toContain('data-status="needs-you"');
+		expect(off).toContain('href="/projects/project-1/settings"');
+		expect(off).not.toContain('will resume automatically');
+		const done = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...queue, pause: { reason: 'no-admissible-issue', createdAt: '2026-09-10T12:00:00.000Z' } } as never} />);
+		expect(done).toContain('data-status="empty"');
+		expect(sortQueuesByUrgency([queue, planned, { ...planned, chainEnabled: false, pause: { reason: 'chain-disabled', createdAt: '' } }] as never).map((entry) => queueStatus(entry))).toEqual(['needs-you', 'ready', 'empty']);
 	});
 	test('known internal destinations use history across surfaces and projects', () => {
 		const base = {
