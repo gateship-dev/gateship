@@ -102,6 +102,6 @@ test.describe('@smoke Central invariants', () => {
 		await switcher.hover();
 		await expect(switcher).toHaveAttribute('data-popup-open', '');
 		await expect(page.getByRole('menu')).toBeHidden();
-		await expect(page.locator('[data-slot=project-switcher-tooltip]:visible')).toHaveCount(1);
+		await expect(page.locator('[data-slot=tooltip]:visible')).toHaveCount(1);
 	});
 });
