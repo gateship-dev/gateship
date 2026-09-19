@@ -216,8 +216,9 @@ export const SWITCHER_ITEM_CLASS =
 
 /* The leading slot every switcher row shares, in the trigger and in its menu:
  * 16px net on the icon axis, so a key chip (wider than a glyph, overhanging
- * 6px each side) and a 16px icon centre on the same x. */
-const LEAD_SLOT_CLASS = '-mx-1.5 flex w-7 shrink-0 justify-center';
+ * 6px each side) and a 16px icon centre on the same x. A chip wider than
+ * that ("Alt+1" off a Mac) grows the slot instead of running into the name. */
+const LEAD_SLOT_CLASS = '-mx-1.5 flex min-w-7 shrink-0 justify-center';
 const KEY_CHIP_CLASS = 'rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground';
 
 function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement {
@@ -824,7 +825,7 @@ export function ShellSidebar({
 	 * one line. Collapsed, the same list becomes an icon rail on the same
 	 * axis. */
 	return (
-		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:py-(--shell-inset)', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
+		<header className={cn('scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:py-(--shell-inset)', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />

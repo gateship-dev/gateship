@@ -1,8 +1,19 @@
+// webui/src/components/ui/data-table.tsx
+//
+// shadcn's data table recipe (docs read 2026-09-19: TanStack Table v9 with
+// `useTable` and explicit `tableFeatures`, Base UI) composed from the kit:
+// Table, Button, Input, Select, DropdownMenu, Skeleton and Empty. Consumers
+// own columns, data and state; this file owns the chrome that every table
+// shares: sortable headers with a column menu, the view-options menu, the
+// pagination footer and the loading, empty and updating states.
+//
+// Column pinning and resizing are deliberately absent: a table that needs
+// them is a table too wide for its screen. A column sizes itself through
+// `meta.className` (a width utility, `text-right` for figures) and nothing
+// else.
+
 import {
 	columnFilteringFeature,
-	columnPinningFeature,
-	columnResizingFeature,
-	columnSizingFeature,
 	columnVisibilityFeature,
 	createFilteredRowModel,
 	createPaginatedRowModel,
@@ -19,20 +30,21 @@ import {
 	type ReactTable,
 	type TableOptions,
 } from '@tanstack/react-table';
-import React from 'react';
-import { Button, buttonVariants } from './button.tsx';
-import { FormField } from './card-layout.tsx';
-import { Input } from './input.tsx';
-import { SelectField } from './select.tsx';
-import { Table as GateshipTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table.tsx';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowLeftDoubleIcon, ArrowRight01Icon, ArrowRightDoubleIcon, ArrowUp01Icon, Settings02Icon, UnfoldMoreIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type React from 'react';
 import { cn } from '../../lib/cn.ts';
+import { Button } from './button.tsx';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './empty.tsx';
+import { Input } from './input.tsx';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select.tsx';
+import { Skeleton } from './skeleton.tsx';
+import { Table as GateshipTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table.tsx';
 
 /** Shared features are deliberately explicit. Consumers still own columns and data. */
 export const gateshipTableFeatures = tableFeatures({
 	columnFilteringFeature,
-	columnPinningFeature,
-	columnResizingFeature,
-	columnSizingFeature,
 	columnVisibilityFeature,
 	filteredRowModel: createFilteredRowModel(),
 	globalFilteringFeature,
@@ -46,7 +58,8 @@ export type GateshipTableFeatures = typeof gateshipTableFeatures;
 export type GateshipTableOptions<TData extends RowData> = TableOptions<GateshipTableFeatures, TData>;
 export type GateshipColumnDef<TData extends RowData, TValue = unknown> = ColumnDef<GateshipTableFeatures, TData, TValue>;
 export type GateshipTable<TData extends RowData> = ReactTable<GateshipTableFeatures, TData>;
-type OffsetPagination = { offset: number; total: number; onOffsetChange: (offset: number) => void; onPageSizeChange: (limit: number) => void };
+/** What a column may say about its own cells: classes for header and cells alike, and the label its menus use. */
+export interface GateshipColumnMeta { className?: string; label?: string }
 
 export function useGateshipTable<TData extends RowData>(options: GateshipTableOptions<TData>): GateshipTable<TData> {
 	return useTable(options);
@@ -55,60 +68,66 @@ export function useGateshipTable<TData extends RowData>(options: GateshipTableOp
 export type TableLocale = 'en-US' | 'pt-BR';
 const copy = {
 	'en-US': {
-		columns: 'Columns',
-		filter: 'Filter',
 		filterPlaceholder: 'Filter rows…',
 		noResults: 'No results.',
+		noResultsDetail: 'Nothing matches the current filters.',
 		loading: 'Loading…',
 		updating: 'Updating…',
-		error: 'Unable to load this table.',
-		reset: 'Reset',
-		pageSize: 'Rows per page',
+		view: 'View',
+		toggleColumns: 'Toggle columns',
+		reset: 'Reset columns',
+		ascending: 'Ascending',
+		descending: 'Descending',
+		hide: 'Hide column',
+		rowsPerPage: 'Rows per page',
+		first: 'First page',
 		previous: 'Previous page',
 		next: 'Next page',
-		page: 'Page',
-		pinStart: 'Pin to start', pinEnd: 'Pin to end', size: 'Size', resetSize: 'Reset size',
-		sort: (column: string, direction: string) => `Sort ${column}, ${direction}`,
-		directions: { ascending: 'ascending', descending: 'descending', none: 'not sorted' },
+		last: 'Last page',
+		page: (current: number, count: number) => `Page ${current} of ${count}`,
 		range: (from: number, to: number, total: number) => `${from}–${to} of ${total}`,
+		sortState: { ascending: 'sorted ascending', descending: 'sorted descending', none: 'not sorted' },
 	},
 	'pt-BR': {
-		columns: 'Colunas',
-		filter: 'Filtrar',
 		filterPlaceholder: 'Filtrar linhas…',
 		noResults: 'Nenhum resultado.',
+		noResultsDetail: 'Nada corresponde aos filtros atuais.',
 		loading: 'Carregando…',
 		updating: 'Atualizando…',
-		error: 'Não foi possível carregar esta tabela.',
-		reset: 'Restaurar',
-		pageSize: 'Linhas por página',
+		view: 'Colunas',
+		toggleColumns: 'Mostrar colunas',
+		reset: 'Restaurar colunas',
+		ascending: 'Crescente',
+		descending: 'Decrescente',
+		hide: 'Ocultar coluna',
+		rowsPerPage: 'Linhas por página',
+		first: 'Primeira página',
 		previous: 'Página anterior',
 		next: 'Próxima página',
-		page: 'Página',
-		pinStart: 'Fixar no início', pinEnd: 'Fixar no fim', size: 'Tamanho', resetSize: 'Restaurar tamanho',
-		sort: (column: string, direction: string) => `Ordenar ${column}, ${direction}`,
-		directions: { ascending: 'crescente', descending: 'decrescente', none: 'sem ordenação' },
+		last: 'Última página',
+		page: (current: number, count: number) => `Página ${current} de ${count}`,
 		range: (from: number, to: number, total: number) => `${from}–${to} de ${total}`,
+		sortState: { ascending: 'ordem crescente', descending: 'ordem decrescente', none: 'sem ordenação' },
 	},
 } as const;
 
 type TableControlProps<TData extends RowData> = { table: GateshipTable<TData>; locale?: TableLocale; className?: string };
+type GateshipColumn<TData extends RowData> = Column<GateshipTableFeatures, TData>;
 
-function columnLabel<TData extends RowData>(column: Column<GateshipTableFeatures, TData>): string {
-		const header = column.columnDef.header;
-		return typeof header === 'string' || typeof header === 'number' ? String(header) : column.id;
+function metaOf<TData extends RowData>(column: GateshipColumn<TData>): GateshipColumnMeta {
+	return (column.columnDef.meta ?? {}) as GateshipColumnMeta;
 }
 
-function pinnedStyle<TData extends RowData>(column: Column<GateshipTableFeatures, TData>): React.CSSProperties | undefined {
-	const pin = column.getIsPinned();
-	if (pin === false) return undefined;
-	return { position: 'sticky', insetInlineStart: pin === 'start' ? column.getStart('start') : undefined, insetInlineEnd: pin === 'end' ? column.getAfter('end') : undefined, zIndex: 1, backgroundColor: 'var(--background)' };
+function columnLabel<TData extends RowData>(column: GateshipColumn<TData>): string {
+	const header = column.columnDef.header;
+	return metaOf(column).label ?? (typeof header === 'string' || typeof header === 'number' ? String(header) : column.id);
 }
 
-export function DataTableToolbar({ children, className }: React.ComponentProps<'div'>): React.ReactElement {
-	return <div className={cn('flex flex-wrap items-end justify-between gap-3', className)} data-slot="data-table-toolbar">{children}</div>;
+export function DataTableToolbar({ children, className, ...props }: React.ComponentProps<'div'>): React.ReactElement {
+	return <div className={cn('flex flex-wrap items-center gap-2', className)} data-slot="data-table-toolbar" {...props}>{children}</div>;
 }
 
+/** The text filter: a column's own filter when `columnId` is given, the table's global filter otherwise. */
 export function DataTableFilter<TData extends RowData>({
 	table,
 	columnId,
@@ -121,144 +140,230 @@ export function DataTableFilter<TData extends RowData>({
 	const column = columnId === undefined ? undefined : table.getColumn(columnId);
 	const value = String(column?.getFilterValue() ?? table.state.globalFilter ?? '');
 	return (
-		<FormField className={cn('min-w-56', className)}>
-			<span>{label ?? text.filter}</span>
-			<Input
-				aria-label={label ?? text.filter}
-				placeholder={placeholder ?? text.filterPlaceholder}
-				value={value}
-				onChange={(event) => {
-					const next = (event.currentTarget as unknown as { value: string }).value;
-					if (column) column.setFilterValue(next);
-					else table.setGlobalFilter(next);
-				}}
-			/>
-		</FormField>
+		<Input
+			aria-label={label ?? placeholder ?? text.filterPlaceholder}
+			className={cn('w-full max-w-sm', className)}
+			data-slot="data-table-filter"
+			placeholder={placeholder ?? text.filterPlaceholder}
+			type="search"
+			value={value}
+			onChange={(event) => {
+				const next = (event.currentTarget as unknown as { value: string }).value;
+				if (column) column.setFilterValue(next);
+				else table.setGlobalFilter(next);
+			}}
+		/>
 	);
 }
 
-export function DataTableColumnVisibility<TData extends RowData>({ table, locale = 'en-US', className, defaultOpen = false, defaultColumnPinning }: TableControlProps<TData> & { defaultOpen?: boolean; defaultColumnPinning?: { start: string[]; end: string[] } }): React.ReactElement {
+/**
+ * A column's header: plain text when the column neither sorts nor hides,
+ * otherwise a ghost button showing the sort state that opens the column's
+ * menu (ascending, descending, hide).
+ */
+export function DataTableColumnHeader<TData extends RowData>({
+	column,
+	title,
+	locale = 'en-US',
+	className,
+}: { column: GateshipColumn<TData>; title: string; locale?: TableLocale; className?: string }): React.ReactElement {
+	const text = copy[locale];
+	if (!column.getCanSort() && !column.getCanHide()) return <span className={className}>{title}</span>;
+	const sorted = column.getIsSorted();
+	const icon = sorted === 'asc' ? ArrowUp01Icon : sorted === 'desc' ? ArrowDown01Icon : UnfoldMoreIcon;
+	const state = sorted === 'asc' ? text.sortState.ascending : sorted === 'desc' ? text.sortState.descending : text.sortState.none;
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger
+				render={<Button aria-label={`${title}, ${state}`} className={cn('-ml-2.5 h-7 gap-1 px-2 font-medium text-muted-foreground data-popup-open:bg-accent', className)} size="sm" type="button" variant="ghost" />}
+			>
+				{title}
+				<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-70" icon={icon} size={14} strokeWidth={2.5} />
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="start" className="min-w-40">
+				{column.getCanSort() ? (
+					<>
+						<DropdownMenuItem onClick={() => column.toggleSorting(false)}><HugeiconsIcon icon={ArrowUp01Icon} size={16} strokeWidth={2.25} />{text.ascending}</DropdownMenuItem>
+						<DropdownMenuItem onClick={() => column.toggleSorting(true)}><HugeiconsIcon icon={ArrowDown01Icon} size={16} strokeWidth={2.25} />{text.descending}</DropdownMenuItem>
+					</>
+				) : null}
+				{column.getCanSort() && column.getCanHide() ? <DropdownMenuSeparator /> : null}
+				{column.getCanHide() ? <DropdownMenuItem onClick={() => column.toggleVisibility(false)}><HugeiconsIcon icon={ViewOffIcon} size={16} strokeWidth={2.25} />{text.hide}</DropdownMenuItem> : null}
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+/** The view-options menu: one checkbox per hideable column, and a reset. */
+export function DataTableViewOptions<TData extends RowData>({ table, locale = 'en-US', className }: TableControlProps<TData>): React.ReactElement {
 	const text = copy[locale];
 	const columns = table.getAllLeafColumns().filter((column) => column.getCanHide());
-	const [open, setOpen] = React.useState(false);
-	const resetPinning = defaultColumnPinning ?? (table.options.meta as { defaultColumnPinning?: { start: string[]; end: string[] } } | undefined)?.defaultColumnPinning;
 	return (
-		<details className={cn('relative', className)} data-slot="data-table-column-visibility" onToggle={(event) => setOpen((event.currentTarget as unknown as { open: boolean }).open)}>
-			<summary className={cn(buttonVariants({ variant: 'outline' }), 'list-none')}>{text.columns}</summary>
-			<div hidden={!open && !defaultOpen} className="absolute right-0 z-10 mt-2 min-w-48 rounded-lg border bg-popover p-2 shadow-lg">
-				{open || defaultOpen ? columns.map((column) => <ColumnVisibilityOption key={column.id} column={column} table={table} locale={locale} />) : null}
-				<Button className="mt-2 w-full" size="sm" type="button" variant="ghost" onClick={() => {
-					table.resetColumnVisibility(true);
-					if (resetPinning === undefined) table.resetColumnPinning(true);
-					else table.setColumnPinning(resetPinning);
-					table.resetColumnSizing(true);
-				}}>{text.reset}</Button>
-			</div>
-		</details>
+		<DropdownMenu>
+			<DropdownMenuTrigger render={<Button className={cn('ml-auto', className)} size="sm" type="button" variant="outline" />}>
+				<HugeiconsIcon aria-hidden="true" icon={Settings02Icon} size={16} strokeWidth={2.25} />
+				{text.view}
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="min-w-44" data-slot="data-table-view-options">
+				{/* Base UI's GroupLabel must live inside a Group. */}
+				<DropdownMenuGroup>
+					<DropdownMenuLabel>{text.toggleColumns}</DropdownMenuLabel>
+					{columns.map((column) => (
+						<DropdownMenuCheckboxItem checked={column.getIsVisible()} closeOnClick={false} key={column.id} onCheckedChange={(checked) => column.toggleVisibility(checked)}>
+							{columnLabel(column)}
+						</DropdownMenuCheckboxItem>
+					))}
+				</DropdownMenuGroup>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem onClick={() => table.resetColumnVisibility(true)}>{text.reset}</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
 	);
 }
 
-function ColumnVisibilityOption<TData extends RowData>({ column, table, locale }: { column: Column<GateshipTableFeatures, TData>; table: GateshipTable<TData>; locale: TableLocale }): React.ReactElement {
-	const text = copy[locale];
-	const pin = column.getIsPinned();
-	return (
-		<div className="grid gap-1 rounded px-2 py-1 text-sm hover:bg-accent">
-			<label className="flex min-h-9 items-center gap-2">
-				<input aria-label={`${text.columns}: ${columnLabel(column)}`} checked={column.getIsVisible()} type="checkbox" onChange={(event) => column.toggleVisibility((event.currentTarget as unknown as { checked: boolean }).checked)} />
-				<span>{String(column.columnDef.header ?? column.id)}</span>
-			</label>
-			<div className="flex items-center gap-1 pl-6">
-				{column.getCanPin() && <>
-					<Button aria-label={`${text.pinStart}: ${columnLabel(column)}`} size="sm" type="button" variant={pin === 'start' ? 'secondary' : 'ghost'} onClick={() => column.pin(pin === 'start' ? false : 'start')}>←</Button>
-					<Button aria-label={`${text.pinEnd}: ${columnLabel(column)}`} size="sm" type="button" variant={pin === 'end' ? 'secondary' : 'ghost'} onClick={() => column.pin(pin === 'end' ? false : 'end')}>→</Button>
-				</>}
-				<label className="sr-only" htmlFor={`column-size-${column.id}`}>{text.size}: {columnLabel(column)}</label>
-				<input
-					aria-label={`${text.size}: ${columnLabel(column)}`}
-					className="h-8 w-16 rounded border bg-background px-1"
-					id={`column-size-${column.id}`}
-					max={column.columnDef.maxSize}
-					min={column.columnDef.minSize ?? 48}
-					type="number"
-					value={column.getSize()}
-					onChange={(event) => table.setColumnSizing((old) => ({ ...old, [column.id]: Number((event.currentTarget as unknown as { value: string }).value) }))}
-				/>
-				<Button aria-label={`${text.resetSize}: ${columnLabel(column)}`} size="sm" type="button" variant="ghost" onClick={() => column.resetSize()}>↺</Button>
-			</div>
-		</div>
-	);
-}
+const PAGE_SIZES = [10, 20, 50, 100] as const;
 
-export function DataTablePagination<TData extends RowData>({ table, locale = 'en-US', className, pageLabel, offset, total: totalOverride, onOffsetChange, onPageSizeChange }: TableControlProps<TData> & { pageLabel?: React.ReactNode; offset?: number; total?: number; onOffsetChange?: (offset: number) => void; onPageSizeChange?: (limit: number) => void }): React.ReactElement {
+/**
+ * The footer: the range on the left, page size, page and the four page
+ * buttons on the right. With `offset`, `total` and the two callbacks the
+ * footer drives server-side pages; without them it pages the table itself.
+ */
+export function DataTablePagination<TData extends RowData>({
+	table,
+	locale = 'en-US',
+	className,
+	offset,
+	total: totalOverride,
+	onOffsetChange,
+	onPageSizeChange,
+}: TableControlProps<TData> & { offset?: number; total?: number; onOffsetChange?: (offset: number) => void; onPageSizeChange?: (limit: number) => void }): React.ReactElement {
 	const text = copy[locale];
-	const pagination = table.state.pagination;
+	const { pageSize, pageIndex } = table.state.pagination;
+	const manual = offset !== undefined && onOffsetChange !== undefined && onPageSizeChange !== undefined;
+	const total = totalOverride ?? table.getRowCount();
+	const currentOffset = manual ? offset : pageIndex * pageSize;
 	const returned = table.getRowModel().rows.length;
-	const offsetPagination = offset === undefined || onOffsetChange === undefined || onPageSizeChange === undefined ? undefined : { offset, total: totalOverride ?? table.getRowCount(), onOffsetChange, onPageSizeChange } satisfies OffsetPagination;
-	const total = offsetPagination?.total ?? totalOverride ?? table.getRowCount();
-	const currentOffset = offsetPagination?.offset ?? pagination.pageIndex * pagination.pageSize;
 	const from = total === 0 ? 0 : currentOffset + 1;
-	const to = currentOffset + returned;
-	const previous = () => offsetPagination ? offsetPagination.onOffsetChange(Math.max(0, currentOffset - pagination.pageSize)) : table.previousPage();
-	const next = () => offsetPagination ? offsetPagination.onOffsetChange(currentOffset + pagination.pageSize) : table.nextPage();
+	const to = Math.min(total, currentOffset + returned);
+	const pageCount = Math.max(1, Math.ceil(total / pageSize));
+	const current = Math.min(pageCount, Math.floor(currentOffset / pageSize) + 1);
+	const goTo = (next: number): void => {
+		if (manual) onOffsetChange(next * pageSize);
+		else table.setPageIndex(next);
+	};
+	const nav = (label: string, icon: typeof ArrowLeft01Icon, target: number, disabled: boolean, className?: string): React.ReactElement => (
+		<Button aria-label={label} className={cn('size-8', className)} disabled={disabled} size="icon" type="button" variant="outline" onClick={() => goTo(target)}>
+			<HugeiconsIcon aria-hidden="true" icon={icon} size={16} strokeWidth={2.25} />
+		</Button>
+	);
 	return (
-		<div className={cn('flex flex-wrap items-center justify-between gap-3 border-t px-2.5 py-3 text-sm text-muted-foreground', className)} data-slot="data-table-pagination">
-			<SelectField
-				aria-label={text.pageSize}
-				items={[10, 20, 25, 50, 100].map((size) => ({ value: String(size), label: String(size) }))}
-				value={String(pagination.pageSize)}
-				onValueChange={(value) => offsetPagination ? offsetPagination.onPageSizeChange(Number(value)) : table.setPageSize(Number(value))}
-			/>
-			{pageLabel ?? <span aria-live="polite">{text.range(from, to, total)}</span>}<span>{text.page} {offsetPagination ? Math.floor(currentOffset / pagination.pageSize) + 1 : pagination.pageIndex + 1} / {Math.max(table.getPageCount(), 1)}</span>
-			<div className="flex gap-2">
-				<Button aria-label={text.previous} disabled={currentOffset === 0} size="sm" type="button" variant="outline" onClick={previous}>‹</Button>
-				<Button aria-label={text.next} disabled={currentOffset + pagination.pageSize >= total} size="sm" type="button" variant="outline" onClick={next}>›</Button>
+		<div className={cn('flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-2 text-sm', className)} data-slot="data-table-pagination">
+			<span aria-live="polite" className="font-mono text-muted-foreground text-xs tabular-nums">{text.range(from, to, total)}</span>
+			<div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+				<label className="flex items-center gap-2 text-muted-foreground">
+					<span className="hidden sm:inline">{text.rowsPerPage}</span>
+					<Select
+						items={PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+						value={String(pageSize)}
+						onValueChange={(value) => manual ? onPageSizeChange(Number(value)) : table.setPageSize(Number(value))}
+					>
+						<SelectTrigger aria-label={text.rowsPerPage} className="h-8 min-h-8 w-18 min-w-0 font-mono tabular-nums sm:min-h-8"><SelectValue /></SelectTrigger>
+						<SelectContent>{PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size}</SelectItem>)}</SelectContent>
+					</Select>
+				</label>
+				<span className="font-mono text-muted-foreground text-xs tabular-nums">{text.page(current, pageCount)}</span>
+				<div className="flex items-center gap-1">
+					{nav(text.first, ArrowLeftDoubleIcon, 0, current <= 1, 'hidden lg:inline-flex')}
+					{nav(text.previous, ArrowLeft01Icon, current - 2, current <= 1)}
+					{nav(text.next, ArrowRight01Icon, current, current >= pageCount)}
+					{nav(text.last, ArrowRightDoubleIcon, pageCount - 1, current >= pageCount, 'hidden lg:inline-flex')}
+				</div>
 			</div>
 		</div>
 	);
 }
 
+export type DataTableStatus = 'ready' | 'loading' | 'updating' | 'error';
+
+/**
+ * The table itself inside its bordered frame. A string header becomes a
+ * DataTableColumnHeader on its own, so a column that sorts or hides gets
+ * its menu without the screen composing one. `loading` (no rows yet) draws
+ * skeleton rows; `updating` keeps the rows and dims them; an empty result
+ * renders `emptyState` in one full-width cell. Errors belong to the caller,
+ * as an Alert above the table.
+ */
 export function DataTable<TData extends RowData>({
 	table,
 	locale = 'en-US',
 	status = 'ready',
 	emptyState,
-	error,
+	emptyDetail,
+	emptyAction,
+	skeletonRows = 5,
+	rowClassName,
 	className,
 }: TableControlProps<TData> & {
-	status?: 'ready' | 'loading' | 'updating' | 'error';
+	status?: DataTableStatus;
 	emptyState?: React.ReactNode;
-	error?: React.ReactNode;
+	emptyDetail?: React.ReactNode;
+	emptyAction?: React.ReactNode;
+	skeletonRows?: number;
+	/** Extra classes for one row, from its data: how a screen marks the rows that wait on the operator. */
+	rowClassName?: (row: TData) => string | undefined;
 }): React.ReactElement {
 	const text = copy[locale];
 	const rows = table.getRowModel().rows;
-	const statusMessage = status === 'loading' ? text.loading : status === 'updating' ? text.updating : status === 'error' ? error ?? text.error : undefined;
+	const columns = table.getVisibleLeafColumns();
+	const busy = status === 'loading' || status === 'updating';
 	return (
-		<div className={cn('relative min-w-0', className)} aria-busy={status === 'loading' || status === 'updating'} data-slot="data-table">
-			{statusMessage && <div className="mb-2 text-sm text-muted-foreground" role={status === 'error' ? 'alert' : 'status'}>{statusMessage}</div>}
+		<div aria-busy={busy} className={cn('overflow-hidden rounded-lg border', className)} data-slot="data-table" data-status={status}>
+			{busy ? <span className="sr-only" role="status">{status === 'loading' ? text.loading : text.updating}</span> : null}
 			<GateshipTable>
 				<TableHeader>
-					{table.getHeaderGroups().map((headerGroup) => <TableRow key={headerGroup.id}>{headerGroup.headers.map((header) => <DataTableHeader key={header.id} header={header} locale={locale} />)}</TableRow>)}
+					{table.getHeaderGroups().map((headerGroup) => (
+						<TableRow key={headerGroup.id}>
+							{headerGroup.headers.map((header) => (
+								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={metaOf(header.column).className} key={header.id}>
+									{header.isPlaceholder ? null : typeof header.column.columnDef.header === 'string'
+										? <DataTableColumnHeader column={header.column} locale={locale} title={header.column.columnDef.header} />
+										: <FlexRender header={header} />}
+								</TableHead>
+							))}
+						</TableRow>
+					))}
 				</TableHeader>
-				<TableBody>
-					{rows.map((row) => <TableRow key={row.id}>{row.getVisibleCells().map((cell) => <TableCell key={cell.id} style={{ minWidth: cell.column.columnDef.minSize, width: cell.column.getSize(), ...pinnedStyle(cell.column) }}><FlexRender cell={cell} /></TableCell>)}</TableRow>)}
+				<TableBody className={cn('transition-opacity', status === 'updating' && 'opacity-60')}>
+					{status === 'loading' && rows.length === 0
+						? Array.from({ length: skeletonRows }, (_, index) => (
+							<TableRow key={`skeleton-${index}`}>
+								{columns.map((column) => <TableCell className={metaOf(column).className} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
+							</TableRow>
+						))
+						: rows.map((row) => (
+							<TableRow className={rowClassName?.(row.original)} key={row.id}>
+								{row.getVisibleCells().map((cell) => <TableCell className={metaOf(cell.column).className} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
+							</TableRow>
+						))}
+					{rows.length === 0 && status !== 'loading' ? (
+						<TableRow>
+							<TableCell className="h-32 text-center" colSpan={columns.length}>
+								<Empty className="p-2" role="status">
+									<EmptyHeader>
+										<EmptyTitle>{emptyState ?? text.noResults}</EmptyTitle>
+										<EmptyDescription>{emptyDetail ?? text.noResultsDetail}</EmptyDescription>
+									</EmptyHeader>
+									{emptyAction}
+								</Empty>
+							</TableCell>
+						</TableRow>
+					) : null}
 				</TableBody>
 			</GateshipTable>
-			{rows.length === 0 && status !== 'loading' && status !== 'error' && <div className="p-6 text-center text-muted-foreground text-sm" role="status">{emptyState ?? text.noResults}</div>}
 		</div>
 	);
 }
 
-function DataTableHeader<TData extends RowData>({ header, locale }: { header: ReturnType<GateshipTable<TData>['getHeaderGroups']>[number]['headers'][number]; locale: TableLocale }): React.ReactElement {
-	const column = header.column;
-	const sorted = column.getIsSorted();
-	const sortLabel = sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none';
-	const content = header.isPlaceholder ? null : <FlexRender header={header} />;
-	const sortHandler = column.getCanSort() ? column.getToggleSortingHandler() : undefined;
-	const label = typeof column.columnDef.header === 'string' || typeof column.columnDef.header === 'number' ? String(column.columnDef.header) : column.id;
-	const direction = sorted === 'asc' ? copy[locale].directions.ascending : sorted === 'desc' ? copy[locale].directions.descending : copy[locale].directions.none;
-	return (
-		<TableHead aria-sort={column.getCanSort() ? sortLabel : undefined} style={{ minWidth: column.columnDef.minSize, width: header.getSize(), ...pinnedStyle(column) }}>
-			{sortHandler ? <button className="min-h-9 text-left font-medium focus-visible:outline-2 focus-visible:ring-2 focus-visible:ring-ring" type="button" title={copy[locale].sort(label, direction)} onClick={sortHandler}>{content}</button> : content}
-		</TableHead>
-	);
+function ariaSort(sorted: false | 'asc' | 'desc'): 'ascending' | 'descending' | 'none' {
+	return sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none';
 }

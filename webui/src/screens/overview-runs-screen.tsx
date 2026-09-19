@@ -1,24 +1,44 @@
+// webui/src/screens/overview-runs-screen.tsx
+//
+// Every project's runs in one table (shadcn data table recipe on TanStack
+// Table v9, server-side filtering, sorting and paging). The row's identity
+// is the issue; the run id is secondary. Quick views sit above the filters
+// because they are the operator's first question: what moves, what waits on
+// me, what shipped, what failed. Rows that wait on the operator carry the
+// acid rule, the product's one acid signal.
+
+import { Alert02Icon, Copy01Icon, LinkSquare02Icon, MoreHorizontalIcon, Cancel01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import React, { useEffect, useMemo, useState } from 'react';
-import type { ColumnPinningState } from '@tanstack/react-table';
 import type { OverviewRunsPageView, OverviewRunsQuery } from '../client.ts';
 import { fetchOverviewRuns } from '../client.ts';
 import type { AppProps } from '../app-props.ts';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Badge } from '../components/ui/badge.tsx';
-import { DataTable, DataTableColumnVisibility, DataTableFilter, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { Button } from '../components/ui/button.tsx';
+import { DataTable, DataTableFilter, DataTablePagination, DataTableToolbar, DataTableViewOptions, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu.tsx';
+import { SelectField } from '../components/ui/select.tsx';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx';
+import { HintTooltip } from '../components/ui/tooltip.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
+import type { Locale, OverviewRunsCatalog, RunInspectorCatalog } from '../locale.ts';
 import { toneOf, type RunState } from '../run-view.ts';
 import { SurfaceColumn } from './surface-column.tsx';
-import { ciBadgeVariant } from './runs.tsx';
+import { ciBadgeVariant, formatCostUsd, formatRunTimestamp } from './runs.tsx';
 
 interface BrowserRuntime { location?: { search: string }; history?: { pushState: (data: null, unused: string, url: string) => void }; addEventListener?: (type: 'popstate', listener: () => void) => void; removeEventListener?: (type: 'popstate', listener: () => void) => void }
 function browserRuntime(): BrowserRuntime { return globalThis as unknown as BrowserRuntime; }
 const RUN_STATES = ['queued', 'working', 'verify', 'review', 'full-verify', 'ready-to-ship', 'shipping', 'done', 'waiting-user', 'waiting-provider', 'failed', 'interrupted', 'cancelled'] as const;
+const RUN_GROUPS = ['active', 'needs-you', 'shipped', 'failed'] as const;
 const RUN_SORT_FIELDS = new Set(['updatedAt', 'createdAt', 'projectName', 'issueId', 'state', 'providerId', 'duration', 'cost']);
-const TABLE_PREFERENCES_KEY = 'gateship:overview-runs:table:v1';
-const RUNS_DEFAULT_PINNING: ColumnPinningState = { start: ['runId'], end: [] };
+/* Mirrors the `needs-you` group in src/runtime/run-overview.ts and the shell's attention map. */
+const NEEDS_YOU: ReadonlySet<string> = new Set(['ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted']);
+const TABLE_PREFERENCES_KEY = 'gateship:overview-runs:table:v2';
+/* Lean by default: the audit columns are one menu away. */
+const DEFAULT_VISIBILITY: Record<string, boolean> = { providerId: false, rounds: false, interventions: false, cost: false, runId: false };
 type RunRow = OverviewRunsPageView['runs'][number];
-type OverviewRunsCatalog = (typeof LOCALE_CATALOG)[keyof typeof LOCALE_CATALOG]['overviewRuns'];
-type RunInspectorCatalog = (typeof LOCALE_CATALOG)[keyof typeof LOCALE_CATALOG]['runInspector'];
+type Update = (changes: Partial<OverviewRunsQuery>) => void;
 
 export function queryFromUrl(runtime = browserRuntime()): OverviewRunsQuery {
 	const params = new URLSearchParams(runtime.location?.search ?? '');
@@ -26,7 +46,7 @@ export function queryFromUrl(runtime = browserRuntime()): OverviewRunsQuery {
 	const allowed = (raw: string | undefined, values: ReadonlySet<string>): string | undefined => raw !== undefined && values.has(raw) ? raw : undefined;
 	const positive = (raw: string | undefined, fallback: number): number => { const parsed = Number(raw ?? fallback); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; };
 	const nonNegative = (raw: string | undefined): number => { const parsed = Number(raw ?? 0); return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0; };
-	return { projectId: value('projectId'), state: allowed(value('state'), new Set(RUN_STATES)) as OverviewRunsQuery['state'], providerId: allowed(value('providerId'), new Set(['claude', 'codex'])) as OverviewRunsQuery['providerId'], period: allowed(value('period'), new Set(['7d', '30d', 'all'])) as OverviewRunsQuery['period'], search: value('search'), sortBy: allowed(value('sortBy'), RUN_SORT_FIELDS) as OverviewRunsQuery['sortBy'], sortDirection: allowed(value('sortDirection'), new Set(['asc', 'desc'])) as OverviewRunsQuery['sortDirection'], limit: positive(value('limit'), 20), offset: nonNegative(value('offset')) };
+	return { projectId: value('projectId'), state: allowed(value('state'), new Set(RUN_STATES)) as OverviewRunsQuery['state'], group: allowed(value('group'), new Set(RUN_GROUPS)) as OverviewRunsQuery['group'], providerId: allowed(value('providerId'), new Set(['claude', 'codex'])) as OverviewRunsQuery['providerId'], period: allowed(value('period'), new Set(['7d', '30d', 'all'])) as OverviewRunsQuery['period'], search: value('search'), sortBy: allowed(value('sortBy'), RUN_SORT_FIELDS) as OverviewRunsQuery['sortBy'], sortDirection: allowed(value('sortDirection'), new Set(['asc', 'desc'])) as OverviewRunsQuery['sortDirection'], limit: positive(value('limit'), 20), offset: nonNegative(value('offset')) };
 }
 
 function overviewRunsUrl(query: OverviewRunsQuery): string {
@@ -34,77 +54,184 @@ function overviewRunsUrl(query: OverviewRunsQuery): string {
 	for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '' && !(key === 'limit' && value === 20) && !(key === 'offset' && value === 0)) params.set(key, String(value));
 	return `/overview/runs${params.toString() ? `?${params}` : ''}`;
 }
-function useOverviewRunsQuery(): [OverviewRunsQuery, (changes: Partial<OverviewRunsQuery>) => void] {
+function useOverviewRunsQuery(): [OverviewRunsQuery, Update] {
 	const [query, setQuery] = useState<OverviewRunsQuery>(() => queryFromUrl());
 	useEffect(() => { const onPop = () => setQuery(queryFromUrl()); const runtime = browserRuntime(); runtime.addEventListener?.('popstate', onPop); return () => runtime.removeEventListener?.('popstate', onPop); }, []);
-	const update = (changes: Partial<OverviewRunsQuery>): void => { const next = { ...query, ...changes, offset: changes.offset ?? 0 }; browserRuntime().history?.pushState(null, '', overviewRunsUrl(next)); setQuery(next); };
+	const update: Update = (changes) => { const next = { ...query, ...changes, offset: changes.offset ?? 0 }; browserRuntime().history?.pushState(null, '', overviewRunsUrl(next)); setQuery(next); };
 	return [query, update];
 }
-function useOverviewRunsPage(query: OverviewRunsQuery): { page: OverviewRunsPageView | null; loading: boolean; error: string | null } {
+function useOverviewRunsPage(query: OverviewRunsQuery, revision: number): { page: OverviewRunsPageView | null; loading: boolean; error: string | null } {
 	const [page, setPage] = useState<OverviewRunsPageView | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null);
-	useEffect(() => { const controller = new AbortController(); let disposed = false; let timeout: ReturnType<typeof setTimeout> | undefined; const read = (): void => { setLoading(true); void fetchOverviewRuns(query, controller.signal).then((value) => { if (!disposed) { setPage(value); setError(null); } }).catch((reason: unknown) => { if (!disposed && !(reason instanceof DOMException && reason.name === 'AbortError')) setError(String(reason)); }).finally(() => { if (!disposed) { setLoading(false); timeout = setTimeout(read, 15_000); } }); }; read(); return () => { disposed = true; controller.abort(); if (timeout !== undefined) clearTimeout(timeout); }; }, [query]);
+	useEffect(() => { const controller = new AbortController(); let disposed = false; let timeout: ReturnType<typeof setTimeout> | undefined; const read = (): void => { setLoading(true); void fetchOverviewRuns(query, controller.signal).then((value) => { if (!disposed) { setPage(value); setError(null); } }).catch((reason: unknown) => { if (!disposed && !(reason instanceof DOMException && reason.name === 'AbortError')) setError(String(reason)); }).finally(() => { if (!disposed) { setLoading(false); timeout = setTimeout(read, 15_000); } }); }; read(); return () => { disposed = true; controller.abort(); if (timeout !== undefined) clearTimeout(timeout); }; }, [query, revision]);
 	return { page, loading, error };
 }
 function duration(ms: number | null): string { if (ms === null || !Number.isFinite(ms)) return '—'; const seconds = Math.round(ms / 1000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
-function readPreferences(): { columnVisibility?: Record<string, boolean>; columnPinning?: ColumnPinningState; columnSizing?: Record<string, number> } { try { const value: unknown = JSON.parse(globalThis.localStorage?.getItem(TABLE_PREFERENCES_KEY) ?? 'null'); if (value === null || typeof value !== 'object') return {}; const stored = value as ReturnType<typeof readPreferences>; return { ...stored, columnPinning: { start: stored.columnPinning?.start ?? [], end: stored.columnPinning?.end ?? [] } }; } catch { return {}; } }
+function readPreferences(): Record<string, boolean> { try { const value: unknown = JSON.parse(globalThis.localStorage?.getItem(TABLE_PREFERENCES_KEY) ?? 'null'); const stored = value !== null && typeof value === 'object' ? (value as { columnVisibility?: Record<string, boolean> }).columnVisibility : undefined; return stored ?? DEFAULT_VISIBILITY; } catch { return DEFAULT_VISIBILITY; } }
+function runHref(run: RunRow): string { return `/projects/${encodeURIComponent(run.projectId)}/runs/${encodeURIComponent(run.runId)}`; }
+/** "Claude · sonnet-5": the provider and the distinct models, without the vendor prefix the provider already names. */
+function providerSummary(run: RunRow): { short: string; full: string } {
+	const provider = run.providerId === 'claude' ? 'Claude Code' : 'Codex';
+	const models = [...new Set(run.roles.flatMap((role) => role.models))];
+	const short = models.map((model) => model.replace(/^claude-/, '')).join(', ');
+	return { short: short === '' ? provider : `${provider.split(' ')[0]} · ${short}`, full: models.length === 0 ? provider : `${provider} / ${models.join(', ')}` };
+}
 
-function overviewRunsColumns(catalog: OverviewRunsCatalog, inspector: RunInspectorCatalog): GateshipColumnDef<RunRow>[] {
-	const href = (run: RunRow) => `/projects/${encodeURIComponent(run.projectId)}/runs/${encodeURIComponent(run.runId)}`;
+/* One badge per row (H4): the merge is the outcome, so a merged run says
+ * "merged" and nothing else; every other row says its state. A failed row
+ * carries its recorded error in the tooltip. */
+function StateBadge({ run, catalog, inspector }: { run: RunRow; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): React.ReactElement {
+	const state = run.state as RunState;
+	const badge = run.merge ? <Badge variant="merged">{catalog.merged}</Badge> : <Badge variant={toneOf(state)}>{inspector.stateLabels[state]}</Badge>;
+	if (!run.error) return badge;
+	return <HintTooltip label={run.error} side="bottom"><span className="inline-flex" tabIndex={0}>{badge}<span className="sr-only">: {run.error}</span></span></HintTooltip>;
+}
+
+function RowActions({ run, catalog }: { run: RunRow; catalog: OverviewRunsCatalog }): React.ReactElement {
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger render={<Button aria-label={catalog.actions} className="-my-1.5 size-7 text-muted-foreground data-popup-open:bg-accent" size="icon" type="button" variant="ghost" />}>
+				<HugeiconsIcon aria-hidden="true" icon={MoreHorizontalIcon} size={16} strokeWidth={2.25} />
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" className="min-w-44">
+				<DropdownMenuItem render={<a href={runHref(run)} />}>{catalog.openRun}</DropdownMenuItem>
+				{run.pullRequest ? <DropdownMenuItem render={<a href={run.pullRequest.url} rel="noreferrer" target="_blank" />}>{catalog.openPullRequest}<HugeiconsIcon aria-hidden="true" className="ml-auto opacity-70" icon={LinkSquare02Icon} size={16} strokeWidth={2.25} /></DropdownMenuItem> : null}
+				<DropdownMenuSeparator />
+				<DropdownMenuItem onClick={() => { void globalThis.navigator?.clipboard?.writeText(run.runId); }}><HugeiconsIcon icon={Copy01Icon} size={16} strokeWidth={2.25} />{catalog.copyRunId}<span className="ml-auto font-mono text-muted-foreground text-xs">{run.runId.slice(0, 8)}</span></DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+function overviewRunsColumns(catalog: OverviewRunsCatalog, inspector: RunInspectorCatalog, locale: Locale): GateshipColumnDef<RunRow>[] {
+	const mono = 'font-mono tabular-nums';
 	return [
-		{ id: 'runId', accessorKey: 'runId', header: catalog.execution, enableSorting: false, cell: ({ row }) => <a className="font-mono underline-offset-2 hover:underline" href={href(row.original)}>{row.original.runId}</a> },
-		{ id: 'state', accessorKey: 'state', header: catalog.state, enableSorting: true, cell: ({ row }) => <span className="inline-flex items-center gap-2"><Badge variant={toneOf(row.original.state as RunState)}>{inspector.stateLabels[row.original.state as RunState]}</Badge>{row.original.merge ? <Badge variant="merged">{catalog.merged}</Badge> : null}</span> },
-		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, cell: ({ row }) => <a className="font-mono underline-offset-2 hover:underline" href={href(row.original)}>{row.original.issueId}<span className="sr-only">, {row.original.runId}</span></a> },
+		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, enableHiding: false, cell: ({ row }) => <span className="inline-flex items-baseline gap-2"><a className="font-medium font-mono underline-offset-4 hover:underline" href={runHref(row.original)}>{row.original.issueId}</a><span className="font-mono text-muted-foreground text-xs">{row.original.runId.slice(0, 8)}</span></span> },
+		{ id: 'state', accessorKey: 'state', header: catalog.state, enableSorting: true, cell: ({ row }) => <StateBadge catalog={catalog} inspector={inspector} run={row.original} /> },
 		{ id: 'projectName', accessorKey: 'projectName', header: catalog.project, enableSorting: true },
-		{ id: 'duration', accessorFn: (row) => row.evaluation.wallTimeMs ?? -1, header: catalog.duration, enableSorting: true, cell: ({ row }) => <span className="font-mono tabular-nums">{duration(row.original.evaluation.wallTimeMs)}</span> },
-		{ id: 'delivery', header: catalog.delivery, cell: ({ row }) => row.original.pullRequest ? <a className="underline-offset-2 hover:underline" href={row.original.pullRequest.url} target="_blank" rel="noreferrer">PR #{row.original.pullRequest.prNumber}</a> : '—' },
-		{ id: 'ci', header: catalog.ci, cell: ({ row }) => row.original.ci ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : '—' },
-		{ id: 'providerId', accessorKey: 'providerId', header: catalog.model, enableSorting: true, cell: ({ row }) => { const models = row.original.roles.flatMap((role) => role.models).join(', '); return <span>{row.original.providerId === 'claude' ? 'Claude Code' : 'Codex'}{models === '' ? '' : ` / ${models}`}</span>; } },
+		{ id: 'delivery', header: catalog.delivery, enableSorting: false, cell: ({ row }) => row.original.pullRequest ? <span className="inline-flex items-center gap-2"><a className="inline-flex items-center gap-1 underline-offset-4 hover:underline" href={row.original.pullRequest.url} rel="noreferrer" target="_blank">PR #{row.original.pullRequest.prNumber}<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-60" icon={LinkSquare02Icon} size={14} strokeWidth={2.25} /></a>{row.original.ci ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : null}</span> : <span className="text-muted-foreground">—</span> },
+		{ id: 'duration', accessorFn: (row) => row.evaluation.wallTimeMs ?? -1, header: catalog.duration, enableSorting: true, meta: { className: `${mono} text-right` }, cell: ({ row }) => duration(row.original.evaluation.wallTimeMs) },
+		{ id: 'updatedAt', accessorKey: 'updatedAt', header: catalog.updated, enableSorting: true, meta: { className: `${mono} text-muted-foreground` }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatRunTimestamp(row.original.updatedAt, locale)}</time> },
+		{ id: 'providerId', accessorKey: 'providerId', header: catalog.model, enableSorting: true, cell: ({ row }) => { const summary = providerSummary(row.original); return <span title={summary.full}>{summary.short}</span>; } },
+		{ id: 'rounds', accessorFn: (row) => row.evaluation.corrections.total, header: catalog.rounds, enableSorting: false, meta: { className: `${mono} text-right` } },
+		{ id: 'interventions', accessorFn: (row) => row.evaluation.operatorInterventions, header: catalog.interventions, enableSorting: false, meta: { className: `${mono} text-right` } },
+		{ id: 'cost', accessorFn: (row) => row.cost.totalCostUsd ?? -1, header: catalog.cost, enableSorting: true, meta: { className: `${mono} text-right` }, cell: ({ row }) => row.original.cost.totalCostUsd === null ? <span className="text-muted-foreground">—</span> : formatCostUsd(row.original.cost.totalCostUsd, locale, 2) },
+		{ id: 'runId', accessorKey: 'runId', header: catalog.runId, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs' } },
+		{ id: 'actions', header: () => <span className="sr-only">{catalog.actions}</span>, enableSorting: false, enableHiding: false, meta: { className: 'w-10 text-right' }, cell: ({ row }) => <RowActions catalog={catalog} run={row.original} /> },
 	];
 }
 
-function OverviewRunsFilters({ props, query, update, catalog }: { props: AppProps; query: OverviewRunsQuery; update: (changes: Partial<OverviewRunsQuery>) => void; catalog: OverviewRunsCatalog }): React.ReactElement {
-	return <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4" role="search" aria-label={catalog.title}><select aria-label={catalog.project} className="min-h-9 rounded-lg border bg-background px-3 text-sm" value={query.projectId ?? ''} onChange={(event) => update({ projectId: (event.currentTarget as unknown as { value: string }).value || undefined })}><option value="">{catalog.project}</option>{props.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><select aria-label={catalog.state} className="min-h-9 rounded-lg border bg-background px-3 text-sm" value={query.state ?? ''} onChange={(event) => update({ state: ((event.currentTarget as unknown as { value: string }).value || undefined) as OverviewRunsQuery['state'] })}><option value="">{catalog.state}</option>{RUN_STATES.map((state) => <option key={state} value={state}>{state}</option>)}</select><select aria-label={catalog.provider} className="min-h-9 rounded-lg border bg-background px-3 text-sm" value={query.providerId ?? ''} onChange={(event) => update({ providerId: ((event.currentTarget as unknown as { value: string }).value || undefined) as OverviewRunsQuery['providerId'] })}><option value="">{catalog.provider}</option><option value="claude">Claude Code</option><option value="codex">Codex</option></select><select aria-label={catalog.period} className="min-h-9 rounded-lg border bg-background px-3 text-sm" value={query.period ?? 'all'} onChange={(event) => update({ period: (event.currentTarget as unknown as { value: string }).value as OverviewRunsQuery['period'] })}><option value="all">{catalog.all}</option><option value="7d">{catalog.last7d}</option><option value="30d">{catalog.last30d}</option></select></div>;
+function hasFilters(query: OverviewRunsQuery): boolean {
+	return Boolean(query.search) || query.projectId !== undefined || query.state !== undefined || query.providerId !== undefined || (query.period !== undefined && query.period !== 'all');
+}
+
+function OverviewRunsFilters({ props, query, update, catalog, inspector }: { props: AppProps; query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): React.ReactElement {
+	const select = 'w-auto min-w-36';
+	return (
+		<>
+			<SelectField aria-label={catalog.project} className={select} items={[{ value: '', label: catalog.project }, ...props.projects.map((project) => ({ value: project.id, label: project.name }))]} value={query.projectId ?? ''} onValueChange={(value) => update({ projectId: value || undefined })} />
+			<SelectField aria-label={catalog.state} className={select} items={[{ value: '', label: catalog.state }, ...RUN_STATES.map((state) => ({ value: state, label: inspector.stateLabels[state] }))]} value={query.state ?? ''} onValueChange={(value) => update({ state: (value || undefined) as OverviewRunsQuery['state'] })} />
+			<SelectField aria-label={catalog.provider} className={select} items={[{ value: '', label: catalog.provider }, { value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} value={query.providerId ?? ''} onValueChange={(value) => update({ providerId: (value || undefined) as OverviewRunsQuery['providerId'] })} />
+			<SelectField aria-label={catalog.period} className={select} items={[{ value: 'all', label: catalog.all }, { value: '7d', label: catalog.last7d }, { value: '30d', label: catalog.last30d }]} value={query.period ?? 'all'} onValueChange={(value) => update({ period: value as OverviewRunsQuery['period'] })} />
+			{hasFilters(query) ? (
+				<Button size="sm" type="button" variant="ghost" onClick={() => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined })}>
+					{catalog.clearFilters}<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={14} strokeWidth={2.5} />
+				</Button>
+			) : null}
+		</>
+	);
+}
+
+function QuickViews({ query, update, catalog }: { query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog }): React.ReactElement {
+	const views: readonly { value: OverviewRunsQuery['group'] | 'all'; label: string }[] = [
+		{ value: 'all', label: catalog.views.all }, { value: 'active', label: catalog.views.active }, { value: 'needs-you', label: catalog.views.needsYou }, { value: 'shipped', label: catalog.views.shipped }, { value: 'failed', label: catalog.views.failed },
+	];
+	return (
+		<ToggleGroup aria-label={catalog.viewsLabel} data-slot="overview-runs-views" size="sm" spacing={1} value={[query.group ?? 'all']} variant="outline" onValueChange={(value) => { const next = value[0]; if (next !== undefined) update({ group: next === 'all' ? undefined : next as OverviewRunsQuery['group'] }); }}>
+			{views.map((view) => <ToggleGroupItem aria-label={view.label} key={view.value} value={view.value ?? 'all'}>{view.label}</ToggleGroupItem>)}
+		</ToggleGroup>
+	);
 }
 
 type RunSorting = { id: string; desc: boolean }[];
 type RunPagination = { pageIndex: number; pageSize: number };
-function updateRunSorting(value: RunSorting | ((current: RunSorting) => RunSorting), current: RunSorting, update: (changes: Partial<OverviewRunsQuery>) => void): void { const next = typeof value === 'function' ? value(current) : value; const first = next[0]; update({ sortBy: first?.id as OverviewRunsQuery['sortBy'] | undefined, sortDirection: first === undefined ? undefined : first.desc ? 'desc' : 'asc' }); }
-function updateRunPagination(value: RunPagination | ((current: RunPagination) => RunPagination), current: RunPagination, update: (changes: Partial<OverviewRunsQuery>) => void): void { const next = typeof value === 'function' ? value(current) : value; update({ limit: next.pageSize, offset: next.pageSize === current.pageSize ? next.pageIndex : 0 }); }
+function updateRunSorting(value: RunSorting | ((current: RunSorting) => RunSorting), current: RunSorting, update: Update): void { const next = typeof value === 'function' ? value(current) : value; const first = next[0]; update({ sortBy: first?.id as OverviewRunsQuery['sortBy'] | undefined, sortDirection: first === undefined ? undefined : first.desc ? 'desc' : 'asc' }); }
+function updateRunPagination(value: RunPagination | ((current: RunPagination) => RunPagination), current: RunPagination, update: Update): void { const next = typeof value === 'function' ? value(current) : value; update({ limit: next.pageSize, offset: next.pageSize === current.pageSize ? next.pageIndex * next.pageSize : 0 }); }
 
-type OverviewRunsTableProps = { props: AppProps; query: OverviewRunsQuery; update: (changes: Partial<OverviewRunsQuery>) => void; page: OverviewRunsPageView | null; loading: boolean; error: string | null };
-type OverviewRunsTableState = { table: ReturnType<typeof useGateshipTable<RunRow>>; rows: RunRow[] };
-
-function useOverviewRunsTableState({ catalog, inspector, query, update, page }: Pick<OverviewRunsTableProps, 'query' | 'update' | 'page'> & { catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): OverviewRunsTableState {
-	const [preferences] = useState(readPreferences); const [columnVisibility, setColumnVisibility] = useState(preferences.columnVisibility ?? {}); const [columnPinning, setColumnPinning] = useState<ColumnPinningState>(preferences.columnPinning ?? RUNS_DEFAULT_PINNING); const [columnSizing, setColumnSizing] = useState(preferences.columnSizing ?? {});
-	const rows = page?.runs ?? [];
-	const columns = useMemo(() => overviewRunsColumns(catalog, inspector), [catalog, inspector]);
-	const sorting: RunSorting = query.sortBy === undefined ? [] : [{ id: query.sortBy, desc: query.sortDirection === 'desc' }]; const pagination: RunPagination = { pageIndex: 0, pageSize: query.limit ?? 20 };
-	const table = useGateshipTable({ columns, data: rows, features: gateshipTableFeatures, getRowId: (row) => `${row.projectId}:${row.runId}`, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: page?.page.total ?? 0, state: { globalFilter: query.search ?? '', sorting, pagination, columnVisibility, columnPinning, columnSizing }, onGlobalFilterChange: (value) => update({ search: String(value ?? '') || undefined }), onSortingChange: (value) => updateRunSorting(value, sorting, update), onPaginationChange: (value) => updateRunPagination(value, pagination, update), onColumnVisibilityChange: (value) => setColumnVisibility(typeof value === 'function' ? value(columnVisibility) : value), onColumnPinningChange: (value) => setColumnPinning(typeof value === 'function' ? value(columnPinning) : value), onColumnSizingChange: (value) => setColumnSizing(typeof value === 'function' ? value(columnSizing) : value) });
-	useEffect(() => { try { globalThis.localStorage?.setItem(TABLE_PREFERENCES_KEY, JSON.stringify({ version: 1, columnVisibility, columnPinning, columnSizing })); } catch { /* storage is optional */ } }, [columnVisibility, columnPinning, columnSizing]);
-	return { table, rows };
+function useOverviewRunsTable({ catalog, inspector, locale, query, update, page }: { catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog; locale: Locale; query: OverviewRunsQuery; update: Update; page: OverviewRunsPageView | null }): ReturnType<typeof useGateshipTable<RunRow>> {
+	const [columnVisibility, setColumnVisibility] = useState(readPreferences);
+	const columns = useMemo(() => overviewRunsColumns(catalog, inspector, locale), [catalog, inspector, locale]);
+	/* The server's default order is the newest change first; the header shows it as such. */
+	const sorting: RunSorting = [{ id: query.sortBy ?? 'updatedAt', desc: (query.sortDirection ?? 'desc') === 'desc' }];
+	const pagination: RunPagination = { pageIndex: Math.floor((query.offset ?? 0) / (query.limit ?? 20)), pageSize: query.limit ?? 20 };
+	const table = useGateshipTable({
+		columns, data: page?.runs ?? [], features: gateshipTableFeatures, getRowId: (row) => `${row.projectId}:${row.runId}`,
+		manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: page?.page.total ?? 0,
+		/* A project filter makes the project column say one thing on every row. */
+		state: { globalFilter: query.search ?? '', sorting, pagination, columnVisibility: { ...columnVisibility, projectName: query.projectId === undefined && (columnVisibility.projectName ?? true) } },
+		onGlobalFilterChange: (value) => update({ search: String(value ?? '') || undefined }),
+		onSortingChange: (value) => updateRunSorting(value, sorting, update),
+		onPaginationChange: (value) => updateRunPagination(value, pagination, update),
+		onColumnVisibilityChange: (value) => setColumnVisibility(typeof value === 'function' ? value(columnVisibility) : value),
+	});
+	useEffect(() => { try { globalThis.localStorage?.setItem(TABLE_PREFERENCES_KEY, JSON.stringify({ version: 2, columnVisibility })); } catch { /* storage is optional */ } }, [columnVisibility]);
+	return table;
 }
 
-function OverviewRunsTable({ props, query, update, page, loading, error }: OverviewRunsTableProps): React.ReactElement {
+function OverviewRunsAlerts({ catalog, error, page, onRetry }: { catalog: OverviewRunsCatalog; error: string | null; page: OverviewRunsPageView | null; onRetry: () => void }): React.ReactElement | null {
+	if (error !== null) {
+		return (
+			<Alert variant="destructive">
+				<HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2.25} />
+				<AlertTitle>{catalog.error}</AlertTitle>
+				<AlertDescription>{error}</AlertDescription>
+				<AlertAction><Button size="sm" type="button" variant="outline" onClick={onRetry}>{catalog.retry}</Button></AlertAction>
+			</Alert>
+		);
+	}
+	if (page === null || page.errors.length === 0) return null;
+	return (
+		<Alert variant="warning">
+			<HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2.25} />
+			<AlertTitle>{catalog.partial}</AlertTitle>
+			<AlertDescription>{page.errors.map((entry) => <p key={entry.projectId}>{catalog.partialProject(entry.projectName, entry.message)}</p>)}</AlertDescription>
+		</Alert>
+	);
+}
+
+function OverviewRunsTable({ props, query, update, onRetry, page, loading, error }: { props: AppProps; query: OverviewRunsQuery; update: Update; onRetry: () => void; page: OverviewRunsPageView | null; loading: boolean; error: string | null }): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].overviewRuns; const inspector = LOCALE_CATALOG[props.locale].runInspector;
-	const { table, rows } = useOverviewRunsTableState({ catalog, inspector, query, update, page });
-	return <OverviewRunsTableContent {...{ catalog, error, loading, page, props, query, rows, table, update }} />;
+	const table = useOverviewRunsTable({ catalog, inspector, locale: props.locale, query, update, page });
+	const status = error !== null && page === null ? 'error' : loading && page === null ? 'loading' : loading ? 'updating' : 'ready';
+	const clear = (): void => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined, group: undefined });
+	return (
+		<>
+			<DataTableToolbar>
+				<QuickViews catalog={catalog} query={query} update={update} />
+				<DataTableFilter className="sm:max-w-64" locale={props.locale} placeholder={catalog.search} table={table} />
+				<DataTableViewOptions locale={props.locale} table={table} />
+			</DataTableToolbar>
+			<DataTableToolbar>
+				<OverviewRunsFilters catalog={catalog} inspector={inspector} props={props} query={query} update={update} />
+			</DataTableToolbar>
+			<OverviewRunsAlerts catalog={catalog} error={error} page={page} onRetry={onRetry} />
+			<DataTable
+				emptyAction={hasFilters(query) || query.group !== undefined ? <Button size="sm" type="button" variant="outline" onClick={clear}>{catalog.clearFilters}</Button> : undefined}
+				emptyDetail={catalog.emptyDetail}
+				emptyState={catalog.empty}
+				locale={props.locale}
+				rowClassName={(run) => NEEDS_YOU.has(run.state) ? '[&>td:first-child]:shadow-[inset_2px_0_0_var(--color-attention)]' : undefined}
+				status={status}
+				table={table}
+			/>
+			<DataTablePagination locale={props.locale} offset={page?.page.offset ?? query.offset ?? 0} total={page?.page.total ?? 0} onOffsetChange={(offset) => update({ offset })} onPageSizeChange={(limit) => update({ limit, offset: 0 })} table={table} />
+		</>
+	);
 }
 
-function OverviewRunsTableContent({ catalog, error, loading, page, props, query, rows, table, update }: OverviewRunsTableProps & { catalog: OverviewRunsCatalog; rows: RunRow[]; table: ReturnType<typeof useGateshipTable<RunRow>> }): React.ReactElement {
-	return <><DataTableToolbar><DataTableFilter className="flex-1" label={catalog.search} placeholder={catalog.search} locale={props.locale} table={table} /><DataTableColumnVisibility defaultColumnPinning={RUNS_DEFAULT_PINNING} locale={props.locale} table={table} /></DataTableToolbar><OverviewRunsFilters props={props} query={query} update={update} catalog={catalog} /><OverviewRunsTableMessages catalog={catalog} error={error} page={page} /><OverviewRunsTableGrid catalog={catalog} error={error} loading={loading} locale={props.locale} page={page} query={query} table={table} update={update} /><OverviewRunsTableSummary catalog={catalog} loading={loading} page={page} rows={rows} /></>;
+export function OverviewRunsSurface({ props }: { props: AppProps }): React.ReactElement {
+	const catalog = LOCALE_CATALOG[props.locale].overviewRuns;
+	const [query, update] = useOverviewRunsQuery();
+	const [revision, setRevision] = useState(0);
+	const result = useOverviewRunsPage(query, revision);
+	return <SurfaceColumn label={catalog.title} status={props.status}><OverviewRunsTable onRetry={() => setRevision((current) => current + 1)} {...{ props, query, update }} {...result} /></SurfaceColumn>;
 }
-
-function OverviewRunsTableMessages({ catalog, error, page }: Pick<OverviewRunsTableProps, 'error' | 'page'> & { catalog: OverviewRunsCatalog }): React.ReactElement {
-	return <>{error ? <p role="alert" className="text-destructive-foreground text-sm">{catalog.error}: {error}</p> : null}{page !== null && page.errors.length > 0 ? <p role="status" className="text-warning-foreground text-sm">{catalog.partial}</p> : null}</>;
-}
-
-function OverviewRunsTableGrid({ catalog, error, loading, locale, page, query, table, update }: Pick<OverviewRunsTableProps, 'error' | 'loading' | 'page' | 'query' | 'update'> & { catalog: OverviewRunsCatalog; locale: AppProps['locale']; table: ReturnType<typeof useGateshipTable<RunRow>> }): React.ReactElement {
-	const status = error ? 'error' : loading && page === null ? 'loading' : loading ? 'updating' : 'ready';
-	return <div className="scroll-container overflow-x-auto rounded-lg border"><DataTable className="min-w-max" error={error ? `${catalog.error}: ${error}` : undefined} emptyState={catalog.empty} locale={locale} status={status} table={table} /><DataTablePagination locale={locale} offset={page?.page.offset ?? query.offset ?? 0} total={page?.page.total ?? 0} onOffsetChange={(offset) => update({ offset })} onPageSizeChange={(limit) => update({ limit, offset: 0 })} table={table} /></div>;
-}
-
-function OverviewRunsTableSummary({ catalog, loading, page, rows }: { catalog: OverviewRunsCatalog; loading: boolean; page: OverviewRunsPageView | null; rows: RunRow[] }): React.ReactElement | null {
-	return page ? <p aria-live="polite" className="text-sm text-muted-foreground">{loading ? `${catalog.loading} ` : ''}{catalog.page((page.page.offset ?? 0) + 1, (page.page.offset ?? 0) + rows.length, page.page.total)}</p> : null;
-}
-
-export function OverviewRunsSurface({ props }: { props: AppProps }): React.ReactElement { const catalog = LOCALE_CATALOG[props.locale].overviewRuns; const [query, update] = useOverviewRunsQuery(); const result = useOverviewRunsPage(query); return <SurfaceColumn label={catalog.title} status={props.status}><OverviewRunsTable {...{ props, query, update }} {...result} /></SurfaceColumn>; }

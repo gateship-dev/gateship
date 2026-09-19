@@ -263,6 +263,7 @@ export interface OverviewRunsPageView {
 		projectName: string;
 		repository?: string;
 		runId: string;
+		error: string | null;
 		roles: RunEvaluationView['roles'];
 		evaluation: RunEvaluationView;
 		cost: RunCostView;
@@ -668,6 +669,8 @@ export interface OverviewRunsQuery {
 	offset?: number;
 	projectId?: string;
 	state?: RunView['state'];
+	/** Mirrors RunOverviewGroup in src/runtime/run-overview.ts. */
+	group?: 'active' | 'needs-you' | 'shipped' | 'failed';
 	providerId?: 'claude' | 'codex';
 	period?: '7d' | '30d' | 'all';
 	search?: string;

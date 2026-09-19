@@ -95,6 +95,24 @@ describe('readRunOverview', () => {
 		expect(readRunOverview([project('one')], { sortBy: 'cost', sortDirection: 'asc', offset: 2, limit: 2 }, options).runs.map((run) => run.runId)).toEqual(['first']);
 	});
 
+	test('filtra por grupo operacional com o mesmo mapa de atenção da shell', () => {
+		const working = history('working-run', '2026-09-04T00:00:00.000Z');
+		working.run.state = 'working';
+		const waiting = history('waiting-run', '2026-09-03T00:00:00.000Z');
+		waiting.run.state = 'waiting-user';
+		const failed = history('failed-run', '2026-09-02T00:00:00.000Z');
+		failed.run.state = 'failed';
+		const shipped = history('shipped-run', '2026-09-01T00:00:00.000Z');
+		const options = { readHistory: () => [working, waiting, failed, shipped] };
+		const ids = (group: 'active' | 'needs-you' | 'shipped' | 'failed') => readRunOverview([project('one')], { group }, options).runs.map((run) => run.runId);
+		expect(ids('active')).toEqual(['working-run']);
+		expect(ids('needs-you')).toEqual(['waiting-run', 'failed-run']);
+		expect(ids('shipped')).toEqual(['shipped-run']);
+		expect(ids('failed')).toEqual(['failed-run']);
+		expect(parseRunOverviewFilters(new URLSearchParams('group=needs-you')).group).toBe('needs-you');
+		expect(() => parseRunOverviewFilters(new URLSearchParams('group=stuck'))).toThrow('group must be active, needs-you, shipped or failed.');
+	});
+
 	test('rejeita parâmetros de ordenação desconhecidos com contrato explícito', () => {
 		expect(() => parseRunOverviewFilters(new URLSearchParams('sortBy=unknown'))).toThrow('sortBy must be a valid run field.');
 		expect(() => parseRunOverviewFilters(new URLSearchParams('sortDirection=sideways'))).toThrow('sortDirection must be asc or desc.');

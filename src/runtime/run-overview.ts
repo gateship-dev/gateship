@@ -21,12 +21,28 @@ export interface RunOverviewFilters {
 	offset?: number;
 	projectId?: string;
 	state?: RunState;
+	group?: RunOverviewGroup;
 	providerId?: 'claude' | 'codex';
 	period?: RunOverviewPeriod;
 	search?: string;
 	sortBy?: RunOverviewSort;
 	sortDirection?: SortDirection;
 }
+
+/**
+ * The operator's quick views over the state machine: what is moving, what
+ * waits on them, what shipped, what failed. The mapping is the one the
+ * shell's attention signal uses, so a row the sidebar counts as "needs you"
+ * is a row this filter returns.
+ */
+export type RunOverviewGroup = 'active' | 'needs-you' | 'shipped' | 'failed';
+export const RUN_OVERVIEW_GROUPS: readonly RunOverviewGroup[] = ['active', 'needs-you', 'shipped', 'failed'];
+const GROUP_STATES: Readonly<Record<RunOverviewGroup, readonly RunState[]>> = {
+	active: ['queued', 'working', 'verify', 'review', 'full-verify', 'shipping'],
+	'needs-you': ['ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted'],
+	shipped: ['done'],
+	failed: ['failed'],
+};
 
 export interface RunOverviewRow {
 	projectId: string;
@@ -38,6 +54,8 @@ export interface RunOverviewRow {
 	createdAt: string;
 	updatedAt: string;
 	providerId: 'claude' | 'codex';
+	/** The run's recorded failure, so a failed row can say why without opening it. */
+	error: string | null;
 	evaluation: PersistedRunHistory['evaluation'];
 	cost: PersistedRunHistory['cost'];
 	roles: PersistedRunHistory['evaluation']['roles'];
@@ -80,11 +98,13 @@ function parseRunOverviewPageNumber(params: URLSearchParams, name: 'limit' | 'of
 
 function validateRunOverviewParams(params: URLSearchParams): void {
 	const state = params.get('state');
+	const group = params.get('group');
 	const providerId = params.get('providerId');
 	const period = params.get('period');
 	const sortBy = params.get('sortBy');
 	const sortDirection = params.get('sortDirection');
 	if (state !== null && !isRunState(state)) throw new Error('state must be a valid run state.');
+	if (group !== null && !RUN_OVERVIEW_GROUPS.includes(group as RunOverviewGroup)) throw new Error('group must be active, needs-you, shipped or failed.');
 	if (providerId !== null && providerId !== 'claude' && providerId !== 'codex') throw new Error('providerId must be claude or codex.');
 	if (period !== null && period !== '7d' && period !== '30d' && period !== 'all') throw new Error('period must be 7d, 30d or all.');
 	const sortFields: readonly RunOverviewSort[] = ['updatedAt', 'createdAt', 'projectName', 'issueId', 'state', 'providerId', 'duration', 'cost'];
@@ -145,6 +165,7 @@ function projectRun(project: RegisteredProject, item: PersistedRunHistory): RunO
 		createdAt: item.run.createdAt,
 		updatedAt: item.run.updatedAt,
 		providerId: item.run.providerId,
+		error: item.run.error,
 		evaluation: item.evaluation,
 		cost: item.cost,
 		roles: item.evaluation.roles,
@@ -161,6 +182,7 @@ function matches(row: RunOverviewRow, filters: RunOverviewFilters, now: number):
 	const search = filters.search?.trim().toLowerCase();
 	return (filters.projectId === undefined || row.projectId === filters.projectId)
 		&& (filters.state === undefined || row.state === filters.state)
+		&& (filters.group === undefined || GROUP_STATES[filters.group].includes(row.state))
 		&& (filters.providerId === undefined || row.providerId === filters.providerId)
 		&& (periodStart === null || Date.parse(row.createdAt) >= periodStart)
 		&& (search === undefined || search === '' || row.runId.toLowerCase().includes(search) || row.issueId.toLowerCase().includes(search));
@@ -203,6 +225,7 @@ export function readRunOverview(
 export function parseRunOverviewFilters(params: URLSearchParams): RunOverviewFilters {
 	validateRunOverviewParams(params);
 	const state = params.get('state');
+	const group = params.get('group');
 	const providerId = params.get('providerId');
 	const period = params.get('period');
 	const sortBy = params.get('sortBy');
@@ -211,6 +234,7 @@ export function parseRunOverviewFilters(params: URLSearchParams): RunOverviewFil
 		limit: parseRunOverviewPageNumber(params, 'limit'), offset: parseRunOverviewPageNumber(params, 'offset'),
 		...(params.get('projectId') === null ? {} : { projectId: params.get('projectId')! }),
 		...(state === null ? {} : { state: state as RunState }),
+		...(group === null ? {} : { group: group as RunOverviewGroup }),
 		...(providerId === null ? {} : { providerId: providerId as RunOverviewFilters['providerId'] }),
 		...(period === null ? {} : { period: period as RunOverviewPeriod }),
 		...(params.get('search') === null ? {} : { search: params.get('search')! }),
