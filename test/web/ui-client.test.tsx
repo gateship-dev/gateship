@@ -3522,18 +3522,40 @@ function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: Retu
 	expect(smallHtml).toContain(LOCALE_CATALOG[locale].shell.routeLabels.overviewInsights);
 	expect(smallHtml).toContain('revision…');
 	expect(smallHtml).not.toContain('revision-1234567890abcdef');
-	expect(smallHtml).toContain('v2');
+	// The cohort is read by five columns; the other six are one menu away, so
+	// their headers and sub-labels stay out of the default table.
+	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci]) expect(smallHtml).toContain(label);
+	for (const hidden of [catalog.specVersion, catalog.cycleQuestions, catalog.reconciliations, catalog.attentionRequests, catalog.unchanged, catalog.contractChangeRequired]) expect(smallHtml).not.toContain(hidden);
 	expect(smallHtml).toContain(`3 (${catalog.cohortEvidenceInsufficient})`);
-	expect(smallHtml).toContain(catalog.cohortEvidenceInsufficient);
-	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(smallHtml).toContain(label);
 	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
+	// A remembered choice of columns brings every fact back.
+	const storage = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
+	const previous = storage.localStorage;
+	storage.localStorage = { getItem: () => JSON.stringify({ columnVisibility: {} }), setItem: () => {} };
+	try {
+		const everyColumn = renderInsightsWithLoadedOverview(locale, factualCohortOverview([smallCohort]));
+		expect(everyColumn).toContain('v2');
+		for (const label of [catalog.specVersion, catalog.cycleQuestions, catalog.reconciliations, catalog.attentionRequests, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(everyColumn).toContain(label);
+	} finally { storage.localStorage = previous; }
 	expect(sufficientHtml).toContain('>5</td>');
 	expect(sufficientHtml).not.toContain(catalog.cohortEvidenceInsufficient);
 	expect(comparable).toContain(locale === 'en-US' ? 'Cohort A' : 'Coorte A');
 	expect(comparable).toContain(locale === 'en-US' ? 'commands' : 'comandos');
 	expect(comparable).toContain(locale === 'en-US' ? 'corrections' : 'correções');
 	expect(comparable).toContain('—');
+	// One chosen pair, never every combination: a third comparable cohort adds an option, not a block.
+	expect(comparable).toContain(locale === 'en-US' ? 'Cohort B' : 'Coorte B');
+	expect(comparable).toContain('5/5 → 7/5');
+	expect((comparable.match(/data-slot="cohort-detail"/g) ?? []).length).toBe(1);
 	expect(incompatible).not.toContain(locale === 'en-US' ? 'Cohort A' : 'Coorte A');
+	// A cohort's timing is read where the cohort is chosen, not printed under every row.
+	const distributionOf = (median: number) => ({ median, p90: median * 2, known: 3, denominator: 3 });
+	const timed = { ...smallCohort, timing: { wallTimeMs: distributionOf(600_000), waits: { provider: distributionOf(60_000), user: distributionOf(120_000) }, phases: { working: distributionOf(300_000) }, corrections: {} } };
+	const timedHtml = renderInsightsWithLoadedOverview(locale, factualCohortOverview([timed, { ...timed, workflowRevision: 'revision-second' }]));
+	expect((timedHtml.match(/data-slot="cohort-facts"/g) ?? []).length).toBe(1);
+	expect(timedHtml).toContain(locale === 'en-US' ? 'Wall time' : 'Tempo total');
+	expect(timedHtml).toContain(`${locale === 'en-US' ? 'median' : 'mediana'} 10m · p90 20m · 3/3`);
+	expect(timedHtml).toContain(catalog.cohortEvidenceInsufficient);
 }
 
 function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: ReturnType<typeof factualSmallCohort>): void {
@@ -3710,6 +3732,30 @@ describe('operator shell', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			assertFactualCohortContent(locale, smallCohort);
 			assertFactualCohortPagination(locale, smallCohort);
+		}
+	});
+	test('Insights scopes by window alone, leads with three groups and keeps providers out until one was observed', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const catalog = LOCALE_CATALOG[locale].overviewInsights;
+			const result = factualCohortOverview([]) as { overview: Record<string, unknown> };
+			Object.assign(result.overview, { shippedWithoutIntervention: 1, firstReviewPasses: 2, firstReviewPassKnownRuns: 3 });
+			const html = renderInsightsWithLoadedOverview(locale, result);
+			// The sidebar switcher is the project filter: the window is the only control here.
+			expect(html).not.toContain('<select');
+			for (const label of [catalog.last7d, catalog.last30d, catalog.all]) expect(html).toContain(`aria-label="${label}"`);
+			expect((html.match(/data-slot="insights-group"/g) ?? []).length).toBe(3);
+			// Shipped of all runs, and shipped without intervention of the shipped.
+			expect(html).toContain('>2/3</p>');
+			expect(html).toContain('>1/2</p>');
+			// `firstReviewPasses` is a share of the runs whose first review is known, under its own name.
+			expect(html).toMatch(new RegExp(`${catalog.firstReviewPasses}</dt><dd[^>]*>2/3<`));
+			expect(html).not.toContain(catalog.configurations);
+			expect(html).not.toContain(`>${catalog.providers}<`);
+			const observed = factualCohortOverview([]) as { overview: Record<string, unknown> };
+			observed.overview.configurations = [{ provider: 'claude', role: 'executor', model: 'claude-sonnet-5' }];
+			const withProviders = renderInsightsWithLoadedOverview(locale, observed);
+			expect(withProviders).toContain(`>${catalog.providers}<`);
+			expect(withProviders).toContain('claude / executor / claude-sonnet-5');
 		}
 	});
 	test('formata tokens de Análises conforme o locale e preserva dado ausente', () => {

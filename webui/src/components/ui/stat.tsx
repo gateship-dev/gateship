@@ -14,6 +14,7 @@ export function Stat({
 	value,
 	hint,
 	className,
+	children,
 	...props
 }: React.ComponentProps<'div'> & {
 	label: React.ReactNode;
@@ -36,6 +37,8 @@ export function Stat({
 			<p className="type-eyebrow text-muted-foreground">{label}</p>
 			<p className="type-data mt-2 text-2xl">{value}</p>
 			{hint === undefined ? null : <p className="mt-1 text-muted-foreground text-xs">{hint}</p>}
+			{/* A group of related numbers under the one that leads them. */}
+			{children === undefined ? null : <div className="mt-4 border-t pt-4" data-slot="stat-detail">{children}</div>}
 		</div>
 	);
 }

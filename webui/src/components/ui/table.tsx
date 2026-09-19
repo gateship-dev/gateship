@@ -69,7 +69,8 @@ export function TableHead({ className, ...props }: React.ComponentProps<'th'>): 
 	return (
 		<th
 			className={cn(
-				'h-10 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground leading-none',
+				/* Heads are always sans: a table set in the data voice still labels its columns in prose. */
+				'h-10 whitespace-nowrap px-3 text-left align-middle font-medium font-sans text-muted-foreground leading-none',
 				className,
 			)}
 			data-slot="table-head"
