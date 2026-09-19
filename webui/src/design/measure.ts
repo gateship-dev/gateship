@@ -7,7 +7,8 @@
 // judgment; what it can measure lives here.
 
 export interface ContrastFinding { text: string; ratio: number; color: string; background: string }
-export interface OverflowFinding { slot: string; clientWidth: number; scrollWidth: number }
+/** `slot`, `text` and `classes` exist so a failing gate names the element, not just its size. */
+export interface OverflowFinding { slot: string; clientWidth: number; scrollWidth: number; text: string; classes: string }
 export interface ToolbarFinding { slot: string; heights: number[] }
 
 export interface DesignReport {
@@ -35,11 +36,20 @@ function browserOf(document: Document): Browser {
 	return document.defaultView as unknown as Browser;
 }
 
+/** Inside a visually hidden block (`sr-only`: a 1px box that clips): laid out, but never seen. */
+function clippedAway(element: Element): boolean {
+	for (let current = element.parentElement; current !== null; current = current.parentElement) {
+		if (current.clientWidth <= 1 && current.clientHeight <= 1) return true;
+	}
+	return false;
+}
+
 function visible(element: Element, browser: Browser): boolean {
 	const rect = element.getBoundingClientRect();
 	if (rect.width === 0 || rect.height === 0) return false;
 	const style = browser.getComputedStyle(element);
-	return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+	if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') return false;
+	return !clippedAway(element);
 }
 
 function ownText(element: Element): string {
@@ -151,7 +161,7 @@ export function measureOverflow(root: ParentNode, document: Document, tolerance 
 		/* Only content that spills where it can be seen: a scroll container scrolls
 		 * on purpose, and `hidden`/`clip` is a decision to cut (truncation, sr-only). */
 		if (browser.getComputedStyle(element).overflowX !== 'visible') continue;
-		findings.push({ slot: element.getAttribute('data-slot') ?? element.tagName.toLowerCase(), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth });
+		findings.push({ slot: element.getAttribute('data-slot') ?? element.tagName.toLowerCase(), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, text: (element.textContent ?? '').trim().slice(0, 40), classes: element.getAttribute('class')?.slice(0, 80) ?? '' });
 	}
 	return findings;
 }
