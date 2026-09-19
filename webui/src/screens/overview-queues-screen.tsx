@@ -80,12 +80,18 @@ function QueueStatusLine({ queue, status, catalog, locale, projectHref }: { queu
 }
 
 function QueueSequence({ queue, catalog, locale, projectHref }: { queue: ProjectQueueView; catalog: OverviewCatalog['queues']; locale: Locale; projectHref: string }): React.ReactElement | null {
-	if (queue.plannedIssues.length === 0) return null;
+	/* The service plans only what is approved, open and unblocked, so an issue
+	 * can be running and no longer planned (blocked or respecified after it
+	 * started). It still leads the list, unnumbered: it holds no place in the
+	 * order, it is simply what is happening. */
+	const running = queue.currentIssue !== null && !queue.plannedIssues.some((issue) => issue.id === queue.currentIssue?.id) ? queue.currentIssue : null;
+	const rows = [...(running === null ? [] : [{ issue: running, order: null }]), ...queue.plannedIssues.map((issue, index) => ({ issue, order: index + 1 }))];
+	if (rows.length === 0) return null;
 	return (
 		<ol aria-label={catalog.sequence} className="divide-y divide-border border-t" data-slot="queue-sequence">
-			{queue.plannedIssues.map((issue, index) => (
+			{rows.map(({ issue, order }) => (
 				<li className="flex min-h-8 items-center gap-3 px-4 py-1 text-sm" key={issue.id}>
-					<span className="w-4 shrink-0 text-right font-mono text-muted-foreground text-xs tabular-nums">{index + 1}</span>
+					<span className="w-4 shrink-0 text-right font-mono text-muted-foreground text-xs tabular-nums">{order}</span>
 					<a className={cn(TEXT_LINK_CLASS, 'shrink-0 font-mono text-xs')} href={`${projectHref}/work#${encodeURIComponent(issue.id)}`}>{issue.id}</a>
 					<span className="min-w-0 flex-1 truncate" title={issue.title}>{issue.title}</span>
 					{queue.currentIssue?.id === issue.id && queue.currentRun !== null ? <Badge variant="info">{runStateLabel(queue.currentRun.state, locale, catalog)}</Badge> : null}

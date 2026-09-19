@@ -149,11 +149,11 @@ function hasFilters(query: OverviewRunsQuery): boolean {
 	return Boolean(query.search) || query.projectId !== undefined || query.state !== undefined || query.providerId !== undefined || (query.period !== undefined && query.period !== 'all');
 }
 
-function OverviewRunsFilters({ props, query, update, catalog, inspector }: { props: AppProps; query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): React.ReactElement {
+/* No project select: the sidebar switcher is the project filter. A `?projectId=` link still scopes the list, and Clear filters lifts it. */
+function OverviewRunsFilters({ query, update, catalog, inspector }: { query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): React.ReactElement {
 	const select = 'w-auto min-w-36';
 	return (
 		<>
-			<SelectField aria-label={catalog.project} className={select} items={[{ value: '', label: catalog.project }, ...props.projects.map((project) => ({ value: project.id, label: project.name }))]} value={query.projectId ?? ''} onValueChange={(value) => update({ projectId: value || undefined })} />
 			<SelectField aria-label={catalog.state} className={select} items={[{ value: '', label: catalog.state }, ...RUN_STATES.map((state) => ({ value: state, label: inspector.stateLabels[state] }))]} value={query.state ?? ''} onValueChange={(value) => update({ state: (value || undefined) as OverviewRunsQuery['state'] })} />
 			<SelectField aria-label={catalog.provider} className={select} items={[{ value: '', label: catalog.provider }, { value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} value={query.providerId ?? ''} onValueChange={(value) => update({ providerId: (value || undefined) as OverviewRunsQuery['providerId'] })} />
 			<SelectField aria-label={catalog.period} className={select} items={[{ value: 'all', label: catalog.all }, { value: '7d', label: catalog.last7d }, { value: '30d', label: catalog.last30d }]} value={query.period ?? 'all'} onValueChange={(value) => update({ period: value as OverviewRunsQuery['period'] })} />
@@ -236,7 +236,7 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 				<DataTableViewOptions locale={props.locale} table={table} />
 			</DataTableToolbar>
 			<DataTableToolbar>
-				<OverviewRunsFilters catalog={catalog} inspector={inspector} props={props} query={query} update={update} />
+				<OverviewRunsFilters catalog={catalog} inspector={inspector} query={query} update={update} />
 			</DataTableToolbar>
 			<OverviewRunsAlerts catalog={catalog} error={error} page={page} onRetry={onRetry} />
 			<DataTable

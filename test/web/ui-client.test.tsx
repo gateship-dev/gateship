@@ -3794,6 +3794,11 @@ describe('operator shell', () => {
 		expect(off).toContain('data-status="needs-you"');
 		expect(off).toContain('href="/projects/project-1/settings"');
 		expect(off).not.toContain('will resume automatically');
+		// An issue can be running and no longer planned (blocked or respecified after it started): it still leads the list.
+		const unplanned = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...planned, currentIssue: { id: 'GSHIP-850', title: 'Running outside the plan' }, currentRun: { id: 'run-1', issueId: 'GSHIP-850', state: 'review', createdAt: '', updatedAt: '', providerId: 'claude' }, nextIssue: null } as never} />);
+		expect(unplanned).toContain('data-status="running"');
+		expect(unplanned.indexOf('Running outside the plan')).toBeLessThan(unplanned.indexOf('Preserve queue order'));
+		expect((unplanned.match(/<li /g) ?? []).length).toBe(3);
 		const done = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...queue, pause: { reason: 'no-admissible-issue', createdAt: '2026-09-10T12:00:00.000Z' } } as never} />);
 		expect(done).toContain('data-status="empty"');
 		expect(sortQueuesByUrgency([queue, planned, { ...planned, chainEnabled: false, pause: { reason: 'chain-disabled', createdAt: '' } }] as never).map((entry) => queueStatus(entry))).toEqual(['needs-you', 'ready', 'empty']);
