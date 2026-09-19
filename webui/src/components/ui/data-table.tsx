@@ -345,7 +345,7 @@ export function DataTable<TData extends RowData>({
 				<TableBody className={cn('transition-opacity', status === 'updating' && 'opacity-60')}>
 					{status === 'loading' && rows.length === 0
 						? Array.from({ length: skeletonRows }, (_, index) => (
-							<TableRow key={`skeleton-${index}`}>
+							<TableRow data-state="loading" key={`skeleton-${index}`}>
 								{columns.map((column) => <TableCell className={cn(metaOf(column).className, alignClass(column))} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
 							</TableRow>
 						))
@@ -354,8 +354,9 @@ export function DataTable<TData extends RowData>({
 								{row.getVisibleCells().map((cell) => <TableCell className={cn(metaOf(cell.column).className, alignClass(cell.column))} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
 							</TableRow>
 						))}
+					{/* `data-state` tells a data row from a stand-in: anything counting rows reads `tr:not([data-state])`. */}
 					{rows.length === 0 && status !== 'loading' ? (
-						<TableRow>
+						<TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="empty">
 							<TableCell className="h-32 text-center" colSpan={columns.length}>
 								<Empty className="p-2" role="status">
 									<EmptyHeader>

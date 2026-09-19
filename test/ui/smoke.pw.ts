@@ -74,7 +74,7 @@ test.describe('@smoke Central invariants', () => {
 		// A header opens its column menu; sorting is an item in it.
 		await page.locator('[data-slot=data-table] th button').first().click();
 		await page.getByRole('menuitem').first().click();
-		await expect(page.locator('tbody tr').first()).toBeVisible();
+		await expect(page.locator('tbody tr:not([data-state])').first()).toBeVisible();
 		await page.getByRole('button', { name: 'Next page' }).click();
 		await expect(page.locator('span[aria-live=polite]:not(.sr-only)')).toContainText('21–40');
 		const table = page.locator('[data-slot=data-table]').first();

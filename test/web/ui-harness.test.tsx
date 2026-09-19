@@ -60,14 +60,14 @@ describe('development UI harness', () => {
 				const long = (await page.locator('body').innerText()).includes('deliberately long');
 				await page.goto('http://127.0.0.1:4174/harness.html?frame=1440');
 				await page.getByRole('button', { name: 'Central/runs' }).click({ timeout: 1000 });
-				await page.locator('tbody tr').first().waitFor({ state: 'visible' });
-				const usualRuns = await page.locator('tbody tr').count();
+				await page.locator('tbody tr:not([data-state])').first().waitFor({ state: 'visible' });
+				const usualRuns = await page.locator('tbody tr:not([data-state])').count();
 				await page.getByRole('button', { name: 'empty', exact: true }).click({ timeout: 1000 });
-				await page.locator('tbody tr').first().waitFor({ state: 'detached' });
-				const emptyRuns = await page.locator('tbody tr').count();
+				await page.locator('tbody tr:not([data-state])').first().waitFor({ state: 'detached' });
+				const emptyRuns = await page.locator('tbody tr:not([data-state])').count();
 				await page.getByRole('button', { name: 'dense', exact: true }).click({ timeout: 1000 });
-				await page.locator('tbody tr').first().waitFor({ state: 'visible' });
-				const denseRows = await page.locator('tbody tr').count();
+				await page.locator('tbody tr:not([data-state])').first().waitFor({ state: 'visible' });
+				const denseRows = await page.locator('tbody tr:not([data-state])').count();
 				const columnMenu = page.locator('[data-slot=data-table-view-options]');
 				await page.getByRole('button', { name: 'Colunas', exact: true }).click({ timeout: 1000 });
 				await columnMenu.waitFor({ state: 'visible' });
@@ -76,18 +76,18 @@ describe('development UI harness', () => {
 				await columnMenu.waitFor({ state: 'hidden' });
 				const columnMenuClosed = await columnMenu.count() === 0;
 				const catalog = await page.locator('[data-fixture-catalog=visible-catalog]').innerText();
-				const firstPageIds = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => row.textContent ?? ''));
+				const firstPageIds = await page.locator('tbody tr:not([data-state])').evaluateAll(rows => rows.map(row => row.textContent ?? ''));
 				const firstPageLabel = await page.locator('span[aria-live=polite]:not(.sr-only)').innerText();
 				await page.getByRole('button', { name: 'Próxima' }).click({ timeout: 1000 });
 				await page.waitForFunction(() => document.querySelector('span[aria-live=polite]:not(.sr-only)')?.textContent?.includes('21–40'));
-				const secondPageIds = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => row.textContent ?? ''));
+				const secondPageIds = await page.locator('tbody tr:not([data-state])').evaluateAll(rows => rows.map(row => row.textContent ?? ''));
 				const secondPageLabel = await page.locator('span[aria-live=polite]:not(.sr-only)').innerText();
 				const previousEnabled = await page.getByRole('button', { name: 'Anterior' }).isEnabled();
 				await page.getByRole('button', { name: 'Anterior' }).click({ timeout: 1000 });
 				await page.waitForFunction(() => document.querySelector('span[aria-live=polite]:not(.sr-only)')?.textContent?.includes('1–20'));
-				const returnedPageIds = await page.locator('tbody tr').evaluateAll(rows => rows.map(row => row.textContent ?? ''));
+				const returnedPageIds = await page.locator('tbody tr:not([data-state])').evaluateAll(rows => rows.map(row => row.textContent ?? ''));
 				await page.goto('http://127.0.0.1:4174/harness.html?frame=1440&route=/overview/runs&scenario=refreshing');
-				await page.locator('tbody tr').first().waitFor({ state: 'visible' });
+				await page.locator('tbody tr:not([data-state])').first().waitFor({ state: 'visible' });
 				const refreshed = await page.locator('body').innerText();
 				const pagination = firstPageLabel.includes('1–20') && secondPageLabel.includes('21–40') && firstPageIds.join('|') !== secondPageIds.join('|') && firstPageIds.join('|') === returnedPageIds.join('|') && previousEnabled;
 				const pending = await page.locator('[data-harness=gateship-ui]').getAttribute('data-scenario') === 'refreshing';
@@ -269,7 +269,7 @@ describe('development UI harness', () => {
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) { try { if ((await fetch('http://127.0.0.1:4177/harness.html')).ok) break; } catch { /* server is starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
 			await cli('open', 'http://127.0.0.1:4177/harness.html?frame=1440&scenario=dense');
-			const result = await cli('run-code', "async page => { await page.getByRole('button', { name: 'Central/runs' }).click(); await page.waitForTimeout(150); const read = async () => { await page.waitForTimeout(500); return [await page.locator('tbody tr').count(), await page.locator('span[aria-live=polite]:not(.sr-only)').innerText(), await page.evaluate(() => window.location.search)]; }; const usual = await read(); const choose = async (label, option) => { await page.locator('[data-slot=select-trigger][aria-label=' + label + ']').click(); await page.getByRole('option', { name: option, exact: true }).click(); }; await page.getByRole('searchbox').fill('GSHIP-906'); await choose('Estado', 'concluída'); await choose('Provider', 'Codex'); await choose('Período', 'Últimos 7 dias'); const filtered = await read(); await page.goto('http://127.0.0.1:4177/harness.html?frame=1440&scenario=dense&projectId=missing'); await page.getByRole('button', { name: 'Central/runs' }).click(); const projectFiltered = await read(); return JSON.stringify({ usual, filtered, projectFiltered }); }");
+			const result = await cli('run-code', "async page => { await page.getByRole('button', { name: 'Central/runs' }).click(); await page.waitForTimeout(150); const read = async () => { await page.waitForTimeout(500); return [await page.locator('tbody tr:not([data-state])').count(), await page.locator('span[aria-live=polite]:not(.sr-only)').innerText(), await page.evaluate(() => window.location.search)]; }; const usual = await read(); const choose = async (label, option) => { await page.locator('[data-slot=select-trigger][aria-label=' + label + ']').click(); await page.getByRole('option', { name: option, exact: true }).click(); }; await page.getByRole('searchbox').fill('GSHIP-906'); await choose('Estado', 'concluída'); await choose('Provider', 'Codex'); await choose('Período', 'Últimos 7 dias'); const filtered = await read(); await page.goto('http://127.0.0.1:4177/harness.html?frame=1440&scenario=dense&projectId=missing'); await page.getByRole('button', { name: 'Central/runs' }).click(); const projectFiltered = await read(); return JSON.stringify({ usual, filtered, projectFiltered }); }");
 			const normalized = result.replaceAll('\\', '');
 			expect(normalized).toContain('"filtered":[1');
 			expect(normalized).toContain('search=GSHIP-906');
@@ -322,7 +322,7 @@ describe('development UI harness', () => {
 		try {
 			for (let attempt = 0; attempt < 20; attempt++) { try { if ((await fetch('http://127.0.0.1:4180/harness.html')).ok) break; } catch { /* server is starting */ } await new Promise((resolve) => setTimeout(resolve, 50)); }
 			await cli('open', 'about:blank');
-			const result = await cli('run-code', "async page => { const matrix = []; for (const locale of ['pt-BR', 'en-US']) for (const theme of ['light', 'dark']) for (const width of [390, 768, 1440]) { await page.setViewportSize({ width, height: 800 }); await page.goto('http://127.0.0.1:4180/harness.html?frame=' + width + '&route=/overview/insights&scenario=insights-long&locale=' + locale + '&theme=' + theme); await page.locator('[data-chart]').waitFor({ state: 'visible' }); const chart = page.locator('[data-chart]').first(); const box = await chart.boundingBox(); matrix.push([locale, theme, width, await page.locator('main').evaluate(node => node.scrollWidth <= node.clientWidth), box?.height ?? 0, await page.locator('[aria-labelledby=insights-outcomes] tbody tr').count(), await page.locator('ul[aria-label]').count(), await chart.getAttribute('data-outcome-patterns')]); } await page.goto('http://127.0.0.1:4180/harness.html?frame=390&route=/overview/insights&scenario=insights-cohorts&locale=en-US&theme=dark'); await page.locator('input[aria-label*=Specification]').waitFor({ state: 'visible' }); const cohorts = page.locator('[data-slot=data-table]').last(); await page.waitForTimeout(1000); const before = await cohorts.locator('tbody tr').count(); await page.locator('input[aria-label*=Specification]').fill('fixture-cohort-25'); await page.waitForTimeout(1000); const after = await cohorts.locator('tbody tr').count(); const filteredLabel = await page.locator('span[aria-live=polite]').first().innerText(); await page.goto('http://127.0.0.1:4180/harness.html?frame=768&route=/overview/insights&scenario=insights-zero&locale=pt-BR&theme=light'); const zero = await page.locator('body').innerText(); await page.goto('http://127.0.0.1:4180/harness.html?frame=768&route=/overview/insights&scenario=insights-null&locale=pt-BR&theme=light'); const missing = await page.locator('body').innerText(); return JSON.stringify({ matrix, before, after, filteredLabel, zero, missing }); }");
+			const result = await cli('run-code', "async page => { const matrix = []; for (const locale of ['pt-BR', 'en-US']) for (const theme of ['light', 'dark']) for (const width of [390, 768, 1440]) { await page.setViewportSize({ width, height: 800 }); await page.goto('http://127.0.0.1:4180/harness.html?frame=' + width + '&route=/overview/insights&scenario=insights-long&locale=' + locale + '&theme=' + theme); await page.locator('[data-chart]').waitFor({ state: 'visible' }); const chart = page.locator('[data-chart]').first(); const box = await chart.boundingBox(); matrix.push([locale, theme, width, await page.locator('main').evaluate(node => node.scrollWidth <= node.clientWidth), box?.height ?? 0, await page.locator('[aria-labelledby=insights-outcomes] tbody tr').count(), await page.locator('ul[aria-label]').count(), await chart.getAttribute('data-outcome-patterns')]); } await page.goto('http://127.0.0.1:4180/harness.html?frame=390&route=/overview/insights&scenario=insights-cohorts&locale=en-US&theme=dark'); await page.locator('input[aria-label*=Specification]').waitFor({ state: 'visible' }); const cohorts = page.locator('[data-slot=data-table]').last(); await page.waitForTimeout(1000); const before = await cohorts.locator('tbody tr:not([data-state])').count(); await page.locator('input[aria-label*=Specification]').fill('fixture-cohort-25'); await page.waitForTimeout(1000); const after = await cohorts.locator('tbody tr:not([data-state])').count(); const filteredLabel = await page.locator('span[aria-live=polite]').first().innerText(); await page.goto('http://127.0.0.1:4180/harness.html?frame=768&route=/overview/insights&scenario=insights-zero&locale=pt-BR&theme=light'); const zero = await page.locator('body').innerText(); await page.goto('http://127.0.0.1:4180/harness.html?frame=768&route=/overview/insights&scenario=insights-null&locale=pt-BR&theme=light'); const missing = await page.locator('body').innerText(); return JSON.stringify({ matrix, before, after, filteredLabel, zero, missing }); }");
 			const normalized = result.replaceAll('\\', '');
 			expect(normalized).toContain('"matrix"');
 			expect(normalized).toContain('"insights-pattern-shipped insights-pattern-failed insights-pattern-cancelled insights-pattern-incomplete"');
