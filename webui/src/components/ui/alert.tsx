@@ -23,7 +23,7 @@ const alertVariants = cva(
 );
 
 export function Alert({ className, variant, ...props }: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>): React.ReactElement {
-	return <div className={cn(alertVariants({ variant }), className)} data-slot="alert" role="alert" {...props} />;
+	return <div className={cn(alertVariants({ variant }), className)} data-slot="alert" data-variant={variant ?? 'default'} role="alert" {...props} />;
 }
 
 export function AlertTitle({ className, ...props }: React.ComponentProps<'div'>): React.ReactElement {

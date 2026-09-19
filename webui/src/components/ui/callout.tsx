@@ -37,6 +37,7 @@ export function Callout({
 				className,
 			)}
 			data-slot="callout"
+			data-tone={tone}
 			{...props}
 		>
 			{title === undefined ? null : <p className="font-medium">{title}</p>}

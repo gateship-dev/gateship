@@ -49,7 +49,7 @@ export function Badge({
 	variant?: BadgeVariant;
 }): React.ReactElement {
 	return (
-		<span className={cn(SHAPE, VARIANT[variant])} data-slot="badge">
+		<span className={cn(SHAPE, VARIANT[variant])} data-slot="badge" data-variant={variant}>
 			{children}
 		</span>
 	);
