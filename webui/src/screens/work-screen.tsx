@@ -747,7 +747,7 @@ export function ProposalsPanel({
 						{proposals.map((proposal) => (
 							<li className="flex min-w-0 flex-col gap-3 py-5 text-sm first:pt-0 last:pb-0" key={proposal.id}>
 								<div className="flex items-start justify-between gap-3">
-									<div className="flex min-w-0 flex-col gap-1.5">
+									<div className="flex min-w-0 flex-col gap-2">
 										<span className="break-words font-semibold">{proposal.title}</span>
 										<div className="flex flex-wrap items-center gap-2 text-muted-foreground">
 											<Badge variant="outline">{proposal.sourceIssueId}</Badge>

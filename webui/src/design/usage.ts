@@ -74,3 +74,20 @@ export function measureUsage(sources: Record<string, string>, colorTokens: reado
 	}
 	return usage;
 }
+
+export interface SpacingFinding { file: string; className: string; px: number }
+
+const SPACING_CLASS = /(?<![\w-])((?:[\w&\[\]>*=-]+:)*-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy])-(\d+(?:\.\d+)?))(?![\w.[])/g;
+
+/** Every spacing utility that is not a multiple of `grid` px, with the file it sits in. */
+export function findOffGridSpacing(sources: Record<string, string>, grid = 4): SpacingFinding[] {
+	const findings: SpacingFinding[] = [];
+	for (const [file, raw] of Object.entries(sources)) {
+		const source = raw.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+		for (const match of source.matchAll(SPACING_CLASS)) {
+			const px = Number(match[2]) * 4;
+			if (px % grid !== 0) findings.push({ file: file.replace(/^\.\//, ''), className: match[1]!, px });
+		}
+	}
+	return findings;
+}

@@ -44,7 +44,7 @@ export function TabsList({
 			<div className="scroll-container scroll-container-stable max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
 				<TabsPrimitive.List
 					className={cn(
-						'relative z-0 flex w-max min-w-full items-center justify-start gap-x-0.5 rounded-lg bg-muted py-0.5 pr-8 pl-0.5 text-muted-foreground/72 sm:pr-0.5',
+						'relative z-0 flex w-max min-w-full items-center justify-start gap-x-1 rounded-lg bg-muted py-1 pr-8 pl-1 text-muted-foreground/72 sm:pr-1',
 						className,
 					)}
 					data-slot="tabs-list"
@@ -95,7 +95,7 @@ export function TabsCount({
 	return (
 		<span
 			className={cn(
-				'inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 font-mono text-[10px] tabular-nums',
+				'inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 font-mono text-xs tabular-nums',
 				attention ? 'bg-attention text-attention-foreground' : 'bg-muted text-muted-foreground',
 			)}
 		>

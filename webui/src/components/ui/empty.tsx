@@ -41,5 +41,5 @@ export function EmptyDescription({ className, ...props }: React.ComponentProps<'
 }
 
 export function EmptyContent({ className, ...props }: React.ComponentProps<'div'>): React.ReactElement {
-	return <div className={cn('flex w-full min-w-0 max-w-sm flex-col items-center gap-2.5 text-balance text-sm', className)} data-slot="empty-content" {...props} />;
+	return <div className={cn('flex w-full min-w-0 max-w-sm flex-col items-center gap-3 text-balance text-sm', className)} data-slot="empty-content" {...props} />;
 }

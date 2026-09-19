@@ -69,7 +69,7 @@ export function TableHead({ className, ...props }: React.ComponentProps<'th'>): 
 	return (
 		<th
 			className={cn(
-				'h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none',
+				'h-10 whitespace-nowrap px-3 text-left align-middle font-medium text-muted-foreground leading-none',
 				className,
 			)}
 			data-slot="table-head"
@@ -82,7 +82,8 @@ export function TableCell({ className, ...props }: React.ComponentProps<'td'>): 
 	return (
 		<td
 			className={cn(
-				'whitespace-nowrap bg-clip-padding p-2.5 align-middle leading-none',
+				/* The row is 40px by declaration, not by padding arithmetic: a cell's height is its minimum, so a two-line cell still grows. */
+				'h-10 whitespace-nowrap bg-clip-padding px-3 py-2 align-middle leading-none',
 				className,
 			)}
 			data-slot="table-cell"

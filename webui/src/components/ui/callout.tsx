@@ -32,7 +32,7 @@ export function Callout({
 	return (
 		<section
 			className={cn(
-				'relative flex w-full flex-col gap-y-0.5 rounded-xl border px-3.5 py-3 text-card-foreground text-sm',
+				'relative flex w-full flex-col gap-y-1 rounded-xl border px-4 py-3 text-card-foreground text-sm',
 				TONE[tone],
 				className,
 			)}

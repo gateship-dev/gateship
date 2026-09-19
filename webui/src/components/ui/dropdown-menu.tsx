@@ -19,7 +19,7 @@ export const POPUP_CHROME =
 	'before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]';
 
 const ITEM =
-	'group/dropdown-menu-item relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none ' +
+	'group/dropdown-menu-item relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 min-h-8 text-sm outline-none ' +
 	'data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-64 ' +
 	"data-inset:pl-8 [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
@@ -67,7 +67,7 @@ export function DropdownMenuGroup(props: MenuPrimitive.Group.Props): React.React
 
 /** Must sit inside a DropdownMenuGroup: Base UI's GroupLabel reads the group's context. */
 export function DropdownMenuLabel({ className, inset, ...props }: Omit<MenuPrimitive.GroupLabel.Props, 'className'> & { className?: string; inset?: boolean }): React.ReactElement {
-	return <MenuPrimitive.GroupLabel className={cn('type-eyebrow px-2 pt-1.5 pb-1 text-muted-foreground data-inset:pl-8', className)} data-inset={inset} data-slot="dropdown-menu-label" {...props} />;
+	return <MenuPrimitive.GroupLabel className={cn('type-eyebrow px-2 pt-2 pb-1 text-muted-foreground data-inset:pl-8', className)} data-inset={inset} data-slot="dropdown-menu-label" {...props} />;
 }
 
 export function DropdownMenuItem({

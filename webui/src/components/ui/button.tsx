@@ -33,8 +33,7 @@ export const buttonVariants = cva(
 			size: {
 				default: 'h-9 px-[calc(--spacing(3)-1px)] sm:h-8',
 				icon: 'size-9 sm:size-8',
-				lg: 'h-10 px-[calc(--spacing(3.5)-1px)] sm:h-9',
-				sm: 'h-8 gap-1.5 px-[calc(--spacing(2.5)-1px)] sm:h-7',
+				sm: 'h-8 gap-1 px-[calc(--spacing(2)-1px)] sm:h-7',
 			},
 			variant: {
 				default:
@@ -50,8 +49,6 @@ export const buttonVariants = cva(
 				/* Raised controls stay white on light and use the input tint on dark. */
 				outline:
 					'border-input bg-white not-dark:bg-clip-padding text-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] hover:bg-accent/50 data-pressed:bg-accent/50 dark:bg-input/32 dark:data-pressed:bg-input/64 dark:hover:bg-input/64 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none',
-				secondary:
-					'border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/90 data-pressed:bg-secondary/90 [:active,[data-pressed]]:bg-secondary/80',
 			},
 		},
 	},

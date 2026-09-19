@@ -918,7 +918,7 @@ export function PreviousRunRow({
 		<TableRow>
 			<TableCell className="break-all font-mono text-xs">{run.issueId}</TableCell>
 			<TableCell>
-				<span className="flex flex-wrap items-center gap-1.5">
+				<span className="flex flex-wrap items-center gap-2">
 					<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
 					{delivery !== null && run.state === 'done'
 						? <Badge variant="merged">Merged</Badge>
@@ -927,7 +927,7 @@ export function PreviousRunRow({
 			</TableCell>
 			<TableCell>
 				{delivery === null ? null : (
-					<span className="flex flex-wrap items-center gap-1.5">
+					<span className="flex flex-wrap items-center gap-2">
 						<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
 							{runInspector.pullRequestLabel(delivery.prNumber)}
 						</a>

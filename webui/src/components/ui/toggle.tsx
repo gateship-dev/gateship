@@ -21,9 +21,7 @@ export const toggleVariants = cva(
 				outline: 'border border-input bg-transparent text-muted-foreground hover:bg-muted',
 			},
 			size: {
-				default: 'h-8 min-w-8 px-2.5',
-				sm: 'h-7 min-w-7 px-2 text-xs',
-				lg: 'h-9 min-w-9 px-2.5',
+				default: 'h-8 min-w-8 px-3',
 			},
 		},
 		defaultVariants: { variant: 'default', size: 'default' },

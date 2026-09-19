@@ -34,8 +34,8 @@ export function Stat({
 			{/* Label first, value under it (dashboard-01's section cards): the
 			 * eye scans labels across a row, then drops to the number it wants. */}
 			<p className="type-eyebrow text-muted-foreground">{label}</p>
-			<p className="type-data mt-1.5 text-2xl">{value}</p>
-			{hint === undefined ? null : <p className="mt-1.5 text-muted-foreground text-xs">{hint}</p>}
+			<p className="type-data mt-2 text-2xl">{value}</p>
+			{hint === undefined ? null : <p className="mt-1 text-muted-foreground text-xs">{hint}</p>}
 		</div>
 	);
 }

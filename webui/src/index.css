@@ -41,7 +41,14 @@ html.gship-harness-reduced-motion *::after {
 	--font-weight-normal: 500;
 	--font-weight-medium: 560;
 	--font-weight-semibold: 620;
-	--font-weight-bold: 680;
+	/* The ladder ends at semibold: bold is switched off, along with the
+	 * weights below the 500 floor and above it that Tailwind ships. */
+	--font-weight-bold: initial;
+	--font-weight-thin: initial;
+	--font-weight-extralight: initial;
+	--font-weight-light: initial;
+	--font-weight-extrabold: initial;
+	--font-weight-black: initial;
 
 	/*
 	 * A true modular scale (operator decision, 2026-08-25) replaces
@@ -60,8 +67,16 @@ html.gship-harness-reduced-motion *::after {
 	--text-lg: 1.1875rem;
 	--text-xl: 1.4375rem;
 	--text-2xl: 1.75rem;
-	--text-3xl: 2.0625rem;
-	--text-4xl: 2.5rem;
+	/* The two largest steps are switched off, not merely unused: nothing in an
+	 * operational console is set above 28px, and an option that exists is an
+	 * option an agent reaches for. `initial` removes the utility. */
+	--text-3xl: initial;
+	--text-4xl: initial;
+	--text-5xl: initial;
+	--text-6xl: initial;
+	--text-7xl: initial;
+	--text-8xl: initial;
+	--text-9xl: initial;
 
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);

@@ -35,7 +35,8 @@ import { HintTooltip, TooltipGroup } from './components/ui/tooltip.tsx';
 import { attachInspector, type Inspection } from './design/inspect.ts';
 import { measureDesign, type DesignReport } from './design/measure.ts';
 import { parseComponentSpec, type ComponentSpec } from './design/specs.ts';
-import { measureUsage } from './design/usage.ts';
+import { OFF_GRID_SPACING } from './design/exceptions.ts';
+import { findOffGridSpacing, measureUsage } from './design/usage.ts';
 import { cn } from './lib/cn.ts';
 import './index.css';
 import stylesheet from './index.css?raw';
@@ -54,13 +55,13 @@ const TYPE_ROLES = [
 	['type-page-title', 'Page title'], ['type-editorial-title', 'Editorial title'], ['type-body', 'Body'], ['type-eyebrow', 'Eyebrow'], ['type-data', 'Data'],
 ] as const;
 const BADGE_VARIANTS: readonly BadgeVariant[] = ['default', 'secondary', 'outline', 'info', 'success', 'warning', 'error', 'merged', 'attention'];
-const BUTTON_VARIANTS = ['default', 'outline', 'ghost', 'secondary', 'destructive', 'attention'] as const;
+const BUTTON_VARIANTS = ['default', 'outline', 'ghost', 'destructive', 'attention'] as const;
 const CALLOUT_TONES: readonly CalloutTone[] = ['neutral', 'success', 'warning', 'destructive'];
 const ROUTES = ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const;
 const SCENARIOS = ['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'insights-zero', 'insights-null', 'insights-long', 'insights-cohorts', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const;
 const WIDTHS = ['390', '768', '1440'] as const;
-const TEXT_STEPS = ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl'] as const;
-const WEIGHTS = [['normal', 'font-normal'], ['medium', 'font-medium'], ['semibold', 'font-semibold'], ['bold', 'font-bold']] as const;
+const TEXT_STEPS = ['xs', 'sm', 'base', 'lg', 'xl', '2xl'] as const;
+const WEIGHTS = [['normal', 'font-normal'], ['medium', 'font-medium'], ['semibold', 'font-semibold']] as const;
 const FAMILIES = [['--font-sans', 'font-sans', 'Names, titles, labels and prose'], ['--font-heading', 'font-heading', 'Page and card titles: an alias of sans until a face is bundled'], ['--font-mono', 'font-mono', 'Identifiers, commands, timestamps, durations, costs and counters']] as const;
 
 /* Every kit file as text, so each sheet is read from the component itself. */
@@ -88,6 +89,7 @@ function optionUses(spec: ComponentSpec, axis: string, option: string): number {
 	}, 0);
 }
 
+const OFF_GRID = findOffGridSpacing(PRODUCT_SOURCES);
 const RADII = ['sm', 'md', 'lg', 'xl', '2xl', 'full'] as const;
 
 const SECTIONS = [['foundations', 'Foundations'], ['components', 'Components'], ['patterns', 'Patterns'], ['screens', 'Screens'], ['report', 'Report']] as const;
@@ -168,11 +170,11 @@ function Typography(): React.ReactElement {
 			<Block rule="Two families. Saans is the intended sans and is not bundled: the system sans stands in until the asset and its licence land in the repo." title="Families">
 				<dl className="grid gap-4">{FAMILIES.map(([variable, className, use]) => <div key={variable}><dt className="font-mono text-muted-foreground text-xs">{variable} · .{className}</dt><dd className={cn('text-xl', className)}>Gateship ships GSHIP-902 0123456789</dd><dd className="text-muted-foreground text-xs">{use}</dd><dd className="mt-1 break-words font-mono text-muted-foreground text-xs">{facts[variable] ?? ''}</dd></div>)}</dl>
 			</Block>
-			<Block rule="Minor third (1.2) on a 16px base. Most of the product lives in xs and sm; 2xl is the page title. No size outside these eight." title="Scale">
+			<Block rule="Minor third (1.2) on a 16px base. Most of the product lives in xs and sm; 2xl is the page title. The steps above it are switched off." title="Scale">
 				<dl className="grid gap-2">{steps.map((step) => <div className="grid items-baseline gap-3 sm:grid-cols-[4rem_1fr_auto_4rem]" key={step}><dt className="font-mono text-muted-foreground text-xs">text-{step}</dt><dd className="truncate" data-fact={`text-${step}`} style={{ fontSize: TEXT_SCALE[step], lineHeight: 1.35 }}>Quiet until you must act</dd><dd className="font-mono text-muted-foreground text-xs tabular-nums">{facts[`text-${step}`] ?? ''}</dd><dd className="text-right"><Used count={USAGE.text[step] ?? 0} /></dd></div>)}</dl>
 				{offScale.length === 0 ? null : <p className="text-warning-foreground text-xs">Off the scale: <span className="font-mono">{offScale.map(([size, count]) => `text-${size} ×${count}`).join(' · ')}</span></p>}
 			</Block>
-			<Block rule="The ladder starts at 500: nothing in the product is lighter. Medium for labels and active items, semibold for titles, bold rarely." title="Weights">
+			<Block rule="The ladder is 500, 560, 620. Normal is the body weight (set on the document, so no class applies it), medium marks labels and active items, semibold titles. Bold is switched off." title="Weights">
 				<dl className="grid gap-2">{weights.map(([name, className]) => <div className="grid items-baseline gap-3 sm:grid-cols-[6rem_1fr_auto_4rem]" key={name}><dt className="font-mono text-muted-foreground text-xs">{className}</dt><dd className={className} data-fact={className}>Executable backlog</dd><dd className="font-mono text-muted-foreground text-xs tabular-nums">{facts[className]?.split(' / ')[2] ?? ''}</dd><dd className="text-right"><Used count={USAGE.weights[name] ?? 0} /></dd></div>)}</dl>
 			</Block>
 			<Block rule="A role is a family, a size and a weight decided once. Screens use roles; they do not compose type from utilities." title="Roles"><TypeRoles /></Block>
@@ -367,14 +369,25 @@ function Components(): React.ReactElement {
 
 function Patterns(): React.ReactElement {
 	const rules = [
+		['Grid', 'Padding, margin and gap are multiples of 4px. A size that needs another number is declared as a height (a 40px row is `h-10`, not 10px of padding twice), and an inset that includes a 1px border subtracts it so the edge still lands on the grid.'],
 		['Table toolbar', 'Quick views, the search and the columns menu share one 32px row; source filters take the next row; every control is 32px tall.'],
 		['Sidebar', 'Rows are 32px on a 4px rhythm; the icon axis sits at x=44 expanded and collapsed; the first row shares the panel controls line (y=41); insets are 24px from the viewport and 24px to the panel.'],
 		['State on a row', 'One badge per row. Rows waiting on the operator carry a 2px acid rule on the first cell; the tooltip and sr-only text carry the reason.'],
 		['Figures', 'Right-aligned, mono, tabular. Unknown is a dash, never a zero.'],
-		['Density', 'Table rows are 40px, header 40px, cells 10px inset. Two rows of toolbar at most.'],
+		['Density', 'Table rows and headers are 40px by declaration, cells 12px inset. Menu items are 32px. Two rows of toolbar at most.'],
 		['Fit', 'A default column set fits 948px at 1280 without horizontal scroll; optional columns may exceed it.'],
 	] as const;
-	return <dl className="grid gap-4 md:grid-cols-2">{rules.map(([title, rule]) => <div className="rounded-lg border p-4" key={title}><dt className="font-medium text-sm">{title}</dt><dd className="mt-1 text-muted-foreground text-sm">{rule}</dd></div>)}</dl>;
+	const recorded = new Set(OFF_GRID_SPACING.map((entry) => `${entry.file} ${entry.className}`));
+	const accidents = OFF_GRID.filter((finding) => !recorded.has(`${finding.file} ${finding.className}`));
+	return (
+		<div className="flex flex-col gap-8">
+			<dl className="grid gap-4 md:grid-cols-2">{rules.map(([title, rule]) => <div className="rounded-lg border p-4" key={title}><dt className="font-medium text-sm">{title}</dt><dd className="mt-1 text-muted-foreground text-sm">{rule}</dd></div>)}</dl>
+			<Block rule="A rule is there so the system gets used, not to forbid a choice. A departure is fine when it is written down with its reason; the gate fails on one that is not, and on a reason nothing uses any more." title="Deliberate departures">
+				<ul className="grid gap-2">{OFF_GRID_SPACING.map((entry) => <li className="rounded-lg border p-3 text-sm" key={`${entry.file} ${entry.className}`}><p className="font-mono text-xs"><span className="text-muted-foreground">{entry.file}</span> {entry.className}</p><p className="mt-1 text-muted-foreground">{entry.reason}</p></li>)}</ul>
+				{accidents.length === 0 ? <p className="text-muted-foreground text-xs">No unrecorded departure from the 4px grid.</p> : <ul className="grid gap-1 font-mono text-warning-foreground text-xs">{accidents.map((finding, index) => <li key={index}>{finding.file} {finding.className} ({finding.px}px)</li>)}</ul>}
+			</Block>
+		</div>
+	);
 }
 
 function ReportView({ report }: { report: DesignReport }): React.ReactElement {

@@ -104,7 +104,7 @@ function StateBadge({ run, catalog, inspector }: { run: RunRow; catalog: Overvie
 function RowActions({ run, catalog }: { run: RunRow; catalog: OverviewRunsCatalog }): React.ReactElement {
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button aria-label={catalog.actions} className="-my-1.5 size-7 text-muted-foreground data-popup-open:bg-accent" size="icon" type="button" variant="ghost" />}>
+			<DropdownMenuTrigger render={<Button aria-label={catalog.actions} className="size-6 text-muted-foreground data-popup-open:bg-accent sm:size-6" size="icon" type="button" variant="ghost" />}>
 				<HugeiconsIcon aria-hidden="true" icon={MoreHorizontalIcon} size={16} strokeWidth={2.25} />
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end" className="min-w-44">
