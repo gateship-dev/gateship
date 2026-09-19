@@ -4,6 +4,7 @@
     "scripts/**/*.ts",
     "test/**/*.ts",
     "webui/src/main.tsx",
+    "webui/src/design.tsx",
     "webui/vite.config.ts"
   ],
   "project": [
