@@ -152,6 +152,10 @@ describe('ui primitives', () => {
 		expect(html).toContain('duas issues');
 		expect(html).not.toContain('open=""');
 		expect(renderToStaticMarkup(<CardDisclosure open />)).toContain('open=""');
+		// The summary carries a chevron that turns with the named group. A caller's
+		// own plain `group` must not merge that name away, or the chevron stops turning.
+		expect(html).toContain('group-open/disclosure:rotate-90');
+		expect(renderToStaticMarkup(<CardDisclosure className="group" />)).toMatch(/class="[^"]*group\/disclosure"/);
 	});
 
 	test('content titles use sans, metric labels use the eyebrow voice, and the footer exists only with actions', () => {

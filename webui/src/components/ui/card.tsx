@@ -58,7 +58,8 @@ export function CardDisclosure({
 	className,
 	...props
 }: React.ComponentProps<'details'>): React.ReactElement {
-	return <details className={cn(FRAME, 'group/disclosure', className)} data-slot="card-frame" {...props} />;
+	/* Outside `cn`: tailwind-merge reads a caller's plain `group` as overriding the named one, and the chevron would stop turning. */
+	return <details className={`${cn(FRAME, className)} group/disclosure`} data-slot="card-frame" {...props} />;
 }
 
 export function CardHeader({

@@ -362,7 +362,7 @@ export function IssueReviewPanel({
 	const ownedByRun = selected !== null && activeRunIssueId(runs) === selected.id;
 
 	return (
-		<CardDisclosure className="group">
+		<CardDisclosure>
 			<CardSummary>
 				<CardTitle>{catalog.review.title}</CardTitle>
 				<CardDescription>{catalog.review.description(drafts.length, formatCount(drafts.length, locale))}</CardDescription>
@@ -655,7 +655,7 @@ export function DiagnosticsPanel({
 	const active = scan?.state === 'queued' || scan?.state === 'running';
 	const analyzer = diagnostics.analyzers[0];
 	return (
-		<CardDisclosure className="group">
+		<CardDisclosure>
 			<CardSummary>
 				<CardTitle>{catalog.diagnostics.title}</CardTitle>
 				<CardDescription>
@@ -733,7 +733,7 @@ export function ProposalsPanel({
 	'locale' | 'proposals' | 'pending' | 'onDismissProposal' | 'onPromoteProposal'
 > & { catalog: WorkCatalog }): React.ReactElement {
 	return (
-		<CardDisclosure className="group">
+		<CardDisclosure>
 			<CardSummary>
 				<CardTitle>{catalog.proposals.pendingTitle}</CardTitle>
 				<CardDescription>{catalog.proposals.pendingCount(proposals.length, formatCount(proposals.length, locale))}</CardDescription>
@@ -856,7 +856,7 @@ export function ResolvedProposalsPanel({
 	resolvedProposalsOmittedCount,
 }: Pick<AppProps, 'locale' | 'resolvedProposals' | 'resolvedProposalsOmittedCount'> & { catalog: WorkCatalog }): React.ReactElement {
 	return (
-		<CardDisclosure className="group">
+		<CardDisclosure>
 			<CardSummary>
 				<CardTitle>{catalog.proposals.resolvedTitle}</CardTitle>
 				<CardDescription>{catalog.proposals.resolvedCount(resolvedProposals.length, formatCount(resolvedProposals.length, locale))}</CardDescription>
