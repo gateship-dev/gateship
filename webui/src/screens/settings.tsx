@@ -603,6 +603,7 @@ export function AgentDefaultsPanel({
 					<SelectField
 						defaultValue={agentDefaults.provider}
 						id="agent-default-provider"
+						className="w-full sm:w-64"
 						items={[{ value: 'claude', label: 'Claude' }, { value: 'codex', label: 'Codex' }]}
 						name="agent-default-provider"
 					/>
@@ -691,7 +692,7 @@ export function SelfUpdatePanel({
 }: Pick<AppProps, 'selfUpdate' | 'pending' | 'onSetSelfUpdate'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	const unavailable = selfUpdate.availability.kind !== 'native';
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.updates.description}
 			title={catalog.updates.title}
 		>
@@ -726,7 +727,7 @@ export function SelfUpdatePanel({
 					</p>
 				</div>
 			) : null}
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -840,11 +841,13 @@ export function NotificationChannelRow({
 		</form>
 	) : null;
 	return (
-		<div className="flex flex-col gap-2">
-			<div className="flex items-center justify-between gap-3">
-				<p className="text-sm">
-					{label}: {channel.configured ? catalog.notifications.configured : catalog.notifications.notConfigured}
-					{!channel.configured && channel.missing.length > 0 ? catalog.notifications.missing(channel.missing.join(', ')) : null}
+		<li className="flex flex-col gap-3 rounded-lg border p-4 text-sm" data-channel={channelId} data-slot="notification-channel">
+			{/* State and action on the first line, as a provider block reads: what it is, whether it works, how to try it. */}
+			<div className="flex flex-wrap items-center justify-between gap-3">
+				<p className="flex flex-wrap items-center gap-2 font-medium">
+					{label}
+					<Badge variant={channel.configured ? 'success' : 'secondary'}>{channel.configured ? catalog.notifications.configured : catalog.notifications.notConfigured}</Badge>
+					{!channel.configured && channel.missing.length > 0 ? <span className="font-normal text-muted-foreground">{catalog.notifications.missing(channel.missing.join(', '))}</span> : null}
 				</p>
 				<ActionButton
 					enabled={channel.configured && !pending}
@@ -852,19 +855,25 @@ export function NotificationChannelRow({
 					onClick={() => onSendNotificationTest(channelId)}
 				/>
 			</div>
-			<p className="text-muted-foreground text-sm">
-				<NotificationChannelInstructions catalog={catalog} channelId={channelId} />
-				{NOTIFICATION_CHANNEL_DOCS[channelId].map((doc, index) => (
-					<React.Fragment key={doc.href}>
-						{index > 0 ? ' ' : null}
-						<a className={TEXT_LINK_CLASS} href={doc.href} rel="noreferrer noopener" target="_blank">
-							{catalog.notifications.docLabels[doc.label]}
-						</a>
-					</React.Fragment>
-				))}
-			</p>
 			{resendForm}
-		</div>
+			{/* Files and variables are reference: open while the channel still needs them, folded once it works. */}
+			<Collapsible defaultOpen={!channel.configured}>
+				<CollapsibleTrigger>{catalog.notifications.setupHelp}</CollapsibleTrigger>
+				<CollapsibleContent>
+					<p className="p-3 text-muted-foreground">
+						<NotificationChannelInstructions catalog={catalog} channelId={channelId} />
+						{NOTIFICATION_CHANNEL_DOCS[channelId].map((doc) => (
+							<React.Fragment key={doc.href}>
+								{' '}
+								<a className={TEXT_LINK_CLASS} href={doc.href} rel="noreferrer noopener" target="_blank">
+									{catalog.notifications.docLabels[doc.label]}
+								</a>
+							</React.Fragment>
+						))}
+					</p>
+				</CollapsibleContent>
+			</Collapsible>
+		</li>
 	);
 }
 
@@ -887,18 +896,18 @@ export function NotificationsPanel({
 			description={catalog.notifications.description}
 			title={catalog.notifications.title}
 		>
-			<div className="flex flex-col gap-4">
-				<div className="flex items-center justify-between gap-3">
-					<p className="text-muted-foreground text-sm">
-						{catalog.notifications.permissionStates[notificationPermission]}
-					</p>
-					<ActionButton
-						enabled={notificationPermission === 'default'}
-						label={actionLabel}
-						onClick={onEnableNotifications}
-					/>
-				</div>
-				<div className="flex flex-col gap-3 border-border border-t pt-4">
+			<ul className="flex flex-col gap-3">
+				<li className="flex flex-col gap-1 rounded-lg border p-4 text-sm" data-channel="browser" data-slot="notification-channel">
+					<div className="flex flex-wrap items-center justify-between gap-3">
+						<p className="font-medium">{catalog.notifications.browserLabel}</p>
+						<ActionButton
+							enabled={notificationPermission === 'default'}
+							label={actionLabel}
+							onClick={onEnableNotifications}
+						/>
+					</div>
+					<p className="text-muted-foreground">{catalog.notifications.permissionStates[notificationPermission]}</p>
+				</li>
 					{NOTIFICATION_CHANNEL_IDS.map((channelId) => (
 						<NotificationChannelRow
 							catalog={catalog}
@@ -911,8 +920,7 @@ export function NotificationsPanel({
 							pending={pending}
 						/>
 					))}
-				</div>
-			</div>
+			</ul>
 		</SectionCard>
 	);
 }

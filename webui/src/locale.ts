@@ -85,6 +85,8 @@ export interface ProjectsCatalog {
 	repositoryUnknown: string;
 	readinessLabel: string;
 	readiness: Readonly<Record<'ready' | 'empty' | 'needs-attention', string>>;
+	/** The registered projects, listed on the page named for them. */
+	list: { title: string; repository: string; settings: string; add: string; closeAdd: string; empty: string; emptyDetail: string };
 	unavailableTitle: string;
 	unavailableDescription: string;
 	notFoundTitle: string;
@@ -472,6 +474,8 @@ export interface SettingsCatalog {
 		execution: string;
 		project: string;
 	};
+	/** The global settings page: what runs the agents, who the operator is, how they are told, how the service updates. */
+	globalTabs: { agents: string; operator: string; notifications: string; updates: string };
 	title: string;
 	project: {
 		title: string;
@@ -588,6 +592,8 @@ export interface SettingsCatalog {
 		permissionStates: Readonly<Record<'granted' | 'denied' | 'unsupported' | 'default', string>>;
 		actionLabels: Readonly<Record<'granted' | 'denied' | 'unsupported' | 'default', string>>;
 		channelLabels: Readonly<Record<'ntfy' | 'resend', string>>;
+		browserLabel: string;
+		setupHelp: string;
 		configured: string;
 		notConfigured: string;
 		missing: (values: string) => string;
@@ -674,6 +680,7 @@ export const LOCALE_CATALOG = {
 			currentBadge: 'served by this instance',
 			repositoryUnknown: 'Repository not known',
 			readinessLabel: 'Readiness',
+			list: { title: 'Registered projects', repository: 'Repository', settings: 'Settings', add: 'Add project', closeAdd: 'Close', empty: 'No project registered yet.', emptyDetail: 'Add the first one below.' },
 			readiness: { ready: 'ready', empty: 'empty', 'needs-attention': 'needs attention' },
 			unavailableTitle: 'Project runtime not loaded',
 			unavailableDescription: 'This project is registered, but its runtime is not loaded in this Gateship instance.',
@@ -1040,6 +1047,7 @@ export const LOCALE_CATALOG = {
 				execution: 'Execution',
 				project: 'Project',
 			},
+			globalTabs: { agents: 'Agents', operator: 'Operator', notifications: 'Notifications', updates: 'Updates' },
 			project: { title: 'Project', description: 'The process operates one local project at a time; this binding is derived from Git, not hidden configuration.', stateLabels: { ready: 'ready', checking: 'checking', attention: 'attention' }, localProject: 'Local project', repository: 'Repository', runSource: 'Run source' },
 			operator: { title: 'Operator', description: 'Human identity and timezone used as non-authoritative conversation context.', name: 'Name', namePlaceholder: 'What the orchestrator should call you', timezone: 'Timezone', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'IANA identifier. The browser suggestion is saved only when you confirm.', save: 'Save profile' },
 			providers: {
@@ -1089,7 +1097,7 @@ export const LOCALE_CATALOG = {
 			updates: { title: 'Gateship updates', description: 'Checks official releases at most daily and applies a verified native binary only while the project is idle.', label: 'Install verified native updates automatically', guidance: 'Fixed cadence: daily. Runs, preserved waiting states, diagnostics, containers, and source checkouts are never updated in place.', available: 'Available', unknown: 'unknown', statusLabels: { success: 'success', rollback: 'rollback', failed: 'failed', 'check-failed': 'check-failed', deferred: 'deferred' }, result: (previous, target, at) => `${previous} → ${target} at ${at}` },
 			diagnostics: { title: 'Diagnostic schedule', description: 'Runs at most one overdue diagnostic, and only while this project is idle.', label: 'Run diagnostics periodically', cadence: 'Cadence', cadenceLabels: { daily: 'Daily', weekly: 'Weekly' }, disabled: 'Disabled.', overdue: 'overdue', nextRun: (value) => `Next run: ${value}`, calculating: 'calculating', guidance: 'A manual scan also resets the window. Missed periods do not create catch-up runs.', save: 'Save schedule' },
 			notifications: {
-				title: 'Notifications', description: 'The browser and remote channels alert you only when a run needs an operator decision; remote channels work even when the tab is closed.', permissionStates: { granted: 'Active in this browser.', denied: "Blocked in this browser's permissions.", unsupported: 'Unavailable in this browser.', default: 'Permission not requested yet.' }, actionLabels: { granted: 'Notifications active', denied: 'Notifications blocked', unsupported: 'Notifications unavailable', default: 'Enable notifications' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configured', notConfigured: 'not configured', missing: (values) => ` (missing: ${values})`, sendTest: 'Send test',
+				title: 'Notifications', browserLabel: 'This browser', setupHelp: 'How to set it up', description: 'The browser and remote channels alert you only when a run needs an operator decision; remote channels work even when the tab is closed.', permissionStates: { granted: 'Active in this browser.', denied: "Blocked in this browser's permissions.", unsupported: 'Unavailable in this browser.', default: 'Permission not requested yet.' }, actionLabels: { granted: 'Notifications active', denied: 'Notifications blocked', unsupported: 'Notifications unavailable', default: 'Enable notifications' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configured', notConfigured: 'not configured', missing: (values) => ` (missing: ${values})`, sendTest: 'Send test',
 				resendFields: { from: 'Sender', to: 'Recipient', apiKey: 'Replacement API key (optional)' },
 				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operator@example.com', apiKey: 'Blank keeps the current credential' },
 				saveResend: 'Save Resend settings', removeResendCredential: 'Remove credential', externallyManaged: 'Managed by the environment', fileCredentialPresent: 'A file-backed credential is present.', fileCredentialAbsent: 'No file credential is present.',
@@ -1146,6 +1154,7 @@ export const LOCALE_CATALOG = {
 			currentBadge: 'servido por esta instância',
 			repositoryUnknown: 'Repositório desconhecido',
 			readinessLabel: 'Prontidão',
+			list: { title: 'Projetos registrados', repository: 'Repositório', settings: 'Ajustes', add: 'Adicionar projeto', closeAdd: 'Fechar', empty: 'Nenhum projeto registrado ainda.', emptyDetail: 'Adicione o primeiro abaixo.' },
 			readiness: { ready: 'pronto', empty: 'vazio', 'needs-attention': 'requer atenção' },
 			unavailableTitle: 'Runtime do projeto não carregado',
 			unavailableDescription: 'Este projeto está registrado, mas seu runtime não está carregado nesta instância do Gateship.',
@@ -1512,6 +1521,7 @@ export const LOCALE_CATALOG = {
 				execution: 'Execução',
 				project: 'Projeto',
 			},
+			globalTabs: { agents: 'Agentes', operator: 'Operador', notifications: 'Notificações', updates: 'Atualizações' },
 			project: { title: 'Projeto', description: 'O processo opera um projeto local por vez; este vínculo é derivado do Git, não de uma configuração oculta.', stateLabels: { ready: 'pronto', checking: 'verificando', attention: 'atenção' }, localProject: 'Projeto local', repository: 'Repositório', runSource: 'Origem das execuções' },
 			operator: { title: 'Operador', description: 'Identidade humana e fuso horário usados como contexto não autoritativo da conversa.', name: 'Nome', namePlaceholder: 'Como o orquestrador deve chamar você', timezone: 'Fuso horário', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'Identificador IANA. A sugestão do navegador só é salva quando você confirma.', save: 'Salvar perfil' },
 			providers: {
@@ -1561,7 +1571,7 @@ export const LOCALE_CATALOG = {
 			updates: { title: 'Atualizações do Gateship', description: 'Verifica lançamentos oficiais no máximo uma vez por dia e aplica um binário nativo verificado somente enquanto o projeto está ocioso.', label: 'Instalar atualizações nativas verificadas automaticamente', guidance: 'Cadência fixa: diária. Execuções, estados de espera preservados, diagnósticos, contêineres e checkouts de código-fonte nunca são atualizados no lugar.', available: 'Disponível', unknown: 'desconhecida', statusLabels: { success: 'sucesso', rollback: 'reversão', failed: 'falhou', 'check-failed': 'verificação falhou', deferred: 'adiada' }, result: (previous, target, at) => `${previous} → ${target} em ${at}` },
 			diagnostics: { title: 'Agenda de diagnósticos', description: 'Executa no máximo um diagnóstico atrasado e somente enquanto este projeto está ocioso.', label: 'Executar diagnósticos periodicamente', cadence: 'Cadência', cadenceLabels: { daily: 'Diária', weekly: 'Semanal' }, disabled: 'Desativada.', overdue: 'atrasado', nextRun: (value) => `Próxima execução: ${value}`, calculating: 'calculando', guidance: 'Uma análise manual também reinicia a janela. Períodos perdidos não criam execuções de compensação.', save: 'Salvar agenda' },
 			notifications: {
-				title: 'Notificações', description: 'O navegador e os canais remotos avisam apenas quando uma execução precisa de uma decisão do operador; os canais remotos funcionam mesmo com a aba fechada.', permissionStates: { granted: 'Ativas neste navegador.', denied: 'Bloqueadas nas permissões deste navegador.', unsupported: 'Indisponíveis neste navegador.', default: 'Permissão ainda não solicitada.' }, actionLabels: { granted: 'Notificações ativas', denied: 'Notificações bloqueadas', unsupported: 'Notificações indisponíveis', default: 'Ativar notificações' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configurado', notConfigured: 'não configurado', missing: (values) => ` (faltando: ${values})`, sendTest: 'Enviar teste',
+				title: 'Notificações', browserLabel: 'Este navegador', setupHelp: 'Como configurar', description: 'O navegador e os canais remotos avisam apenas quando uma execução precisa de uma decisão do operador; os canais remotos funcionam mesmo com a aba fechada.', permissionStates: { granted: 'Ativas neste navegador.', denied: 'Bloqueadas nas permissões deste navegador.', unsupported: 'Indisponíveis neste navegador.', default: 'Permissão ainda não solicitada.' }, actionLabels: { granted: 'Notificações ativas', denied: 'Notificações bloqueadas', unsupported: 'Notificações indisponíveis', default: 'Ativar notificações' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configurado', notConfigured: 'não configurado', missing: (values) => ` (faltando: ${values})`, sendTest: 'Enviar teste',
 				resendFields: { from: 'Remetente', to: 'Destinatário', apiKey: 'Chave de API substituta (opcional)' },
 				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operador@example.com', apiKey: 'Em branco mantém a credencial atual' },
 				saveResend: 'Salvar configurações do Resend', removeResendCredential: 'Remover credencial', externallyManaged: 'Gerenciado pelo ambiente', fileCredentialPresent: 'Há uma credencial armazenada em arquivo.', fileCredentialAbsent: 'Não há credencial em arquivo.',

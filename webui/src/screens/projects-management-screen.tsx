@@ -1,9 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import { fetchProjectOnboarding, type ProjectOnboardingSnapshot } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { DataTable, DataTableToolbar, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { cn } from '../lib/cn.ts';
+import { projectNeedsOperator } from '../overview-counts.ts';
+import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
+import { ProjectActivity, READINESS_TONE } from './overview-screen.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { CreateProjectPanel, ImportProjectPanel, RegisterProjectPanel } from './projects.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
@@ -57,6 +62,39 @@ export function onboardingTargetPlaceholder(operation: 'register' | 'import' | '
 	return operation === 'register' ? local : remote;
 }
 
+type RegisteredProject = AppProps['projects'][number];
+
+/*
+ * What the page is named for: the projects this instance knows, each with where
+ * it lives, whether it can run, what it is doing and the way to its settings
+ * (where a project is also removed). Activity comes from the overview when the
+ * page has it; a project the overview does not report says nothing there.
+ */
+export function RegisteredProjectsTable({ props }: { props: AppProps }): React.ReactElement {
+	const catalog = LOCALE_CATALOG[props.locale].projects;
+	const overviewCatalog = LOCALE_CATALOG[props.locale].overview;
+	const entries = props.overview?.projects;
+	const columns = useMemo<GateshipColumnDef<RegisteredProject>[]>(() => {
+		const entryOf = (project: RegisteredProject) => entries?.find((entry) => entry.project.id === project.id);
+		const defs: GateshipColumnDef<RegisteredProject>[] = [
+			{ id: 'project', header: overviewCatalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.id)}`}>{row.original.name}</a>{row.original.current ? <span className="hidden sm:inline-flex"><Badge variant="info">{catalog.currentBadge}</Badge></span> : null}</span> },
+			{ id: 'repository', header: catalog.list.repository, meta: { className: 'type-data max-w-64 truncate text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => row.original.repository ?? catalog.repositoryUnknown },
+			{ id: 'readiness', header: catalog.readinessLabel, cell: ({ row }) => <Badge variant={READINESS_TONE[row.original.readiness]}>{catalog.readiness[row.original.readiness]}</Badge> },
+			{ id: 'activity', header: overviewCatalog.activity, meta: { className: 'max-w-56', hideBelow: 'sm' }, cell: ({ row }) => { const entry = entryOf(row.original); return entry === undefined ? null : <ProjectActivity catalog={overviewCatalog} entry={entry} locale={props.locale} />; } },
+			{ id: 'settings', header: () => <span className="sr-only">{catalog.list.settings}</span>, meta: { align: 'end', label: catalog.list.settings }, cell: ({ row }) => <a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(row.original.id)}/settings`}>{catalog.list.settings}</a> },
+		];
+		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
+	}, [catalog, overviewCatalog, entries, props.locale]);
+	const data = useMemo(() => [...props.projects], [props.projects]);
+	const table = useGateshipTable({ columns, data, features: gateshipTableFeatures, getRowId: (project) => project.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: data.length });
+	return (
+		<section aria-labelledby="registered-projects">
+			<h2 className="sr-only" id="registered-projects">{catalog.list.title}</h2>
+			<DataTable emptyDetail={catalog.list.emptyDetail} emptyState={catalog.list.empty} locale={props.locale} needsOperator={(project) => { const entry = entries?.find((candidate) => candidate.project.id === project.id); return entry !== undefined && projectNeedsOperator(entry); }} table={table} />
+		</section>
+	);
+}
+
 /** Global registry management remains separate from the operational overview. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the guided surface keeps the operator choices and read-only checks together
 export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
@@ -80,6 +118,8 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 	const [proposalConfirmed, setProposalConfirmed] = useState<OnboardingProposalConfirmation | null>(() => {
 		try { return JSON.parse(storage?.getItem('gship-onboarding-proposal') ?? 'null') as OnboardingProposalConfirmation | null; } catch { return null; }
 	});
+	/* The list is the page; the guided path opens on demand, on a registry with nothing in it, or where the operator left it. */
+	const [adding, setAdding] = useState(() => props.projects.length === 0 || savedChoice === 'existing' || savedChoice === 'new');
 	const confirmed = isOnboardingProposalConfirmed(proposalConfirmed, operation, target, snapshot?.manifestProposal ?? null);
 	useEffect(() => { if (choice === null) return; storage?.setItem('gship-onboarding-choice', choice); }, [choice, storage]);
 	useEffect(() => { if (operation === null) return; storage?.setItem('gship-onboarding-operation', operation); }, [operation, storage]);
@@ -102,6 +142,9 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 	};
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
+			<DataTableToolbar><Button aria-expanded={adding} className="ml-auto" onClick={() => setAdding((current) => !current)} type="button" variant={adding ? 'outline' : 'default'}>{adding ? catalog.list.closeAdd : catalog.list.add}</Button></DataTableToolbar>
+			<RegisteredProjectsTable props={props} />
+			{adding ? <>
 			<Card>
 				<CardHeader><CardTitle>{onboarding.choice.title}</CardTitle></CardHeader>
 				<CardPanel>
@@ -136,6 +179,7 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 					<p className="text-muted-foreground text-sm">{onboarding.nextSteps.reversible}</p>
 				</CardPanel>
 			</Card>
+			</> : null}
 			</> : null}
 			{/* Keep the established registry form contract mounted for deep links and assistive tooling; the guided path above is the visible entry point. */}
 			<div hidden><CreateProjectPanel catalog={catalog} onCreateProject={props.onCreateProject} pending={props.pending} projectOnboardingPending={props.projectOnboardingPending} /><ImportProjectPanel catalog={catalog} onImportProject={props.onImportProject} pending={props.pending} projectOnboardingPending={props.projectOnboardingPending} /><RegisterProjectPanel catalog={catalog} onRegisterProject={props.onRegisterProject} pending={props.pending} /></div>

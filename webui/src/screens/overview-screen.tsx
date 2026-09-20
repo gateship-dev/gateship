@@ -37,7 +37,7 @@ export function OverviewFact({ label, children }: { label: string; children: Rea
 
 type ProjectEntry = ProjectOverviewView;
 
-function ProjectActivity({ entry, catalog, locale }: { entry: ProjectEntry; catalog: OverviewCatalog; locale: Locale }): React.ReactElement {
+export function ProjectActivity({ entry, catalog, locale }: { entry: ProjectEntry; catalog: OverviewCatalog; locale: Locale }): React.ReactElement {
 	if (entry.database.state !== 'available') return <span className="text-muted-foreground">{catalog.databaseUnavailable}</span>;
 	if (entry.activeRun === null) return <span className="text-muted-foreground">{catalog.noRun}</span>;
 	/* Straight to the run: whoever reads "waiting for you" wants that run, not the list it sits in. */

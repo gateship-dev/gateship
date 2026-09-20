@@ -833,6 +833,14 @@ function channelRow(html: string, label: string): string {
 	return html.slice(start);
 }
 
+/** One notification channel's own block: its state is a badge beside its name, so it is read inside the block. */
+function channelBlock(html: string, channelId: 'browser' | 'ntfy' | 'resend'): string {
+	const start = html.indexOf(`data-channel="${channelId}"`);
+	if (start < 0) throw new Error(`channel ${channelId} is not on the screen`);
+	const end = html.indexOf('data-channel="', start + 1);
+	return html.slice(start, end < 0 ? undefined : end);
+}
+
 function expectContainsAll(html: string, values: readonly string[]): void {
 	for (const value of values) expect(html).toContain(value);
 }
@@ -2484,8 +2492,8 @@ describe('settings surface', () => {
 		const observed = new Date('2026-08-20T09:05:00.000Z');
 		expect(english).toContain(observed.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }));
 		expect(portuguese).toContain(observed.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
-		expect(globalEnglish).toContain('ntfy: configured');
-		expect(globalPortuguese).toContain('ntfy: configurado');
+		expect(channelBlock(globalEnglish, 'ntfy')).toContain('>configured<');
+		expect(channelBlock(globalPortuguese, 'ntfy')).toContain('>configurado<');
 		expect(buttonIsEnabled(globalEnglish, 'Send test')).toBe(true);
 		expect(buttonIsEnabled(globalPortuguese, 'Enviar teste')).toBe(true);
 		expect(portuguese).not.toContain('Settings');
@@ -2931,11 +2939,8 @@ describe('settings surface', () => {
 		const granted = globalSettingsPage({ notificationPermission: 'granted' });
 		expect(granted).toContain('Active in this browser.');
 		expect(buttonIsEnabled(granted, 'Notifications active')).toBe(false);
-		const localNotificationRow = granted.slice(
-			granted.indexOf('Active in this browser.'),
-			granted.indexOf('ntfy:'),
-		);
-		expect(localNotificationRow).not.toContain('type="password"');
+		expect(channelBlock(granted, 'browser')).toContain('Active in this browser.');
+		expect(channelBlock(granted, 'browser')).not.toContain('type="password"');
 		expect(globalSettingsPage({ notificationPermission: 'denied' })).toContain('Notifications blocked');
 	});
 
@@ -2944,7 +2949,9 @@ describe('settings surface', () => {
 	// which the read-only `configured` boolean makes structurally impossible.
 	test('the ntfy channel shows its configured state, a test action, and setup instructions, never a secret', () => {
 		const unconfigured = panel(globalSettingsPage(), 'Notifications');
-		expect(unconfigured).toContain('ntfy: not configured');
+		expect(channelBlock(unconfigured, 'ntfy')).toContain('>not configured<');
+		// Setup is reference: open while the channel still needs it, folded once it works.
+		expect(channelBlock(unconfigured, 'ntfy')).toMatch(/<details[^>]*open=""/);
 		expect(buttonIsEnabled(unconfigured, 'Send test')).toBe(false);
 		expect(unconfigured).toContain('GATESHIP_HOME/.gship/ntfy-url');
 		expect(unconfigured).not.toContain('at the project root');
@@ -2965,7 +2972,8 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(configured).toContain('ntfy: configured');
+		expect(channelBlock(configured, 'ntfy')).toContain('>configured<');
+		expect(channelBlock(configured, 'ntfy')).not.toMatch(/<details[^>]*open=""/);
 		expect(buttonIsEnabled(configured, 'Send test')).toBe(true);
 	});
 
@@ -2984,7 +2992,9 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(partial).toContain('email (Resend): not configured (missing: API key, recipient)');
+		expect(channelBlock(partial, 'resend')).toContain('email (Resend)');
+		expect(channelBlock(partial, 'resend')).toContain('>not configured<');
+		expect(channelBlock(partial, 'resend')).toContain(' (missing: API key, recipient)');
 		expect(buttonIsEnabled(channelRow(partial, 'email (Resend)'), 'Send test')).toBe(false);
 		expect(partial).toContain('GATESHIP_HOME/.gship/resend-api-key');
 		expect(partial).not.toContain('to .gship/resend-api-key');
@@ -3023,7 +3033,7 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(configured).toContain('email (Resend): configured');
+		expect(channelBlock(configured, 'resend')).toContain('>configured<');
 		expect(configured).not.toContain('falta:');
 		expect(buttonIsEnabled(channelRow(configured, 'email (Resend)'), 'Send test')).toBe(true);
 		expect(configured).not.toContain('resend-secret');
@@ -4182,6 +4192,34 @@ describe('operator shell', () => {
 		expect(html).not.toContain('preserveAspectRatio="none"');
 	});
 
+	test('the projects page lists the registered projects, and the guided path opens on demand or on an empty registry', () => {
+		const html = renderAt('/projects', { projects: [CURRENT_PROJECT, OTHER_PROJECT] });
+		const table = html.slice(html.indexOf('id="registered-projects"'));
+		// What the page is named for: each project, where it lives, whether it can run, and the way to its settings.
+		expect(table).toContain('href="/projects/project-current"');
+		expect(table).toContain('href="/projects/project-other/settings"');
+		expect(table).toContain('served by this instance');
+		expect((table.match(/<tr /g) ?? []).length).toBe(3);
+		expect(buttonIsEnabled(html, 'Add project')).toBe(true);
+		// With projects registered the guided path waits for the button.
+		expect(html).not.toContain('What are you setting up?');
+		// A registry with nothing in it has nothing to list, so the way to add the first one is already open.
+		const empty = renderAt('/projects', { projects: [] });
+		expect(empty).toContain('No project registered yet.');
+		expect(empty).toContain('What are you setting up?');
+	});
+
+	test('global settings are four tabs, one question each', () => {
+		for (const [locale, labels] of [['en-US', ['Agents', 'Operator', 'Notifications', 'Updates']], ['pt-BR', ['Agentes', 'Operador', 'Notificações', 'Atualizações']]] as const) {
+			const html = globalSettingsPage({ locale });
+			const tabs = openingTags(html).filter((tag) => tag.includes('role="tab"'));
+			expect(tabs).toHaveLength(4);
+			for (const label of labels) expect(html).toContain(`>${label}</`);
+			// Panels stay mounted behind their tabs, so static rendering and find-in-page keep seeing every section.
+			expect((html.match(/data-slot="notification-channel"/g) ?? []).length).toBe(3);
+		}
+	});
+
 	test('project management offers registering an existing checkout by absolute path in both locales', () => {
 		for (const expected of [
 			{
@@ -4614,17 +4652,20 @@ describe('operator shell', () => {
 
 			expect(html.indexOf('data-slot="global-navigation"')).toBeLessThan(html.indexOf('data-slot="settings-navigation"'));
 			// A selected project brings its own settings into the list; the global ones keep the last row.
-			expect(links(settings).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/projects/project-current/settings', '/settings']);
+			expect(links(settings).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/projects/project-current/settings', '/projects', '/settings']);
 			expect(settings).toContain(`>${expected.projectSettings}</span>`);
 			expect(settings).toContain(`>${expected.globalSettings}</span>`);
 			expect(settings).not.toContain('aria-current="page"');
 			// Each settings page marks its own row, so the operator always has a current one.
 			const onProject = links(navigationList(settingsPage({ locale: expected.locale }), 'settings-navigation'));
-			expect(onProject.map((tag) => tag.includes('aria-current="page"'))).toEqual([true, false]);
+			expect(onProject.map((tag) => tag.includes('aria-current="page"'))).toEqual([true, false, false]);
+			// The registry page has a row of its own to be current on.
+			const onRegistry = links(navigationList(renderAt('/projects', { locale: expected.locale }), 'settings-navigation'));
+			expect(onRegistry.map((tag) => tag.includes('aria-current="page"'))).toEqual([true, false]);
 			const onGlobal = links(navigationList(globalSettingsPage({ locale: expected.locale }), 'settings-navigation'));
 			expect(onGlobal.at(-1)).toContain('aria-current="page"');
 			// With every project in view there is no project to configure, and the row is gone.
-			expect(links(navigationList(renderAt('/overview', { locale: expected.locale }), 'settings-navigation'))).toHaveLength(1);
+			expect(links(navigationList(renderAt('/overview', { locale: expected.locale }), 'settings-navigation'))).toHaveLength(2);
 		}
 	});
 
@@ -5101,7 +5142,7 @@ describe('operator shell', () => {
 
 		expect(elementWith(rail, 'data-slot="sidebar"')).toContain('data-state="collapsed"');
 		expect(elementWith(expanded, 'data-slot="sidebar"')).toContain('data-state="expanded"');
-		expect(hrefs(rail)).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights', '/projects/project-current/settings', '/settings']);
+		expect(hrefs(rail)).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights', '/projects/project-current/settings', '/projects', '/settings']);
 		expect(hrefs(rail)).toEqual(hrefs(expanded));
 		expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('data-slot="global-navigation"'));
 		for (const [href, label] of [
@@ -5110,6 +5151,7 @@ describe('operator shell', () => {
 			['/projects/project-current/work', 'Queue'],
 			['/overview/insights', 'Insights'],
 			['/projects/project-current/settings', 'Project settings'],
+			['/projects', 'Projects'],
 			['/settings', 'Global settings'],
 		]) {
 			const link = openingTags(nav).find((tag) => tag.includes(`data-sidebar-id="${href}"`));

@@ -188,6 +188,7 @@ export const NAV_GLYPHS = {
 	work: ListViewIcon,
 	settings: Settings01Icon,
 	globalSettings: Globe02Icon,
+	projects: FolderManagementIcon,
 	overviewQueues: Queue01Icon,
 	overviewInsights: ChartAnalysisIcon,
 } as const;
@@ -368,11 +369,13 @@ function ProjectSwitcherMenu({
 						</Menu.Item>
 					)}
 					<Menu.Item
+						aria-current={selection.surface === 'projects' ? 'page' : undefined}
 						className={SWITCHER_ITEM_CLASS}
 						render={<a href="/projects" />}
 					>
 						<span className={LEAD_SLOT_CLASS}><ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} /></span>
 						<span className="min-w-0 flex-1">{catalog.manageProjectsLabel}</span>
+						<CurrentMark current={selection.surface === 'projects'} />
 					</Menu.Item>
 				</Menu.Popup>
 			</Menu.Positioner>
@@ -496,6 +499,19 @@ function NavCount({ value }: { value: number | null }): React.ReactElement | nul
 	return <span className="ml-auto min-w-4 text-center font-mono text-xs tabular-nums" data-slot="navigation-count">{value}</span>;
 }
 
+/* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail. */
+function NavRow({ href, label, glyph, active, open, count = null }: { href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; open: boolean; count?: number | null }): React.ReactElement {
+	return (
+		<li className="shrink-0">
+			<HintTooltip disabled={open} label={label}>
+				<a aria-current={active ? 'page' : undefined} aria-label={open ? undefined : label} className={open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS} data-sidebar-id={href} href={href}>
+					<NavGlyph name={glyph} />{open ? <><span>{label}</span><NavCount value={count} /></> : null}
+				</a>
+			</HintTooltip>
+		</li>
+	);
+}
+
 export function ShellNavigation({
 	catalog,
 	projects,
@@ -513,7 +529,6 @@ export function ShellNavigation({
 	onSelectAllProjects?: () => void;
 	counts: NavigationCounts | null;
 }): React.ReactElement {
-	const itemClass = open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS;
 	const projectSettingsHref = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId) ? `/projects/${encodeURIComponent(selection.projectId)}/settings` : null;
 	return (
 		<TooltipGroup>
@@ -522,34 +537,14 @@ export function ShellNavigation({
 				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} open={open} projects={projects} selection={selection} status={status} />
 			</div>
 			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap" data-slot="global-navigation">
-				{navigationItems(selection, catalog, counts, projects).map((item) => (
-					<li className="shrink-0" key={item.id}>
-						<HintTooltip disabled={open} label={item.label}>
-							<a aria-current={item.active ? 'page' : undefined} aria-label={open ? undefined : item.label} className={itemClass} data-sidebar-id={item.href} href={item.href}>
-								<NavGlyph name={item.glyph} />{open ? <><span>{item.label}</span><NavCount value={item.count} /></> : null}
-							</a>
-						</HintTooltip>
-					</li>
-				))}
+				{navigationItems(selection, catalog, counts, projects).map((item) => <NavRow active={item.active} count={item.count} glyph={item.glyph} href={item.href} key={item.id} label={item.label} open={open} />)}
 			</ul>
 			<ul className="mt-1 flex flex-wrap gap-1 lg:mt-auto lg:flex-col lg:flex-nowrap" data-slot="settings-navigation">
-				{/* A selected project brings its own settings into the list, above the global ones, which keep the last row either way. */}
-				{projectSettingsHref === null ? null : (
-					<li className="shrink-0">
-						<HintTooltip disabled={open} label={catalog.projectSettingsLabel}>
-							<a aria-current={selection.surface === 'settings' ? 'page' : undefined} aria-label={open ? undefined : catalog.projectSettingsLabel} className={itemClass} data-sidebar-id={projectSettingsHref} href={projectSettingsHref}>
-								<NavGlyph name="settings" />{open ? <span>{catalog.projectSettingsLabel}</span> : null}
-							</a>
-						</HintTooltip>
-					</li>
-				)}
-				<li className="shrink-0">
-					<HintTooltip disabled={open} label={catalog.routeLabels.globalSettings}>
-						<a aria-current={selection.surface === 'global-settings' ? 'page' : undefined} aria-label={open ? undefined : catalog.routeLabels.globalSettings} className={itemClass} data-sidebar-id="/settings" href="/settings">
-							<NavGlyph name="globalSettings" />{open ? <span>{catalog.routeLabels.globalSettings}</span> : null}
-						</a>
-					</HintTooltip>
-				</li>
+				{/* A selected project brings its own settings into the list, above the rest; the global ones keep the last row either way. */}
+				{projectSettingsHref === null ? null : <NavRow active={selection.surface === 'settings'} glyph="settings" href={projectSettingsHref} label={catalog.projectSettingsLabel} open={open} />}
+				{/* The registry is reached from the switcher's menu, and from here: a page needs a row to be current on. */}
+				<NavRow active={selection.surface === 'projects'} glyph="projects" href="/projects" label={catalog.routeLabels.projects} open={open} />
+				<NavRow active={selection.surface === 'global-settings'} glyph="globalSettings" href="/settings" label={catalog.routeLabels.globalSettings} open={open} />
 			</ul>
 		</nav>
 		</TooltipGroup>

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
+import { Tabs, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
@@ -13,28 +14,29 @@ export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 	const loaded = (resource: keyof NonNullable<typeof props.operationalLoaded>): boolean => props.operationalLoaded?.[resource] === true;
 	const pending = (resource: keyof NonNullable<typeof props.operationalPending>): boolean => props.operationalPending?.[resource] === true;
 	return (
-		<SurfaceColumn label={catalog.title} status={props.status}>
-			<OperationalReadPanel detail={failed('Agent defaults')} loaded={loaded('Agent defaults')} locale={props.locale} pending={pending('Agent defaults')} resource="Agent defaults"><AgentDefaultsPanel
+		<SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.routeLabels.globalSettings} status={props.status}>
+			{/* Four unrelated questions, one visible at a time, as the project's own settings are. */}
+			<Tabs defaultValue="agents">
+				<TabsList aria-label={LOCALE_CATALOG[props.locale].shell.routeLabels.globalSettings}>
+					<TabsTab value="agents">{catalog.globalTabs.agents}</TabsTab>
+					<TabsTab value="operator">{catalog.globalTabs.operator}</TabsTab>
+					<TabsTab value="notifications">{catalog.globalTabs.notifications}</TabsTab>
+					<TabsTab value="updates">{catalog.globalTabs.updates}</TabsTab>
+				</TabsList>
+				<TabsPanel value="agents"><OperationalReadPanel detail={failed('Agent defaults')} loaded={loaded('Agent defaults')} locale={props.locale} pending={pending('Agent defaults')} resource="Agent defaults"><AgentDefaultsPanel
 				agentDefaults={props.agentDefaults}
 				catalog={catalog}
 				onSaveAgentDefaults={props.onSaveAgentDefaults}
 				pending={props.pending}
-			/></OperationalReadPanel>
-			<OperationalReadPanel detail={failed('Operator profile')} loaded={loaded('Operator profile')} locale={props.locale} pending={pending('Operator profile')} resource="Operator profile"><OperatorProfilePanel
+			/></OperationalReadPanel></TabsPanel>
+				<TabsPanel value="operator"><OperationalReadPanel detail={failed('Operator profile')} loaded={loaded('Operator profile')} locale={props.locale} pending={pending('Operator profile')} resource="Operator profile"><OperatorProfilePanel
 						catalog={catalog}
 						onSaveOperatorProfile={props.onSaveOperatorProfile}
 						operatorProfile={props.operatorProfile}
 						pending={props.pending}
 						suggestedTimezone={props.suggestedTimezone}
-					/></OperationalReadPanel>
-					<OperationalReadPanel detail={failed('Self update')} loaded={loaded('Self update')} locale={props.locale} pending={pending('Self update')} resource="Self update"><SelfUpdatePanel
-						catalog={catalog}
-						locale={props.locale}
-						onSetSelfUpdate={props.onSetSelfUpdate}
-						pending={props.pending}
-						selfUpdate={props.selfUpdate}
-					/></OperationalReadPanel>
-			<OperationalReadPanel detail={failed('Notifications')} loaded={loaded('Notifications')} locale={props.locale} pending={pending('Notifications')} resource="Notifications"><NotificationsPanel
+					/></OperationalReadPanel></TabsPanel>
+				<TabsPanel value="notifications"><OperationalReadPanel detail={failed('Notifications')} loaded={loaded('Notifications')} locale={props.locale} pending={pending('Notifications')} resource="Notifications"><NotificationsPanel
 						catalog={catalog}
 						notificationChannels={props.notificationChannels}
 						notificationPermission={props.notificationPermission}
@@ -43,7 +45,15 @@ export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 						onSaveResendSettings={props.onSaveResendSettings}
 						onRemoveResendCredential={props.onRemoveResendCredential}
 						pending={props.pending}
-			/></OperationalReadPanel>
+			/></OperationalReadPanel></TabsPanel>
+				<TabsPanel value="updates"><OperationalReadPanel detail={failed('Self update')} loaded={loaded('Self update')} locale={props.locale} pending={pending('Self update')} resource="Self update"><SelfUpdatePanel
+						catalog={catalog}
+						locale={props.locale}
+						onSetSelfUpdate={props.onSetSelfUpdate}
+						pending={props.pending}
+						selfUpdate={props.selfUpdate}
+					/></OperationalReadPanel></TabsPanel>
+			</Tabs>
 		</SurfaceColumn>
 	);
 }
