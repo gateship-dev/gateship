@@ -46,7 +46,7 @@ inspector that copies `slot[variant,size] WxH` for talking about one element.
 | Nothing spills out of its box by more than 8px where it can be seen. A scroll container and a deliberate clip are not spills | Visual gate |
 | The page never scrolls horizontally | Visual gate |
 | Colours come from tokens. No raw colour, no arbitrary value, no inline style, no class Tailwind does not know | Design lint |
-| Sans is the voice of titles, navigation, labels, table heads and prose. Mono is the voice of identifiers, commands, timestamps, durations, costs and counters | Kit defaults (`TableHead` is always sans, `type-data`, `type-eyebrow`), judgment at the call site |
+| Sans is the voice of titles, navigation, labels, table heads, prose and the moment something happened. Mono is the voice of identifiers, commands, durations, costs and counters | Kit defaults (`TableHead` is always sans, `type-data`, `type-eyebrow`), judgment at the call site |
 | Saans is not bundled. The interface uses the system sans until a repository asset and its licence are added | Judgment |
 | Acid (`#c8ff00`) belongs to the mark and the wordmark alone. No surface, badge, counter, dot or button in the interface uses the attention family | Behaviour tests |
 | Work waiting on the operator is said by order (most urgent first), by its state in the warning family and by text. No rule or border on the leading edge of a row, in any colour | Behaviour tests, judgment |
@@ -68,7 +68,11 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | --- | --- |
 | A screen composes the kit and does not restyle it. Colour, typography and spacing a component owns are changed through a variant in the kit, never a class at the call site. Layout classes are free | Design lint `no-restyle` |
 | Class names are static strings, so they can be read | Design lint `require-static-classes` |
-| A list of comparable rows is the kit's `DataTable`: one frame, sans heads, 40px rows, its own empty row, skeleton rows on first load, dimmed rows on refresh | Behaviour tests |
+| A list of comparable rows is the kit's `DataTable`: one frame, sans heads, 40px rows, its own empty row, skeleton rows on first load, dimmed rows on refresh. A cell that holds a control gives up its padding, so the row stays 40px | Behaviour tests, visual gate baselines |
+| The controls over a table are one group: 8px between its rows, a block's distance to the table. The pagination under it shares the toolbar's two edges | Behaviour tests, judgment |
+| A moment is one column, day and time in sans with tabular figures, and the year only when it is not the current one | Behaviour tests |
+| A row names what it is about: a run row shows the issue's id and its title. The title takes no width of its own, so it fills the slack and never widens the table | Visual gate baselines |
+| Figures that come in groups open under the row. A closed row is one line | Behaviour tests |
 | Controls in a table toolbar share one height: 32px, 36px below `sm` | Visual gate |
 | A table gives the width its columns do not need to one column, the one the row is about (`primary`, the first by default). Slack spread over every column reads as holes | Judgment |
 | A secondary column declares the width it shows from (`hideBelow`), measured on the table itself and not on the window: beside an open sidebar a 1024px window leaves the table 672px. A narrow table keeps what the row is about and does not scroll sideways for it | Visual gate at 390px |

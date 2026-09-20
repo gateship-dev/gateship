@@ -5,6 +5,7 @@ import { fetchOverview, type AutonomyDenominatorCode, type AutonomyPercentileMet
 import type { AppProps } from '../app-props.ts';
 import { Alert02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
+import { Badge } from '../components/ui/badge.tsx';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { CardGrid } from '../components/ui/card-layout.tsx';
@@ -19,6 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx'
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG, type OverviewInsightsCatalog } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
+import { formatWhen } from './overview-runs-screen.tsx';
 
 const window = globalThis as unknown as { dispatchEvent: (event: Event) => boolean };
 
@@ -63,9 +65,6 @@ function comparableCohorts(left: CohortRow, cohorts: CohortRow[]): CohortRow[] {
 }
 /** The pair the comparison opens on: the first cohort that has anything to be compared with. */
 function firstComparable(cohorts: CohortRow[]): CohortRow | undefined { return cohorts.find((cohort) => comparableCohorts(cohort, cohorts).length > 0); }
-function labeledMetrics(items: Array<[string, { count: number; denominator: number }]>, className = 'flex flex-col gap-1'): React.ReactElement {
-	return <div className={className}>{items.map(([label, value]) => <span key={label}><span className="text-muted-foreground">{label}: </span>{metric(value)}</span>)}</div>;
-}
 
 interface BrowserRuntime { location?: { search: string }; history?: { pushState: (data: null, unused: string, url: string) => void; replaceState: (data: null, unused: string, url: string) => void }; addEventListener?: (type: 'popstate', listener: () => void) => void; removeEventListener?: (type: 'popstate', listener: () => void) => void }
 function browserRuntime(): BrowserRuntime { return globalThis as unknown as BrowserRuntime; }
@@ -189,9 +188,19 @@ function CohortDetail({ cohorts, catalog, labels }: { cohorts: CohortRow[]; cata
 	</div></CollapsibleContent></Collapsible>;
 }
 
-/* The five columns a cohort is read by; the rest is one menu away and remembered. */
+/** What a cohort row opens into: the figures that come in groups, each group under its name. */
+export function CohortRowDetail({ cohort, catalog }: { cohort: CohortRow; catalog: OverviewInsightsCatalog }): React.ReactElement {
+	const groups: Array<[string, Array<[string, React.ReactNode]>]> = [
+		[catalog.corrections, [[catalog.verification, metric(cohort.corrections.verification)], [catalog.review, metric(cohort.corrections.review)], [catalog.fullVerify, metric(cohort.corrections.fullVerify)], [catalog.ci, metric(cohort.corrections.ci)]]],
+		[catalog.cycleQuestions, [[catalog.executor, metric(cohort.cycleQuestions.executor)], [catalog.review, metric(cohort.cycleQuestions.review)], [catalog.fullVerify, metric(cohort.cycleQuestions.fullVerify)]]],
+		[catalog.reconciliations, [[catalog.unchanged, metric(cohort.reconciliations.unchanged)], [catalog.adapted, metric(cohort.reconciliations.adapted)], [catalog.contractChangeRequired, metric(cohort.reconciliations['contract-change-required'])]]],
+	];
+	return <div className="grid gap-6 sm:grid-cols-3" data-slot="cohort-row-detail">{groups.map(([title, items]) => <section className="flex flex-col gap-3" key={title}><h4 className="type-eyebrow text-muted-foreground">{title}</h4><MetricRows items={items} /></section>)}</div>;
+}
+
+/* The four columns a cohort is read by; single figures are one menu away and remembered, and the figures that come in groups open under the row. */
 const COHORT_PREFERENCES_KEY = 'gateship:overview-insights:cohorts:v1';
-const DEFAULT_COHORT_VISIBILITY: Record<string, boolean> = { specVersion: false, cycleQuestions: false, reconciliations: false, attentionRequests: false, operatorInterventions: false, providerHolds: false };
+const DEFAULT_COHORT_VISIBILITY: Record<string, boolean> = { specVersion: false, attentionRequests: false, operatorInterventions: false, providerHolds: false };
 function readCohortPreferences(): Record<string, boolean> { try { const value: unknown = JSON.parse(globalThis.localStorage?.getItem(COHORT_PREFERENCES_KEY) ?? 'null'); const stored = value !== null && typeof value === 'object' ? (value as { columnVisibility?: Record<string, boolean> }).columnVisibility : undefined; return stored ?? DEFAULT_COHORT_VISIBILITY; } catch { return DEFAULT_COHORT_VISIBILITY; } }
 
 function CohortTable({ history, catalog, locale, filter, sortBy, sortDirection }: { history: HistoricalOverviewView; catalog: OverviewInsightsCatalog; locale: AppProps['locale']; filter?: string; sortBy?: InsightsQuery['cohortSortBy']; sortDirection?: InsightsQuery['cohortSortDirection'] }): React.ReactElement {
@@ -202,20 +211,17 @@ function CohortTable({ history, catalog, locale, filter, sortBy, sortDirection }
 	useEffect(() => { try { globalThis.localStorage?.setItem(COHORT_PREFERENCES_KEY, JSON.stringify({ columnVisibility })); } catch { /* storage is optional */ } }, [columnVisibility]);
 	const columns = useMemo<GateshipColumnDef<CohortRow>[]>(() => [
 		{ id: 'identity', header: catalog.workflowRevision, accessorFn: (row) => formatRevision(row.workflowRevision), enableHiding: false, enableSorting: true },
-		{ id: 'latestTerminalRunAt', header: locale === 'pt-BR' ? 'Última run terminal' : 'Latest terminal run', accessorFn: (row) => row.latestTerminalRunAt, cell: ({ row }) => formatDateTime(row.original.latestTerminalRunAt, locale), enableSorting: true },
-		{ id: 'specVersion', header: catalog.specVersion, accessorKey: 'specVersion', enableSorting: true },
-		{ id: 'sampleSize', header: catalog.sample, accessorKey: 'sampleSize', cell: ({ row }) => `${row.original.sampleSize}${row.original.evidenceSufficient ? '' : ` (${catalog.cohortEvidenceInsufficient})`}`, enableSorting: true },
-		{ id: 'outcomes', header: catalog.outcomeCounts, accessorFn: (row) => `${metric(row.outcomes.shipped)} ${metric(row.outcomes.failed)} ${metric(row.outcomes.cancelled)}`, enableSorting: false, meta: { className: 'type-data whitespace-nowrap' }, cell: ({ row }) => [row.original.outcomes.shipped, row.original.outcomes.failed, row.original.outcomes.cancelled].map(metric).join(' · ') },
-		{ id: 'corrections', header: catalog.corrections, accessorFn: (row) => factualMetrics(row.corrections), enableSorting: false, cell: ({ row }) => labeledMetrics([[catalog.verification, row.original.corrections.verification], [catalog.review, row.original.corrections.review], [catalog.fullVerify, row.original.corrections.fullVerify], [catalog.ci, row.original.corrections.ci]], 'inline-grid auto-cols-max grid-flow-col grid-rows-2 gap-x-4 gap-y-1 whitespace-nowrap') },
-		{ id: 'cycleQuestions', header: catalog.cycleQuestions, accessorFn: (row) => factualMetrics(row.cycleQuestions), enableSorting: false, cell: ({ row }) => labeledMetrics([[catalog.executor, row.original.cycleQuestions.executor], [catalog.review, row.original.cycleQuestions.review], [catalog.fullVerify, row.original.cycleQuestions.fullVerify]]) },
-		{ id: 'reconciliations', header: catalog.reconciliations, accessorFn: (row) => factualMetrics(row.reconciliations), enableSorting: false, cell: ({ row }) => labeledMetrics([[catalog.unchanged, row.original.reconciliations.unchanged], [catalog.adapted, row.original.reconciliations.adapted], [catalog.contractChangeRequired, row.original.reconciliations['contract-change-required']]]) },
-		{ id: 'attentionRequests', header: catalog.attentionRequests, accessorFn: (row) => metric(row.attentionRequests), enableSorting: false, cell: ({ row }) => metric(row.original.attentionRequests) },
-		{ id: 'operatorInterventions', header: catalog.cohortOperatorInterventions, accessorFn: (row) => metric(row.operatorInterventions), enableSorting: false, cell: ({ row }) => metric(row.original.operatorInterventions) },
-		{ id: 'providerHolds', header: catalog.cohortProviderHolds, accessorFn: (row) => metric(row.providerHolds), enableSorting: false, cell: ({ row }) => metric(row.original.providerHolds) },
+		{ id: 'latestTerminalRunAt', header: locale === 'pt-BR' ? 'Última run terminal' : 'Latest terminal run', accessorFn: (row) => row.latestTerminalRunAt, meta: { className: 'tabular-nums text-muted-foreground', hideBelow: 'sm' }, cell: ({ row }) => row.original.latestTerminalRunAt == null ? '—' : <time dateTime={row.original.latestTerminalRunAt}>{formatWhen(row.original.latestTerminalRunAt, locale)}</time>, enableSorting: true },
+		{ id: 'specVersion', header: catalog.specVersion, accessorKey: 'specVersion', enableSorting: true, meta: { hideBelow: 'md' } },
+		{ id: 'sampleSize', header: catalog.sample, accessorKey: 'sampleSize', meta: { className: 'type-data' }, cell: ({ row }) => row.original.evidenceSufficient ? row.original.sampleSize : <span className="inline-flex items-center gap-2" title={catalog.cohortEvidenceInsufficient}>{row.original.sampleSize}<span className="hidden @xl:inline-flex"><Badge variant="neutral">{catalog.cohortSmallSample}</Badge></span><span className="sr-only">{catalog.cohortEvidenceInsufficient}</span></span>, enableSorting: true },
+		{ id: 'outcomes', header: catalog.outcomeCounts, accessorFn: (row) => `${metric(row.outcomes.shipped)} ${metric(row.outcomes.failed)} ${metric(row.outcomes.cancelled)}`, enableSorting: false, meta: { className: 'type-data whitespace-nowrap', hideBelow: 'sm' }, cell: ({ row }) => [row.original.outcomes.shipped, row.original.outcomes.failed, row.original.outcomes.cancelled].map(metric).join(' · ') },
+		{ id: 'attentionRequests', header: catalog.attentionRequests, accessorFn: (row) => metric(row.attentionRequests), enableSorting: false, meta: { align: 'end', className: 'type-data', hideBelow: 'md' }, cell: ({ row }) => metric(row.original.attentionRequests) },
+		{ id: 'operatorInterventions', header: catalog.cohortOperatorInterventions, accessorFn: (row) => metric(row.operatorInterventions), enableSorting: false, meta: { align: 'end', className: 'type-data', hideBelow: 'md' }, cell: ({ row }) => metric(row.original.operatorInterventions) },
+		{ id: 'providerHolds', header: catalog.cohortProviderHolds, accessorFn: (row) => metric(row.providerHolds), enableSorting: false, meta: { align: 'end', className: 'type-data', hideBelow: 'md' }, cell: ({ row }) => metric(row.original.providerHolds) },
 	], [catalog, locale]);
 	const changeSorting = (value: SortingState): void => { const next = value[0]; const cohortSortBy = next?.id === 'identity' ? 'workflowRevision' : next?.id === 'latestTerminalRunAt' || next?.id === 'sampleSize' || next?.id === 'specVersion' ? next.id : undefined; window.dispatchEvent(new CustomEvent('gateship-cohort-sort', { detail: cohortSortBy === undefined ? { cohortSortBy: undefined, cohortSortDirection: undefined } : { cohortSortBy, cohortSortDirection: next?.desc ? 'desc' : 'asc' } })); };
 	const table = useGateshipTable({ columns, data: rows, features: gateshipTableFeatures, getRowId: (row) => row.cohortId ?? `${row.workflowRevision ?? 'unknown'}:${row.specVersion}`, state: { globalFilter, sorting, columnVisibility }, onGlobalFilterChange: (value) => window.dispatchEvent(new CustomEvent('gateship-cohort-filter', { detail: { cohortFilter: String(value ?? '') || undefined } })), onSortingChange: (value) => changeSorting(typeof value === 'function' ? value(sorting) : value), onColumnVisibilityChange: (value) => setColumnVisibility(typeof value === 'function' ? value(columnVisibility) : value), manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: history.cohortsPage?.total ?? rows.length });
-	return <><DataTableToolbar><DataTableFilter label={catalog.cohorts} placeholder={catalog.cohorts} locale={locale} table={table} /><DataTableViewOptions locale={locale} table={table} /></DataTableToolbar><DataTable emptyState={catalog.noData} locale={locale} table={table} /><p className="text-muted-foreground text-xs">{catalog.cohortLegend}</p><DataTablePagination locale={locale} offset={history.cohortsPage?.offset ?? 0} total={history.cohortsPage?.total ?? rows.length} onOffsetChange={(offset) => window.dispatchEvent(new CustomEvent('gateship-cohort-page', { detail: offset }))} onPageSizeChange={(limit) => window.dispatchEvent(new CustomEvent('gateship-cohort-page-size', { detail: { cohortLimit: limit } }))} table={table} /></>;
+	return <><DataTableToolbar><DataTableFilter label={catalog.cohorts} placeholder={catalog.cohorts} locale={locale} table={table} /><DataTableViewOptions locale={locale} table={table} /></DataTableToolbar><DataTable emptyState={catalog.noData} locale={locale} renderExpanded={(row) => <CohortRowDetail catalog={catalog} cohort={row} />} table={table} /><p className="text-muted-foreground text-xs">{catalog.cohortLegend}</p><DataTablePagination locale={locale} offset={history.cohortsPage?.offset ?? 0} total={history.cohortsPage?.total ?? rows.length} onOffsetChange={(offset) => window.dispatchEvent(new CustomEvent('gateship-cohort-page', { detail: offset }))} onPageSizeChange={(limit) => window.dispatchEvent(new CustomEvent('gateship-cohort-page-size', { detail: { cohortLimit: limit } }))} table={table} /></>;
 }
 
 function OutcomeTrend({ history, catalog }: { history: HistoricalOverviewView; catalog: OverviewInsightsCatalog }): React.ReactElement {

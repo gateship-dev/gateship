@@ -83,8 +83,9 @@ export function TableCell({ className, ...props }: React.ComponentProps<'td'>): 
 	return (
 		<td
 			className={cn(
-				/* The row is 40px by declaration, not by padding arithmetic: a cell's height is its minimum, so a two-line cell still grows. */
-				'h-10 whitespace-nowrap bg-clip-padding px-3 py-2 align-middle leading-none',
+				/* The row is 40px by declaration, not by padding arithmetic: a cell's height is its minimum, so a two-line cell still grows.
+				 * A cell that holds a 24px control gives up its own padding, or the control plus the row's border makes the row 41px. */
+				'h-10 whitespace-nowrap bg-clip-padding px-3 py-2 align-middle leading-none has-[>button]:py-0',
 				className,
 			)}
 			data-slot="table-cell"

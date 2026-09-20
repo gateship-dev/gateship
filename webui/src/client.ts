@@ -263,6 +263,8 @@ export interface OverviewRunsPageView {
 		projectName: string;
 		repository?: string;
 		runId: string;
+		/** Absent from services older than the field; null when the backlog no longer names the issue. */
+		issueTitle?: string | null;
 		error: string | null;
 		/** Wall time minus the wait on the operator; see RunOverviewRow. Absent from services older than the field. */
 		activeDurationMs?: number | null;

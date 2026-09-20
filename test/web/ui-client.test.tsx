@@ -155,9 +155,9 @@ import {
 	summarizeWorkflow,
 	summarizeWorkflowCohorts,
 } from '../../webui/src/run-view.ts';
-import { queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
+import { CohortRowDetail, queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
 import { QueueEmptyState, QueueRow, queueErrorsForFilter, queueStatus, sortQueuesByUrgency } from '../../webui/src/screens/overview-queues-screen.tsx';
-import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
+import { formatWhen, queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
 import { DiagnosticsPanel, ProposalsPanel } from '../../webui/src/screens/work-screen.tsx';
 import { type NotificationItem, NotificationsPopover, notificationItems, type PanelKeyEvent, PanelToggleGlyph, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
@@ -1956,6 +1956,13 @@ describe('runs surface', () => {
 		const list = runsListPage({ runs });
 		expect(list).toContain('data-slot="data-table"');
 		expect(list).toContain('data-slot="overview-runs-views"');
+		// Views, search and filters are one group; a narrow table keeps issue and state, and when is one column.
+		expect((list.match(/data-slot="data-table-toolbar"/g) ?? []).length).toBe(2);
+		expect(list.indexOf('data-slot="overview-runs-controls"')).toBeLessThan(list.indexOf('data-slot="data-table-toolbar"'));
+		const heads = list.slice(list.indexOf('<thead'), list.indexOf('</thead>')).split('<th ').slice(1);
+		const hidden = (label: string): string | undefined => /hidden @(xl|3xl):table-cell/.exec(heads.find((head) => head.includes(`>${label}<`)) ?? '')?.[1];
+		expect([hidden('Issue'), hidden('State'), hidden('Delivery'), hidden('Duration'), hidden('Updated'), hidden('Run')]).toEqual([undefined, undefined, 'xl', 'xl', 'xl', '3xl']);
+		expect(heads.some((head) => head.includes('>Time<') || head.includes('>Date<'))).toBe(false);
 		expect(list).not.toContain('data-slot="run-stage-map"');
 		expect(list).not.toContain('Previous runs');
 		const detail = renderAt('/projects/project-current/runs/run-b', { runs });
@@ -3423,6 +3430,17 @@ function factualSmallCohort() {
 	};
 }
 
+/* A closed cohort row is one line: a short label in the cell, the whole sentence for whoever asks, the grouped figures under the row. */
+function assertCohortRowFolds(locale: 'en-US' | 'pt-BR', smallHtml: string, smallCohort: ReturnType<typeof factualSmallCohort>): void {
+	const catalog = LOCALE_CATALOG[locale].overviewInsights;
+	expect(smallHtml).toContain(`>${catalog.cohortSmallSample}</span>`);
+	expect(smallHtml).toContain(`title="${catalog.cohortEvidenceInsufficient}"`);
+	expect(smallHtml).toContain(`aria-label="${locale === 'en-US' ? 'Show details' : 'Mostrar detalhes'}"`);
+	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
+	const detail = renderToStaticMarkup(<CohortRowDetail catalog={catalog} cohort={smallCohort as never} />);
+	for (const label of [catalog.corrections, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.cycleQuestions, catalog.executor, catalog.reconciliations, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(detail).toContain(label);
+}
+
 function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: ReturnType<typeof factualSmallCohort>): void {
 	const catalog = LOCALE_CATALOG[locale].overviewInsights;
 	const smallHtml = renderInsightsWithLoadedOverview(locale, factualCohortOverview([smallCohort]));
@@ -3435,12 +3453,11 @@ function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: Retu
 	expect(smallHtml).toContain(LOCALE_CATALOG[locale].shell.routeLabels.overviewInsights);
 	expect(smallHtml).toContain('revision…');
 	expect(smallHtml).not.toContain('revision-1234567890abcdef');
-	// The cohort is read by five columns; the other six are one menu away, so
-	// their headers and sub-labels stay out of the default table.
-	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci]) expect(smallHtml).toContain(label);
-	for (const hidden of [catalog.specVersion, catalog.cycleQuestions, catalog.reconciliations, catalog.attentionRequests, catalog.unchanged, catalog.contractChangeRequired]) expect(smallHtml).not.toContain(hidden);
-	expect(smallHtml).toContain(`3 (${catalog.cohortEvidenceInsufficient})`);
-	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
+	// The cohort is read by four columns. Single figures are one menu away; the
+	// figures that come in groups open under the row, so a closed row is one line.
+	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled]) expect(smallHtml).toContain(label);
+	for (const hidden of [catalog.specVersion, catalog.cycleQuestions, catalog.reconciliations, catalog.attentionRequests, catalog.unchanged, catalog.contractChangeRequired, catalog.verification]) expect(smallHtml).not.toContain(hidden);
+	assertCohortRowFolds(locale, smallHtml, smallCohort);
 	// A remembered choice of columns brings every fact back.
 	const storage = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
 	const previous = storage.localStorage;
@@ -3448,7 +3465,7 @@ function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: Retu
 	try {
 		const everyColumn = renderInsightsWithLoadedOverview(locale, factualCohortOverview([smallCohort]));
 		expect(everyColumn).toContain('v2');
-		for (const label of [catalog.specVersion, catalog.cycleQuestions, catalog.reconciliations, catalog.attentionRequests, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(everyColumn).toContain(label);
+		for (const label of [catalog.specVersion, catalog.attentionRequests, catalog.cohortOperatorInterventions, catalog.cohortProviderHolds]) expect(everyColumn).toContain(label);
 	} finally { storage.localStorage = previous; }
 	expect(sufficientHtml).toContain('>5</td>');
 	expect(sufficientHtml).not.toContain(catalog.cohortEvidenceInsufficient);
@@ -3624,7 +3641,9 @@ describe('operator shell', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderInsightsWithLoadedOverview(locale, factualCohortOverview([cohort, missing]));
 			expect(html).toContain(locale === 'en-US' ? 'Latest terminal run' : 'Última run terminal');
-		expect(html).toContain(locale === 'en-US' ? 'Sep 1, 2026' : 'set. de 2026');
+			// The same compact moment every table uses; the machine-readable value keeps the whole instant.
+			expect(html).toContain('dateTime="2026-09-01T15:30:00.000Z"');
+			expect(html).toMatch(locale === 'en-US' ? /09\/01(\/2026)? 15:30/ : /01\/09(\/2026)? 15:30/);
 			expect(html).toContain('—');
 		}
 	});
@@ -5623,14 +5642,14 @@ describe('shared live edge and responsive surface content', () => {
 		expect(renderLongContent('/projects/project-current/work')).toContain(`issue ${HASH}`);
 	});
 
-	test('horizontal scrolling is confined to named tab lists and table containers', () => {
+	test('horizontal scrolling is confined to named tab lists, the quick views and table containers', () => {
 		for (const route of CONTENT_SURFACE_PATHS) {
 			const html = renderLongContent(route);
 			const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
 			const tables = horizontal.filter((tag) => tag.includes('data-slot="table-container"'));
 			const local = horizontal.filter((tag) => !tag.includes('data-slot="table-container"'));
 
-			for (const scroller of local) expect(scroller).toContain('data-slot="tabs-scroll"');
+			for (const scroller of local) expect(scroller).toMatch(/data-slot="(tabs-scroll|overview-runs-views-scroll)"/);
 			if (route.endsWith('/work')) expect(local).not.toHaveLength(0);
 			const operatorNav = html.indexOf('<nav aria-label="Navigation"');
 			const navigation = html.slice(operatorNav, html.indexOf('</nav>', operatorNav));
@@ -5641,6 +5660,14 @@ describe('shared live edge and responsive surface content', () => {
 });
 
 describe('screen derivations', () => {
+	test('a moment is one cell: day and time, and the year only when it is not the current one', () => {
+		const now = new Date('2026-09-20T00:00:00.000Z');
+		expect(formatWhen('2026-09-16T08:47:00.000Z', 'pt-BR', now)).toBe('16/09 08:47');
+		expect(formatWhen('2026-09-16T08:47:00.000Z', 'en-US', now)).toBe('09/16 08:47');
+		expect(formatWhen('2025-12-31T23:05:00.000Z', 'pt-BR', now)).toBe('31/12/2025 23:05');
+		expect(formatWhen('not a date', 'pt-BR', now)).toBe('not a date');
+	});
+
 	test('a deep run keeps only its own events while activity is reloaded', () => {
 		const event = (seq: number, runId: string): RunEventView => ({
 			seq, runId, kind: 'run.state', fromState: 'queued', toState: 'working', payload: {}, createdAt: '2026-09-07T00:00:00.000Z',

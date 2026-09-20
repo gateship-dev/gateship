@@ -71,13 +71,13 @@ function useOverviewRunsPage(query: OverviewRunsQuery, revision: number): { page
 function duration(ms: number | null): string { if (ms === null || !Number.isFinite(ms)) return '—'; const seconds = Math.round(ms / 1000); return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`; }
 function readPreferences(): Record<string, boolean> { try { const value: unknown = JSON.parse(globalThis.localStorage?.getItem(TABLE_PREFERENCES_KEY) ?? 'null'); const stored = value !== null && typeof value === 'object' ? (value as { columnVisibility?: Record<string, boolean> }).columnVisibility : undefined; return stored ?? DEFAULT_VISIBILITY; } catch { return DEFAULT_VISIBILITY; } }
 function runHref(run: RunRow): string { return `/projects/${encodeURIComponent(run.projectId)}/runs/${encodeURIComponent(run.runId)}`; }
-export function formatDate(value: string, locale: Locale): string {
+/** Day and time in one cell. The year shows only when it is not the current one, which is when it says something. */
+export function formatWhen(value: string, locale: Locale, now: Date = new Date()): string {
 	const date = new Date(value);
-	return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
-}
-export function formatTime(value: string, locale: Locale): string {
-	const date = new Date(value);
-	return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' });
+	if (Number.isNaN(date.getTime())) return value;
+	const sameYear = date.getUTCFullYear() === now.getUTCFullYear();
+	const day = date.toLocaleDateString(locale, { ...(sameYear ? {} : { year: 'numeric' as const }), month: '2-digit', day: '2-digit', timeZone: 'UTC' });
+	return `${day} ${date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'UTC' })}`;
 }
 /**
  * The server computes the active duration; a service older than that field
@@ -124,27 +124,32 @@ function RowActions({ run, catalog }: { run: RunRow; catalog: OverviewRunsCatalo
 function overviewRunsColumns(catalog: OverviewRunsCatalog, inspector: RunInspectorCatalog, locale: Locale): GateshipColumnDef<RunRow>[] {
 	const mono = 'font-mono tabular-nums';
 	const muted = <span className="text-muted-foreground">—</span>;
-	const models = (role: RunRow['roles'][number]['role'], header: string): GateshipColumnDef<RunRow> => ({ id: `${role}Models`, accessorFn: (row) => roleModels(row, role), header, enableSorting: false, meta: { className: 'font-mono text-xs' }, cell: ({ row }) => roleModels(row.original, role) || muted });
+	const models = (role: RunRow['roles'][number]['role'], header: string): GateshipColumnDef<RunRow> => ({ id: `${role}Models`, accessorFn: (row) => roleModels(row, role), header, enableSorting: false, meta: { className: 'font-mono text-xs', hideBelow: 'md' }, cell: ({ row }) => roleModels(row.original, role) || muted });
 	return [
-		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, enableHiding: false, cell: ({ row }) => <a className="font-medium font-mono underline-offset-4 hover:underline" href={runHref(row.original)}>{row.original.issueId}</a> },
+		/* The row is about the issue: its id, then what it is called. The title takes no width of its own, so it fills the slack the table has and never widens it. */
+		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, enableHiding: false, meta: { primary: true }, cell: ({ row }) => (
+			<a className="group/issue flex min-w-0 items-center gap-3" href={runHref(row.original)}>
+				<span className="font-medium font-mono underline-offset-4 group-hover/issue:underline">{row.original.issueId}</span>
+				{row.original.issueTitle == null ? null : <span className="relative hidden h-5 min-w-0 flex-1 @xl:block" data-slot="issue-title" title={row.original.issueTitle}><span className="absolute inset-0 truncate text-muted-foreground leading-5">{row.original.issueTitle}</span></span>}
+			</a>
+		) },
 		/* The short id is what an operator reads aloud or pastes; the whole id is one column away. */
-		{ id: 'run', accessorKey: 'runId', header: catalog.run, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs' }, cell: ({ row }) => <span title={row.original.runId}>{row.original.runId.slice(0, 8)}</span> },
+		{ id: 'run', accessorKey: 'runId', header: catalog.run, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.runId}>{row.original.runId.slice(0, 8)}</span> },
 		{ id: 'state', accessorKey: 'state', header: catalog.state, enableSorting: true, cell: ({ row }) => <StateBadge catalog={catalog} inspector={inspector} run={row.original} /> },
-		{ id: 'projectName', accessorKey: 'projectName', header: catalog.project, enableSorting: true },
+		{ id: 'projectName', accessorKey: 'projectName', header: catalog.project, enableSorting: true, meta: { hideBelow: 'md' } },
 		/* A merged pull request already passed CI; the badge only says something while the PR is open. */
-		{ id: 'delivery', header: catalog.delivery, enableSorting: false, cell: ({ row }) => row.original.pullRequest ? <span className="inline-flex items-center gap-2"><a className="inline-flex items-center gap-1 underline-offset-4 hover:underline" href={row.original.pullRequest.url} rel="noreferrer" target="_blank">PR #{row.original.pullRequest.prNumber}<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-60" icon={LinkSquare02Icon} size={14} strokeWidth={2.25} /></a>{row.original.ci && !row.original.merge ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : null}</span> : muted },
+		{ id: 'delivery', header: catalog.delivery, enableSorting: false, meta: { hideBelow: 'sm' }, cell: ({ row }) => row.original.pullRequest ? <span className="inline-flex items-center gap-2"><a className="inline-flex items-center gap-1 underline-offset-4 hover:underline" href={row.original.pullRequest.url} rel="noreferrer" target="_blank">PR #{row.original.pullRequest.prNumber}<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-60" icon={LinkSquare02Icon} size={14} strokeWidth={2.25} /></a>{row.original.ci && !row.original.merge ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : null}</span> : muted },
 		/* Active time: the wall clock minus the wait on the operator, computed by the server so the sort agrees. */
-		{ id: 'duration', accessorFn: (row) => activeDuration(row) ?? -1, header: catalog.duration, enableSorting: true, meta: { className: mono, align: 'end' }, cell: ({ row }) => duration(activeDuration(row.original)) },
-		{ id: 'updatedAt', accessorKey: 'updatedAt', header: catalog.date, enableSorting: true, meta: { className: `${mono} text-muted-foreground` }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatDate(row.original.updatedAt, locale)}</time> },
-		{ id: 'updatedTime', accessorKey: 'updatedAt', header: catalog.time, enableSorting: false, meta: { className: `${mono} text-muted-foreground` }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatTime(row.original.updatedAt, locale)}</time> },
-		{ id: 'providerId', accessorKey: 'providerId', header: catalog.provider, enableSorting: true, cell: ({ row }) => row.original.providerId === 'claude' ? 'Claude Code' : 'Codex' },
+		{ id: 'duration', accessorFn: (row) => activeDuration(row) ?? -1, header: catalog.duration, enableSorting: true, meta: { className: mono, align: 'end', hideBelow: 'sm' }, cell: ({ row }) => duration(activeDuration(row.original)) },
+		{ id: 'updatedAt', accessorKey: 'updatedAt', header: catalog.updated, enableSorting: true, meta: { className: 'tabular-nums text-muted-foreground', hideBelow: 'sm' }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatWhen(row.original.updatedAt, locale)}</time> },
+		{ id: 'providerId', accessorKey: 'providerId', header: catalog.provider, enableSorting: true, meta: { hideBelow: 'md' }, cell: ({ row }) => row.original.providerId === 'claude' ? 'Claude Code' : 'Codex' },
 		models('orchestrator', catalog.roles.orchestrator),
 		models('executor', catalog.roles.executor),
 		models('reviewer', catalog.roles.reviewer),
-		{ id: 'rounds', accessorFn: (row) => row.evaluation.corrections.total, header: catalog.rounds, enableSorting: false, meta: { className: mono, align: 'end' } },
-		{ id: 'interventions', accessorFn: (row) => row.evaluation.operatorInterventions, header: catalog.interventions, enableSorting: false, meta: { className: mono, align: 'end' } },
-		{ id: 'cost', accessorFn: (row) => row.cost.totalCostUsd ?? -1, header: catalog.cost, enableSorting: true, meta: { className: mono, align: 'end' }, cell: ({ row }) => row.original.cost.totalCostUsd === null ? muted : formatCostUsd(row.original.cost.totalCostUsd, locale, 2) },
-		{ id: 'runId', accessorKey: 'runId', header: catalog.runId, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs' } },
+		{ id: 'rounds', accessorFn: (row) => row.evaluation.corrections.total, header: catalog.rounds, enableSorting: false, meta: { className: mono, align: 'end', hideBelow: 'md' } },
+		{ id: 'interventions', accessorFn: (row) => row.evaluation.operatorInterventions, header: catalog.interventions, enableSorting: false, meta: { className: mono, align: 'end', hideBelow: 'md' } },
+		{ id: 'cost', accessorFn: (row) => row.cost.totalCostUsd ?? -1, header: catalog.cost, enableSorting: true, meta: { className: mono, align: 'end', hideBelow: 'md' }, cell: ({ row }) => row.original.cost.totalCostUsd === null ? muted : formatCostUsd(row.original.cost.totalCostUsd, locale, 2) },
+		{ id: 'runId', accessorKey: 'runId', header: catalog.runId, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs', hideBelow: 'md' } },
 		{ id: 'actions', header: () => <span className="sr-only">{catalog.actions}</span>, enableSorting: false, enableHiding: false, meta: { className: 'w-10', align: 'end' }, cell: ({ row }) => <RowActions catalog={catalog} run={row.original} /> },
 	];
 }
@@ -175,9 +180,11 @@ function QuickViews({ query, update, catalog }: { query: OverviewRunsQuery; upda
 		{ value: 'all', label: catalog.views.all }, { value: 'active', label: catalog.views.active }, { value: 'needs-you', label: catalog.views.needsYou }, { value: 'shipped', label: catalog.views.shipped }, { value: 'failed', label: catalog.views.failed },
 	];
 	return (
-		<ToggleGroup aria-label={catalog.viewsLabel} className="flex-wrap" data-slot="overview-runs-views" spacing={1} value={[query.group ?? 'all']} variant="outline" onValueChange={(value) => { const next = value[0]; if (next !== undefined) update({ group: next === 'all' ? undefined : next as OverviewRunsQuery['group'] }); }}>
+		<div className="scroll-container max-w-full overflow-x-auto" data-slot="overview-runs-views-scroll">
+		<ToggleGroup aria-label={catalog.viewsLabel} className="w-max" data-slot="overview-runs-views" spacing={1} value={[query.group ?? 'all']} variant="outline" onValueChange={(value) => { const next = value[0]; if (next !== undefined) update({ group: next === 'all' ? undefined : next as OverviewRunsQuery['group'] }); }}>
 			{views.map((view) => <ToggleGroupItem aria-label={view.label} key={view.value} value={view.value ?? 'all'}>{view.label}</ToggleGroupItem>)}
 		</ToggleGroup>
+		</div>
 	);
 }
 
@@ -234,6 +241,8 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 	const clear = (): void => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined, group: undefined });
 	return (
 		<>
+			{/* Views, search and filters are one group of controls: 8px between its rows, a block's distance to the table. */}
+			<div className="flex flex-col gap-2" data-slot="overview-runs-controls">
 			<DataTableToolbar>
 				<QuickViews catalog={catalog} query={query} update={update} />
 				<DataTableFilter className="sm:max-w-64" locale={props.locale} placeholder={catalog.search} table={table} />
@@ -242,6 +251,7 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 			<DataTableToolbar>
 				<OverviewRunsFilters catalog={catalog} inspector={inspector} query={query} scopeProjectId={scopeProjectId} update={update} />
 			</DataTableToolbar>
+			</div>
 			<OverviewRunsAlerts catalog={catalog} error={error} page={page} onRetry={onRetry} />
 			<DataTable
 				emptyAction={hasFilters(query, scopeProjectId) || query.group !== undefined ? <Button size="sm" type="button" variant="outline" onClick={clear}>{catalog.clearFilters}</Button> : undefined}

@@ -55,6 +55,28 @@ describe('readRunOverview', () => {
 		expect(result.runs[0]?.repository).toBe('acme/two');
 	});
 
+	test('nomeia a issue só para os projetos da página devolvida, e segue sem título quando o backlog falha', () => {
+		const data: Record<string, PersistedRunHistory[]> = {
+			'/safe/one/.gship/runtime.sqlite': [history('1', '2026-09-03T00:00:00.000Z'), history('2', '2026-09-02T00:00:00.000Z')],
+			'/safe/two/.gship/runtime.sqlite': [history('3', '2026-09-01T00:00:00.000Z')],
+			'/safe/three/.gship/runtime.sqlite': [history('4', '2026-08-01T00:00:00.000Z')],
+		};
+		const asked: string[] = [];
+		const result = readRunOverview([project('one'), project('two'), project('three')], { limit: 3 }, {
+			readHistory: (path) => data[path] ?? [],
+			readTitles: (entry) => {
+				asked.push(entry.id);
+				if (entry.id === 'two') throw new Error('backlog unavailable');
+				return new Map([['GSHIP-1', 'Fila: ordenar por urgência']]);
+			},
+		});
+		expect(result.runs.map((run) => [run.issueId, run.issueTitle])).toEqual([
+			['GSHIP-1', 'Fila: ordenar por urgência'], ['GSHIP-2', null], ['GSHIP-3', null],
+		]);
+		expect(asked).toEqual(['one', 'two']);
+		expect(result.errors).toEqual([]);
+	});
+
 	test('mantém resultados e identifica projeto indisponível sem expor path', () => {
 		const result = readRunOverview([project('good'), project('bad', 'Projeto indisponível')], {}, {
 			readHistory: (path) => {

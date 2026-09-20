@@ -18,7 +18,7 @@ import type { RunState } from '../run-view.ts';
 import { isRunActive, toneOf } from '../run-view.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { overviewAttention, sortProjectsByUrgency } from '../overview-counts.ts';
-import { formatDate, formatTime } from './overview-runs-screen.tsx';
+import { formatWhen } from './overview-runs-screen.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
 
 export const READINESS_TONE: Readonly<Record<RegisteredProjectView['readiness'], BadgeVariant>> = {
@@ -68,16 +68,13 @@ function ProjectStatusTable({ overview, catalog, locale }: { overview: ProjectOp
 	const runsCatalog = LOCALE_CATALOG[locale].overviewRuns;
 	const data = useMemo(() => sortProjectsByUrgency(overview.projects), [overview.projects]);
 	const columns = useMemo<GateshipColumnDef<ProjectEntry>[]>(() => {
-		const mono = 'type-data whitespace-nowrap text-xs';
-		const when = (entry: ProjectEntry, format: (value: string, locale: Locale) => string): React.ReactNode => { const value = deliveredAt(entry); return value === null ? null : <time dateTime={value}>{format(value, locale)}</time>; };
 		const defs: GateshipColumnDef<ProjectEntry>[] = [
 			{ id: 'project', header: catalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.project.id)}`}>{row.original.project.name}</a>{row.original.project.current ? <span className="hidden @xl:inline-flex"><Tag>{projectCatalog.currentBadge}</Tag></span> : null}</span> },
 			{ id: 'activity', header: catalog.activity, meta: { className: 'max-w-56' }, cell: ({ row }) => <ProjectActivity catalog={catalog} entry={row.original} locale={locale} /> },
 			{ id: 'readiness', header: projectCatalog.readinessLabel, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Badge variant={READINESS_TONE[row.original.project.readiness]}>{projectCatalog.readiness[row.original.project.readiness]}</Badge> },
 			{ id: 'backlog', header: catalog.backlogLabel, meta: { align: 'end', className: 'type-data', hideBelow: 'sm' }, cell: ({ row }) => row.original.backlog.state === 'available' ? row.original.backlog.counts.planned : <span className="font-sans text-muted-foreground">{catalog.partial}</span> },
 			{ id: 'lastDelivery', header: catalog.lastDelivery, meta: { hideBelow: 'md' }, cell: ({ row }) => <LastDelivery catalog={catalog} entry={row.original} /> },
-			{ id: 'date', header: runsCatalog.date, meta: { className: mono, hideBelow: 'md' }, cell: ({ row }) => when(row.original, formatDate) },
-			{ id: 'time', header: runsCatalog.time, meta: { className: `${mono} text-muted-foreground`, hideBelow: 'md' }, cell: ({ row }) => when(row.original, formatTime) },
+			{ id: 'date', header: runsCatalog.date, meta: { className: 'whitespace-nowrap tabular-nums text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => { const value = deliveredAt(row.original); return value === null ? null : <time dateTime={value}>{formatWhen(value, locale)}</time>; } },
 		];
 		/* A handful of projects in a fixed order: nothing here sorts or hides. */
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));

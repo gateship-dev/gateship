@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 
+import { readBacklogFromMain } from '../issues/backlog.ts';
 import type { RegisteredProject } from './project-registry.ts';
 import { type PullRequestDelivery, selectPullRequestDelivery } from './pull-request-delivery.ts';
 import { isRunState, type RunState } from './run-state.ts';
@@ -7,6 +8,7 @@ import {
 	type PersistedRunHistory,
 	readPersistedRunHistory,
 } from './run-store.ts';
+import { RUNTIME_SOURCE_REF } from './source-ref.ts';
 
 export const RUN_OVERVIEW_DEFAULT_LIMIT = 20;
 export const RUN_OVERVIEW_MAX_LIMIT = 100;
@@ -50,6 +52,8 @@ export interface RunOverviewRow {
 	repository?: string;
 	runId: string;
 	issueId: string;
+	/** What the issue is called on the source ref. Null when the backlog cannot be read or no longer holds the issue. */
+	issueTitle: string | null;
 	state: RunState;
 	createdAt: string;
 	updatedAt: string;
@@ -90,7 +94,13 @@ export interface RunOverviewPage {
 
 export interface RunOverviewReadOptions {
 	readHistory?: typeof readPersistedRunHistory;
+	/** Issue id to title, per project. Read only for the projects on the returned page. */
+	readTitles?: (project: RegisteredProject) => ReadonlyMap<string, string>;
 	now?: () => number;
+}
+
+function readIssueTitles(project: RegisteredProject): ReadonlyMap<string, string> {
+	return new Map(readBacklogFromMain(project.root, undefined, RUNTIME_SOURCE_REF).map((issue) => [issue.id, issue.title]));
 }
 
 function parseRunOverviewPageNumber(params: URLSearchParams, name: 'limit' | 'offset'): number | undefined {
@@ -172,6 +182,7 @@ function projectRun(project: RegisteredProject, item: PersistedRunHistory): RunO
 		...(project.repository === undefined ? {} : { repository: project.repository }),
 		runId: item.run.id,
 		issueId: item.run.issueId,
+		issueTitle: null,
 		state: item.run.state,
 		createdAt: item.run.createdAt,
 		updatedAt: item.run.updatedAt,
@@ -198,6 +209,18 @@ function matches(row: RunOverviewRow, filters: RunOverviewFilters, now: number):
 		&& (filters.providerId === undefined || row.providerId === filters.providerId)
 		&& (periodStart === null || Date.parse(row.createdAt) >= periodStart)
 		&& (search === undefined || search === '' || row.runId.toLowerCase().includes(search) || row.issueId.toLowerCase().includes(search));
+}
+
+/** A title is a courtesy: a backlog that cannot be read leaves the ids, and is not an error of the listing. */
+function nameIssues(page: RunOverviewRow[], projects: readonly RegisteredProject[], readTitles: NonNullable<RunOverviewReadOptions['readTitles']>): void {
+	for (const project of projects) {
+		const own = page.filter((row) => row.projectId === project.id);
+		if (own.length === 0) continue;
+		try {
+			const titles = readTitles(project);
+			for (const row of own) row.issueTitle = titles.get(row.issueId) ?? null;
+		} catch { /* ids only */ }
+	}
 }
 
 export function readRunOverview(
@@ -227,8 +250,10 @@ export function readRunOverview(
 	}
 	rows.sort((left, right) => compareRuns(left, right, filters.sortBy ?? 'updatedAt', filters.sortDirection ?? 'desc'));
 	const { limit, offset } = boundedPage(filters);
+	const page = rows.slice(offset, offset + limit);
+	nameIssues(page, projects, options.readTitles ?? readIssueTitles);
 	return {
-		runs: rows.slice(offset, offset + limit),
+		runs: page,
 		page: { limit, offset, returned: Math.min(limit, Math.max(0, rows.length - offset)), total: rows.length },
 		errors,
 	};

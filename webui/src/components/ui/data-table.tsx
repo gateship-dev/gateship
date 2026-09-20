@@ -275,7 +275,7 @@ export function DataTablePagination<TData extends RowData>({
 		</Button>
 	);
 	return (
-		<div className={cn('flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-2 text-sm', className)} data-slot="data-table-pagination">
+		<div className={cn('flex flex-wrap items-center justify-between gap-x-6 gap-y-3 text-sm', className)} data-slot="data-table-pagination">
 			<span aria-live="polite" className="font-mono text-muted-foreground text-xs tabular-nums">{text.range(from, to, total)}</span>
 			<div className="flex flex-wrap items-center gap-x-6 gap-y-3">
 				<label className="flex items-center gap-2 text-muted-foreground">
