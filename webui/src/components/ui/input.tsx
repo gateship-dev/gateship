@@ -26,10 +26,11 @@ const INNER =
 
 export function Input({
 	className,
+	mono = false,
 	...props
-}: Omit<InputPrimitive.Props, 'className'> & { className?: string }): React.ReactElement {
+}: Omit<InputPrimitive.Props, 'className'> & { className?: string; /** What is typed in the data voice: a command is read character by character. */ mono?: boolean }): React.ReactElement {
 	return (
-		<span className={cn(WRAPPER, className)} data-slot="input-control">
+		<span className={cn(WRAPPER, mono && 'font-mono', className)} data-slot="input-control">
 			<InputPrimitive className={INNER} data-slot="input" {...props} />
 		</span>
 	);

@@ -21,12 +21,14 @@ const INNER =
 	'field-sizing-content min-h-17.5 w-full resize-none rounded-[inherit] px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] ' +
 	'text-foreground outline-none placeholder:text-muted-foreground/72 max-sm:min-h-20.5';
 
+/** `mono` sets what is typed in the data voice: a command is read character by character. */
 export function Textarea({
 	className,
+	mono = false,
 	...props
-}: React.ComponentProps<'textarea'>): React.ReactElement {
+}: React.ComponentProps<'textarea'> & { mono?: boolean }): React.ReactElement {
 	return (
-		<span className={cn(WRAPPER, className)} data-slot="textarea-control">
+		<span className={cn(WRAPPER, mono && 'font-mono', className)} data-slot="textarea-control">
 			<textarea className={INNER} data-slot="textarea" {...props} />
 		</span>
 	);

@@ -39,7 +39,7 @@ export function RegisterProjectPanel({
 						if (root !== '') onRegisterProject(root);
 					}}
 				>
-					<FormField className="text-sm" htmlFor="project-root">
+					<FormField htmlFor="project-root">
 						<span className="font-medium">{catalog.register.rootLabel}</span>
 						<Input
 							id="project-root"
@@ -96,7 +96,7 @@ export function ImportProjectPanel({
 						if (repository !== '') onImportProject(repository);
 					}}
 				>
-					<FormField className="text-sm" htmlFor="project-import-repository">
+					<FormField htmlFor="project-import-repository">
 						<span className="font-medium">{catalog.import.repositoryLabel}</span>
 						<Input
 							id="project-import-repository"
@@ -167,7 +167,7 @@ export function CreateProjectPanel({
 						});
 					}}
 				>
-					<FormField className="text-sm" htmlFor="project-create-repository">
+					<FormField htmlFor="project-create-repository">
 						<span className="font-medium">{catalog.create.repositoryLabel}</span>
 						<Input
 							id="project-create-repository"
@@ -180,7 +180,7 @@ export function CreateProjectPanel({
 							value={value ?? repository}
 						/>
 					</FormField>
-					<FormField className="text-sm" htmlFor="project-create-description">
+					<FormField htmlFor="project-create-description">
 						<span className="font-medium">{catalog.create.descriptionLabel}</span>
 						<Input
 							id="project-create-description"
@@ -192,7 +192,7 @@ export function CreateProjectPanel({
 							value={description}
 						/>
 					</FormField>
-					<FormField className="text-sm" htmlFor="project-create-visibility">
+					<FormField htmlFor="project-create-visibility">
 						<span className="font-medium">{catalog.create.visibilityLabel}</span>
 						<SelectField
 							id="project-create-visibility"

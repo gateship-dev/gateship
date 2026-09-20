@@ -56,5 +56,6 @@ export function FormStack({ className, children, ...props }: React.ComponentProp
 }
 
 export function FormField({ className, children, ...props }: React.ComponentProps<'label'>): React.ReactElement {
-	return <label className={cn('flex flex-col gap-1', className)} data-slot="form-field" {...props}>{children}</label>;
+	/* A field reads at the body size everywhere: the label, the help under it, the control's own text. */
+	return <label className={cn('flex flex-col gap-1 text-sm', className)} data-slot="form-field" {...props}>{children}</label>;
 }

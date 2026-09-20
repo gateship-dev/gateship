@@ -32,7 +32,7 @@ import {
 } from '@tanstack/react-table';
 import { ArrowDown01Icon, ArrowLeft01Icon, ArrowLeftDoubleIcon, ArrowRight01Icon, ArrowRightDoubleIcon, ArrowUp01Icon, Settings02Icon, UnfoldMoreIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import type React from 'react';
+import React, { useMemo, useState } from 'react';
 import { cn } from '../../lib/cn.ts';
 import { Button } from './button.tsx';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
@@ -92,6 +92,8 @@ const copy = {
 		page: (current: number, count: number) => `Page ${current} of ${count}`,
 		range: (from: number, to: number, total: number) => `${from}–${to} of ${total}`,
 		sortState: { ascending: 'sorted ascending', descending: 'sorted descending', none: 'not sorted' },
+		expandRow: 'Show details',
+		collapseRow: 'Hide details',
 	},
 	'pt-BR': {
 		filterPlaceholder: 'Filtrar linhas…',
@@ -113,6 +115,8 @@ const copy = {
 		page: (current: number, count: number) => `Página ${current} de ${count}`,
 		range: (from: number, to: number, total: number) => `${from}–${to} de ${total}`,
 		sortState: { ascending: 'ordem crescente', descending: 'ordem decrescente', none: 'sem ordenação' },
+		expandRow: 'Mostrar detalhes',
+		collapseRow: 'Ocultar detalhes',
 	},
 } as const;
 
@@ -299,6 +303,45 @@ export function DataTablePagination<TData extends RowData>({
 /** The acid rule on a row that waits on the operator: the one mark every list shares, so the table owns it. */
 const ATTENTION_ROW_CLASS = '[&>td:first-child]:shadow-attention-rule';
 
+/* One data row and, while it is open, the detail under it. */
+function DataTableBodyRow<TData extends RowData>({ row, attention, open, span, text, renderExpanded, onToggle }: {
+	row: ReturnType<GateshipTable<TData>['getRowModel']>['rows'][number]; attention: boolean; open: boolean; span: number;
+	text: { expandRow: string; collapseRow: string }; renderExpanded?: (row: TData) => React.ReactNode; onToggle: () => void;
+}): React.ReactElement {
+	return (
+		<>
+			<TableRow className={attention ? ATTENTION_ROW_CLASS : undefined} data-attention={attention ? '' : undefined} data-expanded={open ? '' : undefined}>
+				{renderExpanded === undefined ? null : (
+					<TableCell className="w-8 pr-0">
+						<Button aria-expanded={open} aria-label={open ? text.collapseRow : text.expandRow} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" onClick={onToggle}>
+							<HugeiconsIcon aria-hidden="true" className={cn('motion-safe:transition-transform', open && 'rotate-90')} icon={ArrowRight01Icon} size={14} strokeWidth={2.5} />
+						</Button>
+					</TableCell>
+				)}
+				{row.getVisibleCells().map((cell) => <TableCell className={cn(metaOf(cell.column).className, alignClass(cell.column))} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
+			</TableRow>
+			{/* `data-state` keeps the detail out of any count of data rows. */}
+			{open && renderExpanded !== undefined ? <TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="expanded"><TableCell className="whitespace-normal p-4" colSpan={span}>{renderExpanded(row.original)}</TableCell></TableRow> : null}
+		</>
+	);
+}
+
+/**
+ * Search and paging over rows the screen already holds. The table stays in its
+ * manual mode, the one every list uses: this slices the rows and hands back the
+ * state the toolbar and the pagination read.
+ */
+export function useClientPage<TData>(rows: readonly TData[], matches: (row: TData, needle: string) => boolean, pageSize = 20): { search: string; setSearch: (value: string) => void; limit: number; offset: number; setOffset: (value: number) => void; setLimit: (value: number) => void; page: TData[]; total: number } {
+	const [search, setSearchValue] = useState('');
+	const [limit, setLimitValue] = useState(pageSize);
+	const [requested, setOffset] = useState(0);
+	const needle = search.trim().toLocaleLowerCase();
+	const filtered = useMemo(() => needle === '' ? [...rows] : rows.filter((row) => matches(row, needle)), [rows, needle, matches]);
+	/* A row settled elsewhere can empty the last page: fall back to the last one that has rows. */
+	const offset = requested < filtered.length ? requested : Math.max(0, Math.floor((filtered.length - 1) / limit) * limit);
+	return { search, setSearch: (value) => { setSearchValue(value); setOffset(0); }, limit, offset, setOffset, setLimit: (value) => { setLimitValue(value); setOffset(0); }, page: filtered.slice(offset, offset + limit), total: filtered.length };
+}
+
 export type DataTableStatus = 'ready' | 'loading' | 'updating' | 'error';
 
 /**
@@ -318,6 +361,8 @@ export function DataTable<TData extends RowData>({
 	emptyAction,
 	skeletonRows = 5,
 	needsOperator,
+	renderExpanded,
+	defaultExpanded,
 	className,
 }: TableControlProps<TData> & {
 	status?: DataTableStatus;
@@ -327,8 +372,15 @@ export function DataTable<TData extends RowData>({
 	skeletonRows?: number;
 	/** Which rows wait on the operator. The table draws the acid rule; a screen never styles a row. */
 	needsOperator?: (row: TData) => boolean;
+	/** What a row opens into. Given, every row leads with a chevron, and the content is built only while its row is open. */
+	renderExpanded?: (row: TData) => React.ReactNode;
+	/** Row ids open on first render, as `defaultValue` is to an input. */
+	defaultExpanded?: readonly string[];
 }): React.ReactElement {
 	const text = copy[locale];
+	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(defaultExpanded));
+	const toggle = (id: string): void => setExpanded((current) => { const next = new Set(current); if (!next.delete(id)) next.add(id); return next; });
+	const span = table.getVisibleLeafColumns().length + (renderExpanded === undefined ? 0 : 1);
 	const rows = table.getRowModel().rows;
 	const columns = table.getVisibleLeafColumns();
 	const busy = status === 'loading' || status === 'updating';
@@ -339,6 +391,7 @@ export function DataTable<TData extends RowData>({
 				<TableHeader>
 					{table.getHeaderGroups().map((headerGroup) => (
 						<TableRow key={headerGroup.id}>
+							{renderExpanded === undefined ? null : <TableHead className="w-8 pr-0"><span className="sr-only">{text.expandRow}</span></TableHead>}
 							{headerGroup.headers.map((header) => (
 								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={alignClass(header.column)} key={header.id}>
 									{header.isPlaceholder ? null : typeof header.column.columnDef.header === 'string'
@@ -353,18 +406,15 @@ export function DataTable<TData extends RowData>({
 					{status === 'loading' && rows.length === 0
 						? Array.from({ length: skeletonRows }, (_, index) => (
 							<TableRow data-state="loading" key={`skeleton-${index}`}>
+								{renderExpanded === undefined ? null : <TableCell className="w-8 pr-0" />}
 								{columns.map((column) => <TableCell className={cn(metaOf(column).className, alignClass(column))} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
 							</TableRow>
 						))
-						: rows.map((row) => (
-							<TableRow className={needsOperator?.(row.original) ? ATTENTION_ROW_CLASS : undefined} data-attention={needsOperator?.(row.original) ? '' : undefined} key={row.id}>
-								{row.getVisibleCells().map((cell) => <TableCell className={cn(metaOf(cell.column).className, alignClass(cell.column))} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
-							</TableRow>
-						))}
+						: rows.map((row) => <DataTableBodyRow attention={needsOperator?.(row.original) === true} key={row.id} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}
 					{/* `data-state` tells a data row from a stand-in: anything counting rows reads `tr:not([data-state])`. */}
 					{rows.length === 0 && status !== 'loading' ? (
 						<TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="empty">
-							<TableCell className="h-32 text-center" colSpan={columns.length}>
+							<TableCell className="h-32 text-center" colSpan={span}>
 								<Empty className="p-2" role="status">
 									<EmptyHeader>
 										<EmptyTitle>{emptyState ?? text.noResults}</EmptyTitle>

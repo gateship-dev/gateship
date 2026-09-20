@@ -374,7 +374,19 @@ export interface WorkCatalog {
 		queue: string;
 		approval: string;
 		ideas: string;
-		suggestions: string;
+		diagnostics: string;
+		proposals: string;
+	};
+	/** The two suggestion lists: their quick views, search and columns. */
+	list: {
+		views: string;
+		pendingProposals: (formattedCount: string) => string;
+		resolvedProposals: (formattedCount: string) => string;
+		pendingFindings: (formattedCount: string) => string;
+		resolvedFindings: (formattedCount: string) => string;
+		searchProposals: string;
+		searchFindings: string;
+		columns: { title: string; origin: string; run: string; status: string; severity: string; rule: string; location: string; occurrences: string; actions: string };
 	};
 	backlog: {
 		title: string;
@@ -431,12 +443,11 @@ export interface WorkCatalog {
 		cancel: string;
 		severityLabels: Readonly<Record<'error' | 'warning' | 'info', string>>;
 		statusLabels: Readonly<Record<'pending' | 'dismissed' | 'promoted' | 'cleared', string>>;
-		occurrences: (formattedCount: string) => string;
 		toolVersion: (version: string) => string;
 		dismiss: string;
 		defaultIssueTitle: (rule: string, file: string) => string;
 		noPending: string;
-		resolved: (formattedCount: string) => string;
+		noResolved: string;
 		omitted: (formattedCount: string) => string;
 		noHistory: string;
 		history: (promoted: string, dismissed: string, cleared: string, pending: string) => string;
@@ -444,12 +455,8 @@ export interface WorkCatalog {
 		dismissalDisclaimer: string;
 	};
 	proposals: {
-		pendingTitle: string;
-		pendingCount: (count: number, formattedCount: string) => string;
 		emptyPending: string;
 		dismiss: string;
-		resolvedTitle: string;
-		resolvedCount: (count: number, formattedCount: string) => string;
 		readOnly: string;
 		settledNote: string;
 		emptyResolved: string;
@@ -933,7 +940,18 @@ export const LOCALE_CATALOG = {
 				queue: 'Queue',
 				approval: 'Approval',
 				ideas: 'Ideas',
-				suggestions: 'Suggestions',
+				diagnostics: 'Diagnostics',
+				proposals: 'Proposals',
+			},
+			list: {
+				views: 'Views',
+				pendingProposals: (count) => `Pending ${count}`,
+				resolvedProposals: (count) => `Resolved ${count}`,
+				pendingFindings: (count) => `Pending ${count}`,
+				resolvedFindings: (count) => `Resolved ${count}`,
+				searchProposals: 'Search proposals',
+				searchFindings: 'Search findings',
+				columns: { title: 'Proposal', origin: 'Source issue', run: 'Source run', status: 'Status', severity: 'Severity', rule: 'Rule', location: 'Location', occurrences: 'Occurrences', actions: 'Actions' },
 			},
 			backlog: {
 				title: 'Executable backlog',
@@ -991,12 +1009,11 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancel diagnostic',
 				severityLabels: { error: 'error', warning: 'warning', info: 'info' },
 				statusLabels: { pending: 'Pending', dismissed: 'Dismissed', promoted: 'Promoted', cleared: 'Did not recur' },
-				occurrences: (formattedCount) => `×${formattedCount}`,
 				toolVersion: (version) => `tool ${version}`,
 				dismiss: 'Dismiss',
 				defaultIssueTitle: (rule, file) => `${rule} in ${file}`,
 				noPending: 'No pending findings.',
-				resolved: (formattedCount) => `Resolved (${formattedCount})`,
+				noResolved: 'No resolved findings yet.',
 				omitted: (formattedCount) => `+${formattedCount} not shown.`,
 				noHistory: "There is not enough history yet to measure this analyzer's usefulness.",
 				history: (promoted, dismissed, cleared, pending) => `Local history: ${promoted} promoted, ${dismissed} dismissed, ${cleared} that did not recur and ${pending} pending.`,
@@ -1004,12 +1021,8 @@ export const LOCALE_CATALOG = {
 				dismissalDisclaimer: 'Dismissal does not mean false positive; that can only be measured when the operator explicitly classifies the reason.',
 			},
 			proposals: {
-				pendingTitle: 'Derived proposals',
-				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'pending proposal' : 'pending proposals'}.`,
 				emptyPending: 'No pending proposals. A run records out-of-scope discoveries here.',
 				dismiss: 'Dismiss',
-				resolvedTitle: 'Resolved proposals',
-				resolvedCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'resolved proposal' : 'resolved proposals'}.`,
 				readOnly: 'read-only',
 				settledNote: 'Dismissal and promotion cannot be undone here.',
 				emptyResolved: 'No resolved proposals yet.',
@@ -1398,7 +1411,18 @@ export const LOCALE_CATALOG = {
 				queue: 'Fila',
 				approval: 'Aprovação',
 				ideas: 'Ideias',
-				suggestions: 'Sugestões',
+				diagnostics: 'Diagnósticos',
+				proposals: 'Propostas',
+			},
+			list: {
+				views: 'Visões',
+				pendingProposals: (count) => `Pendentes ${count}`,
+				resolvedProposals: (count) => `Resolvidas ${count}`,
+				pendingFindings: (count) => `Pendentes ${count}`,
+				resolvedFindings: (count) => `Resolvidos ${count}`,
+				searchProposals: 'Buscar propostas',
+				searchFindings: 'Buscar achados',
+				columns: { title: 'Proposta', origin: 'Issue de origem', run: 'Run de origem', status: 'Estado', severity: 'Severidade', rule: 'Regra', location: 'Local', occurrences: 'Ocorrências', actions: 'Ações' },
 			},
 			backlog: {
 				title: 'Backlog executável',
@@ -1456,12 +1480,11 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancelar diagnóstico',
 				severityLabels: { error: 'erro', warning: 'aviso', info: 'informação' },
 				statusLabels: { pending: 'Pendente', dismissed: 'Descartado', promoted: 'Promovido', cleared: 'Não voltou a ocorrer' },
-				occurrences: (formattedCount) => `×${formattedCount}`,
 				toolVersion: (version) => `ferramenta ${version}`,
 				dismiss: 'Descartar',
 				defaultIssueTitle: (rule, file) => `${rule} em ${file}`,
 				noPending: 'Nenhum achado pendente.',
-				resolved: (formattedCount) => `Resolvidos (${formattedCount})`,
+				noResolved: 'Nenhum achado resolvido ainda.',
 				omitted: (formattedCount) => `+${formattedCount} não exibidos.`,
 				noHistory: 'Ainda não há histórico suficiente para medir a utilidade deste analisador.',
 				history: (promoted, dismissed, cleared, pending) => `Histórico local: ${promoted} promovidos, ${dismissed} descartados, ${cleared} que não voltaram a ocorrer e ${pending} pendentes.`,
@@ -1469,12 +1492,8 @@ export const LOCALE_CATALOG = {
 				dismissalDisclaimer: 'Descartar não significa falso positivo; isso só pode ser medido quando o operador classifica explicitamente o motivo.',
 			},
 			proposals: {
-				pendingTitle: 'Propostas derivadas',
-				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'proposta pendente' : 'propostas pendentes'}.`,
 				emptyPending: 'Nenhuma proposta pendente. Uma execução registra aqui as descobertas fora do escopo.',
 				dismiss: 'Descartar',
-				resolvedTitle: 'Propostas resolvidas',
-				resolvedCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'proposta resolvida' : 'propostas resolvidas'}.`,
 				readOnly: 'somente leitura',
 				settledNote: 'O descarte e a promoção não podem ser desfeitos aqui.',
 				emptyResolved: 'Nenhuma proposta resolvida ainda.',

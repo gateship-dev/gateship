@@ -158,6 +158,7 @@ import {
 import { queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
 import { QueueEmptyState, QueueRow, queueErrorsForFilter, queueStatus, sortQueuesByUrgency } from '../../webui/src/screens/overview-queues-screen.tsx';
 import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
+import { DiagnosticsPanel, ProposalsPanel } from '../../webui/src/screens/work-screen.tsx';
 import { type NotificationItem, NotificationsPopover, notificationItems, type PanelKeyEvent, PanelToggleGlyph, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
 const BACKLOG = [
@@ -1999,43 +2000,38 @@ describe('work surface', () => {
 			'Título autoral sem tradução',
 			'Escopo autoral sem tradução',
 			'bun test --filter autoral',
-			'Evidência proposta sem tradução.',
-			'Evidência do operador sem tradução.',
 			'regra-autoral',
 			'src/arquivo-autoral.tsx',
 			'Analyzer Factual',
 			'Descrição factual do analyzer.',
-			'GSHIP-999',
 		];
 		const cases = [
 			{
 				locale: 'en-US',
-				empty: ['Executable backlog', '2 admissible issues right now.', 'No pending findings.', '0 open and specified issues.', 'No pending proposals.', 'No resolved proposals yet.', 'New issue'],
+				empty: ['Executable backlog', '2 admissible issues right now.', 'No pending findings.', '0 open and specified issues.', 'No pending proposals.', 'New issue'],
 				actionable: [
 					'Start run', 'Gateship Diagnostics', '1 pending finding.', 'Advisory: never fixes, approves or blocks shipping.',
-					'warning', 'tool 0.9.12', 'Dismiss', 'Promote', 'regra-autoral in src/arquivo-autoral.tsx',
-					'Resolved (1)', 'Promoted', '+1,234 not shown.', 'Local history: 1 promoted, 0 dismissed, 0 that did not recur and 1 pending.',
+					'warning', 'Dismiss', 'Severity', 'Rule', 'Location', 'Occurrences', 'Search findings',
+					'Pending 1', 'Resolved 1', 'Local history: 1 promoted, 0 dismissed, 0 that did not recur and 1 pending.',
 					'1 finding recurred in another scan.', 'Dismissal does not mean false positive', 'Review and approve',
 					'1 open and specified issue.', 'stale', 'Scope and expected outcome', 'Verification command',
 					'Save revision', 'I confirm the persisted scope and verificationCommand.', 'Approve', 'Reason for abandonment',
-					'Abandon', 'Derived proposals', '1 pending proposal.', 'Title', 'Resolved proposals', 'read-only',
-					'Dismissal and promotion cannot be undone here.', 'became', 'Specify existing idea', 'Idea', 'Specify idea',
+					'Abandon', 'Proposals', 'Search proposals', 'Proposal', 'Source issue', 'Source run', 'Specify existing idea', 'Idea', 'Specify idea',
 					'New issue', 'Create issue',
 				],
 				analyzerDescription: 'Errors, security, performance and accessibility in React projects.',
 			},
 			{
 				locale: 'pt-BR',
-				empty: ['Backlog executável', '2 issues admissíveis agora.', 'Nenhum achado pendente.', '0 issues abertas e especificadas.', 'Nenhuma proposta pendente.', 'Nenhuma proposta resolvida ainda.', 'Nova issue'],
+				empty: ['Backlog executável', '2 issues admissíveis agora.', 'Nenhum achado pendente.', '0 issues abertas e especificadas.', 'Nenhuma proposta pendente.', 'Nova issue'],
 				actionable: [
 					'Iniciar execução', 'Diagnósticos do Gateship', '1 achado pendente.', 'Consultivo: nunca corrige, aprova nem bloqueia o envio.',
-					'aviso', 'ferramenta 0.9.12', 'Descartar', 'Promover', 'regra-autoral em src/arquivo-autoral.tsx',
-					'Resolvidos (1)', 'Promovido', '+1.234 não exibidos.', 'Histórico local: 1 promovidos, 0 descartados, 0 que não voltaram a ocorrer e 1 pendentes.',
+					'aviso', 'Descartar', 'Severidade', 'Regra', 'Local', 'Ocorrências', 'Buscar achados',
+					'Pendentes 1', 'Resolvidos 1', 'Histórico local: 1 promovidos, 0 descartados, 0 que não voltaram a ocorrer e 1 pendentes.',
 					'1 achado voltou a ocorrer em outra análise.', 'Descartar não significa falso positivo', 'Revisar e aprovar',
 					'1 issue aberta e especificada.', 'desatualizada', 'Escopo e resultado esperado', 'Comando de verificação',
 					'Salvar revisão', 'Confirmo o escopo e o verificationCommand persistidos.', 'Aprovar', 'Motivo do abandono',
-					'Abandonar', 'Propostas derivadas', '1 proposta pendente.', 'Título', 'Propostas resolvidas', 'somente leitura',
-					'O descarte e a promoção não podem ser desfeitos aqui.', 'virou', 'Especificar ideia existente', 'Ideia', 'Especificar ideia',
+					'Abandonar', 'Propostas', 'Buscar propostas', 'Proposta', 'Issue de origem', 'Run de origem', 'Especificar ideia existente', 'Ideia', 'Especificar ideia',
 					'Nova issue', 'Criar issue',
 				],
 				analyzerDescription: 'Erros, segurança, desempenho e acessibilidade em projetos React.',
@@ -2094,16 +2090,14 @@ describe('work surface', () => {
 	test('empty Work content stays compact and offers no inert run action', () => {
 		const html = workPage({ backlog: [] });
 		const emptyBacklog = elementWith(html, 'data-state="empty"');
-		const compactStates = openingTags(html).filter((tag) => tag.includes('data-density="compact"'));
+		const emptyRows = openingTags(html).filter((tag) => tag.startsWith('<tr') && tag.includes('data-state="empty"'));
 
 		expect(emptyBacklog).toContain('data-slot="card-frame"');
 		expect(html).toContain('0 admissible issues right now.');
 		expect(hasButton(html, 'Start run')).toBe(false);
-		expect(compactStates).toHaveLength(3);
-		for (const state of compactStates) {
-			expect(state).not.toContain('min-h-24');
-			expect(state).not.toContain('p-6');
-		}
+		// The two suggestion lists say "nothing here" inside their own table, one row each, not in a padded box apiece.
+		expect(emptyRows).toHaveLength(2);
+		expect(html).not.toContain('data-density="compact"');
 	});
 
 	test('reviews specified drafts in a closed disclosure and requires persisted confirmation', () => {
@@ -2292,30 +2286,35 @@ describe('work surface', () => {
 		};
 		const html = workPage({ diagnostics });
 
-		expect(panelIsOpen(html, 'Gateship Diagnostics')).toBe(false);
+		// A tab of its own: what the analyzer is and how its last scan went, then the findings as a list.
+		expect(html).toMatch(/Diagnostics<span[^>]*>1<\/span>/);
 		expect(html).toContain('Advisory: never fixes, approves or blocks shipping.');
 		expect(html).toContain('no-transition-all');
 		expect(html).toContain('webui/src/App.tsx:42');
-		expect(html).toContain('Avoid animating every CSS property.');
 		expect(buttonIsEnabled(html, 'Run now')).toBe(true);
 		expect(buttonIsEnabled(html, 'Dismiss')).toBe(true);
-		expect(buttonIsEnabled(html, 'Promote')).toBe(true);
-		expect(html).toContain('Resolved (1)');
-		expect(html).toContain('GSHIP-900');
-		expect(panel(workPage(), 'Gateship Diagnostics')).not.toContain('data-slot="card-footer"');
-		const nextPanel = html.indexOf('>Derived proposals</h2>');
-		const diagnosticsCard = html.slice(
-			html.indexOf('>Gateship Diagnostics</h2>'),
-			html.lastIndexOf('<details', nextPanel),
-		);
-		expect([...diagnosticsCard.matchAll(/data-slot="card-footer"/g)]).toHaveLength(1);
-		expect(diagnosticsCard.indexOf('data-slot="card-footer"')).toBeGreaterThan(
-			diagnosticsCard.lastIndexOf('GSHIP-900'),
-		);
-		expect(html).toContain('+3 not shown.');
 		expect(html).toContain('Local history: 1 promoted, 1 dismissed');
 		expect(html).toContain('Dismissal does not mean false positive');
 		expect(html).not.toContain('Pontuação');
+		// A closed row mounts neither its evidence nor its promotion form.
+		expect(html).not.toContain('Avoid animating every CSS property.');
+		expect(html).not.toContain('name="diagnosticObjective"');
+
+		const panelProps = { catalog: LOCALE_CATALOG['en-US'].work, diagnostics, locale: 'en-US' as const, pending: false, onStartDiagnostic: () => {}, onCancelDiagnostic: () => {}, onDismissDiagnosticFinding: () => {}, onPromoteDiagnosticFinding: () => {} };
+		// No analyzer, no action edge: the card never reserves an empty footer.
+		expect(renderToStaticMarkup(<DiagnosticsPanel {...panelProps} diagnostics={emptyDiagnostics()} />)).not.toContain('data-slot="card-footer"');
+		const open = renderToStaticMarkup(<DiagnosticsPanel {...panelProps} defaultOpenId="diagnostic-1" />);
+		expect(open).toContain('Avoid animating every CSS property.');
+		expect(buttonIsEnabled(open, 'Promote')).toBe(true);
+		for (const name of ['diagnosticTitle', 'diagnosticObjective', 'diagnosticAcceptance', 'diagnosticBoundaries', 'diagnosticVerificationCommand']) expect((open.match(new RegExp(`name="${name}"`, 'g')) ?? []).length).toBe(1);
+		// What a finding became is a read-only view of the same list.
+		const resolved = renderToStaticMarkup(<DiagnosticsPanel {...panelProps} defaultOpenId="diagnostic-2" defaultView="resolved" />);
+		expect(resolved).toContain('Resolved 1');
+		expect(resolved).toContain('old-rule');
+		expect(resolved).toContain('GSHIP-900');
+		expect(resolved).toContain('+3 not shown.');
+		expect(hasButton(resolved, 'Dismiss')).toBe(false);
+		expect(hasButton(resolved, 'Promote')).toBe(false);
 
 		const active = workPage({
 			diagnostics: {
@@ -2328,152 +2327,87 @@ describe('work surface', () => {
 	});
 
 	// GSHIP-613: the third card of /work, disclosed like the drafts one.
-	test('pending proposals are read as evidence and decided, never edited', () => {
-		const html = workPage({ proposals: [{
-			id: 'run-1-proposal-1',
-			title: 'Cobrir o retry do shipper',
-			evidence: 'Sem teste no caminho de erro.',
-			sourceRunId: 'run-1',
-			sourceIssueId: 'CAM-50',
-		}] });
-		const card = panel(html, 'Derived proposals');
+	const PENDING_PROPOSAL = { id: 'run-1-proposal-1', title: 'Cobrir o retry do shipper', evidence: 'Sem teste no caminho de erro.', sourceRunId: 'run-1', sourceIssueId: 'CAM-50' };
+	const PROMOTED_PROPOSAL = { id: 'run-1-proposal-2', title: 'Extrair o parser de eventos', evidence: 'Duplicado em dois adaptadores.', sourceRunId: 'run-1', sourceIssueId: 'CAM-50', status: 'promoted' as const, promotedIssueId: 'CAM-951' };
+	const DISMISSED_PROPOSAL = { id: 'run-1-proposal-3', title: 'Ideia descartada', evidence: 'Já coberto em outro lugar.', sourceRunId: 'run-1', sourceIssueId: 'CAM-50', status: 'dismissed' as const, promotedIssueId: null };
+	/* The list is interactive (a view, an open row), so its states are rendered through the panel's own defaults. */
+	const proposalsList = (overrides: Partial<React.ComponentProps<typeof ProposalsPanel>> = {}): string => renderToStaticMarkup(
+		<ProposalsPanel catalog={LOCALE_CATALOG['en-US'].work} locale="en-US" onDismissProposal={() => {}} onPromoteProposal={() => {}} pending={false} proposals={[]} resolvedProposals={[]} resolvedProposalsOmittedCount={0} {...overrides} />,
+	);
 
-		expect(card).not.toContain('open=""');
-		expect(card).toContain('1 pending proposal.');
-		expect(card).toContain('Cobrir o retry do shipper');
+	test('pending proposals are a searchable list: the evidence and the contract open under the row, never edited', () => {
+		const closed = proposalsList({ proposals: [PENDING_PROPOSAL] });
+		expect(closed).toContain('Cobrir o retry do shipper');
+		expect(closed).toContain('CAM-50');
+		expect(closed).toContain('placeholder="Search proposals"');
+		// Eighty closed rows used to mount eighty forms: a closed row carries no field at all.
+		expect(closed).not.toContain('<textarea');
+		expect(closed).not.toContain('Sem teste no caminho de erro.');
+		expect(buttonIsEnabled(closed, 'Dismiss')).toBe(true);
+
+		const open = proposalsList({ proposals: [PENDING_PROPOSAL], defaultOpenId: PENDING_PROPOSAL.id });
 		// The evidence and its provenance are printed, and no field can change them.
-		expect(card).toContain('Sem teste no caminho de erro.');
-		expect(card).toContain('CAM-50');
-		expect(card).toContain('run-1');
-		expect(card).not.toContain('name="evidence"');
+		expect(open).toContain('Sem teste no caminho de erro.');
+		expect(open).toContain('run-1');
+		expect(open).not.toContain('name="evidence"');
 		// Promotion is the operator's own contract, pre-filled with the title only.
-		expect(card).toContain('value="Cobrir o retry do shipper"');
-		expect(card).toContain('name="proposalScope"');
-		expect(card).toContain('name="proposalVerificationCommand"');
-		expect(buttonIsEnabled(card, 'Dismiss')).toBe(true);
-		expect(buttonIsEnabled(card, 'Promote')).toBe(true);
-		// Promoting files a draft: this card never approves and never starts a run.
-		expect(hasButton(card, 'Approve')).toBe(false);
-		expect(hasButton(card, 'Start run')).toBe(false);
+		expect(open).toContain('value="Cobrir o retry do shipper"');
+		// One field per name: a second one turns `namedItem` into a list whose value is empty.
+		for (const name of ['proposalTitle', 'proposalObjective', 'proposalAcceptance', 'proposalBoundaries', 'proposalVerificationCommand']) expect((open.match(new RegExp(`name="${name}"`, 'g')) ?? []).length).toBe(1);
+		expect(buttonIsEnabled(open, 'Promote')).toBe(true);
+		// Promoting files a draft: this list never approves and never starts a run.
+		expect(hasButton(open, 'Approve')).toBe(false);
+		expect(hasButton(open, 'Start run')).toBe(false);
 	});
 
-	test('an empty inbox still renders the card, and a command in flight holds both decisions', () => {
-		const empty = panel(workPage(), 'Derived proposals');
-		expect(empty).toContain('0 pending proposals.');
+	test('an empty inbox says so, and a command in flight holds both decisions', () => {
+		const empty = proposalsList();
 		expect(empty).toContain('No pending proposals.');
+		expect(empty).toContain('Pending 0');
 
-		const held = panel(
-			workPage({
-				pending: true,
-				proposals: [{
-					id: 'run-1-proposal-1',
-					title: 'Proposta pendente',
-					evidence: 'Evidência capturada.',
-					sourceRunId: 'run-1',
-					sourceIssueId: 'CAM-50',
-				}],
-			}),
-			'Derived proposals',
-		);
+		const held = proposalsList({ pending: true, proposals: [PENDING_PROPOSAL], defaultOpenId: PENDING_PROPOSAL.id });
 		expect(buttonIsEnabled(held, 'Dismiss')).toBe(false);
 		expect(buttonIsEnabled(held, 'Promote')).toBe(false);
 	});
 
 	// GSHIP-643: a settled proposal is visible, read-only, and distinguishes a
 	// promoted one -- which shows the issue it became -- from a dismissed one.
-	test('a promoted proposal is shown resolved, carrying the issue it became', () => {
-		const html = workPage({
-			resolvedProposals: [{
-				id: 'run-1-proposal-2',
-				title: 'Extrair o parser de eventos',
-				evidence: 'Duplicado em dois adaptadores.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-				status: 'promoted',
-				promotedIssueId: 'CAM-951',
-			}],
-		});
-		const card = panel(html, 'Resolved proposals');
-
-		expect(card).toContain('1 resolved proposal.');
-		expect(card).toContain('Extrair o parser de eventos');
-		expect(card).toContain('Promoted');
-		expect(card).toContain('CAM-951');
-		expect(card).not.toContain('Dismissed');
-		// It is read-only: no decision is offered here, ever.
-		expect(hasButton(card, 'Dismiss')).toBe(false);
-		expect(hasButton(card, 'Promote')).toBe(false);
-	});
-
-	test('a dismissed proposal is shown resolved, carrying no issue', () => {
-		const card = panel(workPage({
-			resolvedProposals: [{
-				id: 'run-1-proposal-3',
-				title: 'Ideia descartada',
-				evidence: 'Já coberto em outro lugar.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-				status: 'dismissed',
-				promotedIssueId: null,
-			}],
-		}), 'Resolved proposals');
-
-		expect(card).toContain('Ideia descartada');
-		expect(card).toContain('Dismissed');
-		expect(card).not.toContain('Promoted');
+	test('resolved proposals are a read-only view: a promoted one carries the issue it became, a dismissed one none', () => {
+		const resolved = proposalsList({ resolvedProposals: [PROMOTED_PROPOSAL, DISMISSED_PROPOSAL], defaultView: 'resolved', defaultOpenId: PROMOTED_PROPOSAL.id });
+		expect(resolved).toContain('Resolved 2');
+		expect(resolved).toContain('Extrair o parser de eventos');
+		expect(resolved).toContain('Promoted');
+		expect(resolved).toContain('CAM-951');
+		expect(resolved).toContain('Ideia descartada');
+		expect(resolved).toContain('Dismissed');
+		expect(resolved).toContain('Duplicado em dois adaptadores.');
+		// It is read-only: no decision is offered here, ever, not even under an open row.
+		expect(hasButton(resolved, 'Dismiss')).toBe(false);
+		expect(hasButton(resolved, 'Promote')).toBe(false);
+		expect(resolved).not.toContain('<textarea');
 	});
 
 	test('an empty or truncated resolved history renders as such, never in silence', () => {
-		const empty = panel(workPage(), 'Resolved proposals');
-		expect(empty).toContain('0 resolved proposals.');
+		const empty = proposalsList({ defaultView: 'resolved' });
 		expect(empty).toContain('No resolved proposals yet.');
 		expect(empty).not.toContain('not shown');
 
-		const truncated = panel(
-			workPage({
-				resolvedProposals: [{
-					id: 'run-1-proposal-4',
-					title: 'Mais uma ideia',
-					evidence: 'Evidência.',
-					sourceRunId: 'run-1',
-					sourceIssueId: 'CAM-50',
-					status: 'dismissed',
-					promotedIssueId: null,
-				}],
-				resolvedProposalsOmittedCount: 5,
-			}),
-			'Resolved proposals',
-		);
+		const truncated = proposalsList({ defaultView: 'resolved', resolvedProposals: [DISMISSED_PROPOSAL], resolvedProposalsOmittedCount: 5 });
 		expect(truncated).toContain('+5 resolved proposals not shown.');
 	});
 
 	test('a resolved proposal never appears in, or shrinks, the pending inbox', () => {
-		const html = workPage({
-			proposals: [{
-				id: 'run-1-proposal-1',
-				title: 'Proposta pendente',
-				evidence: 'Evidência capturada.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-			}],
-			resolvedProposals: [{
-				id: 'run-1-proposal-2',
-				title: 'Proposta promovida',
-				evidence: 'Evidência resolvida.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-				status: 'promoted',
-				promotedIssueId: 'CAM-951',
-			}],
-		});
-		const pendingCard = panel(html, 'Derived proposals');
-		expect(pendingCard).toContain('1 pending proposal.');
-		expect(pendingCard).toContain('Proposta pendente');
-		expect(pendingCard).not.toContain('Proposta promovida');
+		const both = { proposals: [PENDING_PROPOSAL], resolvedProposals: [PROMOTED_PROPOSAL] };
+		const pendingView = proposalsList(both);
+		expect(pendingView).toContain('Pending 1');
+		expect(pendingView).toContain('Cobrir o retry do shipper');
+		expect(pendingView).not.toContain('Extrair o parser de eventos');
 
-		const resolvedCard = panel(html, 'Resolved proposals');
-		expect(resolvedCard).toContain('Proposta promovida');
-		expect(resolvedCard).not.toContain('Proposta pendente');
+		const resolvedView = proposalsList({ ...both, defaultView: 'resolved' });
+		expect(resolvedView).toContain('Extrair o parser de eventos');
+		expect(resolvedView).not.toContain('Cobrir o retry do shipper');
+		// The tab counts what still waits for a decision, not what was settled.
+		expect(workPage(both)).toMatch(/Proposals<span[^>]*>1<\/span>/);
 	});
 
 	test('ideas are specified directly, without a planner, and only when there are any', () => {
@@ -4488,10 +4422,9 @@ describe('operator shell', () => {
 		// Diagnostics and proposal data are both scoped to this selected project.
 		expect(html).toContain('Gateship Diagnostics');
 		expect(html).toContain('regra-autoral');
-		expect(html).toContain('Derived proposals');
-		expect(html).toContain('Resolved proposals');
+		expect(html).toContain('Search proposals');
+		expect(html).toContain('Resolved 1');
 		expect(html).toContain('proposta do boot');
-		expect(html).toContain('+3 resolved proposals not shown.');
 	});
 
 	test('the current project keeps the same work panels and their behaviour', () => {
@@ -4509,10 +4442,9 @@ describe('operator shell', () => {
 		expect(html).toContain('New issue');
 		expect(html).toContain('Gateship Diagnostics');
 		expect(html).toContain('regra-autoral');
-		expect(html).toContain('Derived proposals');
+		expect(html).toContain('Search proposals');
 		expect(html).toContain('proposta do boot');
-		expect(html).toContain('Resolved proposals');
-		expect(html).toContain('+3 resolved proposals not shown.');
+		expect(html).toContain('Resolved 1');
 	});
 
 	test('a not-ready non-current project keeps the unavailable surface on runs and work', () => {
