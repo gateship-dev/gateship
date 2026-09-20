@@ -15,7 +15,7 @@ import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunState } from '../run-view.ts';
 import { toneOf } from '../run-view.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
-import { overviewAttention, projectNeedsOperator, sortProjectsByUrgency } from '../overview-counts.ts';
+import { overviewAttention, sortProjectsByUrgency } from '../overview-counts.ts';
 import { formatDate, formatTime } from './overview-runs-screen.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
 
@@ -83,7 +83,7 @@ function ProjectStatusTable({ overview, catalog, locale }: { overview: ProjectOp
 	const table = useGateshipTable({ columns, data, features: gateshipTableFeatures, getRowId: (entry) => entry.project.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: data.length });
 	return <section aria-labelledby="overview-project-status">
 		<h2 className="sr-only" id="overview-project-status">{catalog.projectStatus}</h2>
-		<DataTable locale={locale} needsOperator={projectNeedsOperator} table={table} />
+		<DataTable locale={locale} table={table} />
 	</section>;
 }
 

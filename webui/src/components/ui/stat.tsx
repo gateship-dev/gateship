@@ -2,11 +2,9 @@
 //
 // One operational number: the value in the data voice (mono, tabular), the
 // label over it as a mono eyebrow. Statistics never carry color, with one
-// exception: `tone="attention"` is the only acid surface in the product. Acid
-// marks exactly one thing, work waiting on the operator (design-system.md,
-// Foundations), so nothing else may use the attention family as a surface.
-// Its border uses the -ui ramp so it holds 3:1 on the light canvas, and the
-// pulse honours reduced motion.
+// exception: `tone="attention"` says work is waiting on the operator, in the
+// warning family. The brand's acid is for the mark alone (design-system.md,
+// Foundations). The pulse honours reduced motion.
 // A figure that has a list behind it takes `href` and becomes the way there.
 
 import type React from 'react';
@@ -17,10 +15,8 @@ const SURFACE =
 	'before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-2xl)-1px)] ' +
 	'before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]';
 
-const ATTENTION =
-	'relative rounded-2xl border border-attention-ui bg-attention-surface p-4 ' +
-	'shadow-[inset_0_1px_0_rgba(255,255,255,0.5),0_2px_3px_rgba(0,0,0,0.05),0_6px_28px_rgba(200,255,0,0.09)] ' +
-	'dark:shadow-[0_2px_3px_rgba(0,0,0,0.3),0_6px_28px_rgba(200,255,0,0.09)]';
+/* The same surface, washed in the warning family: same ring, same bevel, so the row of figures keeps one outline. */
+const ATTENTION = `${SURFACE} border-warning/40 bg-warning/8 dark:bg-warning/16`;
 
 const LINK = 'block outline-none hover:border-ring/60 focus-visible:ring-2 focus-visible:ring-ring motion-safe:transition-colors';
 
@@ -46,8 +42,8 @@ export function Stat({
 		<>
 			{/* Label first, value under it (dashboard-01's section cards): the
 			 * eye scans labels across a row, then drops to the number it wants. */}
-			<p className={cn('type-eyebrow flex items-center gap-2', attention ? 'text-foreground' : 'text-muted-foreground')}>
-				{attention ? <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-attention-ui motion-safe:animate-pulse" /> : null}
+			<p className={cn('type-eyebrow flex items-center gap-2', attention ? 'text-warning-foreground' : 'text-muted-foreground')}>
+				{attention ? <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-warning motion-safe:animate-pulse" /> : null}
 				{label}
 			</p>
 			<p className="type-data mt-2 text-2xl">{value}</p>

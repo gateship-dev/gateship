@@ -6,9 +6,7 @@
 // call site uses it and it would pull in an icon package); the class strings
 // that reference it are inert without the indicator element.
 //
-// The `attention` variant is the acid form of the
-// solid button, reserved for actions that resolve an item waiting on the
-// operator; and the focus ring, which uses the neutral --ring token.
+// The focus ring uses the neutral --ring token.
 
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -38,10 +36,6 @@ export const buttonVariants = cva(
 			variant: {
 				default:
 					'not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-primary bg-primary text-primary-foreground shadow-primary/24 shadow-xs hover:bg-primary/90 data-pressed:bg-primary/90 [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none',
-				/* Gateship's acid form of the solid button; the gloss is stronger
-				 * because the fill is light. */
-				attention:
-					'not-disabled:inset-shadow-[0_1px_--theme(--color-white/32%)] border-attention bg-attention text-attention-foreground shadow-attention/24 shadow-xs hover:bg-attention/90 data-pressed:bg-attention/90 [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none',
 				destructive:
 					'not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-destructive bg-destructive text-white shadow-destructive/24 shadow-xs hover:bg-destructive/90 data-pressed:bg-destructive/90 [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none',
 				ghost:

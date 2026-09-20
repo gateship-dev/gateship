@@ -128,7 +128,7 @@ export function NotificationsPopover({ items, catalog }: { items: readonly Notif
 		<span aria-atomic="true" aria-live="polite" className="sr-only" data-slot="notifications-live">{announcement}</span>
 		<Popover.Trigger aria-label={catalog.label} className={cn(buttonVariants({ size: 'icon', variant: 'outline' }), 'relative')} data-slot="notifications-trigger">
 			<ShellIcon icon={Notification02Icon} />
-			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-attention px-1 font-mono text-xs leading-4 text-attention-foreground">{actionableCount}</span>}
+			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-foreground px-1 font-mono text-xs leading-4 text-background">{actionableCount}</span>}
 		</Popover.Trigger>
 		{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- a popup is as wide as its reading measure or as the viewport lets it be, whichever is smaller: no single token says both */}
 		<Popover.Portal><Popover.Positioner align="end" className="z-50" sideOffset={8}><Popover.Popup aria-label={catalog.label} className="w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg/5 outline-none">
@@ -253,7 +253,7 @@ function CurrentMark({ current }: { current: boolean }): React.ReactElement | nu
  * operator's turn, blue is work advancing, and idle is a hollow ring: nothing
  * is happening, so nothing is filled. */
 const STATE_DOT_CLASS: Record<OperatorAttention, string> = {
-	'Needs you': 'bg-attention',
+	'Needs you': 'bg-warning',
 	Working: 'bg-info',
 	Idle: 'border border-muted-foreground/70',
 };
@@ -690,7 +690,7 @@ export function ShellControls({
 		</Button>
 	) : null;
 	return (
-		<div className="w-full shrink-0 border-b border-border px-4 py-3 lg:px-6">
+		<div className="scroll-container scroll-gutter-end w-full shrink-0 overflow-hidden border-b border-border px-4 py-3 lg:px-6">
 			{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- equal flexible sides keep the title on the true centre while the controls on either side differ in width */}
 			<ShellContentFrame className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" data-slot="shell-controls-layout">
 				<div className="flex min-w-0 justify-start">

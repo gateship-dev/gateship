@@ -4013,7 +4013,7 @@ describe('operator shell', () => {
 		expect(unavailable).not.toContain('Some project data is unavailable.');
 	});
 
-	test('overview lists projects by urgency, marks the ones waiting on the operator and links each figure to its list', () => {
+	test('overview lists projects by urgency, says which wait on the operator without a rule on the row, and links each figure to its list', () => {
 		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
 		const entry = (project: typeof CURRENT_PROJECT, activeRun: NonNullable<AppProps['overview']>['projects'][number]['activeRun']) => ({
 			project, root: { state: 'available' as const }, backlog: { state: 'available' as const, counts: { idea: 0, specified: 0, planned: 1 } },
@@ -4031,9 +4031,10 @@ describe('operator shell', () => {
 		const rows = html.slice(html.indexOf('data-slot="data-table"')).split('<tr').slice(2);
 		expect(rows.map((row) => row.match(/(waiting|working|idle)-product/)?.[0])).toEqual(['waiting-product', 'working-product', 'idle-product']);
 		// The acid rule sits on the row that waits on the operator and on no other.
-		expect(rows[0]).toContain('data-attention=""');
-		expect(rows[0]).toContain('shadow-attention-rule');
-		expect(rows[1]).not.toContain('data-attention');
+		// What waits on the operator is said by order and by its state badge. No rule on the row's edge, no acid.
+		expect(rows[0]).toContain('>waiting-user<');
+		expect(html).not.toContain('shadow-attention-rule');
+		expect(html).not.toMatch(/(bg|text|border)-attention/);
 		expect(rows[0]).toContain('href="/projects/project-waiting/runs/run-waiting"');
 		expect(html).toContain('data-tone="attention"');
 		for (const href of ['/overview/runs', '/overview/queues', '/overview/runs?group=shipped&amp;period=7d']) expect(html).toMatch(new RegExp(`<a [^>]*data-slot="stat"[^>]*href="${href.replace('?', '\\?')}"`));

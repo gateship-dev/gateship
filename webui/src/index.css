@@ -122,8 +122,6 @@ html.gship-harness-reduced-motion *::after {
 	 * -ui and -text are the darkened ramps that keep AA on light surfaces.
 	 */
 	--color-attention: var(--attention);
-	/* The acid rule on the leading edge of whatever waits on the operator: one mark, one token. */
-	--shadow-attention-rule: inset 2px 0 0 var(--color-attention);
 	--color-attention-foreground: var(--attention-foreground);
 	--color-attention-ui: var(--attention-ui);
 	--color-attention-text: var(--attention-text);
@@ -385,6 +383,26 @@ html.gship-harness-reduced-motion *::after {
 }
 
 /*
+ * The wide preference releases the measure for lists alone, and only as far as
+ * a list needs it. A form, a row of figures or a paragraph only gets longer
+ * lines, and a table with a few short columns only gets holes between them.
+ * So every block keeps the measure, and a data table starts at the measure and
+ * grows past it when its columns ask for the room (more columns switched on,
+ * long values), up to the width the preference released. A surface that
+ * carries the outer ring counts the ring in its width (`--ring-inset`), so
+ * ringed and unringed blocks end on the same line.
+ */
+:root.gship-wide :is([data-slot='card-stack'], [data-slot='tabs-content'], [data-slot='card-stack'] > section) > :not([data-slot='tabs']):not([data-slot='data-table']):not(section:has(> [data-slot='data-table'])) {
+	max-width: calc(80rem - var(--ring-inset, 0px));
+}
+
+:root.gship-wide :is([data-slot='card-stack'], [data-slot='tabs-content'], [data-slot='card-stack'] > section) > [data-slot='data-table'] {
+	width: fit-content;
+	min-width: min(100% - 14px, 80rem - 14px);
+	max-width: calc(100% - 14px);
+}
+
+/*
  * The outer double border (operator decision, 2026-08-25, settling the
  * ring's final form): a flat 1px line 7px outside the surface, in Gateship
  * ui's own homepage tone (`border/64`), concentric with the surface's
@@ -407,6 +425,7 @@ html.gship-harness-reduced-motion *::after {
 @utility card-ring {
 	position: relative;
 	margin: 7px;
+	--ring-inset: 14px;
 
 	&::after {
 		content: '';
@@ -421,6 +440,7 @@ html.gship-harness-reduced-motion *::after {
 @utility card-ring-group {
 	position: relative;
 	margin: 7px;
+	--ring-inset: 14px;
 
 	&::after {
 		content: '';
@@ -470,8 +490,21 @@ html.gship-harness-reduced-motion *::after {
 	}
 }
 
+/* Symmetric gutters, for a popup list whose rows must sit centred whether or not it scrolls. */
 @utility scroll-container-stable {
 	scrollbar-gutter: stable both-edges;
+}
+
+/*
+ * The content column reserves its scrollbar on the end side only, so a page
+ * that scrolls and one that does not share one width. The shell's controls row
+ * reserves the same gutter (it never scrolls: `overflow: hidden` still honours
+ * `stable`), so both rows share one left edge and one right edge at every
+ * breakpoint. `both-edges` here pushed the content 8 to 11px inside the
+ * controls above it.
+ */
+@utility scroll-gutter-end {
+	scrollbar-gutter: stable;
 }
 
 /* CSS-only position-aware fade. Without a scroll timeline the initial

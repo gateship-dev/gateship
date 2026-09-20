@@ -53,8 +53,8 @@ const COLOR_TOKENS = [
 const TYPE_ROLES = [
 	['type-page-title', 'Page title'], ['type-editorial-title', 'Editorial title'], ['type-body', 'Body'], ['type-eyebrow', 'Eyebrow'], ['type-data', 'Data'],
 ] as const;
-const BADGE_VARIANTS: readonly BadgeVariant[] = ['default', 'secondary', 'outline', 'info', 'success', 'warning', 'error', 'merged', 'attention'];
-const BUTTON_VARIANTS = ['default', 'outline', 'ghost', 'destructive', 'attention'] as const;
+const BADGE_VARIANTS: readonly BadgeVariant[] = ['default', 'secondary', 'outline', 'info', 'success', 'warning', 'error', 'merged'];
+const BUTTON_VARIANTS = ['default', 'outline', 'ghost', 'destructive'] as const;
 const CALLOUT_TONES: readonly CalloutTone[] = ['neutral', 'success', 'warning', 'destructive'];
 const ROUTES = ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const;
 const SCENARIOS = ['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'insights-zero', 'insights-null', 'insights-long', 'insights-cohorts', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const;
@@ -97,7 +97,7 @@ type Row = { id: string; issue: string; state: BadgeVariant; label: string; proj
 const ROWS: Row[] = [
 	{ id: 'a1', issue: 'GSHIP-902', state: 'merged', label: 'Merged', project: 'gateship', duration: '21m 13s' },
 	{ id: 'b2', issue: 'GSHIP-896', state: 'error', label: 'failed', project: 'gateship', duration: '1m 35s' },
-	{ id: 'c3', issue: 'GSHIP-903', state: 'attention', label: 'waiting-user', project: 'reporter', duration: '4m 02s' },
+	{ id: 'c3', issue: 'GSHIP-903', state: 'warning', label: 'waiting-user', project: 'reporter', duration: '4m 02s' },
 ];
 
 /** Hides every option the product does not use, leaving the system as applied. */
@@ -293,7 +293,7 @@ function TableSample({ status }: { status: DataTableStatus }): React.ReactElemen
 				<DataTableFilter className="sm:max-w-64" placeholder="Search" table={table} />
 				<DataTableViewOptions table={table} />
 			</DataTableToolbar>
-			<DataTable emptyState="No runs match." needsOperator={(row) => row.state === 'attention'} status={status} table={table} />
+			<DataTable emptyState="No runs match." status={status} table={table} />
 			<DataTablePagination table={table} />
 		</div>
 	);
@@ -346,7 +346,7 @@ function Components(): React.ReactElement {
 					<Progress label="Recovery budget" value={40} />
 				</Block>
 			</div>
-			<Block rule="Stat is a figure with a mono eyebrow, and a link when a list sits behind it. Its attention tone is the only acid surface and appears only while work waits on you." spec={['stat', 'callout']} title="Stat, attention, callout">
+			<Block rule="Stat is a figure with a mono eyebrow, and a link when a list sits behind it. Its attention tone speaks in the warning family and appears only while work waits on you." spec={['stat', 'callout']} title="Stat, attention, callout">
 				<CardGrid className="sm:grid-cols-2 xl:grid-cols-4" compact equalHeight>
 					<Stat label="Active runs" value={2} />
 					<Stat label="Needs attention" tone="attention" value={1} />

@@ -365,7 +365,7 @@ function RunActivityEntry({
 				{technical.map((item) => <code className="max-w-full truncate" key={item}>{item}</code>)}
 				{label === null ? null : <Badge>{label}</Badge>}
 				{event.kind === 'run.cycle-response' ? <Badge>{catalog.cycleResponseLabel}</Badge> : null}
-				{attention ? <Badge variant="attention">{catalog.attentionLabel}</Badge> : null}
+				{attention ? <Badge variant="warning">{catalog.attentionLabel}</Badge> : null}
 			</span>
 		</>
 	);
@@ -471,10 +471,10 @@ export function RunProgress({
 						<li className="flex min-w-0 flex-1 items-start gap-2 sm:flex-col sm:items-center sm:gap-1" data-stage={phase} data-status={status} key={phase}>
 							<a
 								aria-current={status === 'current' ? 'step' : undefined}
-								className={cn('group flex min-h-11 min-w-0 items-center gap-2 rounded-sm px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-col sm:justify-center sm:text-center', attention && 'text-attention-text')}
+								className={cn('group flex min-h-11 min-w-0 items-center gap-2 rounded-sm px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-col sm:justify-center sm:text-center', attention && 'text-warning-foreground')}
 								href={`#run-activity-${phase}`}
 							>
-								<span aria-hidden="true" className={cn('flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border font-mono text-xs', status === 'complete' && 'bg-muted', status === 'current' && 'border-foreground font-semibold', attention && 'border-attention-ui bg-attention')}>{status === 'complete' ? '✓' : status === 'current' ? '•' : '○'}</span>
+								<span aria-hidden="true" className={cn('flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border font-mono text-xs', status === 'complete' && 'bg-muted', status === 'current' && 'border-foreground font-semibold', attention && 'border-warning bg-warning/16')}>{status === 'complete' ? '✓' : status === 'current' ? '•' : '○'}</span>
 								<span className="text-sm leading-tight">{catalog.stageLabels[phase as keyof typeof catalog.stageLabels]}</span>
 								<span className="sr-only">{catalog.stageStatusLabels[status]}</span>
 							</a>
@@ -484,7 +484,7 @@ export function RunProgress({
 				})}
 			</ol>
 			{hasHistory ? null : <p className="text-muted-foreground text-xs">{catalog.stageMap.noHistory}</p>}
-			{run.state === 'waiting-user' || run.state === 'waiting-provider' || run.state === 'failed' || run.state === 'interrupted' || run.state === 'cancelled' ? <p className={cn('text-xs', actionable ? 'text-attention-text' : 'text-muted-foreground')}><span className="font-medium">{catalog.stageMap.modifierLabel}:</span> {catalog.stateLabels[run.state]}</p> : null}
+			{run.state === 'waiting-user' || run.state === 'waiting-provider' || run.state === 'failed' || run.state === 'interrupted' || run.state === 'cancelled' ? <p className={cn('text-xs', actionable ? 'text-warning-foreground' : 'text-muted-foreground')}><span className="font-medium">{catalog.stageMap.modifierLabel}:</span> {catalog.stateLabels[run.state]}</p> : null}
 			{hasHistory ? <span className="sr-only">{catalog.phaseLabel(catalog.stateLabels[current])}</span> : null}
 			{hasNoRounds(run.roundOrigins) ? null : <p className="text-muted-foreground text-xs">{catalog.correctionRounds(run.roundOrigins.executor, run.roundOrigins.ci ?? 0, run.roundOrigins.decision, run.roundOrigins.orchestrator ?? 0, run.roundOrigins.indeterminate)}</p>}
 		</nav>

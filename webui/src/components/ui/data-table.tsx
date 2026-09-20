@@ -64,7 +64,7 @@ export type GateshipTable<TData extends RowData> = ReactTable<GateshipTableFeatu
  * use. Header text keeps the table's sans voice whatever the cells wear.
  */
 /** `hideBelow` drops a secondary column, head and cells alike, under that breakpoint: a narrow screen keeps what the row is about. */
-export interface GateshipColumnMeta { className?: string; align?: 'start' | 'end'; label?: string; hideBelow?: 'sm' | 'md' }
+export interface GateshipColumnMeta { className?: string; align?: 'start' | 'end'; label?: string; hideBelow?: 'sm' | 'md'; /** The column the row is about. It takes the width the others do not need; without one, the first column does. */ primary?: boolean }
 
 export function useGateshipTable<TData extends RowData>(options: GateshipTableOptions<TData>): GateshipTable<TData> {
 	return useTable(options);
@@ -127,7 +127,8 @@ function metaOf<TData extends RowData>(column: GateshipColumn<TData>): GateshipC
 	return (column.columnDef.meta ?? {}) as GateshipColumnMeta;
 }
 
-const HIDE_BELOW = { sm: 'hidden sm:table-cell', md: 'hidden md:table-cell' } as const;
+/* By the table's own width, not the window's: beside an open sidebar a 1024px window leaves the table 672px. */
+const HIDE_BELOW = { sm: 'hidden @xl:table-cell', md: 'hidden @3xl:table-cell' } as const;
 /** What a column imposes on its head and its cells alike: alignment, and the breakpoint it shows from. */
 function alignClass<TData extends RowData>(column: GateshipColumn<TData>): string | undefined {
 	const meta = metaOf(column);
@@ -300,17 +301,14 @@ export function DataTablePagination<TData extends RowData>({
 	);
 }
 
-/** The acid rule on a row that waits on the operator: the one mark every list shares, so the table owns it. */
-const ATTENTION_ROW_CLASS = '[&>td:first-child]:shadow-attention-rule';
-
 /* One data row and, while it is open, the detail under it. */
-function DataTableBodyRow<TData extends RowData>({ row, attention, open, span, text, renderExpanded, onToggle }: {
-	row: ReturnType<GateshipTable<TData>['getRowModel']>['rows'][number]; attention: boolean; open: boolean; span: number;
+function DataTableBodyRow<TData extends RowData>({ row, open, span, text, renderExpanded, onToggle }: {
+	row: ReturnType<GateshipTable<TData>['getRowModel']>['rows'][number]; open: boolean; span: number;
 	text: { expandRow: string; collapseRow: string }; renderExpanded?: (row: TData) => React.ReactNode; onToggle: () => void;
 }): React.ReactElement {
 	return (
 		<>
-			<TableRow className={attention ? ATTENTION_ROW_CLASS : undefined} data-attention={attention ? '' : undefined} data-expanded={open ? '' : undefined}>
+			<TableRow data-expanded={open ? '' : undefined}>
 				{renderExpanded === undefined ? null : (
 					<TableCell className="w-8 pr-0">
 						<Button aria-expanded={open} aria-label={open ? text.collapseRow : text.expandRow} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" onClick={onToggle}>
@@ -360,7 +358,6 @@ export function DataTable<TData extends RowData>({
 	emptyDetail,
 	emptyAction,
 	skeletonRows = 5,
-	needsOperator,
 	renderExpanded,
 	defaultExpanded,
 	className,
@@ -370,8 +367,6 @@ export function DataTable<TData extends RowData>({
 	emptyDetail?: React.ReactNode;
 	emptyAction?: React.ReactNode;
 	skeletonRows?: number;
-	/** Which rows wait on the operator. The table draws the acid rule; a screen never styles a row. */
-	needsOperator?: (row: TData) => boolean;
 	/** What a row opens into. Given, every row leads with a chevron, and the content is built only while its row is open. */
 	renderExpanded?: (row: TData) => React.ReactNode;
 	/** Row ids open on first render, as `defaultValue` is to an input. */
@@ -383,9 +378,13 @@ export function DataTable<TData extends RowData>({
 	const span = table.getVisibleLeafColumns().length + (renderExpanded === undefined ? 0 : 1);
 	const rows = table.getRowModel().rows;
 	const columns = table.getVisibleLeafColumns();
+	/* A wide table gives its slack to one column; spread over all of them it reads as holes between the facts. */
+	const primaryId = (columns.find((column) => metaOf(column).primary === true) ?? columns[0])?.id;
 	const busy = status === 'loading' || status === 'updating';
 	return (
-		<div aria-busy={busy} className={cn('overflow-hidden rounded-lg border', className)} data-slot="data-table" data-status={status}>
+		<div aria-busy={busy} className={cn('card-ring @container rounded-2xl', className)} data-slot="data-table" data-status={status}>
+			{/* The ring is the edge every surface shares, so a table carries the same one a card does; the clip lives one level in, or it would cut the ring. */}
+			<div className="overflow-hidden rounded-2xl border bg-card" data-slot="data-table-surface">
 			{busy ? <span className="sr-only" role="status">{status === 'loading' ? text.loading : text.updating}</span> : null}
 			<GateshipTable>
 				<TableHeader>
@@ -393,7 +392,7 @@ export function DataTable<TData extends RowData>({
 						<TableRow key={headerGroup.id}>
 							{renderExpanded === undefined ? null : <TableHead className="w-8 pr-0"><span className="sr-only">{text.expandRow}</span></TableHead>}
 							{headerGroup.headers.map((header) => (
-								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={alignClass(header.column)} key={header.id}>
+								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={cn(alignClass(header.column), header.column.id === primaryId && 'w-full')} key={header.id}>
 									{header.isPlaceholder ? null : typeof header.column.columnDef.header === 'string'
 										? <DataTableColumnHeader column={header.column} locale={locale} title={header.column.columnDef.header} />
 										: <FlexRender header={header} />}
@@ -410,7 +409,7 @@ export function DataTable<TData extends RowData>({
 								{columns.map((column) => <TableCell className={cn(metaOf(column).className, alignClass(column))} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
 							</TableRow>
 						))
-						: rows.map((row) => <DataTableBodyRow attention={needsOperator?.(row.original) === true} key={row.id} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}
+						: rows.map((row) => <DataTableBodyRow key={row.id} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}
 					{/* `data-state` tells a data row from a stand-in: anything counting rows reads `tr:not([data-state])`. */}
 					{rows.length === 0 && status !== 'loading' ? (
 						<TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="empty">
@@ -427,6 +426,7 @@ export function DataTable<TData extends RowData>({
 					) : null}
 				</TableBody>
 			</GateshipTable>
+			</div>
 		</div>
 	);
 }

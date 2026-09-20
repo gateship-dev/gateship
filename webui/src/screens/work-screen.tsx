@@ -536,7 +536,7 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 	const columns = useMemo<GateshipColumnDef<DiagnosticFindingView>[]>(() => {
 		const defs: GateshipColumnDef<DiagnosticFindingView>[] = [
 			{ id: 'severity', header: catalog.list.columns.severity, cell: ({ row }) => <Badge variant={diagnosticSeverityVariant(row.original.severity)}>{catalog.diagnostics.severityLabels[row.original.severity]}</Badge> },
-			{ id: 'rule', header: catalog.list.columns.rule, meta: { className: 'max-w-64 whitespace-normal break-words font-medium' }, cell: ({ row }) => row.original.rule },
+			{ id: 'rule', header: catalog.list.columns.rule, meta: { className: 'whitespace-normal break-words font-medium', primary: true }, cell: ({ row }) => row.original.rule },
 			{ id: 'location', header: catalog.list.columns.location, meta: { className: 'type-data max-w-80 truncate text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => diagnosticFindingLocation(row.original) },
 			{ id: 'occurrences', header: catalog.list.columns.occurrences, meta: { align: 'end', className: 'type-data', hideBelow: 'sm' }, cell: ({ row }) => formatCount(row.original.occurrenceCount, locale) },
 			...(view === 'pending'
@@ -692,7 +692,7 @@ export function ProposalsPanel({
 	const list = useClientPage(rows, proposalMatches);
 	const columns = useMemo<GateshipColumnDef<AnyProposal>[]>(() => {
 		const defs: GateshipColumnDef<AnyProposal>[] = [
-			{ id: 'title', header: catalog.list.columns.title, meta: { className: 'max-w-xl whitespace-normal break-words font-medium' }, cell: ({ row }) => row.original.title },
+			{ id: 'title', header: catalog.list.columns.title, meta: { className: 'whitespace-normal break-words font-medium', primary: true }, cell: ({ row }) => row.original.title },
 			{ id: 'origin', header: catalog.list.columns.origin, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Badge variant="outline">{row.original.sourceIssueId}</Badge> },
 			{ id: 'run', header: catalog.list.columns.run, meta: { className: 'type-data text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.sourceRunId}>{row.original.sourceRunId.slice(0, 8)}</span> },
 			...(view === 'pending'

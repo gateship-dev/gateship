@@ -20,17 +20,14 @@ export type BadgeVariant =
 	| 'merged'
 	| 'success'
 	| 'warning'
-	| 'error'
-	/** Reserved for "waits on the operator", the product's one acid signal. */
-	| 'attention';
+	| 'error';
 
 const SHAPE =
-	'relative inline-flex shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none ' +
+	'relative inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none ' +
 	'h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs ' +
 	"[&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0";
 
 const VARIANT: Readonly<Record<BadgeVariant, string>> = {
-	attention: 'bg-attention text-attention-foreground',
 	default: 'bg-primary text-primary-foreground',
 	error: 'bg-destructive/8 text-destructive-foreground dark:bg-destructive/16',
 	info: 'bg-info/8 text-info-foreground dark:bg-info/16',

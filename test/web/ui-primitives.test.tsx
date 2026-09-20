@@ -196,11 +196,12 @@ describe('ui primitives', () => {
 		expect(renderToStaticMarkup(<Badge>ocioso</Badge>)).toContain('bg-primary');
 	});
 
-	test('the attention stat is the acid surface, and a stat with a list behind it is a link', () => {
+	test('the attention stat speaks in the warning family, never in the acid of the mark, and a stat with a list behind it is a link', () => {
 		const html = renderToStaticMarkup(<Stat label="Requer atenção" tone="attention" value={1} />);
-		// The family, not the exact wash: acid marks what waits on the operator.
-		expect(html).toContain('bg-attention-surface');
-		expect(html).toContain('border-attention-ui');
+		// The family, not the exact wash. The acid is the mark's alone.
+		expect(html).toContain('bg-warning/');
+		expect(html).toContain('border-warning/');
+		expect(html).not.toMatch(/(bg|text|border)-attention/);
 		expect(html).toContain('Requer atenção');
 		expect(renderToStaticMarkup(<Stat label="Runs ativas" value={0} />)).not.toContain('attention');
 		const link = renderToStaticMarkup(<Stat href="/overview/queues" label="Issues aprovadas" value={2} />);

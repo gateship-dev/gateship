@@ -59,7 +59,7 @@ export function QueueEmptyState({ projectCount, filter, queues, errors, catalog,
 	return <EmptyState>{locale === 'pt-BR' ? 'Nenhuma fila corresponde ao projeto selecionado.' : 'No queue matches the selected project.'}</EmptyState>;
 }
 
-const STATUS_BADGE: Readonly<Record<QueueStatus, BadgeVariant>> = { 'needs-you': 'attention', running: 'info', paused: 'secondary', ready: 'outline', empty: 'outline' };
+const STATUS_BADGE: Readonly<Record<QueueStatus, BadgeVariant>> = { 'needs-you': 'warning', running: 'info', paused: 'secondary', ready: 'outline', empty: 'outline' };
 
 /* The one sentence that says what the queue is doing and, when it is stopped, why. */
 function QueueStatusLine({ queue, status, catalog, locale, projectHref }: { queue: ProjectQueueView; status: QueueStatus; catalog: OverviewCatalog['queues']; locale: Locale; projectHref: string }): React.ReactElement {
@@ -120,7 +120,7 @@ export function QueueRow({ queue, catalog, locale }: { queue: ProjectQueueView; 
 	const projectHref = `/projects/${encodeURIComponent(queue.project.id)}`;
 	const status = queueStatus(queue);
 	return (
-		<section aria-label={queue.project.name} className={cn('overflow-hidden rounded-lg border bg-card', status === 'needs-you' && 'shadow-attention-rule')} data-slot="queue" data-status={status}>
+		<section aria-label={queue.project.name} className="card-ring rounded-2xl border bg-card" data-slot="queue" data-status={status}>
 			<header className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
 				<h2 className="type-editorial-title min-w-32 text-base"><a className={TITLE_LINK_CLASS} href={`${projectHref}/work`}>{queue.project.name}</a></h2>
 				<QueueStatusLine catalog={catalog} locale={locale} projectHref={projectHref} queue={queue} status={status} />

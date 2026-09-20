@@ -33,7 +33,6 @@ const RUN_STATES = ['queued', 'working', 'verify', 'review', 'full-verify', 'rea
 const RUN_GROUPS = ['active', 'needs-you', 'shipped', 'failed'] as const;
 const RUN_SORT_FIELDS = new Set(['updatedAt', 'createdAt', 'projectName', 'issueId', 'state', 'providerId', 'duration', 'cost']);
 /* Mirrors the `needs-you` group in src/runtime/run-overview.ts and the shell's attention map. */
-const NEEDS_YOU: ReadonlySet<string> = new Set(['ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted']);
 const TABLE_PREFERENCES_KEY = 'gateship:overview-runs:table:v3';
 /* Lean by default: the audit columns are one menu away. */
 const DEFAULT_VISIBILITY: Record<string, boolean> = { providerId: false, orchestratorModels: false, executorModels: false, reviewerModels: false, rounds: false, interventions: false, cost: false, runId: false };
@@ -247,7 +246,6 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 				emptyDetail={catalog.emptyDetail}
 				emptyState={catalog.empty}
 				locale={props.locale}
-				needsOperator={(run) => NEEDS_YOU.has(run.state)}
 				status={status}
 				table={table}
 			/>
