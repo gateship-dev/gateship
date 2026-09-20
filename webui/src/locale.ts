@@ -197,9 +197,10 @@ export interface RunInspectorCatalog {
 	homeAccessibleLabel: string;
 	currentRunTitle: string;
 	latestRunTitle: string;
+	runTitle: string;
+	allRunsLabel: string;
 	stats: {
 		expectedCost: string;
-		events: string;
 	};
 	viewDetailsLabel: string;
 	noRunLabel: string;
@@ -214,7 +215,6 @@ export interface RunInspectorCatalog {
 		cancel: string;
 		ship: string;
 	};
-	expectedCost: (formattedCost: string) => string;
 	correctionRounds: (executor: number, ci: number, decision: number, orchestrator: number, indeterminate: number) => string;
 	specFacts: {
 		title: string; description: string; version: string; fingerprint: string; specCounts: string; corrections: string; questions: string; reconciliations: string; unknown: string; durationTitle: string; wallTime: string; unassigned: string; reconciliation: string; entries: (count: number) => string; yes: string; no: string; phaseLabels: Readonly<Record<string, string>>;
@@ -295,8 +295,6 @@ export interface RunsOperationalCatalog {
 		phaseLabels: Readonly<Record<string, string>>;
 		unknownLabel: string;
 		metadataLabel: string;
-		expand: string;
-		collapse: string;
 		exitCode: string;
 		duration: string;
 		decisionLabel: string;
@@ -308,17 +306,6 @@ export interface RunsOperationalCatalog {
 	workspaces: {
 		title: string;
 		description: (count: number) => string;
-	};
-	previousRuns: {
-		title: string;
-		description: (count: number) => string;
-		columns: {
-			issue: string;
-			state: string;
-			delivery: string;
-			cost: string;
-			updated: string;
-		};
 	};
 }
 
@@ -479,7 +466,6 @@ export interface SettingsCatalog {
 		project: string;
 	};
 	title: string;
-	disclosure: { open: string; close: string };
 	project: {
 		title: string;
 		description: string;
@@ -739,9 +725,10 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Run inspector',
 			currentRunTitle: 'Current run',
 			latestRunTitle: 'Latest run',
+			runTitle: 'Run',
+			allRunsLabel: 'All runs of this project',
 			stats: {
 				expectedCost: 'Expected cost',
-				events: 'Run events',
 			},
 			viewDetailsLabel: 'View run details',
 			noRunLabel: 'No runs recorded yet.',
@@ -770,7 +757,6 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancel',
 				ship: 'Ship',
 			},
-			expectedCost: (formattedCost) => `Expected cost: ${formattedCost}`,
 			correctionRounds: (executor, ci, decision, orchestrator, indeterminate) => {
 				const total = executor + ci + decision + orchestrator + indeterminate;
 				const parts = [
@@ -867,24 +853,12 @@ export const LOCALE_CATALOG = {
 				toolsLabel: 'Tools',
 				cycleResponseLabel: 'Answer to the review cycle',
 				noEvents: 'No public activity has been recorded for this run.',
-				loadPrevious: 'Load previous', loadingPrevious: 'Loading previous…', returnToLive: 'Return to live', roleLabels: { executor: 'Executor', reviewer: 'Reviewer', orchestrator: 'Orchestrator', operator: 'Operator', 'agent-cli': 'Agent CLI', unknown: 'Unknown origin', runtime: 'Runtime' }, phaseLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' }, unknownLabel: 'Unknown event', metadataLabel: 'Metadata', expand: 'Show details', collapse: 'Hide details', exitCode: 'exit code', duration: 'duration', decisionLabel: 'Decision', findingLabel: 'Finding', attentionLabel: 'Needs attention', outputLabel: 'Output',
+				loadPrevious: 'Load previous', loadingPrevious: 'Loading previous…', returnToLive: 'Return to live', roleLabels: { executor: 'Executor', reviewer: 'Reviewer', orchestrator: 'Orchestrator', operator: 'Operator', 'agent-cli': 'Agent CLI', unknown: 'Unknown origin', runtime: 'Runtime' }, phaseLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' }, unknownLabel: 'Unknown event', metadataLabel: 'Metadata', exitCode: 'exit code', duration: 'duration', decisionLabel: 'Decision', findingLabel: 'Finding', attentionLabel: 'Needs attention', outputLabel: 'Output',
 			},
 			workspaces: {
 				title: 'Preserved workspaces',
 				description: (count) =>
 					`${count} ${count === 1 ? 'local resource needs' : 'local resources need'} inspection.`,
-			},
-			previousRuns: {
-				title: 'Previous runs',
-				description: (count) =>
-					`${count} ${count === 1 ? 'run' : 'runs'} before the latest, newest first.`,
-				columns: {
-					issue: 'Issue',
-					state: 'State',
-					delivery: 'Delivery',
-					cost: 'Expected cost',
-					updated: 'Updated',
-				},
 			},
 		},
 		runsWorkflow: {
@@ -1051,7 +1025,6 @@ export const LOCALE_CATALOG = {
 				execution: 'Execution',
 				project: 'Project',
 			},
-			disclosure: { open: 'open', close: 'close' },
 			project: { title: 'Project', description: 'The process operates one local project at a time; this binding is derived from Git, not hidden configuration.', stateLabels: { ready: 'ready', checking: 'checking', attention: 'attention' }, localProject: 'Local project', repository: 'Repository', runSource: 'Run source' },
 			operator: { title: 'Operator', description: 'Human identity and timezone used as non-authoritative conversation context.', name: 'Name', namePlaceholder: 'What the orchestrator should call you', timezone: 'Timezone', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'IANA identifier. The browser suggestion is saved only when you confirm.', save: 'Save profile' },
 			providers: {
@@ -1217,9 +1190,10 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Inspetor da execução',
 			currentRunTitle: 'Execução atual',
 			latestRunTitle: 'Execução mais recente',
+			runTitle: 'Execução',
+			allRunsLabel: 'Todas as execuções deste projeto',
 			stats: {
 				expectedCost: 'Custo esperado',
-				events: 'Eventos da execução',
 			},
 			viewDetailsLabel: 'Ver detalhes da execução',
 			noRunLabel: 'Nenhuma execução registrada ainda.',
@@ -1248,7 +1222,6 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancelar',
 				ship: 'Enviar',
 			},
-			expectedCost: (formattedCost) => `Custo esperado: ${formattedCost}`,
 			correctionRounds: (executor, ci, decision, orchestrator, indeterminate) => {
 				const total = executor + ci + decision + orchestrator + indeterminate;
 				const parts = [
@@ -1345,24 +1318,12 @@ export const LOCALE_CATALOG = {
 				toolsLabel: 'Ferramentas',
 				cycleResponseLabel: 'Resposta ao ciclo de revisão',
 				noEvents: 'Nenhuma atividade pública foi registrada para esta execução.',
-				loadPrevious: 'Carregar anteriores', loadingPrevious: 'Carregando anteriores…', returnToLive: 'Voltar para a cauda', roleLabels: { executor: 'Executor', reviewer: 'Revisor', orchestrator: 'Orquestrador', operator: 'Operador', 'agent-cli': 'Agent CLI', unknown: 'Origem desconhecida', runtime: 'Runtime' }, phaseLabels: { queued: 'Na fila', working: 'Trabalho ativo', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', 'ready-to-ship': 'Pronta para envio', shipping: 'Enviando', done: 'Concluída' }, unknownLabel: 'Evento desconhecido', metadataLabel: 'Metadados', expand: 'Mostrar detalhes', collapse: 'Ocultar detalhes', exitCode: 'código de saída', duration: 'duração', decisionLabel: 'Decisão', findingLabel: 'Achado', attentionLabel: 'Requer atenção', outputLabel: 'Saída',
+				loadPrevious: 'Carregar anteriores', loadingPrevious: 'Carregando anteriores…', returnToLive: 'Voltar para a cauda', roleLabels: { executor: 'Executor', reviewer: 'Revisor', orchestrator: 'Orquestrador', operator: 'Operador', 'agent-cli': 'Agent CLI', unknown: 'Origem desconhecida', runtime: 'Runtime' }, phaseLabels: { queued: 'Na fila', working: 'Trabalho ativo', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', 'ready-to-ship': 'Pronta para envio', shipping: 'Enviando', done: 'Concluída' }, unknownLabel: 'Evento desconhecido', metadataLabel: 'Metadados', exitCode: 'código de saída', duration: 'duração', decisionLabel: 'Decisão', findingLabel: 'Achado', attentionLabel: 'Requer atenção', outputLabel: 'Saída',
 			},
 			workspaces: {
 				title: 'Workspaces preservados',
 				description: (count) =>
 					`${count} ${count === 1 ? 'recurso local precisa' : 'recursos locais precisam'} de inspeção.`,
-			},
-			previousRuns: {
-				title: 'Execuções anteriores',
-				description: (count) =>
-					`${count} ${count === 1 ? 'execução' : 'execuções'} antes da mais recente, da mais nova para a mais antiga.`,
-				columns: {
-					issue: 'Issue',
-					state: 'Estado',
-					delivery: 'Entrega',
-					cost: 'Custo esperado',
-					updated: 'Atualizada',
-				},
 			},
 		},
 		runsWorkflow: {
@@ -1529,7 +1490,6 @@ export const LOCALE_CATALOG = {
 				execution: 'Execução',
 				project: 'Projeto',
 			},
-			disclosure: { open: 'abrir', close: 'fechar' },
 			project: { title: 'Projeto', description: 'O processo opera um projeto local por vez; este vínculo é derivado do Git, não de uma configuração oculta.', stateLabels: { ready: 'pronto', checking: 'verificando', attention: 'atenção' }, localProject: 'Projeto local', repository: 'Repositório', runSource: 'Origem das execuções' },
 			operator: { title: 'Operador', description: 'Identidade humana e fuso horário usados como contexto não autoritativo da conversa.', name: 'Nome', namePlaceholder: 'Como o orquestrador deve chamar você', timezone: 'Fuso horário', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'Identificador IANA. A sugestão do navegador só é salva quando você confirma.', save: 'Salvar perfil' },
 			providers: {

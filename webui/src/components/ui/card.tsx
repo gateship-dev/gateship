@@ -6,6 +6,8 @@
 // details/summary disclosure pair (a disclosure has to be a real <details>;
 // collapsed is a rendering state, never an unmounted branch, ADR-0067).
 
+import { ArrowRight01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
 
@@ -30,9 +32,10 @@ const FRAME =
 	'*:data-[slot=card]:last:[--clip-bottom:1px] *:data-[slot=card]:first:[--clip-top:1px]';
 
 /* Header shared by cards and native disclosures. */
-const HEADER =
-	'relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-x-4 px-6 py-4 ' +
+const HEADER_GRID =
+	'relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-x-4 ' +
 	'has-data-[slot=card-frame-action]:grid-cols-[1fr_auto]';
+const HEADER = `${HEADER_GRID} px-6 py-4`;
 
 /*
  * The inner card uses --color-card mixed with --color-sidebar, barely
@@ -55,7 +58,7 @@ export function CardDisclosure({
 	className,
 	...props
 }: React.ComponentProps<'details'>): React.ReactElement {
-	return <details className={cn(FRAME, className)} data-slot="card-frame" {...props} />;
+	return <details className={cn(FRAME, 'group/disclosure', className)} data-slot="card-frame" {...props} />;
 }
 
 export function CardHeader({
@@ -67,22 +70,27 @@ export function CardHeader({
 
 /**
  * The header of a <CardDisclosure>, which is also its whole click target. The
- * default triangle marker is removed in both spellings browsers use for it.
+ * default triangle marker is removed in both spellings browsers use for it,
+ * and a chevron that turns when the panel opens takes its place.
  */
 export function CardSummary({
 	className,
+	children,
 	...props
 }: React.ComponentProps<'summary'>): React.ReactElement {
 	return (
 		<summary
 			className={cn(
-				HEADER,
-				'cursor-pointer list-none [&::-webkit-details-marker]:hidden',
+				'flex cursor-pointer list-none items-center gap-3 px-6 py-4 [&::-webkit-details-marker]:hidden',
 				className,
 			)}
 			data-slot="card-frame-header"
 			{...props}
-		/>
+		>
+			{/* The chevron is the summary's own: every disclosure opens with the same affordance. */}
+			<HugeiconsIcon aria-hidden="true" className="shrink-0 text-muted-foreground group-open/disclosure:rotate-90 motion-safe:transition-transform" icon={ArrowRight01Icon} size={16} strokeWidth={2.25} />
+			<span className={cn(HEADER_GRID, 'min-w-0 flex-1')}>{children}</span>
+		</summary>
 	);
 }
 

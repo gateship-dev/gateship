@@ -49,15 +49,18 @@ export function queryFromUrl(runtime = browserRuntime()): OverviewRunsQuery {
 	return { projectId: value('projectId'), state: allowed(value('state'), new Set(RUN_STATES)) as OverviewRunsQuery['state'], group: allowed(value('group'), new Set(RUN_GROUPS)) as OverviewRunsQuery['group'], providerId: allowed(value('providerId'), new Set(['claude', 'codex'])) as OverviewRunsQuery['providerId'], period: allowed(value('period'), new Set(['7d', '30d', 'all'])) as OverviewRunsQuery['period'], search: value('search'), sortBy: allowed(value('sortBy'), RUN_SORT_FIELDS) as OverviewRunsQuery['sortBy'], sortDirection: allowed(value('sortDirection'), new Set(['asc', 'desc'])) as OverviewRunsQuery['sortDirection'], limit: positive(value('limit'), 20), offset: nonNegative(value('offset')) };
 }
 
-function overviewRunsUrl(query: OverviewRunsQuery): string {
+/* A project's own runs page is this same table with the project fixed by its path, not by a parameter. */
+function overviewRunsUrl(query: OverviewRunsQuery, scopeProjectId?: string): string {
 	const params = new URLSearchParams();
-	for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '' && !(key === 'limit' && value === 20) && !(key === 'offset' && value === 0)) params.set(key, String(value));
-	return `/overview/runs${params.toString() ? `?${params}` : ''}`;
+	for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '' && !(key === 'limit' && value === 20) && !(key === 'offset' && value === 0) && !(key === 'projectId' && scopeProjectId !== undefined)) params.set(key, String(value));
+	const path = scopeProjectId === undefined ? '/overview/runs' : `/projects/${encodeURIComponent(scopeProjectId)}/runs`;
+	return `${path}${params.toString() ? `?${params}` : ''}`;
 }
-function useOverviewRunsQuery(): [OverviewRunsQuery, Update] {
-	const [query, setQuery] = useState<OverviewRunsQuery>(() => queryFromUrl());
-	useEffect(() => { const onPop = () => setQuery(queryFromUrl()); const runtime = browserRuntime(); runtime.addEventListener?.('popstate', onPop); return () => runtime.removeEventListener?.('popstate', onPop); }, []);
-	const update: Update = (changes) => { const next = { ...query, ...changes, offset: changes.offset ?? 0 }; browserRuntime().history?.pushState(null, '', overviewRunsUrl(next)); setQuery(next); };
+function useOverviewRunsQuery(scopeProjectId?: string): [OverviewRunsQuery, Update] {
+	const read = (): OverviewRunsQuery => scopeProjectId === undefined ? queryFromUrl() : { ...queryFromUrl(), projectId: scopeProjectId };
+	const [query, setQuery] = useState<OverviewRunsQuery>(read);
+	useEffect(() => { const onPop = () => setQuery(read()); const runtime = browserRuntime(); runtime.addEventListener?.('popstate', onPop); return () => runtime.removeEventListener?.('popstate', onPop); }, [scopeProjectId]);
+	const update: Update = (changes) => { const next = { ...query, ...changes, offset: changes.offset ?? 0, ...(scopeProjectId === undefined ? {} : { projectId: scopeProjectId }) }; browserRuntime().history?.pushState(null, '', overviewRunsUrl(next, scopeProjectId)); setQuery(next); };
 	return [query, update];
 }
 function useOverviewRunsPage(query: OverviewRunsQuery, revision: number): { page: OverviewRunsPageView | null; loading: boolean; error: string | null } {
@@ -145,19 +148,19 @@ function overviewRunsColumns(catalog: OverviewRunsCatalog, inspector: RunInspect
 	];
 }
 
-function hasFilters(query: OverviewRunsQuery): boolean {
-	return Boolean(query.search) || query.projectId !== undefined || query.state !== undefined || query.providerId !== undefined || (query.period !== undefined && query.period !== 'all');
+function hasFilters(query: OverviewRunsQuery, scopeProjectId?: string): boolean {
+	return Boolean(query.search) || query.projectId !== scopeProjectId || query.state !== undefined || query.providerId !== undefined || (query.period !== undefined && query.period !== 'all');
 }
 
 /* No project select: the sidebar switcher is the project filter. A `?projectId=` link still scopes the list, and Clear filters lifts it. */
-function OverviewRunsFilters({ query, update, catalog, inspector }: { query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): React.ReactElement {
+function OverviewRunsFilters({ query, update, catalog, inspector, scopeProjectId }: { query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog; scopeProjectId?: string }): React.ReactElement {
 	const select = 'w-auto min-w-36';
 	return (
 		<>
 			<SelectField aria-label={catalog.state} className={select} items={[{ value: '', label: catalog.state }, ...RUN_STATES.map((state) => ({ value: state, label: inspector.stateLabels[state] }))]} value={query.state ?? ''} onValueChange={(value) => update({ state: (value || undefined) as OverviewRunsQuery['state'] })} />
 			<SelectField aria-label={catalog.provider} className={select} items={[{ value: '', label: catalog.provider }, { value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} value={query.providerId ?? ''} onValueChange={(value) => update({ providerId: (value || undefined) as OverviewRunsQuery['providerId'] })} />
 			<SelectField aria-label={catalog.period} className={select} items={[{ value: 'all', label: catalog.all }, { value: '7d', label: catalog.last7d }, { value: '30d', label: catalog.last30d }]} value={query.period ?? 'all'} onValueChange={(value) => update({ period: value as OverviewRunsQuery['period'] })} />
-			{hasFilters(query) ? (
+			{hasFilters(query, scopeProjectId) ? (
 				<Button type="button" variant="ghost" onClick={() => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined })}>
 					{catalog.clearFilters}<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={14} strokeWidth={2.5} />
 				</Button>
@@ -223,7 +226,7 @@ function OverviewRunsAlerts({ catalog, error, page, onRetry }: { catalog: Overvi
 	);
 }
 
-function OverviewRunsTable({ props, query, update, onRetry, page, loading, error }: { props: AppProps; query: OverviewRunsQuery; update: Update; onRetry: () => void; page: OverviewRunsPageView | null; loading: boolean; error: string | null }): React.ReactElement {
+function OverviewRunsTable({ props, query, update, onRetry, page, loading, error, scopeProjectId }: { props: AppProps; query: OverviewRunsQuery; update: Update; onRetry: () => void; page: OverviewRunsPageView | null; loading: boolean; error: string | null; scopeProjectId?: string }): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].overviewRuns; const inspector = LOCALE_CATALOG[props.locale].runInspector;
 	const table = useOverviewRunsTable({ catalog, inspector, locale: props.locale, query, update, page });
 	const status = error !== null && page === null ? 'error' : loading && page === null ? 'loading' : loading ? 'updating' : 'ready';
@@ -236,11 +239,11 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 				<DataTableViewOptions locale={props.locale} table={table} />
 			</DataTableToolbar>
 			<DataTableToolbar>
-				<OverviewRunsFilters catalog={catalog} inspector={inspector} query={query} update={update} />
+				<OverviewRunsFilters catalog={catalog} inspector={inspector} query={query} scopeProjectId={scopeProjectId} update={update} />
 			</DataTableToolbar>
 			<OverviewRunsAlerts catalog={catalog} error={error} page={page} onRetry={onRetry} />
 			<DataTable
-				emptyAction={hasFilters(query) || query.group !== undefined ? <Button size="sm" type="button" variant="outline" onClick={clear}>{catalog.clearFilters}</Button> : undefined}
+				emptyAction={hasFilters(query, scopeProjectId) || query.group !== undefined ? <Button size="sm" type="button" variant="outline" onClick={clear}>{catalog.clearFilters}</Button> : undefined}
 				emptyDetail={catalog.emptyDetail}
 				emptyState={catalog.empty}
 				locale={props.locale}
@@ -259,4 +262,12 @@ export function OverviewRunsSurface({ props }: { props: AppProps }): React.React
 	const [revision, setRevision] = useState(0);
 	const result = useOverviewRunsPage(query, revision);
 	return <SurfaceColumn label={catalog.title} status={props.status}><OverviewRunsTable onRetry={() => setRevision((current) => current + 1)} {...{ props, query, update }} {...result} /></SurfaceColumn>;
+}
+
+/** One project's runs: the same table, scoped by the project's path. */
+export function ProjectRunsTable({ props, projectId }: { props: AppProps; projectId: string }): React.ReactElement {
+	const [query, update] = useOverviewRunsQuery(projectId);
+	const [revision, setRevision] = useState(0);
+	const result = useOverviewRunsPage(query, revision);
+	return <OverviewRunsTable onRetry={() => setRevision((current) => current + 1)} scopeProjectId={projectId} {...{ props, query, update }} {...result} />;
 }

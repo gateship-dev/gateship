@@ -395,6 +395,11 @@ html.gship-harness-reduced-motion *::after {
  * rings and margins), and a card alone in its function keeps its own ring
  * as a group of one (`card-ring`).
  */
+/* A list of facts: one column of labels, 160px wide, then the values. */
+@utility grid-cols-facts {
+	grid-template-columns: 10rem 1fr;
+}
+
 @utility card-ring {
 	position: relative;
 	margin: 7px;

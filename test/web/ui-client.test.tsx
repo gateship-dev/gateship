@@ -490,11 +490,11 @@ describe('operational snapshot reads', () => {
 	});
 
 	test('names a failed Snapshot at workspace notices without hiding revealed notices', () => {
-		const initial = runsPage({ operationalFailures: { Snapshot: 'Snapshot responded with 500' } });
+		const initial = runsListPage({ operationalFailures: { Snapshot: 'Snapshot responded with 500' } });
 		expect(initial).toContain('Snapshot is unavailable.');
 		expect(initial).not.toContain(NOTICES[0]?.detail ?? '');
 
-		const refresh = runsPage({
+		const refresh = runsListPage({
 			workspaceNotices: NOTICES,
 			operationalFailures: { Snapshot: 'Snapshot responded with 500' },
 			operationalLoaded: { Snapshot: true },
@@ -696,7 +696,9 @@ function renderInsightsWithLoadedOverview(locale: Locale, overview: unknown): st
 }
 
 const home = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current', overrides);
-const runsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/runs', overrides);
+/* The project's Runs route is its list; one run is inspected at its own path. No run at all falls back to the unscoped latest-run surface. */
+const runsPage = (overrides: Partial<AppProps> = {}): string => { const first = overrides.runs?.[0]; return renderAt(first === undefined ? '/runs' : `/projects/project-current/runs/${encodeURIComponent(first.id)}`, overrides); };
+const runsListPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/runs', overrides);
 const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/work', overrides);
 const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/settings', overrides);
 const globalSettingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/settings', overrides);
@@ -1005,7 +1007,7 @@ describe('runs surface', () => {
 				}],
 			},
 		});
-		for (const html of [home({ runs: [run] }), runsPage({ runs: [run] })]) {
+		for (const html of [runsPage({ runs: [run] })]) {
 			expect(html).toContain('href="https://github.com/gateship-dev/gateship/pull/685"');
 			expect(html).toContain('PR #685');
 			expect(html).toContain('CI failed');
@@ -1017,19 +1019,20 @@ describe('runs surface', () => {
 		}
 	});
 
-	test('a confirmed pull request is marked merged only for a done run, in detail and history', () => {
+	test('a confirmed pull request is marked merged only for a done run, and a merged run no longer reports its CI', () => {
 		const pullRequest: NonNullable<RunView['pullRequest']> = {
 			prNumber: 692,
 			url: 'https://github.com/gateship-dev/gateship/pull/692',
 			ciStatus: 'passed',
 			failedChecks: [],
 		};
-		const current = runIn('done', { pullRequest });
-		const previous = runIn('done', { id: 'run-previous', issueId: 'CAM-899', pullRequest });
-
-		expect(runsPage({ runs: [current] })).toContain('>Merged<');
-		expect(runsPage({ runs: [current, previous] }).match(/>Merged</g)).toHaveLength(2);
-		expect(runsPage({ runs: [runIn('shipping', { pullRequest })] })).not.toContain('>Merged<');
+		const merged = runsPage({ runs: [runIn('done', { pullRequest })] });
+		expect(merged).toContain('>Merged<');
+		// Merged says the checks passed: repeating it beside the badge is noise.
+		expect(merged).not.toContain('CI passed');
+		const open = runsPage({ runs: [runIn('shipping', { pullRequest })] });
+		expect(open).not.toContain('>Merged<');
+		expect(open).toContain('CI passed');
 	});
 
 	test('a provider hold shows its cause, reset time and retry without losing the run', () => {
@@ -1125,7 +1128,7 @@ describe('runs surface', () => {
 		});
 		const html = runsPage({ locale: 'pt-BR', runs: [waitingRun] });
 
-		expect(html).toContain('Execução mais recente');
+		expect(html).toContain('>Execução<');
 		expect(html).toContain('CAM-900');
 		expect(html).toContain('>aguardando provedor<');
 		expect(html).toContain('O histórico de etapas está indisponível; nenhum progresso foi inferido.');
@@ -1136,9 +1139,8 @@ describe('runs surface', () => {
 		expect(html).toContain('Claude five hour usage limit reached.');
 		expect(html).toContain(`dateTime="${retryAt}"`);
 		expect(html).toContain(formattedRetryAt);
-		// The cost lives in the stat row on /runs: value and label are paired
-		// by the stat, no longer one sentence.
-		expect(html).toContain(`>${formattedCost}</p>`);
+		// The cost is one of the run's facts under the stage map: a label and its value.
+		expect(html).toContain(`>${formattedCost}</span>`);
 		expect(html).toContain('Custo esperado');
 		expect(html).toContain('Rodadas de correção: 1 do executor, 2 de decisões do operador');
 		expect(html).toContain('1 indeterminada');
@@ -1157,7 +1159,8 @@ describe('runs surface', () => {
 		expect(buttonIsEnabled(ready, 'Enviar')).toBe(true);
 		expect(buttonIsEnabled(ready, 'Cancelar')).toBe(true);
 
-		const current = home({ locale: 'pt-BR', runs: [waitingRun] });
+		// The unscoped route still opens the latest run, and says so.
+		const current = renderAt('/runs', { locale: 'pt-BR', runs: [waitingRun] });
 		expect(openingTags(current).find((tag) => tag.startsWith('<main')))
 			.toContain('aria-label="Runs"');
 		expect(current).toContain('Execução mais recente');
@@ -1175,22 +1178,13 @@ describe('runs surface', () => {
 			hourCycle: 'h23',
 			timeZone: 'UTC',
 		});
-		const formattedPreviousAt = new Date(previousAt).toLocaleString('pt-BR', {
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit',
-			hour: '2-digit',
-			minute: '2-digit',
-			hourCycle: 'h23',
-			timeZone: 'UTC',
-		});
 		const formattedCost = new Intl.NumberFormat('pt-BR', {
 			style: 'currency',
 			currency: 'USD',
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 4,
 		}).format(0.1534);
-		const html = runsPage({
+		const authored: Partial<AppProps> = {
 			locale: 'pt-BR',
 			runs: [
 				runIn('working', {
@@ -1249,7 +1243,8 @@ describe('runs surface', () => {
 				branch: 'raw/branch/authored',
 				detail: 'second detail authored exactly',
 			}],
-		});
+		};
+		const html = runsPage(authored);
 
 		const cost = panel(html, 'Custo por função e modelo');
 		expect(html).toContain('GSHIP-AUTHORED-CURRENT');
@@ -1270,7 +1265,8 @@ describe('runs surface', () => {
 		expect(activity).toContain('error authored exactly');
 		expect(activity).toContain(formattedActivityAt);
 
-		const workspaces = panel(html, 'Workspaces preservados');
+		// What the runs left behind is a fact about the project's list, not about one run.
+		const workspaces = panel(runsListPage(authored), 'Workspaces preservados');
 		expect(workspaces).toContain('2 recursos locais precisam de inspeção.');
 		for (const raw of [
 			'dirty',
@@ -1281,13 +1277,6 @@ describe('runs surface', () => {
 			'raw/branch/authored',
 			'second detail authored exactly',
 		]) expect(workspaces).toContain(raw);
-
-		const previous = panel(html, 'Execuções anteriores');
-		expect(previous).toContain('1 execução antes da mais recente, da mais nova para a mais antiga.');
-		expect(previous).toContain('GSHIP-AUTHORED-PREVIOUS');
-		expect(previous).toContain('>falhou<');
-		expect(previous).toContain(`Custo esperado: ${formattedCost}`);
-		expect(previous).toContain(formattedPreviousAt);
 	});
 
 	test('the full report and the run id are one disclosure, closed by default', () => {
@@ -1539,7 +1528,7 @@ describe('runs surface', () => {
 			cost: { reportedRunCount: 2, runCount: 3 },
 		});
 
-		const summary = panel(runsPage({ runs }), 'Workflow signals');
+		const summary = panel(runsListPage({ runs }), 'Workflow signals');
 		expect(summary).toContain('Local window of the latest 3 runs');
 		expect(summary).toContain('1 completed');
 		expect(summary).toContain('4 rounds across 2 runs');
@@ -1552,7 +1541,7 @@ describe('runs surface', () => {
 		expect(summary).toContain('$');
 		expect(summary).not.toContain('Score');
 
-		const summaryPtBr = panel(runsPage({ runs, locale: 'pt-BR' }), 'Sinais do fluxo de trabalho');
+		const summaryPtBr = panel(runsListPage({ runs, locale: 'pt-BR' }), 'Sinais do fluxo de trabalho');
 		expect(summaryPtBr).toContain('1 após continue do orquestrador');
 		expect(summaryPtBr).not.toContain('pelo orquestrador');
 	});
@@ -1575,7 +1564,8 @@ describe('runs surface', () => {
 		expect(html).toContain('Correction round:');
 		expect(html).toContain('1 from CI correction');
 
-		const summary = panel(html, 'Workflow signals');
+		const list = runsListPage({ runs });
+		const summary = panel(list, 'Workflow signals');
 		expect(summary).toContain('1 round across 1 run');
 		expect(summary).toContain('1 from CI correction');
 
@@ -1584,13 +1574,13 @@ describe('runs surface', () => {
 		expect(summarizeWorkflowCohorts(runs)[0]).toMatchObject({
 			corrections: { executor: 0, ci: 1, decision: 0, indeterminate: 0, runCount: 1 },
 		});
-		expect(panel(html, 'Replayable benchmarks')).toContain('1 round across 1 run');
+		expect(panel(list, 'Replayable benchmarks')).toContain('1 round across 1 run');
 	});
 
 	test('keeps absent provider cost explicit instead of fabricating zero', () => {
 		const runs = [runIn('done', { id: 'run-2' }), runIn('failed', { id: 'run-1' })];
 		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2, costCoverage: 'unknown' });
-		expect(panel(runsPage({ runs }), 'Workflow signals'))
+		expect(panel(runsListPage({ runs }), 'Workflow signals'))
 			.toContain('No provider reported cost in this window.');
 	});
 
@@ -1653,8 +1643,8 @@ describe('runs surface', () => {
 			configurations: [{ provider: 'claude', runCount: 2 }],
 		});
 
-		const benchmark = panel(runsPage({ runs }), 'Replayable benchmarks');
-		expect(panelIsOpen(runsPage({ runs }), 'Replayable benchmarks')).toBe(false);
+		const benchmark = panel(runsListPage({ runs }), 'Replayable benchmarks');
+		expect(panelIsOpen(runsListPage({ runs }), 'Replayable benchmarks')).toBe(false);
 		expect(benchmark).toContain('Latest cohort');
 		expect(benchmark).toContain('Previous baseline');
 		expect(benchmark).toContain('revision-b');
@@ -1664,7 +1654,7 @@ describe('runs surface', () => {
 		expect(benchmark).toContain('claude-sonnet-5 (xhigh)');
 		expect(benchmark).toContain('There is no composite score');
 
-		expect(panel(runsPage({ runs: [runIn('done')] }), 'Replayable benchmarks'))
+		expect(panel(runsListPage({ runs: [runIn('done')] }), 'Replayable benchmarks'))
 			.toContain('predate revision tracking');
 	});
 
@@ -1711,7 +1701,7 @@ describe('runs surface', () => {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 4,
 		}).format(0.1534);
-		const html = runsPage({ locale: 'pt-BR', runs });
+		const html = runsListPage({ locale: 'pt-BR', runs });
 		const signals = panel(html, 'Sinais do fluxo de trabalho');
 		const benchmarks = panel(html, 'Benchmarks reproduzíveis');
 
@@ -1768,12 +1758,11 @@ describe('runs surface', () => {
 			payload: { output: 'linha 1\n\nlinha 3', reasoning: 'privado raiz', nested: { values: ['a', 'b'], private: 'privado aninhado' }, items: [{ raw: 'privado array', public: 'mantido' }], extreme: 'x'.repeat(240) },
 			createdAt: '2026-08-16T03:04:05.000Z',
 		};
-		for (const [locale, labels] of [['en-US', ['Show details', 'Hide details', 'Unknown event']] as const, ['pt-BR', ['Mostrar detalhes', 'Ocultar detalhes', 'Evento desconhecido']] as const]) {
+		for (const [locale, unknown] of [['en-US', 'Unknown event'], ['pt-BR', 'Evento desconhecido']] as const) {
 			const html = runsPage({ locale, runs: [runIn('working')], events: [event] });
-			expect(html).toContain(`<summary class="cursor-pointer`);
-			expect(html).toContain(labels[0]);
-			expect(html).toContain(labels[1]);
-			expect(html).toContain(labels[2]);
+			// The event line is its own disclosure: the payload opens under it, and only an event that has one can open.
+			expect((html.match(/<details class="group\/entry"/g) ?? []).length).toBe(1);
+			expect(html).toContain(unknown);
 			expect(html).toContain('linha 1');
 			expect(html).toContain('linha 3');
 			expect(html).toContain('&quot;values&quot;');
@@ -1810,10 +1799,10 @@ describe('runs surface', () => {
 		// from the role label, read from the event's own `responder`.
 		expect(english).toContain('Answer to the review cycle');
 		expect(english).not.toContain('Orchestrator answer to the review cycle');
-		expect(english).toContain('<span class="font-medium">Orchestrator</span>');
+		expect(english).toContain('font-medium">Orchestrator</span>');
 		expect(portuguese).toContain('Resposta ao ciclo de revisão');
 		expect(portuguese).not.toContain('Resposta do orquestrador ao ciclo de revisão');
-		expect(portuguese).toContain('<span class="font-medium">Orquestrador</span>');
+		expect(portuguese).toContain('font-medium">Orquestrador</span>');
 		for (const html of [english, portuguese]) {
 			expect(html).toContain('Keep Authored_GUIDANCE verbatim.');
 			expect(html).toContain('raw-model-v9');
@@ -1835,31 +1824,31 @@ describe('runs surface', () => {
 			payload: { questionId: 'question-1', outcome: 'continue', guidance: 'Ratify.', ...(responder === undefined ? {} : { responder }) },
 			createdAt: '2026-08-16T03:04:05.000Z',
 		});
-		const operatorSpan = '<span class="font-medium">Operator</span>';
-		const orchestratorSpan = '<span class="font-medium">Orchestrator</span>';
+		const operatorSpan = 'font-medium">Operator</span>';
+		const orchestratorSpan = 'font-medium">Orchestrator</span>';
 
 		const operator = runsPage({ runs: [runIn('review')], events: [cycleResponse('operator')] });
 		expect(operator).toContain(operatorSpan);
 		expect(operator).not.toContain(orchestratorSpan);
 
 		const agentCli = runsPage({ runs: [runIn('review')], events: [cycleResponse('agent-cli')] });
-		expect(agentCli).toContain('<span class="font-medium">Agent CLI</span>');
+		expect(agentCli).toContain('font-medium">Agent CLI</span>');
 		expect(agentCli).not.toContain(orchestratorSpan);
 		expect(agentCli).not.toContain(operatorSpan);
 
 		const legacy = runsPage({ runs: [runIn('review')], events: [cycleResponse()] });
-		expect(legacy).toContain('<span class="font-medium">Unknown origin</span>');
+		expect(legacy).toContain('font-medium">Unknown origin</span>');
 		expect(legacy).not.toContain(orchestratorSpan);
 
 		const legacyPtBr = runsPage({ locale: 'pt-BR', runs: [runIn('review')], events: [cycleResponse()] });
-		expect(legacyPtBr).toContain('<span class="font-medium">Origem desconhecida</span>');
+		expect(legacyPtBr).toContain('font-medium">Origem desconhecida</span>');
 
 		const guidanceFromAgentCli: AppProps['events'][number] = {
 			seq: 1, runId: 'run-1', kind: 'run.operator-guidance', fromState: 'waiting-user', toState: 'waiting-user',
 			payload: { text: 'Apply the approved correction.', source: 'agent-cli' }, createdAt: '2026-08-16T03:04:05.000Z',
 		};
 		const agentCliGuidance = runsPage({ runs: [runIn('waiting-user')], events: [guidanceFromAgentCli] });
-		expect(agentCliGuidance).toContain('<span class="font-medium">Agent CLI</span>');
+		expect(agentCliGuidance).toContain('font-medium">Agent CLI</span>');
 
 		const guidanceFromWeb: AppProps['events'][number] = {
 			...guidanceFromAgentCli, payload: { text: 'Ratify.', source: 'web' },
@@ -1940,7 +1929,7 @@ describe('runs surface', () => {
 	});
 
 	test('surfaces preserved workspaces without offering destructive cleanup', () => {
-		const html = runsPage({ workspaceNotices: NOTICES });
+		const html = runsListPage({ workspaceNotices: NOTICES });
 
 		expect(html).toContain('Preserved workspaces');
 		expect(html).toContain('/project/.gship/worktrees/orphan');
@@ -1948,86 +1937,23 @@ describe('runs surface', () => {
 		expect(html).not.toContain('Apagar workspace');
 	});
 
-	test('a single run has no history card to show', () => {
-		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Previous runs');
-	});
-
-	test('previous runs are listed read-only, newest first and without the last run', () => {
-		const html = runsPage({
-			runs: [
-				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
-				runIn('done', { id: 'run-2', issueId: 'CAM-802', updatedAt: '2026-08-15T18:30:00.000Z' }),
-				runIn('failed', { id: 'run-1', issueId: 'CAM-801', updatedAt: '2026-08-14T09:05:00.000Z' }),
-			],
-		});
-		const card = panel(html, 'Previous runs');
-		const firstTimestamp = new Date('2026-08-15T18:30:00.000Z').toLocaleString('en-US', {
-			year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-			hourCycle: 'h23', timeZone: 'UTC',
-		});
-		const secondTimestamp = new Date('2026-08-14T09:05:00.000Z').toLocaleString('en-US', {
-			year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-			hourCycle: 'h23', timeZone: 'UTC',
-		});
-
-		expect(panelIsOpen(html, 'Previous runs')).toBe(false);
-		expect(card).toContain('2 runs before the latest');
-		expect(card).toContain('CAM-802');
-		expect(card).toContain(firstTimestamp);
-		expect(card).toContain('CAM-801');
-		expect(card).toContain(secondTimestamp);
-		expect(card).toContain('failed');
-		// The run the card above commands is not repeated in the history.
-		expect(card).not.toContain('CAM-803');
-		expect(card.indexOf('CAM-802')).toBeLessThan(card.indexOf('CAM-801'));
-		// Read-only: history rows carry no command and no selection.
-		expect(card).not.toContain('<button');
-		expect(card).not.toContain('aria-pressed');
-	});
-
-	// GSHIP-639: each history row carries its own expected cost so Sonnet and
-	// another choice can be compared without opening either run, labeled with
-	// the same honesty rule GSHIP-623 established -- expected cost equivalent
-	// to API usage, never an amount billed -- and a run whose CLI never
-	// reported one shows no number at all, never a fabricated zero.
-	test('each history row shows its own run cost, labeled as expected cost, or none at all', () => {
-		const html = runsPage({
-			runs: [
-				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
-				runIn('done', {
-					id: 'run-2',
-					issueId: 'CAM-802',
-					cost: { totalCostUsd: 0.1534, costCoverage: 'complete', breakdown: [], roles: [] },
-				}),
-				runIn('failed', { id: 'run-1', issueId: 'CAM-801', cost: EMPTY_RUN_COST }),
-			],
-		});
-		const card = panel(html, 'Previous runs');
-
-		const row802 = card.slice(card.indexOf('CAM-802'), card.indexOf('CAM-801'));
-		expect(row802).toContain('Expected cost');
-		expect(row802).toContain('$');
-
-		const row801 = card.slice(card.indexOf('CAM-801'));
-		expect(row801).not.toContain('Expected cost');
-	});
-
-	test('history stops at four entries however long the list is', () => {
-		const card = panel(
-			runsPage({
-				runs: Array.from({ length: 9 }, (_, index) =>
-					runIn('done', { id: `run-${index}`, issueId: `CAM-8${index}0` })),
-			}),
-			'Previous runs',
-		);
-
-		expect(card).toContain('4 runs before the latest');
-		for (const issueId of ['CAM-810', 'CAM-820', 'CAM-830', 'CAM-840']) {
-			expect(card).toContain(issueId);
-		}
-		for (const issueId of ['CAM-800', 'CAM-850', 'CAM-880']) {
-			expect(card).not.toContain(issueId);
-		}
+	test("a project's Runs is its list of runs, one run is inspected at its own path, and the unscoped route keeps the latest run", () => {
+		const runs = [runIn('interrupted', { id: 'run-a', issueId: 'CAM-900' }), runIn('done', { id: 'run-b', issueId: 'CAM-899' })];
+		// The list is the control center's table scoped by the path: no run card, no second history below it.
+		const list = runsListPage({ runs });
+		expect(list).toContain('data-slot="data-table"');
+		expect(list).toContain('data-slot="overview-runs-views"');
+		expect(list).not.toContain('data-slot="run-stage-map"');
+		expect(list).not.toContain('Previous runs');
+		const detail = renderAt('/projects/project-current/runs/run-b', { runs });
+		expect(detail).toContain('data-slot="run-stage-map"');
+		expect(detail).toContain('>CAM-899<');
+		expect(detail).toContain('All runs of this project');
+		expect(detail).not.toContain('data-slot="data-table"');
+		// Where a "Gateship needs you" notification lands: the run it means, not a list to search.
+		const notified = renderAt('/runs', { runs });
+		expect(notified).toContain('>CAM-900<');
+		expect(buttonIsEnabled(notified, 'Resume')).toBe(true);
 	});
 });
 
@@ -2598,8 +2524,8 @@ describe('settings surface', () => {
 		const globalPortuguese = globalSettingsPage({ ...overrides, locale: 'pt-BR' });
 
 		for (const [html, labels] of [
-			[english, ['Settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief', 'open', 'close']],
-			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto', 'abrir', 'fechar']],
+			[english, ['Settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief']],
+			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
@@ -3955,7 +3881,8 @@ describe('operator shell', () => {
 		});
 
 		expect(html).toContain('>other-product</span>');
-		expect(html).toContain('CAM-NEW');
+		// The project's Runs is its list, which reads its own rows: the surface is there, the boundary is gone.
+		expect(html).toContain('data-slot="data-table"');
 		expect(html).not.toContain('Loading operational data…');
 	});
 
@@ -4410,12 +4337,18 @@ describe('operator shell', () => {
 	});
 
 	test('a ready non-current project has Runs and project-scoped settings', () => {
-		const runs = renderAt('/projects/project-other', {
+		// The project opens on its list of runs; a run is commanded at its own path.
+		const list = renderAt('/projects/project-other', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			runs: [runIn('interrupted')],
 		});
-		expect(openingTags(runs).find((tag) => tag.startsWith('<main')))
+		expect(openingTags(list).find((tag) => tag.startsWith('<main')))
 			.toContain('aria-label="Runs"');
+		expect(list).toContain('data-slot="data-table"');
+		const runs = renderAt('/projects/project-other/runs/run-1', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			runs: [runIn('interrupted')],
+		});
 		expect(runs).toContain('CAM-900');
 		expect(buttonIsEnabled(runs, 'Resume')).toBe(true);
 		expect(runs).toContain('/projects/project-other/runs');
@@ -4513,7 +4446,7 @@ describe('operator shell', () => {
 	});
 
 	test('runs is operational for a ready non-current project and commands it', () => {
-		const html = renderAt('/projects/project-other/runs', {
+		const html = renderAt('/projects/project-other/runs/run-1', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			runs: [runIn('interrupted')],
 			workspaceNotices: NOTICES,
@@ -5658,7 +5591,7 @@ describe('shared live edge and responsive surface content', () => {
 
 		expect(unbreakable.length).toBeGreaterThan(3);
 		for (const tag of unbreakable) expect(tag).toMatch(/break-(all|words)/);
-		expect(renderLongContent('/projects/project-current/runs')).toContain(`provider.activity.${HASH}`);
+		expect(renderLongContent(`/projects/project-current/runs/run-${HASH}`)).toContain(`provider.activity.${HASH}`);
 		expect(renderLongContent('/projects/project-current/runs')).toContain(`/project/.gship/worktrees/${HASH}`);
 		expect(renderLongContent('/projects/project-current/work')).toContain(`issue ${HASH}`);
 	});

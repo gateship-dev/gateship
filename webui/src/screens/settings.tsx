@@ -402,7 +402,6 @@ function AgentSourceNotice({ catalog, source }: { catalog: SettingsCatalog; sour
 export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'providerSource' | 'onResetProvider'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
 		<ContextPanel
-			actionLabels={props.catalog.disclosure}
 			description={props.catalog.providers.description}
 			open
 			title={props.catalog.providers.title}
@@ -555,7 +554,6 @@ export function ModelSettingsPanel({
 }: Pick<AppProps, 'modelSettings' | 'modelSettingsSource' | 'pending' | 'onSaveModelSettings' | 'onResetModelSettings'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.models.description}
 			open
 			title={catalog.models.title}
@@ -601,7 +599,7 @@ export function AgentDefaultsPanel({
 	catalog,
 }: Pick<AppProps, 'agentDefaults' | 'pending' | 'onSaveAgentDefaults'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel actionLabels={catalog.disclosure} description={catalog.agentDefaults.description} open title={catalog.agentDefaults.title}>
+		<ContextPanel description={catalog.agentDefaults.description} open title={catalog.agentDefaults.title}>
 			<FormStack
 				key={JSON.stringify(agentDefaults)}
 				onSubmit={(event) => {
@@ -649,7 +647,6 @@ export function ChainRunsPanel({
 }: Pick<AppProps, 'chainRuns' | 'pending' | 'onSetChainRuns'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.chain.description}
 			open
 			title={catalog.chain.title}
@@ -682,7 +679,6 @@ export function ExecutorHandoffPanel({
 }: Pick<AppProps, 'executorHandoff' | 'pending' | 'onSetExecutorHandoff'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.executorHandoff.description}
 			open
 			title={catalog.executorHandoff.title}
@@ -711,7 +707,6 @@ export function SelfUpdatePanel({
 	const unavailable = selfUpdate.availability.kind !== 'native';
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.updates.description}
 			title={catalog.updates.title}
 		>
@@ -904,7 +899,6 @@ export function NotificationsPanel({
 	const actionLabel = catalog.notifications.actionLabels[notificationPermission];
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.notifications.description}
 			open
 			title={catalog.notifications.title}
@@ -980,7 +974,6 @@ export function ProjectBriefPanel({
 }: Pick<AppProps, 'brief' | 'pending' | 'onSaveBrief'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.brief.description}
 			open
 			title={catalog.brief.title}
@@ -1042,7 +1035,6 @@ export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & {
 	const ready = project.state === 'ready';
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.project.description}
 			open
 			title={catalog.project.title}
@@ -1082,7 +1074,6 @@ export function OperatorProfilePanel({
 	const initialTimezone = operatorProfile.timezone || suggestedTimezone;
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.operator.description}
 			open
 			title={catalog.operator.title}
@@ -1144,7 +1135,6 @@ export function DiagnosticSchedulePanel({
 	const schedule = diagnostics.schedule;
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.diagnostics.description}
 			title={catalog.diagnostics.title}
 		>
