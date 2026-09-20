@@ -3,8 +3,8 @@
 // One operational number: the value in the data voice (mono, tabular), the
 // label over it as a mono eyebrow. Statistics never carry color, with one
 // exception: `tone="attention"` is the only acid surface in the product. Acid
-// marks exactly one thing, work waiting on the operator (design-system.md
-// section 1), so nothing else may use the attention family as a surface.
+// marks exactly one thing, work waiting on the operator (design-system.md,
+// Foundations), so nothing else may use the attention family as a surface.
 // Its border uses the -ui ramp so it holds 3:1 on the light canvas, and the
 // pulse honours reduced motion.
 // A figure that has a list behind it takes `href` and becomes the way there.

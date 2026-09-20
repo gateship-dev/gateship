@@ -6,6 +6,7 @@ import { ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button, buttonVariants } from '../components/ui/button.tsx';
+import { POPUP_CHROME } from '../components/ui/dropdown-menu.tsx';
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunInspectorCatalog, ShellCatalog } from '../locale.ts';
@@ -129,8 +130,10 @@ export function NotificationsPopover({ items, catalog }: { items: readonly Notif
 			<ShellIcon icon={Notification02Icon} />
 			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-attention px-1 font-mono text-xs leading-4 text-attention-foreground">{actionableCount}</span>}
 		</Popover.Trigger>
+		{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- a popup is as wide as its reading measure or as the viewport lets it be, whichever is smaller: no single token says both */}
 		<Popover.Portal><Popover.Positioner align="end" className="z-50" sideOffset={8}><Popover.Popup aria-label={catalog.label} className="w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg/5 outline-none">
 			<div className="flex items-center gap-2 px-2 py-2"><HugeiconsIcon className="size-4" icon={Alert02Icon} size={16} strokeWidth={2.25} /><strong className="text-sm">{catalog.label}</strong><span className="ml-auto font-mono text-xs text-muted-foreground">{catalog.count(actionableCount)}</span></div>
+			{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- the list scrolls inside the popup before the popup leaves a short viewport */}
 			{items.length === 0 ? <p className="px-2 py-5 text-center text-sm text-muted-foreground">{catalog.empty}</p> : <ul className="mt-1 flex max-h-[min(28rem,70vh)] flex-col gap-1 overflow-y-auto">{items.map((item) => <li key={item.id} className="rounded-lg border border-border/60 p-3 text-sm"><div className="flex items-start justify-between gap-2"><strong>{item.href === undefined ? item.title : <a className="underline decoration-border underline-offset-2 hover:decoration-foreground" href={item.href}>{item.title}</a>}</strong><span className="shrink-0 font-mono text-xs text-muted-foreground">{item.severity}</span></div><p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p></li>)}</ul>}
 		</Popover.Popup></Popover.Positioner></Popover.Portal>
 	</Popover.Root>;
@@ -211,7 +214,10 @@ export function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.Rea
  * second line as text, never as a chip beside the name. The acid dot on
  * "Needs you" keeps the sidebar's one acid signal.
  */
-export const SWITCHER_ITEM_CLASS =
+export /* The kit's popup chrome, plus what this menu alone needs: it opens as wide as its trigger, borders included. */
+// oxlint-disable-next-line shadcn/no-arbitrary-values -- the anchor's width is a runtime value, and the popup adds its own two borders to match the trigger's edge
+const SWITCHER_POPUP_CLASS = cn(POPUP_CHROME, 'relative min-w-[calc(var(--anchor-width)+2px)] origin-(--transform-origin) p-1 motion-safe:duration-100 motion-reduce:transition-none motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-95');
+const SWITCHER_ITEM_CLASS =
 	'flex min-h-8 w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 text-sm outline-none ' +
 	'data-highlighted:bg-accent data-highlighted:text-accent-foreground';
 
@@ -320,7 +326,7 @@ function ProjectSwitcherMenu({
 			{/* One pixel out on each side so the popup's border sits outside the
 			 * trigger's edge and every row inside lines up with the trigger. */}
 			<Menu.Positioner align="start" alignOffset={-1} className="z-50" sideOffset={6}>
-				<Menu.Popup className="relative min-w-[calc(var(--anchor-width)+2px)] origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 motion-safe:duration-100 motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+				<Menu.Popup className={SWITCHER_POPUP_CLASS}>
 					<div className="type-eyebrow px-2 pt-2 pb-1 text-muted-foreground">
 						{catalog.projectNavigationLabel}
 					</div>
@@ -685,6 +691,7 @@ export function ShellControls({
 	) : null;
 	return (
 		<div className="w-full shrink-0 border-b border-border px-4 py-3 lg:px-6">
+			{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- equal flexible sides keep the title on the true centre while the controls on either side differ in width */}
 			<ShellContentFrame className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" data-slot="shell-controls-layout">
 				<div className="flex min-w-0 justify-start">
 					{/* The sidebar toggle lives in the content area, not the sidebar. */}
@@ -841,6 +848,7 @@ export function ShellSidebar({
 		<header className={cn('scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:py-(--shell-inset)', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
 			<h1 className="flex items-center gap-2 lg:hidden">
 				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
+				{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- the wordmark's own proportions, taken from its viewBox so the height alone sizes it without a layout shift */}
 				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
 			</h1>
 			<ShellNavigation
