@@ -5,6 +5,7 @@ import type { AppProps } from '../app-props.ts';
 import type { AgentSettingSource, DiagnosticCadenceView, DiagnosticsView, ModelRoleName, ModelSettingsView, ModelSlotView, NotificationChannelId, NotificationChannelView, ProviderStatusView } from '../client.ts';
 import { emptyModelSettings, MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_CHANNEL_IDS } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { CardFooter } from '../components/ui/card.tsx';
 import { FormStack } from '../components/ui/card-layout.tsx';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
@@ -354,8 +355,8 @@ export function ProviderRow({
 				<div className="flex min-w-0 flex-col gap-1">
 					<p className="flex flex-wrap items-center gap-2 font-medium">
 						{provider.label}
-						{provider.id === selectedProvider ? <Badge variant="secondary">{catalog.providers.inUse}</Badge> : null}
-						{provider.id === 'claude' ? <Badge variant="outline">{catalog.providers.claudeCredential.originLabels[provider.login]}</Badge> : null}
+						{provider.id === selectedProvider ? <Tag>{catalog.providers.inUse}</Tag> : null}
+						{provider.id === 'claude' ? <Tag>{catalog.providers.claudeCredential.originLabels[provider.login]}</Tag> : null}
 					</p>
 					<p className="break-words text-muted-foreground">{providerDescription(provider, catalog)}</p>
 				</div>
@@ -846,7 +847,7 @@ export function NotificationChannelRow({
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<p className="flex flex-wrap items-center gap-2 font-medium">
 					{label}
-					<Badge variant={channel.configured ? 'success' : 'secondary'}>{channel.configured ? catalog.notifications.configured : catalog.notifications.notConfigured}</Badge>
+					<Badge variant={channel.configured ? 'success' : 'neutral'}>{channel.configured ? catalog.notifications.configured : catalog.notifications.notConfigured}</Badge>
 					{!channel.configured && channel.missing.length > 0 ? <span className="font-normal text-muted-foreground">{catalog.notifications.missing(channel.missing.join(', '))}</span> : null}
 				</p>
 				<ActionButton
@@ -1032,7 +1033,7 @@ export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & {
 		>
 			<div className="flex flex-col gap-3 text-sm">
 				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant={ready ? 'success' : project.state === 'checking' ? 'secondary' : 'warning'}>
+					<Badge variant={ready ? 'success' : project.state === 'checking' ? 'neutral' : 'warning'}>
 						{ready ? catalog.project.stateLabels.ready : project.state === 'checking' ? catalog.project.stateLabels.checking : catalog.project.stateLabels.attention}
 					</Badge>
 					<span className="font-medium">{project.name === '' ? catalog.project.localProject : project.name}</span>

@@ -1,53 +1,44 @@
 // webui/src/components/ui/badge.tsx
 //
-// Gateship's compact status chip. Its semantic variants
-// are an 8% wash of their own hue (16% on dark), never a solid. Badges on
-// this screen only ever report what the runtime decided, so the component
-// takes a variant and children and nothing else: no sizes, no link or
-// button form, no click target.
+// The state or the class of the thing beside it: readiness, severity, outcome,
+// a channel that is configured. One or two words, first letter capital, in a
+// wash of its own semantic hue (8%, 16% on dark), never a solid and never an
+// icon, because the hue already says it. A badge is static: what can be
+// clicked is a link or a button, what can be toggled is a ToggleGroup.
 //
-// `merged` uses the purple state family and `attention` is reserved for what
-// waits on the operator.
+// It is not the only short label in the kit. The life cycle of a run is a
+// StatusDot, a fixed attribute of an entity is a Tag, an id is a Reference and
+// a number beside a label is a Count.
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
+import { sentenceCase } from './label-text.ts';
 
-export type BadgeVariant =
-	| 'default'
-	| 'secondary'
-	| 'outline'
-	| 'info'
-	| 'merged'
-	| 'success'
-	| 'warning'
-	| 'error';
+export type BadgeVariant = 'neutral' | 'info' | 'merged' | 'success' | 'warning' | 'error';
 
 const SHAPE =
 	'relative inline-flex w-fit shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-sm border border-transparent font-medium outline-none ' +
-	'h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs ' +
-	"[&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-3.5 sm:[&_svg:not([class*='size-'])]:size-3 [&_svg]:pointer-events-none [&_svg]:shrink-0";
+	'h-5.5 min-w-5.5 px-[calc(--spacing(1)-1px)] text-sm sm:h-4.5 sm:min-w-4.5 sm:text-xs';
 
 const VARIANT: Readonly<Record<BadgeVariant, string>> = {
-	default: 'bg-primary text-primary-foreground',
 	error: 'bg-destructive/8 text-destructive-foreground dark:bg-destructive/16',
 	info: 'bg-info/8 text-info-foreground dark:bg-info/16',
 	merged: 'bg-merged/8 text-merged-foreground dark:bg-merged/16',
-	outline: 'border-input bg-background text-foreground dark:bg-input/32',
-	secondary: 'bg-secondary text-secondary-foreground',
+	neutral: 'bg-secondary text-secondary-foreground',
 	success: 'bg-success/8 text-success-foreground dark:bg-success/16',
 	warning: 'bg-warning/8 text-warning-foreground dark:bg-warning/16',
 };
 
 export function Badge({
 	children,
-	variant = 'default',
+	variant = 'neutral',
 }: {
 	children: React.ReactNode;
 	variant?: BadgeVariant;
 }): React.ReactElement {
 	return (
 		<span className={cn(SHAPE, VARIANT[variant])} data-slot="badge" data-variant={variant}>
-			{children}
+			{sentenceCase(children)}
 		</span>
 	);
 }

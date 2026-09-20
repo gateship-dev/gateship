@@ -3,6 +3,7 @@ import type { AppProps } from '../app-props.ts';
 import { fetchProjectOnboarding, type ProjectOnboardingSnapshot } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { DataTable, DataTableToolbar, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { cn } from '../lib/cn.ts';
@@ -41,8 +42,8 @@ export function clearOnboardingStorage(storage: OnboardingStorage | null): void 
 	storage?.removeItem('gship-onboarding-choice'); storage?.removeItem('gship-onboarding-operation'); storage?.removeItem('gship-onboarding-target'); storage?.removeItem('gship-onboarding-proposal');
 }
 
-export function onboardingCheckPresentation(state: string): { label: 'ready' | 'not found' | 'needs attention' | 'not applicable yet'; variant: 'success' | 'error' | 'warning' | 'secondary' } {
-	return state === 'ready' ? { label: 'ready', variant: 'success' } : state === 'missing' ? { label: 'not found', variant: 'error' } : state === 'not-applicable' ? { label: 'not applicable yet', variant: 'secondary' } : { label: 'needs attention', variant: 'warning' };
+export function onboardingCheckPresentation(state: string): { label: 'ready' | 'not found' | 'needs attention' | 'not applicable yet'; variant: 'success' | 'error' | 'warning' | 'neutral' } {
+	return state === 'ready' ? { label: 'ready', variant: 'success' } : state === 'missing' ? { label: 'not found', variant: 'error' } : state === 'not-applicable' ? { label: 'not applicable yet', variant: 'neutral' } : { label: 'needs attention', variant: 'warning' };
 }
 
 export function onboardingDetailsVisible(choice: 'existing' | 'new' | null): boolean {
@@ -76,7 +77,7 @@ export function RegisteredProjectsTable({ props }: { props: AppProps }): React.R
 	const columns = useMemo<GateshipColumnDef<RegisteredProject>[]>(() => {
 		const entryOf = (project: RegisteredProject) => entries?.find((entry) => entry.project.id === project.id);
 		const defs: GateshipColumnDef<RegisteredProject>[] = [
-			{ id: 'project', header: overviewCatalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.id)}`}>{row.original.name}</a>{row.original.current ? <span className="hidden sm:inline-flex"><Badge variant="info">{catalog.currentBadge}</Badge></span> : null}</span> },
+			{ id: 'project', header: overviewCatalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.id)}`}>{row.original.name}</a>{row.original.current ? <span className="hidden @xl:inline-flex"><Tag>{catalog.currentBadge}</Tag></span> : null}</span> },
 			{ id: 'repository', header: catalog.list.repository, meta: { className: 'type-data max-w-64 truncate text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => row.original.repository ?? catalog.repositoryUnknown },
 			{ id: 'readiness', header: catalog.readinessLabel, cell: ({ row }) => <Badge variant={READINESS_TONE[row.original.readiness]}>{catalog.readiness[row.original.readiness]}</Badge> },
 			{ id: 'activity', header: overviewCatalog.activity, meta: { className: 'max-w-56', hideBelow: 'sm' }, cell: ({ row }) => { const entry = entryOf(row.original); return entry === undefined ? null : <ProjectActivity catalog={overviewCatalog} entry={entry} locale={props.locale} />; } },

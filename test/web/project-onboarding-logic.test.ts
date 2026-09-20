@@ -26,7 +26,7 @@ describe('guided project onboarding state', () => {
 	});
 
 	test('keeps not-applicable checks neutral', () => {
-		expect(onboardingCheckPresentation('not-applicable')).toEqual({ label: 'not applicable yet', variant: 'secondary' });
+		expect(onboardingCheckPresentation('not-applicable')).toEqual({ label: 'not applicable yet', variant: 'neutral' });
 	});
 
 	test('normalizes optional onboarding targets before building the request', async () => {

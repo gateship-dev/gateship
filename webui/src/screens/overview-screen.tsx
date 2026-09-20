@@ -9,22 +9,24 @@ import { DataTable, gateshipTableFeatures, useGateshipTable, type GateshipColumn
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { Stat } from '../components/ui/stat.tsx';
+import { StatusDot } from '../components/ui/status-dot.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, OverviewCatalog } from '../locale.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunState } from '../run-view.ts';
-import { toneOf } from '../run-view.ts';
+import { isRunActive, toneOf } from '../run-view.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { overviewAttention, sortProjectsByUrgency } from '../overview-counts.ts';
 import { formatDate, formatTime } from './overview-runs-screen.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
 
 export const READINESS_TONE: Readonly<Record<RegisteredProjectView['readiness'], BadgeVariant>> = {
-	ready: 'success', empty: 'secondary', 'needs-attention': 'warning',
+	ready: 'success', empty: 'neutral', 'needs-attention': 'warning',
 };
 
 export const OUTCOME_TONE: Readonly<Record<string, BadgeVariant>> = {
-	shipped: 'success', failed: 'error', cancelled: 'secondary', incomplete: 'warning',
+	shipped: 'success', failed: 'error', cancelled: 'neutral', incomplete: 'warning',
 };
 
 function stateLabel(state: string, locale: Locale): string {
@@ -43,14 +45,14 @@ export function ProjectActivity({ entry, catalog, locale }: { entry: ProjectEntr
 	/* Straight to the run: whoever reads "waiting for you" wants that run, not the list it sits in. */
 	return <a className={cn(TEXT_LINK_CLASS, 'inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1')} href={`/projects/${encodeURIComponent(entry.project.id)}/runs/${encodeURIComponent(entry.activeRun.id)}`}>
 		<span className="type-data text-xs">{entry.activeRun.issueId}</span>
-		<Badge variant={toneOf(entry.activeRun.state as RunState)}>{stateLabel(entry.activeRun.state, locale)}</Badge>
+		<StatusDot active={isRunActive(entry.activeRun.state as RunState)} tone={toneOf(entry.activeRun.state as RunState)}>{stateLabel(entry.activeRun.state, locale)}</StatusDot>
 	</a>;
 }
 
 function LastDelivery({ entry, catalog }: { entry: ProjectEntry; catalog: OverviewCatalog }): React.ReactElement {
 	if (entry.overview.overview === null) return <span className="text-muted-foreground">{catalog.historyUnavailable}</span>;
 	if (entry.latestRun === null || entry.latestRunOutcome === null) return <span className="text-muted-foreground">{catalog.noDelivery}</span>;
-	return <Badge variant={OUTCOME_TONE[entry.latestRunOutcome] ?? 'secondary'}>{catalog.outcomes[entry.latestRunOutcome]}</Badge>;
+	return <StatusDot tone={OUTCOME_TONE[entry.latestRunOutcome] ?? 'neutral'}>{catalog.outcomes[entry.latestRunOutcome]}</StatusDot>;
 }
 
 function deliveredAt(entry: ProjectEntry): string | null {
@@ -69,7 +71,7 @@ function ProjectStatusTable({ overview, catalog, locale }: { overview: ProjectOp
 		const mono = 'type-data whitespace-nowrap text-xs';
 		const when = (entry: ProjectEntry, format: (value: string, locale: Locale) => string): React.ReactNode => { const value = deliveredAt(entry); return value === null ? null : <time dateTime={value}>{format(value, locale)}</time>; };
 		const defs: GateshipColumnDef<ProjectEntry>[] = [
-			{ id: 'project', header: catalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.project.id)}`}>{row.original.project.name}</a>{row.original.project.current ? <span className="hidden sm:inline-flex"><Badge variant="info">{projectCatalog.currentBadge}</Badge></span> : null}</span> },
+			{ id: 'project', header: catalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.project.id)}`}>{row.original.project.name}</a>{row.original.project.current ? <span className="hidden @xl:inline-flex"><Tag>{projectCatalog.currentBadge}</Tag></span> : null}</span> },
 			{ id: 'activity', header: catalog.activity, meta: { className: 'max-w-56' }, cell: ({ row }) => <ProjectActivity catalog={catalog} entry={row.original} locale={locale} /> },
 			{ id: 'readiness', header: projectCatalog.readinessLabel, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Badge variant={READINESS_TONE[row.original.project.readiness]}>{projectCatalog.readiness[row.original.project.readiness]}</Badge> },
 			{ id: 'backlog', header: catalog.backlogLabel, meta: { align: 'end', className: 'type-data', hideBelow: 'sm' }, cell: ({ row }) => row.original.backlog.state === 'available' ? row.original.backlog.counts.planned : <span className="font-sans text-muted-foreground">{catalog.partial}</span> },

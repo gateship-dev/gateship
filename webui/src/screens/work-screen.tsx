@@ -5,6 +5,9 @@ import type { AppProps } from '../app-props.ts';
 import type { DiagnosticFindingView, DiagnosticsView, IssueReviewDraft } from '../client.ts';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
 import { Badge } from '../components/ui/badge.tsx';
+import { Count } from '../components/ui/count.tsx';
+import { Reference } from '../components/ui/reference.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardAction, CardDescription, CardDisclosure, CardFooter, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
 import { FormField, FormStack } from '../components/ui/card-layout.tsx';
@@ -305,7 +308,7 @@ export function IssueReviewForm({
 				onReviewIssue(draft.id, reviewPayload({ objective, acceptance, boundaries, verify, evidence: draft.evidence }));
 			}}
 		>
-			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
+			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'neutral'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
 			<SpecFields catalog={catalog} setters={setters} values={values} />
 			<EvidencePanel catalog={catalog} evidence={draft.evidence} />
 			<label className="flex items-start gap-2 text-sm">
@@ -366,7 +369,7 @@ export function IssueReviewPanel({
 			<CardSummary>
 				<CardTitle>{catalog.review.title}</CardTitle>
 				<CardDescription>{catalog.review.description(drafts.length, formatCount(drafts.length, locale))}</CardDescription>
-				<CardAction><Badge variant="secondary">{formatCount(drafts.length, locale)}</Badge></CardAction>
+				<CardAction><Count>{formatCount(drafts.length, locale)}</Count></CardAction>
 			</CardSummary>
 			<CardPanel>
 				<label className="flex flex-col gap-1 text-sm" htmlFor="review-issue">
@@ -419,7 +422,7 @@ export function diagnosticScanVariant(
 	if (state === 'completed') return 'success';
 	if (state === 'failed') return 'error';
 	if (state === 'queued' || state === 'running') return 'info';
-	return 'secondary';
+	return 'neutral';
 }
 
 export function DiagnosticScanSummary({
@@ -541,7 +544,7 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 			{ id: 'occurrences', header: catalog.list.columns.occurrences, meta: { align: 'end', className: 'type-data', hideBelow: 'sm' }, cell: ({ row }) => formatCount(row.original.occurrenceCount, locale) },
 			...(view === 'pending'
 				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { align: 'end' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismiss(row.original.id)}>{catalog.diagnostics.dismiss}</Button> }]
-				: [{ id: 'status', header: catalog.list.columns.status, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant="secondary">{catalog.diagnostics.statusLabels[row.original.status]}</Badge>{row.original.promotedIssueId === null ? null : <Badge variant="info">{row.original.promotedIssueId}</Badge>}</span> }]),
+				: [{ id: 'status', header: catalog.list.columns.status, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant="neutral">{catalog.diagnostics.statusLabels[row.original.status]}</Badge>{row.original.promotedIssueId === null ? null : <Reference>{row.original.promotedIssueId}</Reference>}</span> }]),
 		];
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
 	}, [catalog, locale, onDismiss, pending, view]);
@@ -643,7 +646,7 @@ export function DiagnosticsPanel({
 						<p className="text-muted-foreground">{catalog.diagnostics.advisory}</p>
 						{analyzer === undefined ? null : (
 							<div className="flex flex-wrap items-center gap-2">
-								<Badge variant="outline">{analyzer.label}</Badge>
+								<Tag>{analyzer.label}</Tag>
 								<code className="text-xs">v{analyzer.version}</code>
 								<span className="text-muted-foreground">{analyzer.id === 'react' ? catalog.diagnostics.analyzerDescriptions.react : analyzer.description}</span>
 							</div>
@@ -693,11 +696,11 @@ export function ProposalsPanel({
 	const columns = useMemo<GateshipColumnDef<AnyProposal>[]>(() => {
 		const defs: GateshipColumnDef<AnyProposal>[] = [
 			{ id: 'title', header: catalog.list.columns.title, meta: { className: 'whitespace-normal break-words font-medium', primary: true }, cell: ({ row }) => row.original.title },
-			{ id: 'origin', header: catalog.list.columns.origin, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Badge variant="outline">{row.original.sourceIssueId}</Badge> },
+			{ id: 'origin', header: catalog.list.columns.origin, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Reference>{row.original.sourceIssueId}</Reference> },
 			{ id: 'run', header: catalog.list.columns.run, meta: { className: 'type-data text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.sourceRunId}>{row.original.sourceRunId.slice(0, 8)}</span> },
 			...(view === 'pending'
 				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { align: 'end' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: AnyProposal } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismissProposal(row.original.id)}>{catalog.proposals.dismiss}</Button> }]
-				: [{ id: 'status', header: catalog.list.columns.status, cell: ({ row }: { row: { original: AnyProposal } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant={row.original.status === 'promoted' ? 'success' : 'secondary'}>{catalog.proposals.statusLabels[row.original.status ?? 'dismissed']}</Badge>{row.original.status === 'promoted' && row.original.promotedIssueId != null ? <><span className="text-muted-foreground">{catalog.proposals.became}</span><Badge variant="info">{row.original.promotedIssueId}</Badge></> : null}</span> }]),
+				: [{ id: 'status', header: catalog.list.columns.status, cell: ({ row }: { row: { original: AnyProposal } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant={row.original.status === 'promoted' ? 'success' : 'neutral'}>{catalog.proposals.statusLabels[row.original.status ?? 'dismissed']}</Badge>{row.original.status === 'promoted' && row.original.promotedIssueId != null ? <><span className="text-muted-foreground">{catalog.proposals.became}</span><Reference>{row.original.promotedIssueId}</Reference></> : null}</span> }]),
 		];
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
 	}, [catalog, onDismissProposal, pending, view]);
@@ -708,7 +711,7 @@ export function ProposalsPanel({
 				<SuggestionViews label={catalog.list.views} pending={catalog.list.pendingProposals(formatCount(proposals.length, locale))} resolved={catalog.list.resolvedProposals(formatCount(resolvedProposals.length, locale))} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
 				<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchProposals} table={table} />
 			</DataTableToolbar>
-			{view === 'resolved' ? <p className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm"><Badge variant="outline">{catalog.proposals.readOnly}</Badge>{catalog.proposals.settledNote}</p> : null}
+			{view === 'resolved' ? <p className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm"><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</p> : null}
 			{view === 'resolved' ? resolvedUnavailable : null}
 			<DataTable
 				emptyDetail={list.search === '' ? '' : undefined}
@@ -716,7 +719,7 @@ export function ProposalsPanel({
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.proposals.emptyPending : catalog.proposals.emptyResolved}
 				locale={locale}
 				renderExpanded={(proposal) => (
-					<SuggestionDetail evidence={proposal.evidence} meta={<p className="flex flex-wrap items-center gap-2 text-muted-foreground"><Badge variant="outline">{proposal.sourceIssueId}</Badge><code className="type-data break-all text-xs">{proposal.sourceRunId}</code></p>}>
+					<SuggestionDetail evidence={proposal.evidence} meta={<p className="flex flex-wrap items-center gap-2 text-muted-foreground"><Reference>{proposal.sourceIssueId}</Reference><Reference>{proposal.sourceRunId}</Reference></p>}>
 						{view === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={proposal.title} pending={pending} prefix="proposal" onPromote={(input) => onPromoteProposal(proposal.id, input)} /> : null}
 					</SuggestionDetail>
 				)}

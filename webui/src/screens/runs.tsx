@@ -8,11 +8,13 @@ import type { ProviderStatusView } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
 import { Callout } from '../components/ui/callout.tsx';
+import { StatusDot } from '../components/ui/status-dot.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { Card, CardAction, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { cn } from '../lib/cn.ts';
 import { DEFAULT_LOCALE, LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, RunInspectorCatalog, RunsOperationalCatalog, RunsWorkflowCatalog, SettingsCatalog } from '../locale.ts';
-import { actionsFor, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
+import { actionsFor, isRunActive, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
 import type { ProviderUsageWindowView, RunCostCoverage, RunCostRole, RunCostRoleUsage, RunEventView, RunExecutorHandoffView, RunProviderWaitView, RunView, WorkflowCohort } from '../run-view.ts';
 import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
@@ -363,8 +365,8 @@ function RunActivityEntry({
 				{/* A tool result can run to pages: the line keeps its first stretch, the disclosure keeps the rest. */}
 				{metadata.map((item) => <span className="max-w-full truncate" key={item} title={item.length > 120 ? undefined : item}>{item}</span>)}
 				{technical.map((item) => <code className="max-w-full truncate" key={item}>{item}</code>)}
-				{label === null ? null : <Badge>{label}</Badge>}
-				{event.kind === 'run.cycle-response' ? <Badge>{catalog.cycleResponseLabel}</Badge> : null}
+				{label === null ? null : <Tag>{label}</Tag>}
+				{event.kind === 'run.cycle-response' ? <Tag>{catalog.cycleResponseLabel}</Tag> : null}
 				{attention ? <Badge variant="warning">{catalog.attentionLabel}</Badge> : null}
 			</span>
 		</>
@@ -505,7 +507,7 @@ export function PullRequestDelivery({
 					{catalog.pullRequestLabel(delivery.prNumber)}
 				</a>
 				{/* Merged says CI passed: the check only speaks while the pull request is open. */}
-				{run.state === 'done' ? <Badge variant="merged">Merged</Badge> : <Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>}
+				{run.state === 'done' ? <Badge variant="merged">{catalog.mergedLabel}</Badge> : <Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>}
 			</>}
 			{correction === null ? null : correction.check.url === undefined ? (
 				<span className="text-warning-foreground text-xs">
@@ -531,7 +533,7 @@ export function ciBadgeVariant(status: NonNullable<RunView['pullRequest']>['ciSt
 	if (status === 'failed') return 'error';
 	if (status === 'pending') return 'warning';
 	if (status === 'passed') return 'success';
-	return 'outline';
+	return 'neutral';
 }
 
 export function ProviderWaitCallout({
@@ -692,7 +694,7 @@ export function RunCard({
 				</div>
 				{run === null ? null : (
 					<CardAction>
-						<Badge variant={toneOf(run.state)}>{catalog.stateLabels[run.state]}</Badge>
+						<StatusDot active={isRunActive(run.state)} tone={toneOf(run.state)}>{catalog.stateLabels[run.state]}</StatusDot>
 					</CardAction>
 				)}
 			</CardHeader>
@@ -1151,7 +1153,7 @@ export function WorkspaceNoticesPanel({
 						key={`${notice.kind}-${notice.runId}-${notice.workspacePath}-${notice.branch}`}
 					>
 						<div className="flex flex-wrap items-center gap-2">
-							<Badge variant="outline">{notice.kind}</Badge>
+							<Tag>{notice.kind}</Tag>
 							{notice.runId === null ? null : <code className="break-all">{notice.runId}</code>}
 						</div>
 						<code className="break-all text-muted-foreground">
@@ -1200,7 +1202,7 @@ export function usageWindowLabel(window: ProviderUsageWindowView, locale: Locale
 export function usageWindowVariant(status: ProviderUsageWindowView['status']): BadgeVariant {
 	if (status === 'rejected') return 'error';
 	if (status === 'allowed_warning') return 'warning';
-	return 'outline';
+	return 'neutral';
 }
 
 export function formatUsageTime(value: string, locale: Locale): string {

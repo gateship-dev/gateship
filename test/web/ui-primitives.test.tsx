@@ -21,7 +21,11 @@ import { CardGrid, CardSplit, CardStack, FormField, FormStack } from '../../webu
 import { EmptyState } from '../../webui/src/components/ui/empty-state.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
 import { Separator } from '../../webui/src/components/ui/separator.tsx';
+import { Count } from '../../webui/src/components/ui/count.tsx';
+import { Reference } from '../../webui/src/components/ui/reference.tsx';
 import { Stat } from '../../webui/src/components/ui/stat.tsx';
+import { StatusDot } from '../../webui/src/components/ui/status-dot.tsx';
+import { Tag } from '../../webui/src/components/ui/tag.tsx';
 import {
 	Tabs,
 	TabsList,
@@ -189,11 +193,31 @@ describe('ui primitives', () => {
 		expect(html).toContain('width:33%');
 	});
 
-	test('a badge carries the family it was told, and is neutral by default', () => {
+	test('a badge carries the family it was told, is neutral by default and starts with a capital', () => {
 		// The family, not the tint strength: the alpha is a design value.
-		expect(renderToStaticMarkup(<Badge variant="warning">waiting-user</Badge>))
-			.toContain('bg-warning/');
-		expect(renderToStaticMarkup(<Badge>ocioso</Badge>)).toContain('bg-primary');
+		expect(renderToStaticMarkup(<Badge variant="warning">aguardando você</Badge>)).toContain('bg-warning/');
+		// Neutral, never the solid black chip: a badge that shouts louder than the thing it describes.
+		const idle = renderToStaticMarkup(<Badge>ocioso</Badge>);
+		expect(idle).toContain('data-variant="neutral"');
+		expect(idle).not.toContain('bg-primary');
+		// First letter capital, the rest as written: "Aguardando você", never "Aguardando Você".
+		expect(idle).toContain('>Ocioso<');
+		expect(renderToStaticMarkup(<Badge variant="warning">aguardando você</Badge>)).toContain('>Aguardando você<');
+	});
+
+	test('each short label has one job: a dot for the life of a run, a tag for an attribute, a reference for an id, a count for a number', () => {
+		const dot = renderToStaticMarkup(<StatusDot active tone="info">em andamento</StatusDot>);
+		expect(dot).toContain('>Em andamento<');
+		expect(dot).toContain('motion-safe:animate-pulse');
+		expect(renderToStaticMarkup(<StatusDot tone="success">concluída</StatusDot>)).not.toContain('animate-pulse');
+		// A tag has no hue: nothing about an attribute changes or asks for anything.
+		const tag = renderToStaticMarkup(<Tag>somente leitura</Tag>);
+		expect(tag).toContain('>Somente leitura<');
+		expect(tag).not.toMatch(/bg-(info|success|warning|destructive|merged)/);
+		// An id is read character by character and is a link only when there is somewhere to go.
+		expect(renderToStaticMarkup(<Reference>GSHIP-902</Reference>)).toMatch(/^<span [^>]*type-data/);
+		expect(renderToStaticMarkup(<Reference href="/projects/p/runs/r">69864f95</Reference>)).toMatch(/^<a [^>]*href="\/projects\/p\/runs\/r"/);
+		expect(renderToStaticMarkup(<Count tone="warning">3</Count>)).toContain('tabular-nums');
 	});
 
 	test('the attention stat speaks in the warning family, never in the acid of the mark, and a stat with a list behind it is a link', () => {

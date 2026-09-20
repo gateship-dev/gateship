@@ -12,6 +12,10 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from './components/ui/alert.tsx';
+import { Count } from './components/ui/count.tsx';
+import { Reference } from './components/ui/reference.tsx';
+import { StatusDot } from './components/ui/status-dot.tsx';
+import { Tag } from './components/ui/tag.tsx';
 import { Badge, type BadgeVariant } from './components/ui/badge.tsx';
 import { Button } from './components/ui/button.tsx';
 import { Callout, type CalloutTone } from './components/ui/callout.tsx';
@@ -53,7 +57,7 @@ const COLOR_TOKENS = [
 const TYPE_ROLES = [
 	['type-page-title', 'Page title'], ['type-editorial-title', 'Editorial title'], ['type-body', 'Body'], ['type-eyebrow', 'Eyebrow'], ['type-data', 'Data'],
 ] as const;
-const BADGE_VARIANTS: readonly BadgeVariant[] = ['default', 'secondary', 'outline', 'info', 'success', 'warning', 'error', 'merged'];
+const BADGE_VARIANTS: readonly BadgeVariant[] = ['neutral', 'info', 'success', 'warning', 'error', 'merged'];
 const BUTTON_VARIANTS = ['default', 'outline', 'ghost', 'destructive'] as const;
 const CALLOUT_TONES: readonly CalloutTone[] = ['neutral', 'success', 'warning', 'destructive'];
 const ROUTES = ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const;
@@ -302,11 +306,15 @@ function TableSample({ status }: { status: DataTableStatus }): React.ReactElemen
 function Components(): React.ReactElement {
 	return (
 		<div className="flex flex-col gap-8">
-			<Block rule="One constructive primary action per panel. Acid only for the operator's turn. Every size shares the 32px row at sm." spec={['button']} title="Button">
+			<Block rule="One constructive primary action per panel. Every size shares the 32px row at sm." spec={['button']} title="Button">
 				<div className="flex flex-col gap-3">{(['default', 'sm', 'icon'] as const).map((size) => <div className="flex flex-wrap items-center gap-2" key={size}>{BUTTON_VARIANTS.map((variant) => <Button key={variant} size={size} type="button" variant={variant}>{size === 'icon' ? <HugeiconsIcon icon={Search01Icon} size={16} strokeWidth={2.25} /> : variant}</Button>)}<span className="font-mono text-muted-foreground text-xs">{size}</span></div>)}</div>
 			</Block>
-			<Block rule="Compact, always beside a textual label somewhere on the row. Never the only carrier of state." spec={['badge']} title="Badge">
-				<div className="flex flex-wrap gap-2">{BADGE_VARIANTS.map((variant) => <Badge key={variant} variant={variant}>{variant}</Badge>)}</div>
+			<Block rule="Five short labels, one job each. Badge: the state or class of something, in its semantic wash, one per row. StatusDot: the life of a run, moving only while the run does. Tag: a fixed attribute, no hue, the only one that may lead with an icon. Reference: an id, mono, a link when there is somewhere to go. Count: a number beside a label. All start with a capital and stay at one or two words." spec={['badge', 'status-dot', 'tag', 'reference', 'count']} title="Short labels">
+				<div className="flex flex-col gap-3">
+					<div className="flex flex-wrap items-center gap-2">{BADGE_VARIANTS.map((variant) => <Badge key={variant} variant={variant}>{variant}</Badge>)}</div>
+					<div className="flex flex-wrap items-center gap-4"><StatusDot active tone="info">working</StatusDot><StatusDot tone="warning">waiting for you</StatusDot><StatusDot tone="success">done</StatusDot><StatusDot tone="error">failed</StatusDot><StatusDot tone="merged">merged</StatusDot><StatusDot tone="neutral">cancelled</StatusDot></div>
+					<div className="flex flex-wrap items-center gap-2"><Tag>this instance</Tag><Tag>in use</Tag><Tag>read-only</Tag><Reference>GSHIP-902</Reference><Reference href="#">69864f95</Reference><Count>3</Count><Count tone="warning">2</Count><Count tone="strong">1</Count><Count form="plain">12</Count></div>
+				</div>
 			</Block>
 			<Block rule="Input, Select and Textarea share one chrome: hairline border, input tint on dark, neutral 3px ring on focus." spec={['input', 'select', 'textarea', 'card-layout']} title="Fields">
 				<FormStack className="max-w-md">
@@ -356,7 +364,7 @@ function Components(): React.ReactElement {
 			<Block rule="24px inset in the header and panel; a footer only when the card has actions." spec={['card', 'item']} title="Card">
 				<CardStack>
 					<Card><CardHeader><CardTitle>Executable backlog</CardTitle></CardHeader><CardPanel><p className="text-muted-foreground text-sm">0 admissible issues right now.</p></CardPanel><CardFooter><Button size="sm" type="button">Approve next</Button><Button size="sm" type="button" variant="ghost">Later</Button></CardFooter></Card>
-					<ItemGroup><Item><ItemContent><p className="text-sm">GSHIP-903 · Runs table on the shadcn recipe</p></ItemContent><Badge variant="info">review</Badge></Item><Item><ItemContent><p className="text-sm">GSHIP-904 · Design scratchpad</p></ItemContent><Badge variant="secondary">queued</Badge></Item></ItemGroup>
+					<ItemGroup><Item><ItemContent><p className="text-sm">GSHIP-903 · Runs table on the shadcn recipe</p></ItemContent><Badge variant="info">review</Badge></Item><Item><ItemContent><p className="text-sm">GSHIP-904 · Design scratchpad</p></ItemContent><Badge variant="neutral">queued</Badge></Item></ItemGroup>
 				</CardStack>
 			</Block>
 			<Block rule="Loading draws skeleton rows, updating dims the body, empty renders one full-width cell. Headers are sans; cells choose their voice." spec={['data-table', 'table']} title="Data table">

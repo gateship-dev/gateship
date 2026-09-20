@@ -6,6 +6,7 @@ import { ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button, buttonVariants } from '../components/ui/button.tsx';
+import { Count } from '../components/ui/count.tsx';
 import { POPUP_CHROME } from '../components/ui/dropdown-menu.tsx';
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
@@ -128,7 +129,7 @@ export function NotificationsPopover({ items, catalog }: { items: readonly Notif
 		<span aria-atomic="true" aria-live="polite" className="sr-only" data-slot="notifications-live">{announcement}</span>
 		<Popover.Trigger aria-label={catalog.label} className={cn(buttonVariants({ size: 'icon', variant: 'outline' }), 'relative')} data-slot="notifications-trigger">
 			<ShellIcon icon={Notification02Icon} />
-			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-foreground px-1 font-mono text-xs leading-4 text-background">{actionableCount}</span>}
+			{actionableCount === 0 ? null : <Count aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1" tone="strong">{actionableCount}</Count>}
 		</Popover.Trigger>
 		{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- a popup is as wide as its reading measure or as the viewport lets it be, whichever is smaller: no single token says both */}
 		<Popover.Portal><Popover.Positioner align="end" className="z-50" sideOffset={8}><Popover.Popup aria-label={catalog.label} className="w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg/5 outline-none">
@@ -502,7 +503,7 @@ function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: 
  * renders as nothing, never as a zero the service did not report. */
 function NavCount({ value }: { value: number | null }): React.ReactElement | null {
 	if (value === null) return null;
-	return <span className="ml-auto min-w-4 text-center font-mono text-xs tabular-nums" data-slot="navigation-count">{value}</span>;
+	return <Count className="ml-auto" data-slot="navigation-count" form="plain">{value}</Count>;
 }
 
 /* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail. */

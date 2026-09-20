@@ -39,8 +39,9 @@ que espera o operador, coluna responsiva, linha que abre e paginação local.
 
 Os demais componentes nasceram no repositório e seguem o mesmo idioma: `badge`,
 `button`, `callout`, `card`, `card-layout`, `chart`, `collapsible`,
-`empty-state`, `input`, `item`, `progress`, `select`, `separator`, `skeleton`,
-`stat`, `table`, `tabs` e `textarea`.
+`count`, `empty-state`, `input`, `item`, `progress`, `reference`, `select`,
+`separator`, `skeleton`, `stat`, `status-dot`, `table`, `tabs`, `tag` e
+`textarea`.
 
 ## Quando criar uma variante
 
@@ -60,5 +61,6 @@ direto do código e mostra quais estão em uso. Uma variante sem uso é removida
   que um arquivo de fonte e a licença dele sejam adicionados.
 - Biblioteca de charts além do Recharts já usado em Insights.
 - Registry privado. A Gateship ainda não distribui componentes entre projetos.
-- Layout de dashboard pronto ou preset de tema. Tokens neutros, estados
-  semânticos e o acid reservado à atenção vêm de `webui/src/index.css`.
+- Layout de dashboard pronto ou preset de tema. Tokens neutros e estados
+  semânticos vêm de `webui/src/index.css`. O acid é da marca e não entra em
+  componente nenhum.

@@ -199,6 +199,7 @@ export interface RunInspectorCatalog {
 	homeAccessibleLabel: string;
 	currentRunTitle: string;
 	latestRunTitle: string;
+	mergedLabel: string;
 	runTitle: string;
 	allRunsLabel: string;
 	stats: {
@@ -741,6 +742,7 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Run inspector',
 			currentRunTitle: 'Current run',
 			latestRunTitle: 'Latest run',
+			mergedLabel: 'Merged',
 			runTitle: 'Run',
 			allRunsLabel: 'All runs of this project',
 			stats: {
@@ -749,19 +751,20 @@ export const LOCALE_CATALOG = {
 			viewDetailsLabel: 'View run details',
 			noRunLabel: 'No runs recorded yet.',
 			stateLabels: {
-				queued: 'queued',
-				working: 'working',
-				verify: 'verify',
-				review: 'review',
-				'full-verify': 'full-verify',
-				'ready-to-ship': 'ready-to-ship',
-				shipping: 'shipping',
-				done: 'done',
-				'waiting-user': 'waiting-user',
-				'waiting-provider': 'waiting-provider',
-				failed: 'failed',
-				interrupted: 'interrupted',
-				cancelled: 'cancelled',
+				/* The words the stage map already uses, so a state reads the same wherever it shows; never the runtime's raw id. */
+				queued: 'Queued',
+				working: 'Working',
+				verify: 'Verify',
+				review: 'Review',
+				'full-verify': 'Full verify',
+				'ready-to-ship': 'Ready to ship',
+				shipping: 'Shipping',
+				done: 'Done',
+				'waiting-user': 'Waiting for you',
+				'waiting-provider': 'Waiting for provider',
+				failed: 'Failed',
+				interrupted: 'Interrupted',
+				cancelled: 'Cancelled',
 			},
 			stageLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' },
 			stageStatusLabels: { complete: 'completed', current: 'current stage', future: 'upcoming' },
@@ -1215,6 +1218,7 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Inspetor da execução',
 			currentRunTitle: 'Execução atual',
 			latestRunTitle: 'Execução mais recente',
+			mergedLabel: 'Mesclada',
 			runTitle: 'Execução',
 			allRunsLabel: 'Todas as execuções deste projeto',
 			stats: {

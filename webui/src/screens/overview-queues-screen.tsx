@@ -5,13 +5,14 @@ import { Alert02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Badge, type BadgeVariant } from '../components/ui/badge.tsx';
+import { StatusDot } from '../components/ui/status-dot.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
 import { Skeleton } from '../components/ui/skeleton.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, OverviewCatalog } from '../locale.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
-import type { RunState } from '../run-view.ts';
+import { isRunActive, toneOf, type RunState } from '../run-view.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { formatRunTimestamp } from './runs.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
@@ -59,7 +60,7 @@ export function QueueEmptyState({ projectCount, filter, queues, errors, catalog,
 	return <EmptyState>{locale === 'pt-BR' ? 'Nenhuma fila corresponde ao projeto selecionado.' : 'No queue matches the selected project.'}</EmptyState>;
 }
 
-const STATUS_BADGE: Readonly<Record<QueueStatus, BadgeVariant>> = { 'needs-you': 'warning', running: 'info', paused: 'secondary', ready: 'outline', empty: 'outline' };
+const STATUS_BADGE: Readonly<Record<QueueStatus, BadgeVariant>> = { 'needs-you': 'warning', running: 'info', paused: 'neutral', ready: 'neutral', empty: 'neutral' };
 
 /* The one sentence that says what the queue is doing and, when it is stopped, why. */
 function QueueStatusLine({ queue, status, catalog, locale, projectHref }: { queue: ProjectQueueView; status: QueueStatus; catalog: OverviewCatalog['queues']; locale: Locale; projectHref: string }): React.ReactElement {
@@ -94,7 +95,7 @@ function QueueSequence({ queue, catalog, locale, projectHref }: { queue: Project
 					<span className="w-4 shrink-0 text-right font-mono text-muted-foreground text-xs tabular-nums">{order}</span>
 					<a className={cn(TEXT_LINK_CLASS, 'shrink-0 font-mono text-xs')} href={`${projectHref}/work#${encodeURIComponent(issue.id)}`}>{issue.id}</a>
 					<span className="min-w-0 flex-1 truncate" title={issue.title}>{issue.title}</span>
-					{queue.currentIssue?.id === issue.id && queue.currentRun !== null ? <Badge variant="info">{runStateLabel(queue.currentRun.state, locale, catalog)}</Badge> : null}
+					{queue.currentIssue?.id === issue.id && queue.currentRun !== null ? <StatusDot active={isRunActive(queue.currentRun.state as RunState)} tone={toneOf(queue.currentRun.state as RunState)}>{runStateLabel(queue.currentRun.state, locale, catalog)}</StatusDot> : null}
 					{queue.nextIssue?.id === issue.id && queue.currentIssue?.id !== issue.id ? <span className="shrink-0 text-muted-foreground text-xs">{catalog.next}</span> : null}
 				</li>
 			))}

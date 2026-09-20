@@ -48,7 +48,8 @@ inspector that copies `slot[variant,size] WxH` for talking about one element.
 | Colours come from tokens. No raw colour, no arbitrary value, no inline style, no class Tailwind does not know | Design lint |
 | Sans is the voice of titles, navigation, labels, table heads and prose. Mono is the voice of identifiers, commands, timestamps, durations, costs and counters | Kit defaults (`TableHead` is always sans, `type-data`, `type-eyebrow`), judgment at the call site |
 | Saans is not bundled. The interface uses the system sans until a repository asset and its licence are added | Judgment |
-| Acid (`#c8ff00`) marks one thing: work waiting on the operator. It appears as the attention tone of `Stat`, the rule on the leading edge of a row or queue (`--shadow-attention-rule`), and the attention badge. Counters, links and healthy activity stay grey | Behaviour tests, judgment |
+| Acid (`#c8ff00`) belongs to the mark and the wordmark alone. No surface, badge, counter, dot or button in the interface uses the attention family | Behaviour tests |
+| Work waiting on the operator is said by order (most urgent first), by its state in the warning family and by text. No rule or border on the leading edge of a row, in any colour | Behaviour tests, judgment |
 | State is never colour alone. It comes with text, shape or position | Judgment |
 | Every surface is judged in both themes before it is accepted | Visual gate baselines, judgment |
 
@@ -69,14 +70,15 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | Class names are static strings, so they can be read | Design lint `require-static-classes` |
 | A list of comparable rows is the kit's `DataTable`: one frame, sans heads, 40px rows, its own empty row, skeleton rows on first load, dimmed rows on refresh | Behaviour tests |
 | Controls in a table toolbar share one height: 32px, 36px below `sm` | Visual gate |
-| A row carries at most one state badge | Judgment |
-| Rows that wait on the operator are named by the screen (`needsOperator`) and drawn by the table | Behaviour tests |
-| A secondary column declares the breakpoint it shows from (`hideBelow`). A narrow screen keeps what the row is about and does not scroll sideways for it | Visual gate at 390px |
+| A table gives the width its columns do not need to one column, the one the row is about (`primary`, the first by default). Slack spread over every column reads as holes | Judgment |
+| A secondary column declares the width it shows from (`hideBelow`), measured on the table itself and not on the window: beside an open sidebar a 1024px window leaves the table 672px. A narrow table keeps what the row is about and does not scroll sideways for it | Visual gate at 390px |
 | A row that has detail opens under itself with a chevron (`renderExpanded`). What it opens into is built only while it is open | Behaviour tests |
 | A list the screen already holds is searched and paged with `useClientPage`; a list the server pages keeps the URL as its state | Behaviour tests |
 | Every disclosure opens with the same chevron, owned by `CardSummary` and `CollapsibleTrigger`. No "open" and "close" labels, no native triangle | Behaviour tests |
 | A section that is always there is a plain card (`SectionCard`). A disclosure is for what is optional | Judgment |
 | Collapsed is a rendering state: the content of a disclosure and of a hidden tab stays mounted, so static rendering and find-in-page see it. The exception is a row's detail, which the list's search covers | Behaviour tests |
+| Short labels have one job each. `Badge` is the state or class of something, in its semantic wash, never solid, never with an icon, one per row. `StatusDot` is the life of a run, a dot and its name, moving only while the run does. `Tag` is a fixed attribute with no hue, the only one that may lead with an icon. `Reference` is an id, mono, a link when there is somewhere to go. `Count` is a number beside a label. What can be toggled is a `ToggleGroup`, never a badge | Behaviour tests, judgment |
+| A short label starts with a capital and leaves the rest as written, one or two words, in the words the stage map already uses. The kit capitalises, so a catalog entry in lower case still reads right. The runtime's raw ids never reach the screen | Behaviour tests |
 | `Stat` is a figure under a mono eyebrow. It is a link when a list sits behind the figure, and it can lead a group of related rows | Behaviour tests |
 | A form field is a `FormField`, which owns the body size. A command is typed in `mono`. A form has one field per name, because a second one makes the browser return a list whose value is empty | Behaviour tests |
 | A panel has one constructive primary action. Secondary and destructive actions look different from it. `CardFooter` exists only with actions, and is `sticky` only under a form that runs to screens of text | Judgment, behaviour tests |
@@ -105,6 +107,8 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | The sidebar is one flat list that never reorders: Now, Runs, Queue, Insights. The project switcher above it is a filter; with a project selected, Runs and Queue open that project's own surfaces | Behaviour tests |
 | The lower group holds Project settings (only with a project selected), Projects and Global settings, which keeps the last row | Behaviour tests |
 | Every page has a row that is current on it, and its title matches that row | Behaviour tests |
+| A screen has one left edge and one right edge, shared by the controls row and every block under it, at every breakpoint. The outer ring is that edge: cards, groups of figures, tables and queues all carry it. The content column reserves its scrollbar on the end side only, and the controls row reserves the same gutter | Visual gate baselines, judgment |
+| Blocks sit 24px apart, a tab list and its panel included | Judgment |
 | Collapsing the sidebar moves nothing: the icon axis stays at x=44, rows are 32px, and the first row sits on the line of the panel's controls (`--shell-inset`). Icon-only rows keep their label, tooltip and active background | Visual gate baselines |
 | The project filter lives in the switcher. A surface does not carry a second project select; a `?projectId=` link still scopes it | Behaviour tests |
 | Every screen puts what waits on the operator before autonomous activity, history and statistics | Judgment |
@@ -118,6 +122,7 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | At 390px every destination stays reachable and the sidebar becomes horizontal navigation | Visual gate baselines |
 | Grids collapse to one column; a grid of fields stacks, and each field keeps a real label | Visual gate, behaviour tests |
 | Interactive targets offer at least 44px to a coarse pointer. Labels wrap instead of being clipped | Kit defaults, judgment |
+| The wide preference releases the measure for lists alone, and only as far as a list needs it. Every block keeps the 80rem measure; a data table starts there and grows when its columns ask for the room | Judgment |
 | Only the content panel scrolls on desktop. A bar that floats over it is opaque (`--color-muted-solid`) and rests on the column's fade | Judgment |
 
 ## Interaction and accessibility

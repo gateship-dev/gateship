@@ -453,7 +453,7 @@ describe('operational snapshot reads', () => {
 		expect(html).toContain('Operational data could not be refreshed.');
 		expect(html).toContain('Project responded with 500');
 		expect(html).toContain('Try again');
-		expect(html).toContain('Phase working');
+		expect(html).toContain('Phase Working');
 	});
 
 	test('keeps all Snapshot-dependent Work panels visible after a failed refresh', () => {
@@ -475,7 +475,7 @@ describe('operational snapshot reads', () => {
 			operationalFailures: { 'Run activity': 'Run activity responded with 500' },
 		});
 		expect(runs).toContain('Run activity is unavailable.');
-		expect(runs).toContain('Phase working');
+		expect(runs).toContain('Phase Working');
 		expect(runs).not.toContain('Runs is unavailable.');
 	});
 
@@ -486,7 +486,7 @@ describe('operational snapshot reads', () => {
 			operationalLoaded: { Runs: true },
 		});
 		expect(runs).toContain('Runs is unavailable.');
-		expect(runs).toContain('Phase working');
+		expect(runs).toContain('Phase Working');
 		expect(runs).toContain('CAM-REVEALED');
 	});
 
@@ -860,7 +860,7 @@ describe('project onboarding', () => {
 			existingGuidance: 'Stop this process and start Gateship inside the clone.',
 			newTitle: 'New project',
 			newGuidance: 'Create the repository with a main branch, enter the clone and start Gateship.',
-			incompleteBadge: 'incomplete configuration',
+			incompleteBadge: 'Incomplete configuration',
 			recoveryGuidance: 'After correcting it, restart Gateship. In a container, update GATESHIP_PROJECT_DIR and recreate the service.',
 			settingsGuidance: 'Agent and subscription settings remain available under ',
 			settingsLabel: 'Settings',
@@ -875,7 +875,7 @@ describe('project onboarding', () => {
 			existingGuidance: 'Pare este processo e inicie o Gateship dentro do clone.',
 			newTitle: 'Novo projeto',
 			newGuidance: 'Crie o repositório com uma branch main, entre no clone e inicie o Gateship.',
-			incompleteBadge: 'configuração incompleta',
+			incompleteBadge: 'Configuração incompleta',
 			recoveryGuidance: 'Depois de corrigir, reinicie o Gateship. Em um contêiner, atualize GATESHIP_PROJECT_DIR e recrie o serviço.',
 			settingsGuidance: 'Os ajustes de agentes e assinaturas continuam disponíveis em ',
 			settingsLabel: 'Ajustes',
@@ -1143,7 +1143,7 @@ describe('runs surface', () => {
 
 		expect(html).toContain('>Execução<');
 		expect(html).toContain('CAM-900');
-		expect(html).toContain('>aguardando provedor<');
+		expect(html).toContain('>Aguardando provedor<');
 		expect(html).toContain('O histórico de etapas está indisponível; nenhum progresso foi inferido.');
 		expect(html).not.toContain('Fase em andamento');
 		expect(shellHeader(html)).not.toContain('Precisa de você');
@@ -1282,11 +1282,11 @@ describe('runs surface', () => {
 		const workspaces = panel(runsListPage(authored), 'Workspaces preservados');
 		expect(workspaces).toContain('2 recursos locais precisam de inspeção.');
 		for (const raw of [
-			'dirty',
+			'Dirty',
 			'run-notice-authored',
 			'/raw/workspace/authored',
 			'detail authored exactly',
-			'orphan',
+			'Orphan',
 			'raw/branch/authored',
 			'second detail authored exactly',
 		]) expect(workspaces).toContain(raw);
@@ -2023,10 +2023,10 @@ describe('work surface', () => {
 				empty: ['Executable backlog', '2 admissible issues right now.', 'No pending findings.', '0 open and specified issues.', 'No pending proposals.', 'New issue'],
 				actionable: [
 					'Start run', 'Gateship Diagnostics', '1 pending finding.', 'Advisory: never fixes, approves or blocks shipping.',
-					'warning', 'Dismiss', 'Severity', 'Rule', 'Location', 'Occurrences', 'Search findings',
+					'Warning', 'Dismiss', 'Severity', 'Rule', 'Location', 'Occurrences', 'Search findings',
 					'Pending 1', 'Resolved 1', 'Local history: 1 promoted, 0 dismissed, 0 that did not recur and 1 pending.',
 					'1 finding recurred in another scan.', 'Dismissal does not mean false positive', 'Review and approve',
-					'1 open and specified issue.', 'stale', 'Scope and expected outcome', 'Verification command',
+					'1 open and specified issue.', 'Stale', 'Scope and expected outcome', 'Verification command',
 					'Save revision', 'I confirm the persisted scope and verificationCommand.', 'Approve', 'Reason for abandonment',
 					'Abandon', 'Proposals', 'Search proposals', 'Proposal', 'Source issue', 'Source run', 'Specify existing idea', 'Idea', 'Specify idea',
 					'New issue', 'Create issue',
@@ -2038,10 +2038,10 @@ describe('work surface', () => {
 				empty: ['Backlog executável', '2 issues admissíveis agora.', 'Nenhum achado pendente.', '0 issues abertas e especificadas.', 'Nenhuma proposta pendente.', 'Nova issue'],
 				actionable: [
 					'Iniciar execução', 'Diagnósticos do Gateship', '1 achado pendente.', 'Consultivo: nunca corrige, aprova nem bloqueia o envio.',
-					'aviso', 'Descartar', 'Severidade', 'Regra', 'Local', 'Ocorrências', 'Buscar achados',
+					'Aviso', 'Descartar', 'Severidade', 'Regra', 'Local', 'Ocorrências', 'Buscar achados',
 					'Pendentes 1', 'Resolvidos 1', 'Histórico local: 1 promovidos, 0 descartados, 0 que não voltaram a ocorrer e 1 pendentes.',
 					'1 achado voltou a ocorrer em outra análise.', 'Descartar não significa falso positivo', 'Revisar e aprovar',
-					'1 issue aberta e especificada.', 'desatualizada', 'Escopo e resultado esperado', 'Comando de verificação',
+					'1 issue aberta e especificada.', 'Desatualizada', 'Escopo e resultado esperado', 'Comando de verificação',
 					'Salvar revisão', 'Confirmo o escopo e o verificationCommand persistidos.', 'Aprovar', 'Motivo do abandono',
 					'Abandonar', 'Propostas', 'Buscar propostas', 'Proposta', 'Issue de origem', 'Run de origem', 'Especificar ideia existente', 'Ideia', 'Especificar ideia',
 					'Nova issue', 'Criar issue',
@@ -2492,8 +2492,8 @@ describe('settings surface', () => {
 		const observed = new Date('2026-08-20T09:05:00.000Z');
 		expect(english).toContain(observed.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }));
 		expect(portuguese).toContain(observed.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
-		expect(channelBlock(globalEnglish, 'ntfy')).toContain('>configured<');
-		expect(channelBlock(globalPortuguese, 'ntfy')).toContain('>configurado<');
+		expect(channelBlock(globalEnglish, 'ntfy')).toContain('>Configured<');
+		expect(channelBlock(globalPortuguese, 'ntfy')).toContain('>Configurado<');
 		expect(buttonIsEnabled(globalEnglish, 'Send test')).toBe(true);
 		expect(buttonIsEnabled(globalPortuguese, 'Enviar teste')).toBe(true);
 		expect(portuguese).not.toContain('Settings');
@@ -2566,7 +2566,7 @@ describe('settings surface', () => {
 
 		expect(providers).toContain('Claude Code');
 		expect(providers).toContain('Subscription connected · max');
-		expect(providers).toContain('in use');
+		expect(providers).toContain('In use');
 		expect(buttonIsEnabled(providers, 'Connect ChatGPT')).toBe(true);
 		expect(providers).toContain('Platform billing');
 		expect(providers).not.toContain('name="api-key"');
@@ -2584,7 +2584,7 @@ describe('settings surface', () => {
 		});
 		const providers = panel(html, 'Local agents');
 
-		expect(providers).toContain('external login');
+		expect(providers).toContain('External login');
 		expect(providers).toContain('claude setup-token');
 		expect(providers).toContain('name="claude-credential-token"');
 		expect(providers).toContain('type="password"');
@@ -2949,7 +2949,7 @@ describe('settings surface', () => {
 	// which the read-only `configured` boolean makes structurally impossible.
 	test('the ntfy channel shows its configured state, a test action, and setup instructions, never a secret', () => {
 		const unconfigured = panel(globalSettingsPage(), 'Notifications');
-		expect(channelBlock(unconfigured, 'ntfy')).toContain('>not configured<');
+		expect(channelBlock(unconfigured, 'ntfy')).toContain('>Not configured<');
 		// Setup is reference: open while the channel still needs it, folded once it works.
 		expect(channelBlock(unconfigured, 'ntfy')).toMatch(/<details[^>]*open=""/);
 		expect(buttonIsEnabled(unconfigured, 'Send test')).toBe(false);
@@ -2972,7 +2972,7 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(channelBlock(configured, 'ntfy')).toContain('>configured<');
+		expect(channelBlock(configured, 'ntfy')).toContain('>Configured<');
 		expect(channelBlock(configured, 'ntfy')).not.toMatch(/<details[^>]*open=""/);
 		expect(buttonIsEnabled(configured, 'Send test')).toBe(true);
 	});
@@ -2993,7 +2993,7 @@ describe('settings surface', () => {
 			'Notifications',
 		);
 		expect(channelBlock(partial, 'resend')).toContain('email (Resend)');
-		expect(channelBlock(partial, 'resend')).toContain('>not configured<');
+		expect(channelBlock(partial, 'resend')).toContain('>Not configured<');
 		expect(channelBlock(partial, 'resend')).toContain(' (missing: API key, recipient)');
 		expect(buttonIsEnabled(channelRow(partial, 'email (Resend)'), 'Send test')).toBe(false);
 		expect(partial).toContain('GATESHIP_HOME/.gship/resend-api-key');
@@ -3033,7 +3033,7 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(channelBlock(configured, 'resend')).toContain('>configured<');
+		expect(channelBlock(configured, 'resend')).toContain('>Configured<');
 		expect(configured).not.toContain('falta:');
 		expect(buttonIsEnabled(channelRow(configured, 'email (Resend)'), 'Send test')).toBe(true);
 		expect(configured).not.toContain('resend-secret');
@@ -3302,7 +3302,7 @@ describe('settings surface', () => {
 		}), 'Gateship updates');
 		expect(elementWith(updates, 'type="checkbox"')).toContain('disabled=""');
 		expect(updates).toContain('A host must replace this container.');
-		expect(updates).toContain('rollback');
+		expect(updates).toContain('Rollback');
 		expect(updates).toContain('1.0.0 → 2.0.0');
 	});
 
@@ -3901,8 +3901,8 @@ describe('operator shell', () => {
 
 	test('overview renders four metrics and compact project collections without management forms', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, label: 'Now', current: 'served by this instance', readiness: 'Readiness' },
-			{ locale: 'pt-BR' as const, label: 'Agora', current: 'servido por esta instância', readiness: 'Prontidão' },
+			{ locale: 'en-US' as const, label: 'Now', current: 'Served by this instance', readiness: 'Readiness' },
+			{ locale: 'pt-BR' as const, label: 'Agora', current: 'Servido por esta instância', readiness: 'Prontidão' },
 		]) {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
 			expect(html).toContain(`aria-label="${expected.label}"`);
@@ -3973,8 +3973,8 @@ describe('operator shell', () => {
 					}],
 				},
 			});
-			expect(html).toContain('servido por esta instância');
-			expect(html).toContain('enviada');
+			expect(html).toContain('Servido por esta instância');
+			expect(html).toContain('Enviada');
 			expect(html).not.toContain('falhou');
 			expect(html).not.toContain('cancelada');
 			expect(html).not.toContain('incompleta');
@@ -4032,7 +4032,7 @@ describe('operator shell', () => {
 		expect(rows.map((row) => row.match(/(waiting|working|idle)-product/)?.[0])).toEqual(['waiting-product', 'working-product', 'idle-product']);
 		// The acid rule sits on the row that waits on the operator and on no other.
 		// What waits on the operator is said by order and by its state badge. No rule on the row's edge, no acid.
-		expect(rows[0]).toContain('>waiting-user<');
+		expect(rows[0]).toContain('>Waiting for you<');
 		expect(html).not.toContain('shadow-attention-rule');
 		expect(html).not.toMatch(/(bg|text|border)-attention/);
 		expect(rows[0]).toContain('href="/projects/project-waiting/runs/run-waiting"');
@@ -4076,9 +4076,9 @@ describe('operator shell', () => {
 
 	test('overview localizes active run states in pt-BR', () => {
 		const states = [
-			['working', 'em andamento'],
-			['waiting-user', 'aguardando você'],
-			['interrupted', 'interrompida'],
+			['working', 'Em andamento'],
+			['waiting-user', 'Aguardando você'],
+			['interrupted', 'Interrompida'],
 		] as const;
 		for (const [state, label] of states) {
 			const history = {
@@ -4199,7 +4199,7 @@ describe('operator shell', () => {
 		// What the page is named for: each project, where it lives, whether it can run, and the way to its settings.
 		expect(table).toContain('href="/projects/project-current"');
 		expect(table).toContain('href="/projects/project-other/settings"');
-		expect(table).toContain('served by this instance');
+		expect(table).toContain('Served by this instance');
 		expect((table.match(/<tr /g) ?? []).length).toBe(3);
 		expect(buttonIsEnabled(html, 'Add project')).toBe(true);
 		// With projects registered the guided path waits for the button.
@@ -5221,7 +5221,7 @@ describe('operator shell', () => {
 
 		expect(shellHeader(html)).not.toContain('Needs you');
 		expect(shellHeader(html)).not.toContain('failed');
-		expect(html).toContain('>failed<');
+		expect(html).toContain('>Failed<');
 	});
 
 	test('a service older than origin/main is reported wherever the operator is', () => {

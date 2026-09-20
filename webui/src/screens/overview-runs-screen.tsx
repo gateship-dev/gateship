@@ -19,11 +19,12 @@ import { Button } from '../components/ui/button.tsx';
 import { DataTable, DataTableFilter, DataTablePagination, DataTableToolbar, DataTableViewOptions, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu.tsx';
 import { SelectField } from '../components/ui/select.tsx';
+import { StatusDot } from '../components/ui/status-dot.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx';
 import { HintTooltip } from '../components/ui/tooltip.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, OverviewRunsCatalog, RunInspectorCatalog } from '../locale.ts';
-import { toneOf, type RunState } from '../run-view.ts';
+import { isRunActive, toneOf, type RunState } from '../run-view.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { ciBadgeVariant, formatCostUsd } from './runs.tsx';
 
@@ -98,7 +99,8 @@ function roleModels(run: RunRow, role: RunRow['roles'][number]['role']): string 
  * carries its recorded error in the tooltip. */
 function StateBadge({ run, catalog, inspector }: { run: RunRow; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog }): React.ReactElement {
 	const state = run.state as RunState;
-	const badge = run.merge ? <Badge variant="merged">{catalog.merged}</Badge> : <Badge variant={toneOf(state)}>{inspector.stateLabels[state]}</Badge>;
+	/* The life cycle of a run is a dot and its name: a column of them is scanned faster than a column of washes. */
+	const badge = run.merge ? <StatusDot tone="merged">{catalog.merged}</StatusDot> : <StatusDot active={isRunActive(state)} tone={toneOf(state)}>{inspector.stateLabels[state]}</StatusDot>;
 	if (!run.error) return badge;
 	return <HintTooltip label={run.error} side="bottom"><span className="inline-flex" tabIndex={0}>{badge}<span className="sr-only">: {run.error}</span></span></HintTooltip>;
 }

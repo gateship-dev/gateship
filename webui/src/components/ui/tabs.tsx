@@ -17,6 +17,7 @@ import {
 	segmentedControlItemSizeClassNames,
 } from '../../lib/segmented-control.ts';
 import { cn } from '../../lib/cn.ts';
+import { Count } from './count.tsx';
 
 export function Tabs({
 	className,
@@ -84,24 +85,9 @@ export function TabsTab({
 	);
 }
 
-/** The count chip a tab carries; `attention` marks a queue waiting on the operator, in the warning family. */
-export function TabsCount({
-	attention = false,
-	children,
-}: {
-	attention?: boolean;
-	children: React.ReactNode;
-}): React.ReactElement {
-	return (
-		<span
-			className={cn(
-				'inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 font-mono text-xs tabular-nums',
-				attention ? 'bg-warning/16 text-warning-foreground dark:bg-warning/24' : 'bg-muted text-muted-foreground',
-			)}
-		>
-			{children}
-		</span>
-	);
+/** The count a tab carries; `attention` says it counts something waiting on the operator. */
+export function TabsCount({ attention = false, children }: { attention?: boolean; children: React.ReactNode }): React.ReactElement {
+	return <Count tone={attention ? 'warning' : 'neutral'}>{children}</Count>;
 }
 
 export function TabsPanel({
