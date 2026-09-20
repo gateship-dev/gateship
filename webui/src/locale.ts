@@ -501,6 +501,7 @@ export interface SettingsCatalog {
 		installedDisconnected: string;
 		clientMissing: string;
 		connectChatGpt: string;
+		signInHelp: string;
 		codexSubscriptionGuidance: string;
 		codexApiKeyWarning: string;
 		codexEnterpriseFuture: string;
@@ -547,6 +548,7 @@ export interface SettingsCatalog {
 		title: string;
 		description: string;
 		roleLabels: Readonly<Record<'orchestrator' | 'executor' | 'reviewer', string>>;
+		role: string;
 		model: string;
 		effort: string;
 		cliDefault: string;
@@ -1043,6 +1045,7 @@ export const LOCALE_CATALOG = {
 			providers: {
 				title: 'Local agents', description: 'Gateship uses subscriptions from installed clients. Claude can optionally use a dedicated credential of its own, isolated from Claude Desktop or the terminal; Codex and the external Claude login never leave the client that owns them.', inUse: 'in use',
 				connectedUnavailable: (reason) => `Subscription connected, but currently unavailable: ${reason}.`, unavailable: (reason) => `Currently unavailable: ${reason}.`, connected: (plan) => `Subscription connected${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Installed, without a connected subscription', clientMissing: 'Client not found', connectChatGpt: 'Connect ChatGPT', useProvider: (label) => `Use ${label}`,
+				signInHelp: 'How to sign in',
 				codexSubscriptionGuidance: 'Recommended: sign in with your ChatGPT subscription using codex login in the environment where Gateship runs.',
 				codexApiKeyWarning: 'An API key uses Platform billing, not credits from your ChatGPT plan, and is not an admissible subscription login for Gateship execution.',
 				codexEnterpriseFuture: 'Codex Enterprise access-token support is planned for a future capability; it is not available here.',
@@ -1074,7 +1077,7 @@ export const LOCALE_CATALOG = {
 					originLabels: { external: 'external login', web: 'managed login', dedicated: 'dedicated credential' },
 				},
 			},
-			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Cycle resolver', executor: 'Executor', reviewer: 'Reviewer' }, model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
+			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Cycle resolver', executor: 'Executor', reviewer: 'Reviewer' }, role: 'Role', model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
 			agentDefaults: { title: 'Agent defaults', description: 'Default provider, model and effort for projects that have not set their own agent configuration.', provider: 'Default provider', save: 'Save agent defaults' },
 			agentSources: { global: 'Inherited from global defaults.', project: 'Customized for this project.', providerDefault: 'Using the provider default.', resetProvider: 'Reset provider to global default', resetModels: 'Reset models to global defaults' },
 			chain: { title: 'Automatic run chaining', description: 'When a run finishes in done, starts the next approved issue automatically in ID order.', label: 'Chain approved runs automatically' },
@@ -1514,6 +1517,7 @@ export const LOCALE_CATALOG = {
 			providers: {
 				title: 'Agentes locais', description: 'O Gateship usa assinaturas de clientes instalados. O Claude pode opcionalmente usar uma credencial dedicada própria, isolada do Claude Desktop ou do terminal; o Codex e o login externo do Claude nunca saem do cliente que os possui.', inUse: 'em uso',
 				connectedUnavailable: (reason) => `Assinatura conectada, mas indisponível no momento: ${reason}.`, unavailable: (reason) => `Indisponível no momento: ${reason}.`, connected: (plan) => `Assinatura conectada${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Instalado, sem uma assinatura conectada', clientMissing: 'Cliente não encontrado', connectChatGpt: 'Conectar ChatGPT', useProvider: (label) => `Usar ${label}`,
+				signInHelp: 'Como entrar',
 				codexSubscriptionGuidance: 'Recomendado: entre com sua assinatura do ChatGPT usando codex login no ambiente onde o Gateship executa.',
 				codexApiKeyWarning: 'Uma API key usa o faturamento da Platform, não os créditos do seu plano ChatGPT, e não é um login de assinatura admissível para execução no Gateship.',
 				codexEnterpriseFuture: 'O suporte a access token do Codex Enterprise é uma capacidade futura; não está disponível aqui.',
@@ -1545,7 +1549,7 @@ export const LOCALE_CATALOG = {
 					originLabels: { external: 'login externo', web: 'login gerenciado', dedicated: 'credencial dedicada' },
 				},
 			},
-			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Resolvedor do ciclo', executor: 'Executor', reviewer: 'Revisor' }, model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
+			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Resolvedor do ciclo', executor: 'Executor', reviewer: 'Revisor' }, role: 'Função', model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
 			agentDefaults: { title: 'Padrões dos agentes', description: 'Provedor, modelo e esforço padrão para projetos que ainda não definiram sua própria configuração de agentes.', provider: 'Provedor padrão', save: 'Salvar padrões dos agentes' },
 			agentSources: { global: 'Herdado dos padrões globais.', project: 'Personalizado para este projeto.', providerDefault: 'Usando o padrão do provedor.', resetProvider: 'Redefinir provedor para o padrão global', resetModels: 'Redefinir modelos para os padrões globais' },
 			chain: { title: 'Encadeamento automático de execuções', description: 'Quando uma execução termina como concluída, inicia automaticamente a próxima issue aprovada em ordem de ID.', label: 'Encadear execuções aprovadas automaticamente' },

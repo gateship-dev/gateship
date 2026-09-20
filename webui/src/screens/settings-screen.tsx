@@ -14,7 +14,7 @@ export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNod
 	const loaded = (resource: keyof NonNullable<typeof props.operationalLoaded>): boolean => props.operationalLoaded?.[resource] === true;
 	const pending = (resource: keyof NonNullable<typeof props.operationalPending>): boolean => props.operationalPending?.[resource] === true;
 	return (
-		<SurfaceColumn label={catalog.title} status={props.status}>
+		<SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.projectSettingsLabel} status={props.status}>
 			<Tabs defaultValue="providers">
 				<TabsList>
 					<TabsTab value="providers">{catalog.tabs.providers}</TabsTab>

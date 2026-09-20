@@ -92,6 +92,8 @@ html.gship-harness-reduced-motion *::after {
 	--color-secondary: var(--secondary);
 	--color-secondary-foreground: var(--secondary-foreground);
 	--color-muted: var(--muted);
+	/* The muted wash as an opaque surface, for a bar that content scrolls under. */
+	--color-muted-solid: var(--muted-solid);
 	--color-muted-foreground: var(--muted-foreground);
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
@@ -192,6 +194,7 @@ html.gship-harness-reduced-motion *::after {
 	--secondary: --alpha(var(--color-black) / 4%);
 	--secondary-foreground: var(--color-neutral-800);
 	--muted: --alpha(var(--color-black) / 4%);
+	--muted-solid: color-mix(in srgb, var(--card) 96%, var(--color-black));
 	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
 	--accent: --alpha(var(--color-black) / 4%);
 	--accent-foreground: var(--color-neutral-800);
@@ -297,6 +300,7 @@ html.gship-harness-reduced-motion *::after {
 	--secondary: --alpha(var(--color-white) / 4%);
 	--secondary-foreground: var(--color-neutral-100);
 	--muted: --alpha(var(--color-white) / 4%);
+	--muted-solid: color-mix(in srgb, var(--card) 96%, var(--color-white));
 	/* 85%, not the light theme's 90%: on the dark theme's tinted surfaces (table
 	 * heads, select values over --input) 90% measured 4.32:1, under AA. */
 	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 85%, var(--color-white));

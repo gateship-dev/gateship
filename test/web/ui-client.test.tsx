@@ -814,7 +814,11 @@ function switcherTrigger(html: string): string {
 function panel(html: string, title: string): string {
 	const start = html.indexOf(`>${title}</h2>`);
 	if (start < 0) throw new Error(`panel ${title} is not on the screen`);
-	const end = html.indexOf('</details>', start);
+	/* A disclosure ends where it closes. A plain card has no closing tag of its own to look for, and may fold
+	 * a part of its content in a `<details>` of its own, so it runs to the next card on the page. */
+	const frame = html.lastIndexOf('data-slot="card-frame"', start);
+	const disclosure = html.lastIndexOf('<details', start) > html.lastIndexOf('<div', frame);
+	const end = disclosure ? html.indexOf('</details>', start) : html.indexOf('data-slot="card-frame"', start);
 	return html.slice(start, end < 0 ? undefined : end);
 }
 
@@ -2458,8 +2462,8 @@ describe('settings surface', () => {
 		const globalPortuguese = globalSettingsPage({ ...overrides, locale: 'pt-BR' });
 
 		for (const [html, labels] of [
-			[english, ['Settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief']],
-			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto']],
+			[english, ['Project settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief']],
+			[portuguese, ['Ajustes do projeto', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
@@ -2502,6 +2506,45 @@ describe('settings surface', () => {
 		expect(stored).toContain('value="Europe/Lisbon"');
 		expect(stored).not.toContain('value="America/Sao_Paulo"');
 		expect(buttonIsEnabled(globalSettingsPage({ pending: true }), 'Save profile')).toBe(false);
+	});
+
+	test('models are a grid, role by model and effort: the column names a field once, and each field keeps its own label', () => {
+		// The column names what a field is, once; each field is still named by its row and its column.
+		const models = panel(settingsPage(), 'Model and effort by role');
+		expect((models.match(/data-slot="model-provider"/g) ?? []).length).toBe(2);
+		expect((models.match(/data-slot="model-columns"/g) ?? []).length).toBe(2);
+		expect((models.match(/data-slot="model-slot"/g) ?? []).length).toBe(6);
+		// Every field keeps a real label naming its row and its column; the visible part of it is the column alone.
+		for (const provider of ['claude', 'codex']) for (const role of ['orchestrator', 'executor', 'reviewer']) for (const field of ['model', 'effort']) {
+			expect(models).toContain(`for="${provider}-${role}-${field}"`);
+			expect((models.match(new RegExp(`name="${provider}-${role}-${field}"`, 'g')) ?? []).length).toBe(1);
+		}
+		expect(models).toContain('<span class="sr-only">Executor — model</span>');
+	});
+
+	test('project settings are plain sections: a block per provider, and a save bar that stays in reach', () => {
+		const html = settingsPage({
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'dedicated' },
+				{ id: 'codex', installed: true, subscription: false, label: 'Codex', login: 'web' },
+			],
+		});
+		// A section that is always there is a card: nothing to fold, so no disclosure and no chevron.
+		for (const title of ['Local agents', 'Model and effort by role', 'Project brief']) {
+			const frame = html.lastIndexOf('data-slot="card-frame"', html.indexOf(`>${title}</h2>`));
+			expect(html.slice(html.lastIndexOf('<', frame)).startsWith('<div')).toBe(true);
+		}
+		const models = panel(html, 'Model and effort by role');
+		// One block per provider. How to sign in is folded once the provider is connected, open while it still needs it.
+		const providers = panel(html, 'Local agents');
+		expect((providers.match(/data-slot="provider-block"/g) ?? []).length).toBe(2);
+		const codex = providers.slice(providers.indexOf('data-provider="codex"'));
+		expect(codex).toContain('How to sign in');
+		expect(codex.slice(codex.indexOf('data-slot="collapsible"') - 200, codex.indexOf('data-slot="collapsible"') + 200)).toContain('open=""');
+		expect(providers.slice(0, providers.indexOf('data-provider="codex"'))).not.toContain('data-slot="collapsible"');
+		// The brief runs to screens of text, so its action edge is sticky; the short forms keep theirs at rest.
+		expect(panel(html, 'Project brief')).toContain('data-sticky=""');
+		expect(models).not.toContain('data-sticky');
 	});
 
 	test('shows subscription state without any credential field', () => {
@@ -4562,18 +4605,26 @@ describe('operator shell', () => {
 
 	test('navigation keeps localized global settings in its own list after the destinations', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, globalSettings: 'Global settings' },
-			{ locale: 'pt-BR' as const, globalSettings: 'Ajustes globais' },
+			{ locale: 'en-US' as const, globalSettings: 'Global settings', projectSettings: 'Project settings' },
+			{ locale: 'pt-BR' as const, globalSettings: 'Ajustes globais', projectSettings: 'Ajustes do projeto' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
 			const settings = navigationList(html, 'settings-navigation');
+			const links = (list: string): string[] => openingTags(list).filter((tag) => tag.startsWith('<a'));
 
 			expect(html.indexOf('data-slot="global-navigation"')).toBeLessThan(html.indexOf('data-slot="settings-navigation"'));
-			expect(openingTags(settings).filter((tag) => tag.startsWith('<a'))).toHaveLength(1);
-			expect(settings).toContain('href="/settings"');
+			// A selected project brings its own settings into the list; the global ones keep the last row.
+			expect(links(settings).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/projects/project-current/settings', '/settings']);
+			expect(settings).toContain(`>${expected.projectSettings}</span>`);
 			expect(settings).toContain(`>${expected.globalSettings}</span>`);
 			expect(settings).not.toContain('aria-current="page"');
-			expect(navigationList(globalSettingsPage({ locale: expected.locale }), 'settings-navigation')).toContain('aria-current="page"');
+			// Each settings page marks its own row, so the operator always has a current one.
+			const onProject = links(navigationList(settingsPage({ locale: expected.locale }), 'settings-navigation'));
+			expect(onProject.map((tag) => tag.includes('aria-current="page"'))).toEqual([true, false]);
+			const onGlobal = links(navigationList(globalSettingsPage({ locale: expected.locale }), 'settings-navigation'));
+			expect(onGlobal.at(-1)).toContain('aria-current="page"');
+			// With every project in view there is no project to configure, and the row is gone.
+			expect(links(navigationList(renderAt('/overview', { locale: expected.locale }), 'settings-navigation'))).toHaveLength(1);
 		}
 	});
 
@@ -5050,7 +5101,7 @@ describe('operator shell', () => {
 
 		expect(elementWith(rail, 'data-slot="sidebar"')).toContain('data-state="collapsed"');
 		expect(elementWith(expanded, 'data-slot="sidebar"')).toContain('data-state="expanded"');
-		expect(hrefs(rail)).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights', '/settings']);
+		expect(hrefs(rail)).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights', '/projects/project-current/settings', '/settings']);
 		expect(hrefs(rail)).toEqual(hrefs(expanded));
 		expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('data-slot="global-navigation"'));
 		for (const [href, label] of [
@@ -5058,6 +5109,7 @@ describe('operator shell', () => {
 			['/projects/project-current/runs', 'Runs'],
 			['/projects/project-current/work', 'Queue'],
 			['/overview/insights', 'Insights'],
+			['/projects/project-current/settings', 'Project settings'],
 			['/settings', 'Global settings'],
 		]) {
 			const link = openingTags(nav).find((tag) => tag.includes(`data-sidebar-id="${href}"`));

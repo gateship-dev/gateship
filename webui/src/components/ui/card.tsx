@@ -114,15 +114,21 @@ export function CardTitle({ className, ...props }: React.ComponentProps<'h2'>): 
  */
 export function CardFooter({
 	className,
+	sticky = false,
 	...props
-}: React.ComponentProps<'div'>): React.ReactElement {
+}: React.ComponentProps<'div'> & { /** Holds the action edge at the bottom of the viewport while a long form scrolls under it. */ sticky?: boolean }): React.ReactElement {
 	return (
 		<div
 			className={cn(
 				'-mx-6 -mb-6 mt-2 flex flex-col-reverse gap-2 border-border border-t bg-muted px-6 py-4 sm:flex-row sm:items-center sm:justify-end',
+				/* Opaque while it floats: the wash alone lets the text under it show through. */
+				/* It rests on the column's fade (the last 16px of the scroll area), so nothing readable shows under it:
+				 * the column pads 16px, and 24px from `lg`, hence the 8px it steps down there. */
+				sticky && 'sticky bottom-0 z-10 rounded-b-[calc(var(--radius-2xl)-1px)] bg-muted-solid lg:-bottom-2',
 				className,
 			)}
 			data-slot="card-footer"
+			data-sticky={sticky ? '' : undefined}
 			{...props}
 		/>
 	);

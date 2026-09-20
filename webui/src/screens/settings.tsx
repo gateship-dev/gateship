@@ -7,13 +7,14 @@ import { emptyModelSettings, MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_
 import { Badge } from '../components/ui/badge.tsx';
 import { CardFooter } from '../components/ui/card.tsx';
 import { FormStack } from '../components/ui/card-layout.tsx';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, SettingsCatalog } from '../locale.ts';
 import type { ProviderUsageView, ProviderUsageWindowView } from '../run-view.ts';
-import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
+import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS, SectionCard } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
 import type { ProviderPanelProps } from './runs.tsx';
 import { fieldReader, formatCount, formatExactPercent, formatRunTimestamp, formatUsageTime, providerDescription, usageWindowLabel, usageWindowVariant } from './runs.tsx';
@@ -319,7 +320,7 @@ export function ClaudeInteractiveLoginNotice({
 	text: SettingsCatalog['providers']['claudeCredential'];
 }): React.ReactElement {
 	return (
-		<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
+		<div className="flex flex-col gap-2 text-sm">
 			<p className="font-medium">{text.recommendedTitle}</p>
 			<p className="text-muted-foreground">{text.recommendedGuidance}</p>
 			<p className="text-muted-foreground text-xs">{text.usageGuidance}</p>
@@ -347,16 +348,16 @@ export function ProviderRow({
 	onSelectProvider,
 }: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView; catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
-		<li className="flex flex-col gap-3 text-sm">
-			<div className="flex items-center justify-between gap-3">
-				<div className="min-w-0">
+		<li className="flex flex-col gap-3 rounded-lg border p-4 text-sm" data-provider={provider.id} data-slot="provider-block">
+			{/* State and action on the first line: what it is, whether it is the one in use, what can be done about it. */}
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div className="flex min-w-0 flex-col gap-1">
 					<p className="flex flex-wrap items-center gap-2 font-medium">
 						{provider.label}
 						{provider.id === selectedProvider ? <Badge variant="secondary">{catalog.providers.inUse}</Badge> : null}
 						{provider.id === 'claude' ? <Badge variant="outline">{catalog.providers.claudeCredential.originLabels[provider.login]}</Badge> : null}
 					</p>
 					<p className="break-words text-muted-foreground">{providerDescription(provider, catalog)}</p>
-					<ProviderUsageDetail catalog={catalog} locale={locale} usage={provider.usage} />
 				</div>
 				{provider.id === 'codex' && !provider.subscription && provider.installed ? (
 					<ActionButton enabled={!pending} label={catalog.providers.connectChatGpt} onClick={onConnectCodex} />
@@ -369,28 +370,36 @@ export function ProviderRow({
 					/>
 				) : null}
 			</div>
+			<ProviderUsageDetail catalog={catalog} locale={locale} usage={provider.usage} />
 			{provider.id === 'claude' ? (
-				<>
-					{provider.login === 'dedicated' ? null : <ClaudeInteractiveLoginNotice provider={provider} text={catalog.providers.claudeCredential} />}
-					<ClaudeCredentialSection
-						catalog={catalog}
-						error={claudeCredentialError}
-						onConnectClaudeCredential={onConnectClaudeCredential}
-						onDisconnectClaudeCredential={onDisconnectClaudeCredential}
-						onDismissError={onDismissClaudeCredentialError}
-						pending={pending}
-						provider={provider}
-					/>
-				</>
+				<ClaudeCredentialSection
+					catalog={catalog}
+					error={claudeCredentialError}
+					onConnectClaudeCredential={onConnectClaudeCredential}
+					onDisconnectClaudeCredential={onDisconnectClaudeCredential}
+					onDismissError={onDismissClaudeCredentialError}
+					pending={pending}
+					provider={provider}
+				/>
 			) : null}
-			{provider.id === 'codex' ? (
-				<div className="flex flex-col gap-1 text-xs text-muted-foreground">
-					<p>{catalog.providers.codexSubscriptionGuidance}</p>
-					<code className="break-all">codex login</code>
-					<p>{catalog.providers.codexApiKeyWarning}</p>
-					<p>{catalog.providers.codexEnterpriseFuture}</p>
-				</div>
-			) : null}
+			{/* How to sign in is reference: open while the provider still needs it, folded once it is connected. */}
+			{provider.id === 'claude' && provider.login === 'dedicated' ? null : (
+				<Collapsible defaultOpen={!provider.subscription}>
+					<CollapsibleTrigger>{catalog.providers.signInHelp}</CollapsibleTrigger>
+					<CollapsibleContent>
+						<div className="flex flex-col gap-2 p-3">
+							{provider.id === 'claude' ? <ClaudeInteractiveLoginNotice provider={provider} text={catalog.providers.claudeCredential} /> : (
+								<div className="flex flex-col gap-1 text-muted-foreground text-xs">
+									<p>{catalog.providers.codexSubscriptionGuidance}</p>
+									<code className="break-all">codex login</code>
+									<p>{catalog.providers.codexApiKeyWarning}</p>
+									<p>{catalog.providers.codexEnterpriseFuture}</p>
+								</div>
+							)}
+						</div>
+					</CollapsibleContent>
+				</Collapsible>
+			)}
 		</li>
 	);
 }
@@ -401,9 +410,8 @@ function AgentSourceNotice({ catalog, source }: { catalog: SettingsCatalog; sour
 
 export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'providerSource' | 'onResetProvider'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
-		<ContextPanel
+		<SectionCard
 			description={props.catalog.providers.description}
-			open
 			title={props.catalog.providers.title}
 	>
 		<AgentSourceNotice catalog={props.catalog} source={props.providerSource} />
@@ -430,7 +438,7 @@ export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'provi
 				{props.catalog.agentSources.resetProvider}
 			</button></CardFooter>
 		) : null}
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -464,6 +472,12 @@ export function readModelSettings(form: EventTarget): ModelSettingsView {
 	return settings;
 }
 
+/*
+ * One role: its name leads the row and each field is labelled by its row and
+ * its column. From `sm` the column head says what a field is, once, and the
+ * field's own label goes quiet; on a narrow screen the row stacks and the
+ * labels are what is left to read.
+ */
 export function ModelSlotFields({
 	providerId,
 	role,
@@ -475,38 +489,24 @@ export function ModelSlotFields({
 	slot: ModelSlotView;
 	catalog: SettingsCatalog;
 }): React.ReactElement {
+	const roleLabel = catalog.models.roleLabels[role];
+	const field = (kind: 'model' | 'effort', span: string): React.ReactElement => (
+		<label className={cn('flex min-w-0 flex-col gap-1', span)} htmlFor={`${providerId}-${role}-${kind}`}>
+			<span className="sr-only">{`${roleLabel} — ${catalog.models[kind]}`}</span>
+			<span aria-hidden="true" className="text-muted-foreground text-xs capitalize sm:hidden">{catalog.models[kind]}</span>
+			<Input defaultValue={slot[kind]} id={`${providerId}-${role}-${kind}`} mono name={`${providerId}-${role}-${kind}`} placeholder={catalog.models.cliDefault} />
+		</label>
+	);
 	return (
-		<div className="flex flex-col gap-2 sm:flex-row">
-			<label
-				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
-				htmlFor={`${providerId}-${role}-model`}
-			>
-				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.model}</span>
-				<Input
-					className="font-mono"
-					defaultValue={slot.model}
-					id={`${providerId}-${role}-model`}
-					name={`${providerId}-${role}-model`}
-					placeholder={catalog.models.cliDefault}
-				/>
-			</label>
-			<label
-				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
-				htmlFor={`${providerId}-${role}-effort`}
-			>
-				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.effort}</span>
-				<Input
-					className="font-mono"
-					defaultValue={slot.effort}
-					id={`${providerId}-${role}-effort`}
-					name={`${providerId}-${role}-effort`}
-					placeholder={catalog.models.cliDefault}
-				/>
-			</label>
+		<div className="grid gap-2 border-t py-3 first:border-0 sm:grid-cols-4 sm:items-center sm:gap-3 sm:border-0 sm:py-0" data-slot="model-slot">
+			<span className="font-medium text-sm">{roleLabel}</span>
+			{field('model', 'sm:col-span-2')}
+			{field('effort', '')}
 		</div>
 	);
 }
 
+/* A provider's slots are a grid, role by (model, effort). */
 export function ModelProviderFields({
 	providerId,
 	modelSettings,
@@ -516,25 +516,13 @@ export function ModelProviderFields({
 	catalog: SettingsCatalog;
 }): React.ReactElement {
 	return (
-		<fieldset className="flex flex-col gap-3">
+		<fieldset className="flex flex-col gap-2" data-slot="model-provider">
 			<legend className="font-medium text-sm">{MODEL_PROVIDER_LABELS[providerId]}</legend>
-			<a
-				className={TEXT_LINK_CLASS}
-				href={MODEL_DOC_URLS[providerId]}
-				rel="noreferrer noopener"
-				target="_blank"
-			>
-				{catalog.models.documentation(MODEL_PROVIDER_LABELS[providerId])}
-			</a>
-			{MODEL_ROLE_NAMES.map((role) => (
-				<ModelSlotFields
-					catalog={catalog}
-					key={role}
-					providerId={providerId}
-					role={role}
-					slot={modelSettings[providerId][role]}
-				/>
-			))}
+			<a className={TEXT_LINK_CLASS} href={MODEL_DOC_URLS[providerId]} rel="noreferrer noopener" target="_blank">{catalog.models.documentation(MODEL_PROVIDER_LABELS[providerId])}</a>
+			<div aria-hidden="true" className="hidden text-muted-foreground text-sm sm:grid sm:grid-cols-4 sm:gap-3" data-slot="model-columns">
+				<span>{catalog.models.role}</span><span className="col-span-2 capitalize">{catalog.models.model}</span><span className="capitalize">{catalog.models.effort}</span>
+			</div>
+			{MODEL_ROLE_NAMES.map((role) => <ModelSlotFields catalog={catalog} key={role} providerId={providerId} role={role} slot={modelSettings[providerId][role]} />)}
 		</fieldset>
 	);
 }
@@ -553,9 +541,8 @@ export function ModelSettingsPanel({
 	catalog,
 }: Pick<AppProps, 'modelSettings' | 'modelSettingsSource' | 'pending' | 'onSaveModelSettings' | 'onResetModelSettings'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.models.description}
-			open
 			title={catalog.models.title}
 	>
 		<AgentSourceNotice catalog={catalog} source={modelSettingsSource} />
@@ -587,7 +574,7 @@ export function ModelSettingsPanel({
 					) : null}
 				</CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -599,7 +586,7 @@ export function AgentDefaultsPanel({
 	catalog,
 }: Pick<AppProps, 'agentDefaults' | 'pending' | 'onSaveAgentDefaults'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel description={catalog.agentDefaults.description} open title={catalog.agentDefaults.title}>
+		<SectionCard description={catalog.agentDefaults.description} title={catalog.agentDefaults.title}>
 			<FormStack
 				key={JSON.stringify(agentDefaults)}
 				onSubmit={(event) => {
@@ -627,7 +614,7 @@ export function AgentDefaultsPanel({
 					{catalog.agentDefaults.save}
 				</button></CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -646,9 +633,8 @@ export function ChainRunsPanel({
 	catalog,
 }: Pick<AppProps, 'chainRuns' | 'pending' | 'onSetChainRuns'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.chain.description}
-			open
 			title={catalog.chain.title}
 		>
 			<label className="flex items-center gap-2 text-sm">
@@ -661,7 +647,7 @@ export function ChainRunsPanel({
 				/>
 				<span className="font-medium">{catalog.chain.label}</span>
 			</label>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -678,9 +664,8 @@ export function ExecutorHandoffPanel({
 	catalog,
 }: Pick<AppProps, 'executorHandoff' | 'pending' | 'onSetExecutorHandoff'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.executorHandoff.description}
-			open
 			title={catalog.executorHandoff.title}
 		>
 			<label className="flex items-center gap-2 text-sm">
@@ -693,7 +678,7 @@ export function ExecutorHandoffPanel({
 				/>
 				<span className="font-medium">{catalog.executorHandoff.label}</span>
 			</label>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -898,9 +883,8 @@ export function NotificationsPanel({
 > & { catalog: SettingsCatalog }): React.ReactElement {
 	const actionLabel = catalog.notifications.actionLabels[notificationPermission];
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.notifications.description}
-			open
 			title={catalog.notifications.title}
 		>
 			<div className="flex flex-col gap-4">
@@ -929,7 +913,7 @@ export function NotificationsPanel({
 					))}
 				</div>
 			</div>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -973,9 +957,8 @@ export function ProjectBriefPanel({
 	catalog,
 }: Pick<AppProps, 'brief' | 'pending' | 'onSaveBrief'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.brief.description}
-			open
 			title={catalog.brief.title}
 		>
 			<FormStack
@@ -1016,11 +999,12 @@ export function ProjectBriefPanel({
 						/>
 					</label>
 				))}
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				{/* The brief runs to screens of text: the way to save it stays in reach. */}
+				<CardFooter sticky><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.brief.save}
 				</button></CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -1034,9 +1018,8 @@ export function ProjectBriefPanel({
 export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & { catalog: SettingsCatalog }): React.ReactElement {
 	const ready = project.state === 'ready';
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.project.description}
-			open
 			title={catalog.project.title}
 		>
 			<div className="flex flex-col gap-3 text-sm">
@@ -1047,7 +1030,7 @@ export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & {
 					<span className="font-medium">{project.name === '' ? catalog.project.localProject : project.name}</span>
 				</div>
 				{ready ? (
-					<dl className="grid gap-2 sm:grid-cols-[8rem_1fr]">
+					<dl className="grid gap-2 sm:grid-cols-facts">
 						<dt className="text-muted-foreground">{catalog.project.repository}</dt>
 						<dd><code className="break-all">{project.repository}</code></dd>
 						<dt className="text-muted-foreground">{catalog.project.runSource}</dt>
@@ -1057,7 +1040,7 @@ export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & {
 					<p className="text-muted-foreground">{project.detail}</p>
 				)}
 			</div>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -1073,9 +1056,8 @@ export function OperatorProfilePanel({
 > & { catalog: SettingsCatalog }): React.ReactElement {
 	const initialTimezone = operatorProfile.timezone || suggestedTimezone;
 	return (
-		<ContextPanel
+		<SectionCard
 			description={catalog.operator.description}
-			open
 			title={catalog.operator.title}
 		>
 			<FormStack
@@ -1114,7 +1096,7 @@ export function OperatorProfilePanel({
 					{catalog.operator.save}
 				</button></CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 

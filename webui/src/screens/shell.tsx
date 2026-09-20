@@ -514,6 +514,7 @@ export function ShellNavigation({
 	counts: NavigationCounts | null;
 }): React.ReactElement {
 	const itemClass = open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS;
+	const projectSettingsHref = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId) ? `/projects/${encodeURIComponent(selection.projectId)}/settings` : null;
 	return (
 		<TooltipGroup>
 		<nav aria-label={catalog.operatorNavigationLabel} className="lg:flex lg:flex-1 lg:flex-col">
@@ -532,6 +533,16 @@ export function ShellNavigation({
 				))}
 			</ul>
 			<ul className="mt-1 flex flex-wrap gap-1 lg:mt-auto lg:flex-col lg:flex-nowrap" data-slot="settings-navigation">
+				{/* A selected project brings its own settings into the list, above the global ones, which keep the last row either way. */}
+				{projectSettingsHref === null ? null : (
+					<li className="shrink-0">
+						<HintTooltip disabled={open} label={catalog.projectSettingsLabel}>
+							<a aria-current={selection.surface === 'settings' ? 'page' : undefined} aria-label={open ? undefined : catalog.projectSettingsLabel} className={itemClass} data-sidebar-id={projectSettingsHref} href={projectSettingsHref}>
+								<NavGlyph name="settings" />{open ? <span>{catalog.projectSettingsLabel}</span> : null}
+							</a>
+						</HintTooltip>
+					</li>
+				)}
 				<li className="shrink-0">
 					<HintTooltip disabled={open} label={catalog.routeLabels.globalSettings}>
 						<a aria-current={selection.surface === 'global-settings' ? 'page' : undefined} aria-label={open ? undefined : catalog.routeLabels.globalSettings} className={itemClass} data-sidebar-id="/settings" href="/settings">
@@ -746,6 +757,8 @@ export function shellSurfaceTitle(
 	if (selection.surface === 'overview-insights') return catalog.routeLabels.overviewInsights;
 	if (selection.surface === 'projects') return catalog.routeLabels.projects;
 	if (selection.surface === 'global-settings') return catalog.routeLabels.globalSettings;
+	/* Two settings pages exist: this one says whose it is, as its sidebar row does. */
+	if (selection.surface === 'settings') return catalog.projectSettingsLabel;
 	return catalog.routeLabels[selection.surface];
 }
 
