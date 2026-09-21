@@ -4,7 +4,7 @@ import { fetchProjectOnboarding, type ProjectOnboardingSnapshot } from '../clien
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Tag } from '../components/ui/tag.tsx';
-import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { DataTable, DataTableToolbar, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { cn } from '../lib/cn.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
@@ -146,9 +146,8 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 			<RegisteredProjectsTable props={props} />
 			{adding ? <>
 			<Card>
-				<CardHeader><CardTitle>{onboarding.choice.title}</CardTitle></CardHeader>
+				<CardHeader><CardTitle>{onboarding.choice.title}</CardTitle><CardDescription>{onboarding.choice.description}</CardDescription></CardHeader>
 				<CardPanel>
-					<p className="text-muted-foreground text-sm">{onboarding.choice.description}</p>
 					<div className="grid gap-3 sm:grid-cols-2">
 						<Button aria-pressed={onboardingSelectionPressed(choice === 'existing')} variant={choice === 'existing' ? 'default' : 'outline'} onClick={() => { setChoice('existing'); setOperation('register'); setProposalConfirmed(null); }}>{onboarding.choice.existing}</Button>
 						<Button aria-pressed={onboardingSelectionPressed(choice === 'new')} variant={choice === 'new' ? 'default' : 'outline'} onClick={() => { setChoice('new'); setOperation('create'); setProposalConfirmed(null); }}>{onboarding.choice.fresh}</Button>
@@ -172,9 +171,8 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 			{operation === 'register' ? <RegisterProjectPanel catalog={catalog} onRegisterProject={props.onRegisterProject} pending={props.pending} onboardingConfirmed={confirmed || snapshot?.manifestProposal === null} value={target} onValueChange={(value) => { setTarget(value); setProposalConfirmed(null); }} /> : null}
 			{choice !== null ? <button className="self-start text-muted-foreground text-sm underline underline-offset-4" onClick={resetToProjectType} type="button">{onboarding.choice.back}</button> : null}
 			<Card>
-				<CardHeader><CardTitle>{onboarding.nextSteps.title}</CardTitle></CardHeader>
+				<CardHeader><CardTitle>{onboarding.nextSteps.title}</CardTitle><CardDescription>{onboarding.nextSteps.description}</CardDescription></CardHeader>
 				<CardPanel>
-					<p className="text-muted-foreground text-sm">{onboarding.nextSteps.description}</p>
 					<div className="flex flex-wrap items-center gap-3"><span className="font-medium text-sm">{onboarding.nextSteps.notification}</span><Button disabled={props.pending} onClick={() => props.onSendNotificationTest('ntfy')} size="sm" variant="outline">{onboarding.nextSteps.test} ntfy</Button><Button disabled={props.pending} onClick={() => props.onSendNotificationTest('resend')} size="sm" variant="outline">{onboarding.nextSteps.test} Resend</Button></div>
 					<p className="text-muted-foreground text-sm">{onboarding.nextSteps.reversible}</p>
 				</CardPanel>

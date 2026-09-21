@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectOverviewView, RegisteredProjectView } from '../client.ts';
-import { Card, CardFooter, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { Card, CardDescription, CardFooter, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
@@ -28,9 +28,9 @@ export function RegisterProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.register.title}</CardTitle>
+				<CardDescription>{catalog.register.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.register.description}</p>
 				<FormStack
 					 onSubmit={(event) => {
 						event.preventDefault();
@@ -85,9 +85,9 @@ export function ImportProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.import.title}</CardTitle>
+				<CardDescription>{catalog.import.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.import.description}</p>
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -152,9 +152,9 @@ export function CreateProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.create.title}</CardTitle>
+				<CardDescription>{catalog.create.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.create.description}</p>
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -258,9 +258,9 @@ export function UnregisterProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.remove.title}</CardTitle>
+				<CardDescription>{catalog.remove.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.remove.description}</p>
 				<p className="text-muted-foreground text-sm">{catalog.remove.filesRemain}</p>
 				<label className="flex items-start gap-2 text-sm">
 					<input

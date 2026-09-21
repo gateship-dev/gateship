@@ -4,7 +4,7 @@ import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectStatusView } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
-import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { Separator } from '../components/ui/separator.tsx';
 import type { OnboardingCatalog } from '../locale.ts';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
@@ -44,9 +44,9 @@ export function OnboardingSurface({
 			<Card>
 				<CardHeader>
 					<CardTitle>{catalog.cardTitle}</CardTitle>
+					<CardDescription>{catalog.description}</CardDescription>
 				</CardHeader>
 				<CardPanel>
-					<p className="text-muted-foreground text-sm">{catalog.description}</p>
 					{project.state === 'checking' ? (
 						<p className="text-muted-foreground text-sm">{project.detail}</p>
 					) : null}

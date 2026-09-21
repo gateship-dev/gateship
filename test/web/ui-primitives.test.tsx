@@ -34,7 +34,7 @@ import {
 	TabsTab,
 } from '../../webui/src/components/ui/tabs.tsx';
 import { cn } from '../../webui/src/lib/cn.ts';
-import { ContextPanel } from '../../webui/src/screens/operator-controls.tsx';
+import { ContextPanel, SectionCard } from '../../webui/src/screens/operator-controls.tsx';
 import {
 	DataTable,
 	DataTableViewOptions,
@@ -176,7 +176,16 @@ describe('ui primitives', () => {
 		expect(footer).toContain('border-t');
 		expect(footer).toContain('bg-muted');
 		expect(renderToStaticMarkup(<CardPanel>read only</CardPanel>)).not.toContain('card-footer');
+		// A disclosure keeps its description inside, so it closes to one line; a plain section names and describes itself in its header.
 		expect(context).not.toContain('data-slot="card-frame-description"');
+		const section = renderToStaticMarkup(<SectionCard description="What this section is" title="Section"><p>content</p></SectionCard>);
+		const header = section.slice(section.indexOf('data-slot="card-frame-header"'), section.indexOf('data-slot="card"'));
+		expect(header).toContain('data-slot="card-frame-description"');
+		expect(header).toContain('What this section is');
+		// One text inset for every surface: a card pads 16px, as a Stat and a table's edge cells do.
+		expect(section).toContain('px-4 py-3');
+		expect(section).toMatch(/class="[^"]*\bp-4\b[^"]*" data-slot="card-panel"/);
+		expect(section).not.toMatch(/\bp-6\b|px-6/);
 		expect(context).toContain('Supporting context');
 		expect(context).toContain('<button type="submit">Save</button>');
 	});

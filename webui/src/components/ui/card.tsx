@@ -35,7 +35,8 @@ const FRAME =
 const HEADER_GRID =
 	'relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-x-4 ' +
 	'has-data-[slot=card-frame-action]:grid-cols-[1fr_auto]';
-const HEADER = `${HEADER_GRID} px-6 py-4`;
+/* 16px is the text inset every surface shares (a Stat, a table's edge cells, a card), so stacked blocks have one text edge. */
+const HEADER = `${HEADER_GRID} px-4 py-3`;
 
 /*
  * The inner card uses --color-card mixed with --color-sidebar, barely
@@ -82,7 +83,7 @@ export function CardSummary({
 	return (
 		<summary
 			className={cn(
-				'flex cursor-pointer list-none items-center gap-3 px-6 py-4 [&::-webkit-details-marker]:hidden',
+				'flex cursor-pointer list-none items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden',
 				className,
 			)}
 			data-slot="card-frame-header"
@@ -120,7 +121,7 @@ export function CardFooter({
 	return (
 		<div
 			className={cn(
-				'-mx-6 -mb-6 mt-2 flex flex-col-reverse gap-2 border-border border-t bg-muted px-6 py-4 sm:flex-row sm:items-center sm:justify-end',
+				'-mx-4 -mb-4 mt-2 flex flex-col-reverse gap-2 border-border border-t bg-muted px-4 py-3 sm:flex-row sm:items-center sm:justify-end',
 				/* Opaque while it floats: the wash alone lets the text under it show through. */
 				/* It rests on the column's fade (the last 16px of the scroll area), so nothing readable shows under it:
 				 * the column pads 16px, and 24px from `lg`, hence the 8px it steps down there. */
@@ -141,7 +142,8 @@ export function CardDescription({
 }: React.ComponentProps<'div'>): React.ReactElement {
 	return (
 		<div
-			className={cn('self-center text-muted-foreground text-sm', className)}
+			/* A reading measure: across a 1080px card a sentence would run to 170 characters a line. */
+			className={cn('max-w-3xl self-center text-muted-foreground text-sm', className)}
 			data-slot="card-frame-description"
 			{...props}
 		/>
@@ -177,7 +179,7 @@ export function CardPanel({
 }: React.ComponentProps<'div'>): React.ReactElement {
 	return (
 		<div className={INNER_CARD} data-slot="card">
-			<div className={cn('flex flex-1 flex-col gap-4 p-6', className)} data-slot="card-panel" {...props}>
+			<div className={cn('flex flex-1 flex-col gap-4 p-4', className)} data-slot="card-panel" {...props}>
 				{children}
 			</div>
 		</div>

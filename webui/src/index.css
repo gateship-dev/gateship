@@ -461,6 +461,15 @@ html.gship-harness-reduced-motion *::after {
 	}
 }
 
+/* A table inside a card already sits inside a ring: it keeps its border and gives its own ring, and the ring's margin, up. */
+[data-slot='card-panel'] [data-slot='data-table'] {
+	margin: 0;
+}
+
+[data-slot='card-panel'] [data-slot='data-table']::after {
+	display: none;
+}
+
 /* Shared native scroll chrome. Styling is separate from gutter reservation:
  * the viewport keeps its full width while internal operational columns can
  * opt into stable geometry where content becoming taller would move them. */

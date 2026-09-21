@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Button, buttonVariants } from '../components/ui/button.tsx';
-import { Card, CardDisclosure, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
+import { Card, CardDescription, CardDisclosure, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
 
 export const BUTTON_CLASS = buttonVariants({ variant: 'outline' });
 export const PRIMARY_BUTTON_CLASS = buttonVariants({ variant: 'default' });
@@ -18,6 +18,7 @@ export function ContextPanel({ title, description, open = false, children }: { t
 				<CardTitle>{title}</CardTitle>
 			</CardSummary>
 			<CardPanel>
+				{/* A disclosure keeps its description inside: closed, it is one line and its summary is only a name. */}
 				<p className="text-muted-foreground text-sm">{description}</p>
 				{children}
 			</CardPanel>
@@ -29,11 +30,9 @@ export function ContextPanel({ title, description, open = false, children }: { t
 export function SectionCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }): React.ReactElement {
 	return (
 		<Card>
-			<CardHeader><CardTitle>{title}</CardTitle></CardHeader>
-			<CardPanel>
-				<p className="text-muted-foreground text-sm">{description}</p>
-				{children}
-			</CardPanel>
+			{/* What the section is sits with its name; the panel starts with the content. */}
+			<CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
+			<CardPanel>{children}</CardPanel>
 		</Card>
 	);
 }
