@@ -17,13 +17,14 @@ import {
 	CardSummary,
 	CardTitle,
 } from '../../webui/src/components/ui/card.tsx';
-import { CardGrid, CardSplit, CardStack, FormField, FormStack } from '../../webui/src/components/ui/card-layout.tsx';
+import { CardGrid, CardSplit, CardStack, CheckField, FormField, FormStack } from '../../webui/src/components/ui/card-layout.tsx';
 import { EmptyState } from '../../webui/src/components/ui/empty-state.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
 import { Separator } from '../../webui/src/components/ui/separator.tsx';
 import { Count } from '../../webui/src/components/ui/count.tsx';
 import { Reference } from '../../webui/src/components/ui/reference.tsx';
 import { Stat } from '../../webui/src/components/ui/stat.tsx';
+import { Switch } from '../../webui/src/components/ui/switch.tsx';
 import { StatusDot } from '../../webui/src/components/ui/status-dot.tsx';
 import { Tag } from '../../webui/src/components/ui/tag.tsx';
 import {
@@ -288,6 +289,22 @@ describe('ui primitives', () => {
 		expect(html).toContain('whitespace-nowrap');
 		expect(html).toContain('pointer-coarse:min-h-11');
 		expect(html).toContain('motion-reduce:transition-none');
+	});
+
+	test('a field is as wide as what is typed in it, and a boolean that acts at once is a switch in the product ink', () => {
+		expect(renderToStaticMarkup(<FormField>name</FormField>)).toContain('max-w-md');
+		expect(renderToStaticMarkup(<FormField measure="prose">brief</FormField>)).toContain('max-w-3xl');
+		expect(renderToStaticMarkup(<FormField measure="full">in a grid</FormField>)).not.toMatch(/max-w-/);
+		expect(renderToStaticMarkup(<CheckField><input type="checkbox" />I confirm</CheckField>)).toMatch(/^<label class="[^"]*flex items-start gap-2/);
+		const off = renderToStaticMarkup(<Switch checked={false} />);
+		const on = renderToStaticMarkup(<Switch checked disabled />);
+		expect(off).toContain('role="switch"');
+		expect(off).toContain('aria-checked="false"');
+		expect(on).toContain('aria-checked="true"');
+		expect(on).toContain('aria-disabled="true"');
+		// Ink when on, never the acid of the mark.
+		expect(on).toContain('data-checked:bg-primary');
+		expect(on).not.toMatch(/attention/);
 	});
 
 	test('a count says how many, and says nothing when there are none', () => {

@@ -10,7 +10,7 @@ import { Reference } from '../components/ui/reference.tsx';
 import { Tag } from '../components/ui/tag.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardAction, CardDescription, CardDisclosure, CardFooter, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
-import { FormField, FormStack } from '../components/ui/card-layout.tsx';
+import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { DataTable, DataTableFilter, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useClientPage, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
@@ -119,25 +119,25 @@ export function IssueIntakePanel({
 					});
 				}}
 			>
-				<FormField htmlFor="issue-title">
+				<FormField htmlFor="issue-title" measure="prose">
 					<span className="font-medium">{catalog.form.title}</span>
 					<Input id="issue-title" name="title" required />
 				</FormField>
-				<FormField htmlFor="issue-objective">
+				<FormField htmlFor="issue-objective" measure="prose">
 					<span className="font-medium">{catalog.form.objective}</span>
 					<Textarea className="min-h-24" id="issue-objective" name="objective" required />
 				</FormField>
 				<input aria-hidden="true" name="scope" type="hidden" />
 				<input aria-hidden="true" name="verificationCommand" type="hidden" />
-				<FormField htmlFor="issue-acceptance">
+				<FormField htmlFor="issue-acceptance" measure="prose">
 					<span className="font-medium">{catalog.form.acceptance}</span>
 					<Textarea className="min-h-24" id="issue-acceptance" name="acceptance" required />
 				</FormField>
-				<FormField htmlFor="issue-boundaries">
+				<FormField htmlFor="issue-boundaries" measure="prose">
 					<span className="font-medium">{catalog.form.boundaries}</span>
 					<Textarea className="min-h-20" id="issue-boundaries" name="boundaries" />
 				</FormField>
-				<FormField htmlFor="issue-verify">
+				<FormField htmlFor="issue-verify" measure="prose">
 					<span className="font-medium">{catalog.form.verify}</span>
 					<Textarea className="min-h-20" mono id="issue-verify" name="verify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
@@ -185,21 +185,21 @@ export function IssueSpecifyPanel({
 						required
 					/>
 				</FormField>
-				<FormField htmlFor="idea-objective">
+				<FormField htmlFor="idea-objective" measure="prose">
 					<span className="font-medium">{catalog.form.objective}</span>
 					<Textarea className="min-h-24" id="idea-objective" name="ideaObjective" required />
 				</FormField>
 				<input aria-hidden="true" name="ideaScope" type="hidden" />
 				<input aria-hidden="true" name="ideaVerificationCommand" type="hidden" />
-				<FormField htmlFor="idea-acceptance">
+				<FormField htmlFor="idea-acceptance" measure="prose">
 					<span className="font-medium">{catalog.form.acceptance}</span>
 					<Textarea className="min-h-24" id="idea-acceptance" name="ideaAcceptance" required />
 				</FormField>
-				<FormField htmlFor="idea-boundaries">
+				<FormField htmlFor="idea-boundaries" measure="prose">
 					<span className="font-medium">{catalog.form.boundaries}</span>
 					<Textarea className="min-h-20" id="idea-boundaries" name="ideaBoundaries" />
 				</FormField>
-				<FormField htmlFor="idea-verify">
+				<FormField htmlFor="idea-verify" measure="prose">
 					<span className="font-medium">{catalog.form.verify}</span>
 					<Textarea className="min-h-20" mono id="idea-verify" name="ideaVerify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
@@ -242,19 +242,19 @@ function reviewPayload(values: ReviewValues & { evidence?: IssueReviewDraft['evi
 
 function SpecFields({ catalog, values, setters }: { catalog: WorkCatalog; values: ReviewValues; setters: { setObjective: React.Dispatch<React.SetStateAction<string>>; setAcceptance: React.Dispatch<React.SetStateAction<string[]>>; setBoundaries: React.Dispatch<React.SetStateAction<string[]>>; setVerify: React.Dispatch<React.SetStateAction<string[]>> } }): React.ReactElement {
 	return <>
-		<FormField htmlFor="review-objective">
+		<FormField htmlFor="review-objective" measure="prose">
 			<span className="font-medium">{catalog.form.objective}</span><span className="sr-only">Scope and expected outcome Escopo e resultado esperado</span>
 			<Textarea className="min-h-24" id="review-objective" onChange={(event) => setters.setObjective((event.currentTarget as unknown as { value: string }).value)} required value={values.objective} />
 		</FormField>
-		<FormField htmlFor="review-acceptance">
+		<FormField htmlFor="review-acceptance" measure="prose">
 			<span className="font-medium">{catalog.form.acceptance}</span>
 			<Textarea className="min-h-24" id="review-acceptance" onChange={(event) => setters.setAcceptance((event.currentTarget as unknown as { value: string }).value.split('\n'))} required value={values.acceptance.join('\n')} />
 		</FormField>
-		<FormField htmlFor="review-boundaries">
+		<FormField htmlFor="review-boundaries" measure="prose">
 			<span className="font-medium">{catalog.form.boundaries}</span>
 			<Textarea className="min-h-20" id="review-boundaries" onChange={(event) => setters.setBoundaries((event.currentTarget as unknown as { value: string }).value.split('\n'))} value={values.boundaries.join('\n')} />
 		</FormField>
-		<FormField htmlFor="review-verify">
+		<FormField htmlFor="review-verify" measure="prose">
 			<span className="font-medium">{catalog.form.verify}</span><span className="sr-only">Verification command Comando de verificação</span>
 			<Textarea className="min-h-20" mono id="review-verify" onChange={(event) => setters.setVerify((event.currentTarget as unknown as { value: string }).value.split('\n'))} required value={values.verify.join('\n')} />
 		</FormField>
@@ -314,18 +314,18 @@ export function IssueReviewForm({
 			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'neutral'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
 			<SpecFields catalog={catalog} setters={setters} values={values} />
 			<EvidencePanel catalog={catalog} evidence={draft.evidence} />
-			<label className="flex items-start gap-2 text-sm">
+			<CheckField>
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmPersisted}</span>
-			</label>
-			<FormField htmlFor="abandon-reason">
+			</CheckField>
+			<FormField htmlFor="abandon-reason" measure="prose">
 				<span className="font-medium">{catalog.review.abandonReason}</span>
 				<Textarea className="min-h-20" id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
 			</FormField>
-			<label className="flex items-start gap-2 text-sm">
+			<CheckField>
 				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmAbandon(draft.id)}</span>
-			</label>
+			</CheckField>
 			<CardFooter>
 				<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
 				<button
@@ -375,7 +375,7 @@ export function IssueReviewPanel({
 				<CardAction><Count>{formatCount(drafts.length, locale)}</Count></CardAction>
 			</CardSummary>
 			<CardPanel>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="review-issue">
+				<FormField htmlFor="review-issue">
 					<span className="font-medium">{catalog.review.draft}</span>
 					<SelectField
 						id="review-issue"
@@ -386,7 +386,7 @@ export function IssueReviewPanel({
 						onValueChange={(value) => setSelectedId(value === '' ? null : value)}
 						value={selectedId ?? ''}
 					/>
-				</label>
+				</FormField>
 				{selected === null || !ownedByRun ? null : (
 					<p className="text-muted-foreground text-sm">
 						{catalog.review.ownedByRun(selected.id)}
@@ -498,11 +498,11 @@ function PromoteForm({ catalog, prefix, defaultTitle, pending, onPromote }: { ca
 				});
 			}}
 		>
-			<FormField><span className="font-medium">{catalog.form.title}</span><Input defaultValue={defaultTitle} name={`${prefix}Title`} required /></FormField>
-			<FormField><span className="font-medium">{catalog.form.objective}</span><Textarea className="min-h-24" name={`${prefix}Objective`} required /></FormField>
-			<FormField><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name={`${prefix}Acceptance`} required /></FormField>
-			<FormField><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name={`${prefix}Boundaries`} /></FormField>
-			<FormField><span className="font-medium">{catalog.form.verify}</span><Input mono name={`${prefix}VerificationCommand`} placeholder={catalog.form.verificationPlaceholder} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.title}</span><Input defaultValue={defaultTitle} name={`${prefix}Title`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.objective}</span><Textarea className="min-h-24" name={`${prefix}Objective`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name={`${prefix}Acceptance`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name={`${prefix}Boundaries`} /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.verify}</span><Input mono name={`${prefix}VerificationCommand`} placeholder={catalog.form.verificationPlaceholder} required /></FormField>
 			<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">{catalog.form.promote}</button>
 		</FormStack>
 	);

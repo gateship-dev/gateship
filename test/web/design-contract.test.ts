@@ -34,6 +34,13 @@ describe('design contract', () => {
 		for (const entry of OFF_GRID_SPACING) expect(entry.reason.length).toBeGreaterThan(20);
 	});
 
+	test('a screen writes no label of its own: a field is a FormField and a box beside its text is a CheckField', () => {
+		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).filter(([name, source]) => name.startsWith('screens/') && /<label\b/.test(source)).map(([name]) => name);
+		expect(handWritten(sources)).toEqual([]);
+		// The check reads what it claims to: a planted label is found, and the kit, which owns the element, is left alone.
+		expect(handWritten({ 'screens/planted.tsx': '<label className="flex flex-col gap-1"><span>Name</span></label>', 'components/ui/card-layout.tsx': '<label data-slot="form-field" />' })).toEqual(['screens/planted.tsx']);
+	});
+
 	test('type stays on the scale and the ladder', () => {
 		const usage = measureUsage(sources, []);
 		expect(Object.keys(usage.text).filter((size) => size.startsWith('[') || size === '3xl' || size === '4xl')).toEqual([]);

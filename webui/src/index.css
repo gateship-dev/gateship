@@ -619,12 +619,12 @@ html.gship-harness-reduced-motion *::after {
 		font-variant-numeric: tabular-nums;
 	}
 
-	/* Checkboxes stay native for their form semantics; the check itself is
-	 * selection, so it wears the acid-ui ramp. */
+	/* Checkboxes stay native for their form semantics. The check wears the
+	 * product's ink: the acid belongs to the mark alone. */
 	input[type='checkbox'] {
 		width: 1rem;
 		height: 1rem;
-		accent-color: var(--attention-ui);
+		accent-color: var(--primary);
 	}
 
 	/* Set for one frame around a theme swap (main.tsx): colors cut over

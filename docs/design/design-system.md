@@ -89,7 +89,10 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | Every surface shares one text inset, 16px: a `Stat`, the first and last cell of a table, and a card's header, panel and footer. Stacked blocks have one text edge. Between columns a table keeps 12px | Behaviour tests, visual gate baselines |
 | A card names and describes itself in its header (`CardDescription`, held to a reading measure) and its panel starts with the content. A disclosure is the exception: its description stays inside, so closed it is one line | Behaviour tests |
 | A table inside a card keeps its border and gives up its own ring: the card's ring already holds it | Judgment |
-| A form field is a `FormField`, which owns the body size. A command is typed in `mono`. A form has one field per name, because a second one makes the browser return a list whose value is empty | Behaviour tests |
+| A form field is a `FormField`, which owns the body size and the field's measure: a name or a choice in 448px, prose in a reading measure, `full` inside a grid that already sizes it. A box beside its text is a `CheckField`. A screen writes no `<label>` of its own | Contract test, behaviour tests |
+| A boolean that acts the moment it is flipped is a `Switch`; one that waits for the form's save is a checkbox. Both wear the product's ink, never the acid | Behaviour tests |
+| A command is typed in `mono`. A form has one field per name, because a second one makes the browser return a list whose value is empty | Behaviour tests |
+| The actions of a block close it on its own edge, in a card's footer or at the foot of a nested form, in the same order everywhere | Judgment |
 | A panel has one constructive primary action. Secondary and destructive actions look different from it. `CardFooter` exists only with actions, and is `sticky` only under a form that runs to screens of text | Judgment, behaviour tests |
 | Reference text (how to sign in, how to set a channel up) folds once the thing it explains works, and opens by itself while it does not | Behaviour tests |
 | An empty state says what is missing and offers the next action when there is one. No empty framed region | Judgment |

@@ -3254,22 +3254,24 @@ describe('settings surface', () => {
 	test('the chain switch is off by default and shows no pause reason', () => {
 		const chainRuns = panel(settingsPage(), 'Automatic run chaining');
 
-		expect(chainRuns).not.toContain('checked=""');
+		// It acts the moment it is flipped, so it is a switch and not a form's checkbox.
+		expect(chainRuns).toContain('role="switch"');
+		expect(chainRuns).toContain('aria-checked="false"');
 		expect(chainRuns).not.toContain('Queue stopped');
 	});
 
 	test('the chain switch reflects the stored setting and is held while a command is in flight', () => {
 		const on = panel(settingsPage({ chainRuns: { enabled: true, pause: null } }), 'Automatic run chaining');
-		expect(on).toContain('checked=""');
+		expect(on).toContain('aria-checked="true"');
 
-		const checkbox = elementWith(settingsPage({ pending: true }), 'type="checkbox"');
-		expect(checkbox).toContain('disabled=""');
+		const held = elementWith(panel(settingsPage({ pending: true }), 'Automatic run chaining'), 'role="switch"');
+		expect(held).toContain('aria-disabled="true"');
 	});
 
 	// GSHIP-722: off by default, same as chain runs.
 	test('the executor handoff switch is off by default', () => {
 		const executorHandoff = panel(settingsPage(), 'Executor handoff between providers');
-		expect(executorHandoff).not.toContain('checked=""');
+		expect(executorHandoff).toContain('aria-checked="false"');
 	});
 
 	test('the executor handoff switch reflects the stored setting', () => {
@@ -3277,7 +3279,7 @@ describe('settings surface', () => {
 			settingsPage({ executorHandoff: { enabled: true } }),
 			'Executor handoff between providers',
 		);
-		expect(on).toContain('checked=""');
+		expect(on).toContain('aria-checked="true"');
 	});
 
 	test('native self update is off by default with one fixed daily policy', () => {
@@ -3288,7 +3290,7 @@ describe('settings surface', () => {
 				currentVersion: '1.0.0',
 			},
 		}), 'Gateship updates');
-		expect(updates).not.toContain('checked=""');
+		expect(updates).toContain('aria-checked="false"');
 		expect(updates).toContain('Fixed cadence: daily');
 		expect(updates).not.toMatch(/weekly|cron/i);
 	});

@@ -40,7 +40,7 @@ que espera o operador, coluna responsiva, linha que abre e paginação local.
 Os demais componentes nasceram no repositório e seguem o mesmo idioma: `badge`,
 `button`, `callout`, `card`, `card-layout`, `chart`, `collapsible`,
 `count`, `empty-state`, `input`, `item`, `progress`, `reference`, `select`,
-`separator`, `skeleton`, `stat`, `status-dot`, `table`, `tabs`, `tag` e
+`separator`, `skeleton`, `stat`, `status-dot`, `switch`, `table`, `tabs`, `tag` e
 `textarea`.
 
 ## Quando criar uma variante

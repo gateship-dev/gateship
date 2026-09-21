@@ -7,10 +7,11 @@ import { emptyModelSettings, MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_
 import { Badge } from '../components/ui/badge.tsx';
 import { Tag } from '../components/ui/tag.tsx';
 import { CardFooter } from '../components/ui/card.tsx';
-import { FormStack } from '../components/ui/card-layout.tsx';
+import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
+import { Switch } from '../components/ui/switch.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, SettingsCatalog } from '../locale.ts';
@@ -263,7 +264,7 @@ export function ClaudeCredentialSection({
 						});
 					}}
 				>
-					<label className="flex flex-col gap-1" htmlFor="claude-credential-token">
+					<FormField htmlFor="claude-credential-token">
 						<span className="font-medium">{text.tokenLabel}</span>
 						<Input
 							autoComplete="off"
@@ -276,8 +277,8 @@ export function ClaudeCredentialSection({
 							value={token}
 						/>
 						{error === null ? null : <span className="text-destructive text-xs" role="alert">{error}</span>}
-					</label>
-					<label className="flex items-start gap-2">
+					</FormField>
+					<CheckField>
 						<input
 							checked={confirmed}
 							name="claude-credential-confirm"
@@ -285,7 +286,7 @@ export function ClaudeCredentialSection({
 							type="checkbox"
 						/>
 						<span>{text.confirm}</span>
-					</label>
+					</CheckField>
 					<div className="flex flex-wrap gap-2">
 						<button
 							className={cn(PRIMARY_BUTTON_CLASS, 'self-end')}
@@ -491,18 +492,19 @@ export function ModelSlotFields({
 	catalog: SettingsCatalog;
 }): React.ReactElement {
 	const roleLabel = catalog.models.roleLabels[role];
-	const field = (kind: 'model' | 'effort', span: string): React.ReactElement => (
-		<label className={cn('flex min-w-0 flex-col gap-1', span)} htmlFor={`${providerId}-${role}-${kind}`}>
+	/* The model takes two of the row's columns, the effort one. A wrapper carries the span: a static string the design lint can read. */
+	const field = (kind: 'model' | 'effort'): React.ReactElement => (
+		<FormField measure="full" htmlFor={`${providerId}-${role}-${kind}`}>
 			<span className="sr-only">{`${roleLabel} — ${catalog.models[kind]}`}</span>
 			<span aria-hidden="true" className="text-muted-foreground text-xs capitalize sm:hidden">{catalog.models[kind]}</span>
 			<Input defaultValue={slot[kind]} id={`${providerId}-${role}-${kind}`} mono name={`${providerId}-${role}-${kind}`} placeholder={catalog.models.cliDefault} />
-		</label>
+		</FormField>
 	);
 	return (
 		<div className="grid gap-2 border-t py-3 first:border-0 sm:grid-cols-4 sm:items-center sm:gap-3 sm:border-0 sm:py-0" data-slot="model-slot">
 			<span className="font-medium text-sm">{roleLabel}</span>
-			{field('model', 'sm:col-span-2')}
-			{field('effort', '')}
+			<div className="min-w-0 sm:col-span-2">{field('model')}</div>
+			<div className="min-w-0">{field('effort')}</div>
 		</div>
 	);
 }
@@ -599,7 +601,7 @@ export function AgentDefaultsPanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="agent-default-provider">
+				<FormField htmlFor="agent-default-provider">
 					<span className="font-medium">{catalog.agentDefaults.provider}</span>
 					<SelectField
 						defaultValue={agentDefaults.provider}
@@ -608,7 +610,7 @@ export function AgentDefaultsPanel({
 						items={[{ value: 'claude', label: 'Claude' }, { value: 'codex', label: 'Codex' }]}
 						name="agent-default-provider"
 					/>
-				</label>
+				</FormField>
 				{MODEL_PROVIDER_IDS.map((providerId) => (
 					<ModelProviderFields catalog={catalog} key={providerId} modelSettings={agentDefaults.modelSettings} providerId={providerId} />
 				))}
@@ -639,16 +641,10 @@ export function ChainRunsPanel({
 			description={catalog.chain.description}
 			title={catalog.chain.title}
 		>
-			<label className="flex items-center gap-2 text-sm">
-				<input
-					checked={chainRuns.enabled}
-					disabled={pending}
-					onChange={(event) =>
-						onSetChainRuns((event.currentTarget as unknown as { checked: boolean }).checked)}
-					type="checkbox"
-				/>
+			<CheckField className="items-center">
+				<Switch checked={chainRuns.enabled} disabled={pending} onCheckedChange={(checked) => onSetChainRuns(checked)} />
 				<span className="font-medium">{catalog.chain.label}</span>
-			</label>
+			</CheckField>
 		</SectionCard>
 	);
 }
@@ -670,16 +666,10 @@ export function ExecutorHandoffPanel({
 			description={catalog.executorHandoff.description}
 			title={catalog.executorHandoff.title}
 		>
-			<label className="flex items-center gap-2 text-sm">
-				<input
-					checked={executorHandoff.enabled}
-					disabled={pending}
-					onChange={(event) =>
-						onSetExecutorHandoff((event.currentTarget as unknown as { checked: boolean }).checked)}
-					type="checkbox"
-				/>
+			<CheckField className="items-center">
+				<Switch checked={executorHandoff.enabled} disabled={pending} onCheckedChange={(checked) => onSetExecutorHandoff(checked)} />
 				<span className="font-medium">{catalog.executorHandoff.label}</span>
-			</label>
+			</CheckField>
 		</SectionCard>
 	);
 }
@@ -697,17 +687,10 @@ export function SelfUpdatePanel({
 			description={catalog.updates.description}
 			title={catalog.updates.title}
 		>
-			<label className="flex items-center gap-2 text-sm">
-				<input
-					checked={selfUpdate.enabled}
-					disabled={pending || unavailable || selfUpdate.applying}
-					onChange={(event) => onSetSelfUpdate(
-						(event.currentTarget as unknown as { checked: boolean }).checked,
-					)}
-					type="checkbox"
-				/>
+			<CheckField className="items-center">
+				<Switch checked={selfUpdate.enabled} disabled={pending || unavailable || selfUpdate.applying} onCheckedChange={(checked) => onSetSelfUpdate(checked)} />
 				<span className="font-medium">{catalog.updates.label}</span>
-			</label>
+			</CheckField>
 			<p className="text-muted-foreground text-xs">
 				{catalog.updates.guidance}
 			</p>
@@ -786,7 +769,7 @@ export function NotificationChannelRow({
 	const label = catalog.notifications.channelLabels[channelId];
 	const resendForm = channelId === 'resend' ? (
 		<form
-			className="grid gap-3 sm:grid-cols-2"
+			className="flex flex-col gap-3"
 			key={JSON.stringify(channel)}
 			onSubmit={(event) => {
 				event.preventDefault();
@@ -794,8 +777,10 @@ export function NotificationChannelRow({
 				onSaveResendSettings({ from: read('resend-from'), to: read('resend-to'), apiKey: read('resend-api-key') });
 			}}
 		>
+			{/* The fields keep a reading measure; the actions close the block on its own edge, as a card's footer does. */}
+			<div className="grid max-w-3xl gap-3 sm:grid-cols-2">
 			{(['from', 'to'] as const).map((field) => (
-				<label className="flex flex-col gap-1 text-sm" key={field}>
+				<FormField measure="full" key={field}>
 					<span className="font-medium">
 						{catalog.notifications.resendFields[field]}
 						{channel.externallyManaged[field] ? ` · ${catalog.notifications.externallyManaged}` : null}
@@ -808,9 +793,9 @@ export function NotificationChannelRow({
 						placeholder={catalog.notifications.resendPlaceholders[field]}
 						required
 					/>
-				</label>
+				</FormField>
 			))}
-			<label className="flex flex-col gap-1 text-sm sm:col-span-2">
+			<FormField className="sm:col-span-2" measure="full">
 				<span className="font-medium">
 					{catalog.notifications.resendFields.apiKey}
 					{channel.externallyManaged.apiKey ? ` · ${catalog.notifications.externallyManaged}` : null}
@@ -822,16 +807,17 @@ export function NotificationChannelRow({
 					placeholder={catalog.notifications.resendPlaceholders.apiKey}
 					type="password"
 				/>
-			</label>
+			</FormField>
 			<p className="text-muted-foreground text-xs sm:col-span-2">
 				{channel.fileCredentialExists ? catalog.notifications.fileCredentialPresent : catalog.notifications.fileCredentialAbsent}
 			</p>
-			<div className="flex flex-wrap gap-2 sm:col-span-2">
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
+			</div>
+			<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end" data-slot="channel-actions">
+				<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.notifications.saveResend}
 				</button>
 				<button
-					className={cn(BUTTON_CLASS, 'self-end')}
+					className={BUTTON_CLASS}
 					disabled={pending || !channel.fileCredentialExists}
 					onClick={onRemoveResendCredential}
 					type="button"
@@ -983,7 +969,7 @@ export function ProjectBriefPanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="brief-objective">
+				<FormField measure="prose" htmlFor="brief-objective">
 					<span className="font-medium">{catalog.brief.fieldLabels.objective}</span>
 					<Textarea
 						className="min-h-16"
@@ -991,13 +977,9 @@ export function ProjectBriefPanel({
 						id="brief-objective"
 						name="objective"
 					/>
-				</label>
+				</FormField>
 				{BRIEF_LISTS.map((field) => (
-					<label
-						className="flex flex-col gap-1 text-sm"
-						htmlFor={`brief-${field.name}`}
-						key={field.name}
-					>
+					<FormField measure="prose" htmlFor={`brief-${field.name}`} key={field.name}>
 						<span className="font-medium">{catalog.brief.fieldLabels[field.name]}</span>
 						<Textarea
 							className="min-h-20"
@@ -1006,7 +988,7 @@ export function ProjectBriefPanel({
 							name={field.name}
 							placeholder={catalog.brief.linePlaceholder}
 						/>
-					</label>
+					</FormField>
 				))}
 				{/* The brief runs to screens of text: the way to save it stays in reach. */}
 				<CardFooter sticky><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
@@ -1080,7 +1062,7 @@ export function OperatorProfilePanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-name">
+				<FormField htmlFor="operator-name">
 					<span className="font-medium">{catalog.operator.name}</span>
 					<Input
 						defaultValue={operatorProfile.name}
@@ -1088,8 +1070,8 @@ export function OperatorProfilePanel({
 						name="operator-name"
 						placeholder={catalog.operator.namePlaceholder}
 					/>
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-timezone">
+				</FormField>
+				<FormField htmlFor="operator-timezone">
 					<span className="font-medium">{catalog.operator.timezone}</span>
 					<Input
 						defaultValue={initialTimezone}
@@ -1100,7 +1082,7 @@ export function OperatorProfilePanel({
 					<span className="text-muted-foreground text-xs">
 						{catalog.operator.timezoneGuidance}
 					</span>
-				</label>
+				</FormField>
 				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
 					{catalog.operator.save}
 				</button></CardFooter>
@@ -1142,11 +1124,11 @@ export function DiagnosticSchedulePanel({
 					onSave(enabled, cadence);
 				}}
 			>
-				<label className="flex items-center gap-2 text-sm" htmlFor="diagnostic-enabled">
+				<CheckField className="items-center" htmlFor="diagnostic-enabled">
 					<input defaultChecked={schedule.enabled} id="diagnostic-enabled" name="diagnostic-enabled" type="checkbox" />
 					<span className="font-medium">{catalog.diagnostics.label}</span>
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="diagnostic-cadence">
+				</CheckField>
+				<FormField htmlFor="diagnostic-cadence">
 					<span className="font-medium">{catalog.diagnostics.cadence}</span>
 					<SelectField
 						defaultValue={schedule.cadence}
@@ -1157,7 +1139,7 @@ export function DiagnosticSchedulePanel({
 						]}
 						name="diagnostic-cadence"
 					/>
-				</label>
+				</FormField>
 				<p className="text-muted-foreground text-xs">
 					{active
 						? catalog.diagnostics.calculating

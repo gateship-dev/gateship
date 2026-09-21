@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectOverviewView, RegisteredProjectView } from '../client.ts';
 import { Card, CardDescription, CardFooter, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
-import { FormField, FormStack } from '../components/ui/card-layout.tsx';
+import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import type { ProjectsCatalog } from '../locale.ts';
@@ -39,7 +39,7 @@ export function RegisterProjectPanel({
 						if (root !== '') onRegisterProject(root);
 					}}
 				>
-					<FormField htmlFor="project-root">
+					<FormField htmlFor="project-root" measure="prose">
 						<span className="font-medium">{catalog.register.rootLabel}</span>
 						<Input
 							id="project-root"
@@ -180,7 +180,7 @@ export function CreateProjectPanel({
 							value={value ?? repository}
 						/>
 					</FormField>
-					<FormField htmlFor="project-create-description">
+					<FormField htmlFor="project-create-description" measure="prose">
 						<span className="font-medium">{catalog.create.descriptionLabel}</span>
 						<Input
 							id="project-create-description"
@@ -213,7 +213,7 @@ export function CreateProjectPanel({
 					) : null}
 					<p className="text-muted-foreground text-xs">{catalog.create.destinationGuidance}</p>
 					<p className="text-muted-foreground text-xs">{catalog.create.credentialGuidance}</p>
-					<label className="flex items-start gap-2 text-sm">
+					<CheckField>
 						<input
 							checked={confirmed}
 							disabled={pending || namedRepository === ''}
@@ -223,7 +223,7 @@ export function CreateProjectPanel({
 							type="checkbox"
 						/>
 						<span>{authorization}</span>
-					</label>
+					</CheckField>
 					{projectOnboardingPending === 'create'
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.create.pending}</p>
 						: null}
@@ -262,7 +262,7 @@ export function UnregisterProjectPanel({
 			</CardHeader>
 			<CardPanel>
 				<p className="text-muted-foreground text-sm">{catalog.remove.filesRemain}</p>
-				<label className="flex items-start gap-2 text-sm">
+				<CheckField>
 					<input
 						checked={confirmed}
 						disabled={pending}
@@ -272,7 +272,7 @@ export function UnregisterProjectPanel({
 						type="checkbox"
 					/>
 					<span>{catalog.remove.confirm(project.name)}</span>
-				</label>
+				</CheckField>
 				<CardFooter>
 					<button
 					className={BUTTON_CLASS}

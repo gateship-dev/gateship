@@ -58,7 +58,15 @@ export function FormStack({ className, children, ...props }: React.ComponentProp
 	return <form className={cn('flex flex-col gap-3', className)} data-slot="form-stack" {...props}>{children}</form>;
 }
 
-export function FormField({ className, children, ...props }: React.ComponentProps<'label'>): React.ReactElement {
+/* A field is as wide as what is typed in it, not as the card that holds it: a name or a choice in 448px, prose in a reading measure. */
+const FIELD_MEASURE = { field: 'max-w-md', prose: 'max-w-3xl', full: '' } as const;
+
+export function FormField({ className, children, measure = 'field', ...props }: React.ComponentProps<'label'> & { /** `prose` for a textarea that holds paragraphs, `full` for a field a grid already sizes. */ measure?: keyof typeof FIELD_MEASURE }): React.ReactElement {
 	/* A field reads at the body size everywhere: the label, the help under it, the control's own text. */
-	return <label className={cn('flex flex-col gap-1 text-sm', className)} data-slot="form-field" {...props}>{children}</label>;
+	return <label className={cn('flex min-w-0 flex-col gap-1 text-sm', FIELD_MEASURE[measure], className)} data-measure={measure} data-slot="form-field" {...props}>{children}</label>;
+}
+
+/** A box and what it says, side by side: a checkbox that waits for the form's save, or a switch that acts at once. The box comes first in the markup. */
+export function CheckField({ className, children, ...props }: React.ComponentProps<'label'>): React.ReactElement {
+	return <label className={cn('flex items-start gap-2 text-sm', className)} data-slot="check-field" {...props}>{children}</label>;
 }
