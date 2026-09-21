@@ -23,11 +23,14 @@ export function AppShell({
 	skipLabel,
 	sidebar,
 	controls,
+	tabBar,
 	children,
 }: {
 	skipLabel: string;
 	sidebar: React.ReactNode;
 	controls: React.ReactNode;
+	/** The destinations below lg, the last row of the column. */
+	tabBar?: React.ReactNode;
 	children: React.ReactNode;
 }): React.ReactElement {
 	return (
@@ -45,6 +48,7 @@ export function AppShell({
 					{children}
 				</div>
 			</div>
+			{tabBar}
 		</div>
 	);
 }

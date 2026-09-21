@@ -4810,9 +4810,10 @@ describe('operator shell', () => {
 		expect(registryLink(html, 'project-9')).not.toContain('aria-keyshortcuts');
 		expect(registryLink(html, 'project-10')).not.toContain('aria-keyshortcuts');
 		expect(html).not.toContain('Alt+10');
-		expect(switcherTrigger(html)).toContain(`>${shortcutLabel('overview', undefined, platform)}</kbd>`);
+		// Open, the trigger gives the chip's room to the name: the menu's rows teach the shortcut, the trigger still declares it.
+		expect(switcherTrigger(html)).not.toContain('<kbd');
 		expect(switcherTrigger(html)).toContain('aria-keyshortcuts="Alt+1"');
-		expect(switcherTrigger(selectedHtml)).toContain(`>${shortcutLabel('project', 0, platform)}</kbd>`);
+		expect(switcherTrigger(selectedHtml)).not.toContain('<kbd');
 		expect(switcherTrigger(selectedHtml)).toContain('aria-keyshortcuts="Alt+2"');
 		expect(registryLink(selectedHtml, 'project-1')).toContain('aria-current="page"');
 		expect(registryLink(selectedHtml, 'project-2')).not.toContain('aria-current');
@@ -4831,8 +4832,9 @@ describe('operator shell', () => {
 		expect(unresolved).not.toContain('data-slot="project-state-dot"');
 		expect(selected).toContain(`>${CURRENT_PROJECT.name}<`);
 		expect(elementWith(selected, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
-		expect(selected).toContain(`>${idle}</span>`);
-		expect(selected.indexOf('data-slot="switcher-key"')).toBeLessThan(selected.indexOf(`>${CURRENT_PROJECT.name}<`));
+		// Idle is the resting state: the hollow dot shows it and the word stays for a screen reader, so the name keeps the room.
+		expect(selected).toContain(`<span class="sr-only">${idle}</span>`);
+		expect(selected).not.toContain('data-slot="switcher-key"');
 		expect(selected.indexOf(`>${CURRENT_PROJECT.name}<`)).toBeLessThan(selected.indexOf('data-slot="project-state-dot"'));
 	});
 
@@ -4981,9 +4983,11 @@ describe('operator shell', () => {
 			expect(now).toContain('<svg');
 			expect(now).not.toContain('<kbd');
 			expect(trigger).toContain('aria-keyshortcuts="Alt+1"');
-			expect(elementWith(trigger, 'data-slot="switcher-key"')).toContain('<kbd');
-			expect(trigger).toContain(`>${shortcutLabel('overview', undefined, presentationPlatform())}</kbd>`);
 		}
+		// On the rail the chip is the trigger; open, the name has its room and the menu shows the chips.
+		expect(elementWith(switcherTrigger(collapsed), 'data-slot="switcher-key"')).toContain('<kbd');
+		expect(switcherTrigger(collapsed)).toContain(`>${shortcutLabel('overview', undefined, presentationPlatform())}</kbd>`);
+		expect(switcherTrigger(expanded)).not.toContain('<kbd');
 		expect(openingTags(navigationList(collapsed, 'global-navigation')).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Now"');
 		expect(switcherTrigger(collapsed)).toContain('aria-label="All projects"');
 		expect(switcherTrigger(expanded)).toContain('>All projects<');
@@ -5135,14 +5139,27 @@ describe('operator shell', () => {
 		expect(noStatusTrigger).not.toContain('aria-describedby=');
 	});
 
-	test('the sidebar reserves the brand for its quiet desktop footer signature', () => {
-		const html = shellHeader(runsPage({ runs: [runIn('failed')], version: '0.292.0' }));
+	test('the sidebar reserves the brand for its quiet desktop footer signature, and a small screen gets an app bar and a tab bar', () => {
+		const page = runsPage({ runs: [runIn('failed')], version: '0.292.0' });
+		const html = shellHeader(page);
 		const signatureStart = html.indexOf('data-slot="sidebar-signature"');
 		const signature = html.slice(signatureStart);
-		const compactHeader = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
-
-		expect(compactHeader).toContain('lg:hidden');
-		expect(compactHeader).toContain('viewBox="3250 0 10187 2750"');
+		// Below lg the controls row is the app bar: the mark leads it and names the product for a screen reader.
+		const appBar = page.slice(page.indexOf('<h1'), page.indexOf('</h1>'));
+		expect(html).not.toContain('<h1');
+		expect(appBar).toContain('lg:hidden');
+		expect(appBar).toContain('viewBox="0 0 2750 2750"');
+		expect(appBar).toContain('<span class="sr-only">Gateship</span>');
+		// The lists leave the header for the tab bar: four destinations and More, counts on the icons, zeros unsaid.
+		for (const list of ['global-navigation', 'settings-navigation']) expect(openingTags(html).find((tag) => tag.includes(`data-slot="${list}"`))).toContain('hidden flex-col gap-1 lg:flex');
+		const tabStart = page.indexOf('data-slot="tab-bar"');
+		const tabBar = page.slice(tabStart, page.indexOf('</nav>', tabStart));
+		expect(openingTags(page).find((tag) => tag.includes('data-slot="tab-bar"'))).toContain('lg:hidden');
+		expect(tabBar.indexOf('data-slot="tab-bar"')).toBe(0);
+		expect([...tabBar.matchAll(/<a [^>]*href="([^"]+)"/g)].map((match) => match[1])).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights']);
+		expect(tabBar).toContain('data-slot="tab-more"');
+		expect(tabBar).toContain('>More<');
+		expect(page.indexOf('data-slot="tab-bar"')).toBeGreaterThan(page.indexOf('</main>'));
 		expect(html.indexOf('data-slot="settings-navigation"')).toBeLessThan(signatureStart);
 		expect(html.indexOf('</nav>')).toBeLessThan(signatureStart);
 		expect(signature).toContain('viewBox="3250 0 10187 2750"');
@@ -5231,8 +5248,8 @@ describe('operator shell', () => {
 		expect(counts(null, undefined)).toEqual([]);
 		expect(counts(null, overview)).toEqual(['1', '3', '7']);
 		expect(counts(CURRENT_PROJECT.id, overview)).toEqual(['1', '1', '2']);
-		// An unknown backlog renders nothing, never a fabricated zero.
-		expect(counts(OTHER_PROJECT.id, overview)).toEqual(['1', '0']);
+		// An unknown backlog renders nothing, and neither does a zero: no active run is said by the absence of a figure.
+		expect(counts(OTHER_PROJECT.id, overview)).toEqual(['1']);
 	});
 
 	test('the technical run state stays on the run card and never reaches the header', () => {

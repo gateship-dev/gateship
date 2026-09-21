@@ -58,6 +58,8 @@ export interface ShellCatalog {
 			queueActiveDetail: string;
 	};
 	operatorNavigationLabel: string;
+	tabBarLabel: string;
+	moreLabel: string;
 	projectNavigationLabel: string;
 	manageProjectsLabel: string;
 	switcherPlaceholder: string;
@@ -651,6 +653,8 @@ export const LOCALE_CATALOG = {
 	'en-US': {
 		shell: {
 			operatorNavigationLabel: 'Navigation',
+			tabBarLabel: 'Destinations',
+			moreLabel: 'More',
 			projectNavigationLabel: 'Projects',
 			manageProjectsLabel: 'Manage projects',
 			switcherPlaceholder: 'Select a project',
@@ -1127,6 +1131,8 @@ export const LOCALE_CATALOG = {
 	'pt-BR': {
 		shell: {
 			operatorNavigationLabel: 'Navegação',
+			tabBarLabel: 'Destinos',
+			moreLabel: 'Mais',
 			projectNavigationLabel: 'Projetos',
 			manageProjectsLabel: 'Gerenciar projetos',
 			switcherPlaceholder: 'Selecionar projeto',

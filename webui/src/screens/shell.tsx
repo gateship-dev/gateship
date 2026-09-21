@@ -7,7 +7,7 @@ import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button, buttonVariants } from '../components/ui/button.tsx';
 import { Count } from '../components/ui/count.tsx';
-import { POPUP_CHROME } from '../components/ui/dropdown-menu.tsx';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, POPUP_CHROME } from '../components/ui/dropdown-menu.tsx';
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunInspectorCatalog, ShellCatalog } from '../locale.ts';
@@ -18,7 +18,7 @@ import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, Notification02Icon, Settings01Icon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
@@ -227,7 +227,7 @@ const SWITCHER_ITEM_CLASS =
  * chip and a 16px icon centre on the same x. A chip wider than the box
  * ("Alt+1" off a Mac) grows it instead of running into the name. */
 const LEAD_SLOT_CLASS = '-mx-1 flex min-w-6 shrink-0 justify-center';
-const KEY_CHIP_CLASS = 'rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground';
+const KEY_CHIP_CLASS = 'shrink-0 whitespace-nowrap rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground';
 
 function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement {
 	const platform = presentationPlatform();
@@ -301,14 +301,16 @@ function ProjectSwitcherTrigger({
 }): React.ReactElement {
 	const state = selected === null ? null : status;
 	if (!open) return <SwitcherKey badge={state} label={keyLabel} />;
+	/* Open, the trigger leads with the folder and gives the name the room: the shortcut is taught by the menu's rows, where every project shows its own. */
 	return (
 		<>
-			<SwitcherKey badge={null} label={keyLabel} />
+			<SwitcherKey badge={null} label={null} />
 			<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">{selected?.name ?? catalog.allProjectsLabel}</span>
 			{state === null ? null : (
 				<span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
 					<StateDot attention={state.attention} />
-					<span>{state.label}</span>
+					{/* Idle is the resting state: its hollow dot says it, and the name keeps the room. A state that moves or waits is written out. */}
+					<span className={state.attention === 'Idle' ? 'sr-only' : undefined}>{state.label}</span>
 				</span>
 			)}
 			<ShellIcon className="opacity-70" icon={UnfoldMoreIcon} />
@@ -502,7 +504,8 @@ function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: 
  * turn, and a number beside a link is orientation, not a call. Unknown
  * renders as nothing, never as a zero the service did not report. */
 function NavCount({ value }: { value: number | null }): React.ReactElement | null {
-	if (value === null) return null;
+	/* Nothing active, nothing waiting, nothing approved: a row of zeros is noise beside the labels. */
+	if (value === null || value === 0) return null;
 	return <Count className="ml-auto" data-slot="navigation-count" form="plain">{value}</Count>;
 }
 
@@ -543,10 +546,11 @@ export function ShellNavigation({
 			<div data-slot="project-switcher-item">
 				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} open={open} projects={projects} selection={selection} status={status} />
 			</div>
-			<ul className="mt-2 flex flex-wrap gap-1 lg:mt-4 lg:flex-col lg:flex-nowrap" data-slot="global-navigation">
+			{/* Below lg the destinations live in the tab bar at the foot of the screen. */}
+			<ul className="mt-4 hidden flex-col gap-1 lg:flex" data-slot="global-navigation">
 				{navigationItems(selection, catalog, counts, projects).map((item) => <NavRow active={item.active} count={item.count} glyph={item.glyph} href={item.href} key={item.id} label={item.label} open={open} />)}
 			</ul>
-			<ul className="mt-1 flex flex-wrap gap-1 lg:mt-auto lg:flex-col lg:flex-nowrap" data-slot="settings-navigation">
+			<ul className="mt-auto hidden flex-col gap-1 lg:flex" data-slot="settings-navigation">
 				{/* A selected project brings its own settings into the list, above the rest; the global ones keep the last row either way. */}
 				{projectSettingsHref === null ? null : <NavRow active={selection.surface === 'settings'} glyph="settings" href={projectSettingsHref} label={catalog.projectSettingsLabel} open={open} />}
 				{/* The registry is reached from the switcher's menu, and from here: a page needs a row to be current on. */}
@@ -555,6 +559,56 @@ export function ShellNavigation({
 			</ul>
 		</nav>
 		</TooltipGroup>
+	);
+}
+
+/* A tab is an icon over its name, as wide as its share of the bar and 48px tall for a thumb. */
+const TAB_CLASS =
+	'relative flex min-h-12 w-full flex-col items-center justify-center gap-1 rounded-lg px-1 text-sidebar-foreground text-xs outline-none ' +
+	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
+	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground ' +
+	'data-[current=true]:bg-sidebar-accent data-[current=true]:font-medium data-[current=true]:text-sidebar-accent-foreground';
+
+/**
+ * Below lg the destinations are a tab bar at the foot of the screen, where a
+ * thumb reaches: the four lists, and More for settings and the registry. It is
+ * the last row of the shell's column, not a layer over the content, so nothing
+ * scrolls under it.
+ */
+export function ShellTabBar({ locale, route, selectedProjectId, projects, overview = null }: Pick<AppProps, 'locale' | 'overview' | 'projects'> & { route: OperatorRoute; selectedProjectId: string | null }): React.ReactElement {
+	const catalog = LOCALE_CATALOG[locale].shell;
+	const selection = routeSelection(route, projects.find((project) => project.current)?.id ?? null, selectedProjectId);
+	const counts = navigationCounts(overview, selection.projectId);
+	const projectSettingsHref = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId) ? `/projects/${encodeURIComponent(selection.projectId)}/settings` : null;
+	const more = selection.surface === 'settings' || selection.surface === 'projects' || selection.surface === 'global-settings';
+	return (
+		<nav aria-label={catalog.tabBarLabel} className="shrink-0 px-2 pb-2 lg:hidden" data-slot="tab-bar">
+			<ul className="grid grid-cols-5 gap-1">
+				{navigationItems(selection, catalog, counts, projects).map((item) => (
+					<li key={item.id}>
+						<a aria-current={item.active ? 'page' : undefined} className={TAB_CLASS} href={item.href}>
+							{/* The figure keeps the sidebar's voice: small, mono, the tab's own colour. It hangs off the tab, not off the 16px glyph, so it spills out of nothing. */}
+							<NavGlyph name={item.glyph} />
+							{item.count === null || item.count === 0 ? null : <Count className="absolute top-1 left-1/2 ml-3" data-slot="tab-count" form="plain">{item.count}</Count>}
+							<span className="max-w-full truncate">{item.label}</span>
+						</a>
+					</li>
+				))}
+				<li>
+					<DropdownMenu>
+						<DropdownMenuTrigger render={<button className={TAB_CLASS} data-current={more} data-slot="tab-more" type="button" />}>
+							<HugeiconsIcon aria-hidden="true" className="size-4 shrink-0 opacity-70" icon={MoreHorizontalIcon} size={16} strokeWidth={2.25} />
+							<span className="max-w-full truncate">{catalog.moreLabel}</span>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end" className="min-w-52" side="top">
+							{projectSettingsHref === null ? null : <DropdownMenuItem render={<a aria-current={selection.surface === 'settings' ? 'page' : undefined} href={projectSettingsHref} />}><NavGlyph name="settings" />{catalog.projectSettingsLabel}</DropdownMenuItem>}
+							<DropdownMenuItem render={<a aria-current={selection.surface === 'projects' ? 'page' : undefined} href="/projects" />}><NavGlyph name="projects" />{catalog.routeLabels.projects}</DropdownMenuItem>
+							<DropdownMenuItem render={<a aria-current={selection.surface === 'global-settings' ? 'page' : undefined} href="/settings" />}><NavGlyph name="globalSettings" />{catalog.routeLabels.globalSettings}</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</li>
+			</ul>
+		</nav>
 	);
 }
 
@@ -708,6 +762,8 @@ export function ShellControls({
 					>
 						<PanelToggleGlyph side="left" />
 					</Button>
+					{/* Below lg this row is the app bar: the mark leads it, the page's name stays on the centre. */}
+					<h1 className="flex items-center lg:hidden"><GateshipMark className="size-6" portal /><span className="sr-only">Gateship</span></h1>
 				</div>
 				<div className="min-w-0 px-2 text-center type-editorial-title text-sm sm:text-base" data-slot="shell-surface-title" title={title}>
 					<span className="block overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
@@ -847,11 +903,6 @@ export function ShellSidebar({
 	 * axis. */
 	return (
 		<header className={cn('scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:py-(--shell-inset)', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
-			<h1 className="flex items-center gap-2 lg:hidden">
-				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
-				{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- the wordmark's own proportions, taken from its viewBox so the height alone sizes it without a layout shift */}
-				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
-			</h1>
 			<ShellNavigation
 				catalog={catalog}
 				projects={projects}

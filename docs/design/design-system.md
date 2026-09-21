@@ -110,7 +110,9 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | --- | --- |
 | The sidebar is one flat list that never reorders: Now, Runs, Queue, Insights. The project switcher above it is a filter; with a project selected, Runs and Queue open that project's own surfaces | Behaviour tests |
 | The lower group holds Project settings (only with a project selected), Projects and Global settings, which keeps the last row | Behaviour tests |
-| Every page has a row that is current on it, and its title matches that row | Behaviour tests |
+| Every page has a row that is current on it, and its title matches that row. The title sits on the true centre of the controls row | Behaviour tests |
+| The switcher's trigger belongs to the project's name. Open, it carries no shortcut chip (the menu's rows teach the shortcut) and writes the state out only when it moves or waits; idle is the hollow dot. On the rail the chip is the trigger | Behaviour tests |
+| A navigation count says how many, and says nothing when there are none | Behaviour tests |
 | A screen has one left edge and one right edge, shared by the controls row and every block under it, at every breakpoint. The outer ring is that edge: cards, groups of figures, tables and queues all carry it. The content column reserves its scrollbar on the end side only, and the controls row reserves the same gutter | Visual gate baselines, judgment |
 | Blocks sit 24px apart, a tab list and its panel included | Judgment |
 | Collapsing the sidebar moves nothing: the icon axis stays at x=44, rows are 32px, and the first row sits on the line of the panel's controls (`--shell-inset`). Icon-only rows keep their label, tooltip and active background | Visual gate baselines |
@@ -123,7 +125,7 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 
 | Rule | Check |
 | --- | --- |
-| At 390px every destination stays reachable and the sidebar becomes horizontal navigation | Visual gate baselines |
+| Below `lg` the shell is an app: the switcher on top, the controls row as the app bar (mark, centred title, actions) and a tab bar at the foot with the four lists and More, which holds the settings and the registry. The tab bar is the last row of the column, not a layer over the content | Behaviour tests, visual gate baselines |
 | Grids collapse to one column; a grid of fields stacks, and each field keeps a real label | Visual gate, behaviour tests |
 | Interactive targets offer at least 44px to a coarse pointer. Labels wrap instead of being clipped | Kit defaults, judgment |
 | The wide preference releases the measure for lists alone, and only as far as a list needs it. Every block keeps the 80rem measure; a data table starts there and grows when its columns ask for the room | Judgment |
