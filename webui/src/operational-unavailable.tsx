@@ -1,4 +1,6 @@
 import React from 'react';
+import { Card, CardPanel } from './components/ui/card.tsx';
+import { Skeleton } from './components/ui/skeleton.tsx';
 import type { Locale } from './locale.ts';
 
 /** A failed read is named where its dependent surface would otherwise look empty. */
@@ -24,10 +26,13 @@ export function OperationalReadPanel({ resource, detail, loaded, pending = false
 	children: React.ReactNode;
 }): React.ReactElement {
 	if (detail === undefined && !pending) return <>{children}</>;
-	if (detail === undefined) return loaded ? <>{children}</> : <div aria-busy="true" aria-label={locale === 'pt-BR' ? `Carregando ${resource}` : `Loading ${resource}`} className="rounded-xl border border-border bg-card p-4 text-sm" role="status">
-		<span className="sr-only">{locale === 'pt-BR' ? `Carregando ${resource}…` : `Loading ${resource}…`}</span>
-		<div aria-hidden="true" className="h-4 w-2/5 rounded-md bg-muted" />
-	</div>;
+	/* The stand-in wears the frame the panel will: the ring and the inset every card has, so nothing shifts when it arrives. */
+	if (detail === undefined) return loaded ? <>{children}</> : <Card aria-busy="true" aria-label={locale === 'pt-BR' ? `Carregando ${resource}` : `Loading ${resource}`} role="status">
+		<CardPanel>
+			<span className="sr-only">{locale === 'pt-BR' ? `Carregando ${resource}…` : `Loading ${resource}…`}</span>
+			<Skeleton aria-hidden="true" className="h-4 w-2/5" />
+		</CardPanel>
+	</Card>;
 	const unavailable = <OperationalUnavailable detail={detail} locale={locale} resource={resource} />;
 	return loaded ? <>{unavailable}{children}</> : unavailable;
 }

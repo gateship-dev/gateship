@@ -43,8 +43,9 @@ export function ProjectActivity({ entry, catalog, locale }: { entry: ProjectEntr
 	if (entry.database.state !== 'available') return <span className="text-muted-foreground">{catalog.databaseUnavailable}</span>;
 	if (entry.activeRun === null) return <span className="text-muted-foreground">{catalog.noRun}</span>;
 	/* Straight to the run: whoever reads "waiting for you" wants that run, not the list it sits in. */
-	return <a className={cn(TEXT_LINK_CLASS, 'inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1')} href={`/projects/${encodeURIComponent(entry.project.id)}/runs/${encodeURIComponent(entry.activeRun.id)}`}>
-		<span className="type-data text-xs">{entry.activeRun.issueId}</span>
+	/* The id keeps to the cell: an id longer than the column would run under its neighbour, so it truncates and the title carries it whole. */
+	return <a className={cn(TEXT_LINK_CLASS, 'flex max-w-full flex-wrap items-center gap-x-2 gap-y-1')} href={`/projects/${encodeURIComponent(entry.project.id)}/runs/${encodeURIComponent(entry.activeRun.id)}`} title={entry.activeRun.issueId}>
+		<span className="type-data max-w-full truncate text-xs">{entry.activeRun.issueId}</span>
 		<StatusDot active={isRunActive(entry.activeRun.state as RunState)} tone={toneOf(entry.activeRun.state as RunState)}>{stateLabel(entry.activeRun.state, locale)}</StatusDot>
 	</a>;
 }
@@ -70,7 +71,7 @@ function ProjectStatusTable({ overview, catalog, locale }: { overview: ProjectOp
 	const columns = useMemo<GateshipColumnDef<ProjectEntry>[]>(() => {
 		const defs: GateshipColumnDef<ProjectEntry>[] = [
 			{ id: 'project', header: catalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.project.id)}`}>{row.original.project.name}</a>{row.original.project.current ? <span className="hidden @xl:inline-flex"><Tag>{projectCatalog.currentBadge}</Tag></span> : null}</span> },
-			{ id: 'activity', header: catalog.activity, meta: { className: 'max-w-56' }, cell: ({ row }) => <ProjectActivity catalog={catalog} entry={row.original} locale={locale} /> },
+			{ id: 'activity', header: catalog.activity, meta: { className: 'max-w-56 overflow-hidden' }, cell: ({ row }) => <ProjectActivity catalog={catalog} entry={row.original} locale={locale} /> },
 			{ id: 'readiness', header: projectCatalog.readinessLabel, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Badge variant={READINESS_TONE[row.original.project.readiness]}>{projectCatalog.readiness[row.original.project.readiness]}</Badge> },
 			{ id: 'backlog', header: catalog.backlogLabel, meta: { align: 'end', className: 'type-data', hideBelow: 'sm' }, cell: ({ row }) => row.original.backlog.state === 'available' ? row.original.backlog.counts.planned : <span className="font-sans text-muted-foreground">{catalog.partial}</span> },
 			{ id: 'lastDelivery', header: catalog.lastDelivery, meta: { hideBelow: 'md' }, cell: ({ row }) => <LastDelivery catalog={catalog} entry={row.original} /> },

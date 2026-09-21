@@ -3,6 +3,7 @@ import type { AppProps } from '../app-props.ts';
 import { fetchProjectOnboarding, type ProjectOnboardingSnapshot } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx';
 import { Tag } from '../components/ui/tag.tsx';
 import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { CheckField, FormField } from '../components/ui/card-layout.tsx';
@@ -50,10 +51,6 @@ export function onboardingCheckPresentation(state: string): { label: 'ready' | '
 
 export function onboardingDetailsVisible(choice: 'existing' | 'new' | null): boolean {
 	return choice !== null;
-}
-
-export function onboardingSelectionPressed(selected: boolean): boolean {
-	return selected;
 }
 
 export function onboardingTargetGuidance(operation: 'register' | 'import' | 'create' | null, local: string, remote: string): string {
@@ -150,12 +147,16 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 			<Card>
 				<CardHeader><CardTitle>{onboarding.choice.title}</CardTitle><CardDescription>{onboarding.choice.description}</CardDescription></CardHeader>
 				<CardPanel>
-					<div className="grid gap-3 sm:grid-cols-2">
-						<Button aria-pressed={onboardingSelectionPressed(choice === 'existing')} variant={choice === 'existing' ? 'default' : 'outline'} onClick={() => { setChoice('existing'); setOperation('register'); setProposalConfirmed(null); }}>{onboarding.choice.existing}</Button>
-						<Button aria-pressed={onboardingSelectionPressed(choice === 'new')} variant={choice === 'new' ? 'default' : 'outline'} onClick={() => { setChoice('new'); setOperation('create'); setProposalConfirmed(null); }}>{onboarding.choice.fresh}</Button>
-					</div>
+					{/* One choice of two, and then one of two ways in: a toggle group, as every exclusive choice in the product is. */}
+					<ToggleGroup aria-label={onboarding.choice.title} spacing={1} value={choice === null ? [] : [choice]} variant="outline" onValueChange={(next) => { const value = next[0]; if (value === 'existing') { setChoice('existing'); setOperation('register'); setProposalConfirmed(null); } else if (value === 'new') { setChoice('new'); setOperation('create'); setProposalConfirmed(null); } }}>
+						<ToggleGroupItem value="existing">{onboarding.choice.existing}</ToggleGroupItem>
+						<ToggleGroupItem value="new">{onboarding.choice.fresh}</ToggleGroupItem>
+					</ToggleGroup>
 					{choice !== null ? <FormField className="mt-3" measure="prose"><span className="font-medium">{onboarding.choice.targetLabel}</span><Input mono onChange={(event) => { setTarget((event.currentTarget as unknown as { value: string }).value); setProposalConfirmed(null); }} placeholder={onboardingTargetPlaceholder(operation, onboarding.choice.targetPlaceholder, onboarding.choice.repositoryPlaceholder)} value={target} /><span className="text-muted-foreground text-xs">{onboardingTargetGuidance(operation, onboarding.choice.localTargetGuidance, onboarding.choice.remoteTargetGuidance)}</span></FormField> : null}
-					{choice === 'existing' ? <div className="mt-3 flex flex-wrap gap-2"><Button aria-pressed={onboardingSelectionPressed(operation === 'register')} size="sm" variant={operation === 'register' ? 'default' : 'outline'} onClick={() => { setOperation('register'); setProposalConfirmed(null); }}>{catalog.register.title}</Button><Button aria-pressed={onboardingSelectionPressed(operation === 'import')} size="sm" variant={operation === 'import' ? 'default' : 'outline'} onClick={() => { setOperation('import'); setProposalConfirmed(null); }}>{catalog.import.title}</Button></div> : null}
+					{choice === 'existing' ? <ToggleGroup aria-label={onboarding.choice.existing} className="mt-3 max-w-full flex-wrap" spacing={1} value={operation === null ? [] : [operation]} variant="outline" onValueChange={(next) => { const value = next[0]; if (value === 'register' || value === 'import') { setOperation(value); setProposalConfirmed(null); } }}>
+						<ToggleGroupItem value="register">{catalog.register.title}</ToggleGroupItem>
+						<ToggleGroupItem value="import">{catalog.import.title}</ToggleGroupItem>
+					</ToggleGroup> : null}
 				</CardPanel>
 			</Card>
 			{onboardingDetailsVisible(choice) ? <>
