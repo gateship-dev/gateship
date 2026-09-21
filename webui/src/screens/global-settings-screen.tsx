@@ -7,16 +7,20 @@ import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { AgentDefaultsPanel, NotificationsPanel, OperatorProfilePanel, SelfUpdatePanel } from './settings.tsx';
+import { useTabParam } from '../lib/use-tab-param.ts';
+
+const GLOBAL_TABS = ['agents', 'operator', 'notifications', 'updates'] as const;
 
 export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
 	const failed = (resource: keyof NonNullable<typeof props.operationalFailures>): string | undefined => props.operationalFailures?.[resource];
 	const loaded = (resource: keyof NonNullable<typeof props.operationalLoaded>): boolean => props.operationalLoaded?.[resource] === true;
 	const pending = (resource: keyof NonNullable<typeof props.operationalPending>): boolean => props.operationalPending?.[resource] === true;
+	const [tab, setTab] = useTabParam(GLOBAL_TABS, 'agents');
 	return (
 		<SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.routeLabels.globalSettings} status={props.status}>
 			{/* Four unrelated questions, one visible at a time, as the project's own settings are. */}
-			<Tabs defaultValue="agents">
+			<Tabs value={tab} onValueChange={(next) => setTab(next as typeof tab)}>
 				<TabsList aria-label={LOCALE_CATALOG[props.locale].shell.routeLabels.globalSettings}>
 					<TabsTab value="agents">{catalog.globalTabs.agents}</TabsTab>
 					<TabsTab value="operator">{catalog.globalTabs.operator}</TabsTab>

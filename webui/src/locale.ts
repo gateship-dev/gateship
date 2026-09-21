@@ -385,10 +385,10 @@ export interface WorkCatalog {
 	/** The two suggestion lists: their quick views, search and columns. */
 	list: {
 		views: string;
-		pendingProposals: (formattedCount: string) => string;
-		resolvedProposals: (formattedCount: string) => string;
-		pendingFindings: (formattedCount: string) => string;
-		resolvedFindings: (formattedCount: string) => string;
+		pendingProposals: string;
+		resolvedProposals: string;
+		pendingFindings: string;
+		resolvedFindings: string;
 		searchProposals: string;
 		searchFindings: string;
 		columns: { title: string; origin: string; run: string; status: string; severity: string; rule: string; location: string; occurrences: string; actions: string };
@@ -961,10 +961,10 @@ export const LOCALE_CATALOG = {
 			},
 			list: {
 				views: 'Views',
-				pendingProposals: (count) => `Pending ${count}`,
-				resolvedProposals: (count) => `Resolved ${count}`,
-				pendingFindings: (count) => `Pending ${count}`,
-				resolvedFindings: (count) => `Resolved ${count}`,
+				pendingProposals: 'Pending',
+				resolvedProposals: 'Resolved',
+				pendingFindings: 'Pending',
+				resolvedFindings: 'Resolved',
 				searchProposals: 'Search proposals',
 				searchFindings: 'Search findings',
 				columns: { title: 'Proposal', origin: 'Source issue', run: 'Source run', status: 'Status', severity: 'Severity', rule: 'Rule', location: 'Location', occurrences: 'Occurrences', actions: 'Actions' },
@@ -1438,10 +1438,10 @@ export const LOCALE_CATALOG = {
 			},
 			list: {
 				views: 'Visões',
-				pendingProposals: (count) => `Pendentes ${count}`,
-				resolvedProposals: (count) => `Resolvidas ${count}`,
-				pendingFindings: (count) => `Pendentes ${count}`,
-				resolvedFindings: (count) => `Resolvidos ${count}`,
+				pendingProposals: 'Pendentes',
+				resolvedProposals: 'Resolvidas',
+				pendingFindings: 'Pendentes',
+				resolvedFindings: 'Resolvidos',
 				searchProposals: 'Buscar propostas',
 				searchFindings: 'Buscar achados',
 				columns: { title: 'Proposta', origin: 'Issue de origem', run: 'Run de origem', status: 'Estado', severity: 'Severidade', rule: 'Regra', location: 'Local', occurrences: 'Ocorrências', actions: 'Ações' },

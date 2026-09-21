@@ -504,8 +504,8 @@ function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: 
  * turn, and a number beside a link is orientation, not a call. Unknown
  * renders as nothing, never as a zero the service did not report. */
 function NavCount({ value }: { value: number | null }): React.ReactElement | null {
-	/* Nothing active, nothing waiting, nothing approved: a row of zeros is noise beside the labels. */
-	if (value === null || value === 0) return null;
+	/* Unknown renders nothing, and so does zero: that one is the kit's rule for every count. */
+	if (value === null) return null;
 	return <Count className="ml-auto" data-slot="navigation-count" form="plain">{value}</Count>;
 }
 
@@ -589,7 +589,7 @@ export function ShellTabBar({ locale, route, selectedProjectId, projects, overvi
 						<a aria-current={item.active ? 'page' : undefined} className={TAB_CLASS} href={item.href}>
 							{/* The figure keeps the sidebar's voice: small, mono, the tab's own colour. It hangs off the tab, not off the 16px glyph, so it spills out of nothing. */}
 							<NavGlyph name={item.glyph} />
-							{item.count === null || item.count === 0 ? null : <Count className="absolute top-1 left-1/2 ml-3" data-slot="tab-count" form="plain">{item.count}</Count>}
+							{item.count === null ? null : <Count className="absolute top-1 left-1/2 ml-3" data-slot="tab-count" form="plain">{item.count}</Count>}
 							<span className="max-w-full truncate">{item.label}</span>
 						</a>
 					</li>

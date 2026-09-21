@@ -158,6 +158,7 @@ import {
 import { CohortRowDetail, queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
 import { QueueEmptyState, QueueRow, queueErrorsForFilter, queueStatus, sortQueuesByUrgency } from '../../webui/src/screens/overview-queues-screen.tsx';
 import { formatWhen, queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
+import { readTab } from '../../webui/src/lib/use-tab-param.ts';
 import { DiagnosticsPanel, ProposalsPanel } from '../../webui/src/screens/work-screen.tsx';
 import { type NotificationItem, NotificationsPopover, notificationItems, type PanelKeyEvent, PanelToggleGlyph, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
@@ -5677,6 +5678,24 @@ describe('shared live edge and responsive surface content', () => {
 });
 
 describe('screen derivations', () => {
+	test('the open tab is read from the address, and an unknown one falls back to the default', () => {
+		const tabs = ['queue', 'approval', 'proposals'] as const;
+		const at = (search: string) => ({ location: { pathname: '/projects/p/work', search, hash: '' } });
+		expect(readTab(tabs, 'queue', at('?tab=proposals'))).toBe('proposals');
+		expect(readTab(tabs, 'queue', at('?tab=nowhere'))).toBe('queue');
+		expect(readTab(tabs, 'approval', at(''))).toBe('approval');
+		// The screen opens on it: the selected tab and the visible panel follow the address.
+		const runtime = globalThis as unknown as { location?: unknown };
+		const previous = runtime.location;
+		runtime.location = { pathname: '/projects/project-current/work', search: '?tab=proposals', hash: '' };
+		try {
+			const html = renderAt('/projects/project-current/work');
+			const selected = openingTags(html).filter((tag) => tag.includes('data-slot="tabs-tab"') && tag.includes('aria-selected="true"'));
+			expect(selected).toHaveLength(1);
+			expect(html.slice(html.indexOf(selected[0]!))).toMatch(/^[^>]*>Proposals/);
+		} finally { runtime.location = previous; }
+	});
+
 	test('a moment is one cell: day and time, and the year only when it is not the current one', () => {
 		const now = new Date('2026-09-20T00:00:00.000Z');
 		expect(formatWhen('2026-09-16T08:47:00.000Z', 'pt-BR', now)).toBe('16/09 08:47');

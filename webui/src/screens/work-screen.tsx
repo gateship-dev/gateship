@@ -26,6 +26,9 @@ import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from '
 import { fieldReader, formatCount } from './runs.tsx';
 import { draftChanged } from './runs-screen.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
+import { useTabParam } from '../lib/use-tab-param.ts';
+
+const WORK_TABS = ['queue', 'approval', 'ideas', 'diagnostics', 'proposals'] as const;
 
 function parseLines(value: string, optional = false): string[] {
 	if (optional && value.trim() === '') return [];
@@ -517,11 +520,12 @@ function SuggestionDetail({ evidence, meta, children }: { evidence: string; meta
 }
 
 type SuggestionView = 'pending' | 'resolved';
-function SuggestionViews({ label, value, onChange, pending, resolved }: { label: string; value: SuggestionView; onChange: (value: SuggestionView) => void; pending: string; resolved: string }): React.ReactElement {
+/* A view's count is a Count, the figure every label in the product carries: mono, quiet, absent at zero. The accessible name keeps the number. */
+function SuggestionViews({ label, value, onChange, pending, resolved }: { label: string; value: SuggestionView; onChange: (value: SuggestionView) => void; pending: [string, string]; resolved: [string, string] }): React.ReactElement {
 	return (
 		<ToggleGroup aria-label={label} spacing={1} value={[value]} variant="outline" onValueChange={(next) => { if (next[0] !== undefined) onChange(next[0] as SuggestionView); }}>
-			<ToggleGroupItem aria-label={pending} value="pending">{pending}</ToggleGroupItem>
-			<ToggleGroupItem aria-label={resolved} value="resolved">{resolved}</ToggleGroupItem>
+			<ToggleGroupItem aria-label={`${pending[0]} ${pending[1]}`} value="pending">{pending[0]}<Count form="plain">{pending[1]}</Count></ToggleGroupItem>
+			<ToggleGroupItem aria-label={`${resolved[0]} ${resolved[1]}`} value="resolved">{resolved[0]}<Count form="plain">{resolved[1]}</Count></ToggleGroupItem>
 		</ToggleGroup>
 	);
 }
@@ -552,7 +556,7 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 	return (
 		<>
 			<DataTableToolbar>
-				<SuggestionViews label={catalog.list.views} pending={catalog.list.pendingFindings(formatCount(diagnostics.findings.length, locale))} resolved={catalog.list.resolvedFindings(formatCount(diagnostics.resolvedFindings.length, locale))} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
+				<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingFindings, formatCount(diagnostics.findings.length, locale)]} resolved={[catalog.list.resolvedFindings, formatCount(diagnostics.resolvedFindings.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
 				<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchFindings} table={table} />
 			</DataTableToolbar>
 			<DataTable
@@ -708,7 +712,7 @@ export function ProposalsPanel({
 	return (
 		<>
 			<DataTableToolbar>
-				<SuggestionViews label={catalog.list.views} pending={catalog.list.pendingProposals(formatCount(proposals.length, locale))} resolved={catalog.list.resolvedProposals(formatCount(resolvedProposals.length, locale))} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
+				<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingProposals, formatCount(proposals.length, locale)]} resolved={[catalog.list.resolvedProposals, formatCount(resolvedProposals.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
 				<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchProposals} table={table} />
 			</DataTableToolbar>
 			{view === 'resolved' ? <p className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm"><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</p> : null}
@@ -755,9 +759,11 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(knownRuns[0] ?? null, props.selectedIssueId !== null);
 	const runsUnavailable = failed('Runs');
 	const reviewActionsDisabled = props.pending || runsUnavailableInitially;
+	/* Drafts waiting for approval open the page on them, unless the address names a tab. */
+	const [tab, setTab] = useTabParam(WORK_TABS, props.drafts.length > 0 ? 'approval' : 'queue');
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.work} status={props.status}>
-			<Tabs defaultValue={props.drafts.length > 0 ? 'approval' : 'queue'}>
+			<Tabs value={tab} onValueChange={(next) => setTab(next as typeof tab)}>
 				<TabsList aria-label={localeCatalog.shell.routeLabels.work}>
 					<TabsTab value="queue">
 						{catalog.tabs.queue}

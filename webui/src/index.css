@@ -521,6 +521,34 @@ html.gship-harness-reduced-motion *::after {
 	}
 }
 
+/* The same fade along the inline axis, for a row that scrolls sideways: tabs, quick views. */
+@utility scroll-fade-x {
+	--scroll-fade-size: 1.5rem;
+	mask-image: linear-gradient(to right, black 0, black 100%);
+	mask-repeat: no-repeat;
+	mask-size: 100% 100%;
+
+	@supports (animation-timeline: scroll()) {
+		animation: scroll-fade-x both linear;
+		animation-timeline: scroll(self inline);
+	}
+}
+
+@keyframes scroll-fade-x {
+	0% {
+		mask-image: linear-gradient(to right, black 0, black calc(100% - var(--scroll-fade-size)), transparent 100%);
+	}
+
+	1%,
+	99% {
+		mask-image: linear-gradient(to right, transparent 0, black var(--scroll-fade-size), black calc(100% - var(--scroll-fade-size)), transparent 100%);
+	}
+
+	100% {
+		mask-image: linear-gradient(to right, transparent 0, black var(--scroll-fade-size), black 100%);
+	}
+}
+
 @keyframes scroll-fade {
 	0% {
 		mask-image: linear-gradient(to bottom, black 0, black calc(100% - var(--scroll-fade-size)), transparent 100%);

@@ -180,7 +180,7 @@ function QuickViews({ query, update, catalog }: { query: OverviewRunsQuery; upda
 		{ value: 'all', label: catalog.views.all }, { value: 'active', label: catalog.views.active }, { value: 'needs-you', label: catalog.views.needsYou }, { value: 'shipped', label: catalog.views.shipped }, { value: 'failed', label: catalog.views.failed },
 	];
 	return (
-		<div className="scroll-container max-w-full overflow-x-auto" data-slot="overview-runs-views-scroll">
+		<div className="scroll-container scroll-fade-x max-w-full overflow-x-auto" data-slot="overview-runs-views-scroll">
 		<ToggleGroup aria-label={catalog.viewsLabel} className="w-max" data-slot="overview-runs-views" spacing={1} value={[query.group ?? 'all']} variant="outline" onValueChange={(value) => { const next = value[0]; if (next !== undefined) update({ group: next === 'all' ? undefined : next as OverviewRunsQuery['group'] }); }}>
 			{views.map((view) => <ToggleGroupItem aria-label={view.label} key={view.value} value={view.value ?? 'all'}>{view.label}</ToggleGroupItem>)}
 		</ToggleGroup>

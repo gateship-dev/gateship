@@ -11,7 +11,7 @@
 // stack layout, which every surface on this screen relies on.
 
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
-import type React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
 	segmentedControlItemLayoutClassName,
 	segmentedControlItemSizeClassNames,
@@ -32,20 +32,32 @@ export function Tabs({
 	);
 }
 
+/* A tab opened by its address, or by the back button, can sit past the edge of a narrow list: bring it in, without moving the page. */
+function revealActiveTab(node: unknown): void {
+	const scroller = node as { scrollLeft: number; clientWidth: number; querySelector: (selector: string) => { offsetLeft: number; offsetWidth: number } | null } | null;
+	const active = scroller?.querySelector('[data-slot="tabs-tab"][aria-selected="true"]');
+	if (scroller === null || scroller === undefined || active === null || active === undefined) return;
+	const hidden = active.offsetLeft < scroller.scrollLeft || active.offsetLeft + active.offsetWidth > scroller.scrollLeft + scroller.clientWidth;
+	if (hidden) scroller.scrollLeft = active.offsetLeft - (scroller.clientWidth - active.offsetWidth) / 2;
+}
+
 export function TabsList({
 	className,
 	children,
 	...props
 }: Omit<TabsPrimitive.List.Props, 'className'> & { className?: string }): React.ReactElement {
+	const scroller = useRef<HTMLDivElement>(null);
+	/* After every render, not once: the selected tab changes without this list remounting. */
+	useEffect(() => revealActiveTab(scroller.current));
 	return (
 		<div
 			className="relative w-fit max-w-full"
 			data-slot="tabs-scroll-frame"
 		>
-			<div className="scroll-container max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
+			<div className="scroll-container scroll-fade-x max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll" ref={scroller}>
 				<TabsPrimitive.List
 					className={cn(
-						'relative z-0 flex w-max items-center justify-start gap-x-1 rounded-lg bg-muted py-1 pr-8 pl-1 text-muted-foreground/72 sm:pr-1',
+						'relative z-0 flex w-max items-center justify-start gap-x-1 rounded-lg bg-muted p-1 text-muted-foreground/72',
 						className,
 					)}
 					data-slot="tabs-list"
@@ -72,9 +84,10 @@ export function TabsTab({
 	return (
 		<TabsPrimitive.Tab
 			className={cn(
-				'relative flex shrink-0 grow cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-transparent font-medium text-base outline-none pointer-coarse:min-h-11 ' +
+				/* One size at every width: a tab is not a field, so nothing asks for 16px on a phone, and five of them at 16px need 603px. */
+				'relative flex shrink-0 grow cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-transparent font-medium text-sm outline-none pointer-coarse:min-h-11 ' +
 					'transition-[color,background-color,box-shadow] hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none ' +
-					'data-active:text-foreground data-disabled:pointer-events-none data-disabled:opacity-64 sm:text-sm',
+					'data-active:text-foreground data-disabled:pointer-events-none data-disabled:opacity-64',
 				segmentedControlItemLayoutClassName,
 				segmentedControlItemSizeClassNames.default,
 				className,

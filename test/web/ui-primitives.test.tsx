@@ -28,6 +28,7 @@ import { StatusDot } from '../../webui/src/components/ui/status-dot.tsx';
 import { Tag } from '../../webui/src/components/ui/tag.tsx';
 import {
 	Tabs,
+	TabsCount,
 	TabsList,
 	TabsPanel,
 	TabsTab,
@@ -266,7 +267,11 @@ describe('ui primitives', () => {
 		expect(html).toContain('data-slot="tabs-scroll"');
 		expect(html).toContain('overflow-x-auto');
 		expect(html).toContain('scroll-container');
-		expect(html).toContain('pr-8');
+		// The fade at its edges says the row scrolls; no trailing pad pretends to.
+		expect(html).toContain('scroll-fade-x');
+		expect(html).not.toContain('pr-8');
+		// One size at every width: a tab is not a field.
+		expect(html).not.toContain('text-base');
 		expect(html).toContain('aria-label="Work"');
 		for (const label of ['Queue', 'Approval', 'Ideas', 'Suggestions']) {
 			expect(html).toContain(`>${label}</button>`);
@@ -274,6 +279,15 @@ describe('ui primitives', () => {
 		expect(html).toContain('whitespace-nowrap');
 		expect(html).toContain('pointer-coarse:min-h-11');
 		expect(html).toContain('motion-reduce:transition-none');
+	});
+
+	test('a count says how many, and says nothing when there are none', () => {
+		expect(renderToStaticMarkup(<Count>3</Count>)).toContain('>3</span>');
+		expect(renderToStaticMarkup(<Count>{0}</Count>)).toBe('');
+		expect(renderToStaticMarkup(<Count form="plain">0</Count>)).toBe('');
+		expect(renderToStaticMarkup(<TabsCount>{0}</TabsCount>)).toBe('');
+		// Unknown is not zero: the dash a screen shows for it stays.
+		expect(renderToStaticMarkup(<TabsCount>—</TabsCount>)).toContain('—');
 	});
 
 	test('a compact empty state keeps its explanation without reserving a tall region', () => {

@@ -4,7 +4,8 @@
 // so a column of them lines up. `plain` is a figure with no surface (a sidebar
 // row wears its row's colour), `chip` sits in a quiet pill, `strong` is the
 // chip that has to be seen over an icon. `warning` says the number counts
-// something waiting on the operator.
+// something waiting on the operator. A count says how many, and says nothing
+// when there are none: zero renders no element at all.
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
@@ -26,6 +27,7 @@ export function Count({
 	tone = 'neutral',
 	className,
 	...props
-}: React.ComponentProps<'span'> & { form?: keyof typeof FORM; tone?: keyof typeof TONE }): React.ReactElement {
+}: React.ComponentProps<'span'> & { form?: keyof typeof FORM; tone?: keyof typeof TONE }): React.ReactElement | null {
+	if (children === 0 || children === '0') return null;
 	return <span className={cn('font-mono text-xs tabular-nums', FORM[form], TONE[tone][form], className)} data-slot="count" {...props}>{children}</span>;
 }
