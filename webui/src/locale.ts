@@ -215,7 +215,7 @@ export interface RunInspectorCatalog {
 	stateLabels: Readonly<Record<RunState, string>>;
 	stageLabels: Readonly<Record<'queued' | 'working' | 'verify' | 'review' | 'full-verify' | 'ready-to-ship' | 'shipping' | 'done', string>>;
 	stageStatusLabels: Readonly<Record<'complete' | 'current' | 'future', string>>;
-	stageMap: { title: string; noHistory: string; modifierLabel: string };
+	stageMap: { title: string; noHistory: string; modifierLabel: string; position: (step: number, total: number, label: string) => string };
 	phaseLabel: (phase: string) => string;
 	commandLabels: {
 		resume: string;
@@ -778,7 +778,7 @@ export const LOCALE_CATALOG = {
 			},
 			stageLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' },
 			stageStatusLabels: { complete: 'completed', current: 'current stage', future: 'upcoming' },
-			stageMap: { title: 'Run stages', noHistory: 'Stage history is unavailable; no progress inferred.', modifierLabel: 'Current state' },
+			stageMap: { title: 'Run stages', noHistory: 'Stage history is unavailable; no progress inferred.', modifierLabel: 'Current state', position: (step, total, label) => `Stage ${step} of ${total} · ${label}` },
 			phaseLabel: (phase) => `Phase ${phase}`,
 			commandLabels: {
 				resume: 'Resume',
@@ -1258,7 +1258,7 @@ export const LOCALE_CATALOG = {
 			},
 			stageLabels: { queued: 'Na fila', working: 'Em andamento', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', 'ready-to-ship': 'Pronta para envio', shipping: 'Enviando', done: 'Concluída' },
 			stageStatusLabels: { complete: 'concluída', current: 'etapa atual', future: 'próxima' },
-			stageMap: { title: 'Etapas da run', noHistory: 'O histórico de etapas está indisponível; nenhum progresso foi inferido.', modifierLabel: 'Estado atual' },
+			stageMap: { title: 'Etapas da run', noHistory: 'O histórico de etapas está indisponível; nenhum progresso foi inferido.', modifierLabel: 'Estado atual', position: (step, total, label) => `Etapa ${step} de ${total} · ${label}` },
 			phaseLabel: (phase) => `Fase ${phase}`,
 			commandLabels: {
 				resume: 'Retomar',

@@ -130,6 +130,9 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | Collapsing the sidebar moves nothing: the icon axis stays at x=44, rows are 32px, and the first row sits on the line of the panel's controls (`--shell-inset`). Icon-only rows keep their label, tooltip and active background | Visual gate baselines |
 | The project filter lives in the switcher. A surface does not carry a second project select; a `?projectId=` link still scopes it | Behaviour tests |
 | Every screen puts what waits on the operator before autonomous activity, history and statistics | Judgment |
+| The stage map joins its stages with a real line, darker where the run has been, so the line reads the progress too. It takes its label size from its own width, and below `sm` it is one row of dots with a caption that names where the run is. A run with no stage history draws no map: a sentence says so | Behaviour tests |
+| A run's address opens that run, however old: one the recent list no longer carries is read by its id, and an unknown id says not found with the way back, never that the project has no runs | Behaviour tests |
+| An activity line is one line: when, who, the phase as a tag, what. Below `sm` its detail is one truncated line, and the disclosure holds the rest | Judgment |
 | A merged run does not repeat that its CI passed. A run's duration excludes the time it spent waiting on the operator | Behaviour tests |
 | Plain links are the routing mechanism | Judgment |
 

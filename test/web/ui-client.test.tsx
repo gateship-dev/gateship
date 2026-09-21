@@ -995,6 +995,19 @@ describe('runs surface', () => {
 		expect(working).toContain('aria-current="step"');
 		expect(buttonIsEnabled(working, 'Cancel')).toBe(true);
 		expect(hasButton(working, 'Ship')).toBe(false);
+		// The stages are joined by a real line, darker where the run has been, and a narrow map names only where the run is.
+		const map = working.slice(working.indexOf('data-slot="run-stage-map"'), working.indexOf('</nav>', working.indexOf('data-slot="run-stage-map"')));
+		expect((map.match(/data-slot="stage-connector"/g) ?? []).length).toBe(7);
+		expect((map.match(/data-walked=""/g) ?? []).length).toBe(1);
+		expect(elementWith(map, 'data-slot="stage-connector"')).toContain('h-px');
+		expect(map).toContain('Stage 2 of 8 · Working');
+		expect(elementWith(map, 'data-slot="stage-caption"')).toContain('sm:hidden');
+		// A run with no stage history draws no empty map: the sentence says it, and the state stays.
+		const bare = runsPage({ runs: [runIn('failed')] });
+		const bareMap = bare.slice(bare.indexOf('data-slot="run-stage-map"'), bare.indexOf('</nav>', bare.indexOf('data-slot="run-stage-map"')));
+		expect(bareMap).toContain('Stage history is unavailable');
+		expect(bareMap).not.toContain('<ol');
+		expect(bareMap).not.toContain('data-slot="stage-connector"');
 		// What ends a run says so in the danger family; what the state asks for is the primary action and closes the row.
 		const variantOf = (html: string, label: string): string | undefined => openingTags(html).find((tag) => tag.startsWith('<button') && html.includes(`${tag}${label}<`))?.match(/data-variant="([a-z]+)"/)?.[1];
 		expect(variantOf(working, 'Cancel')).toBe('destructive');

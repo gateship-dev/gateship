@@ -358,12 +358,13 @@ function RunActivityEntry({
 		<>
 			<time className="type-data w-16 shrink-0 text-muted-foreground text-xs">{formatEventTime(event.createdAt, locale)}</time>
 			<span className="w-24 shrink-0 font-medium">{catalog.roleLabels[role]}</span>
-			<span className="w-24 shrink-0 text-muted-foreground">{phase === null ? '' : catalog.phaseLabels[phase]}</span>
-			<span className="flex min-w-0 basis-full flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs sm:flex-1 sm:basis-0">
-				<code className="break-all">{kinds}</code>
+			{/* The phase is as wide as its name: a fixed column broke "Full verify" in two on every line. Below sm the detail is one truncated line; the disclosure holds the rest. */}
+			<span className="flex min-w-0 basis-full items-center gap-x-2 gap-y-1 overflow-hidden text-muted-foreground text-xs sm:flex-1 sm:basis-0 sm:flex-wrap sm:overflow-visible">
+				{phase === null ? null : <Tag>{catalog.phaseLabels[phase]}</Tag>}
+				<code className="min-w-0 truncate sm:break-all sm:whitespace-normal">{kinds}</code>
 				{/* A tool result can run to pages: the line keeps its first stretch, the disclosure keeps the rest. */}
-				{metadata.map((item) => <span className="max-w-full truncate" key={item} title={item.length > 120 ? undefined : item}>{item}</span>)}
-				{technical.map((item) => <code className="max-w-full truncate" key={item}>{item}</code>)}
+				{metadata.map((item) => <span className="min-w-0 max-w-full truncate" key={item} title={item.length > 120 ? undefined : item}>{item}</span>)}
+				{technical.map((item) => <code className="min-w-0 max-w-full truncate" key={item}>{item}</code>)}
 				{label === null ? null : <Tag>{label}</Tag>}
 				{event.kind === 'run.cycle-response' ? <Tag>{catalog.cycleResponseLabel}</Tag> : null}
 				{attention ? <Badge variant="warning">{catalog.attentionLabel}</Badge> : null}
@@ -449,6 +450,31 @@ export function RunActivity({
 	);
 }
 
+/* One stage of the map: the line from the previous stage, then the dot over its name. */
+function RunStage({ catalog, phase, status, attention, first }: { catalog: RunInspectorCatalog; phase: (typeof RUN_PHASES)[number]; status: 'complete' | 'current' | 'future'; attention: boolean; first: boolean }): React.ReactElement {
+	const walked = status !== 'future';
+	const glyph = status === 'complete' ? '✓' : status === 'current' ? '•' : '○';
+	return (
+		<li className="relative flex min-w-0 flex-1 flex-col items-center" data-stage={phase} data-status={status}>
+			{/* The line runs from the previous dot's centre to this one's, under both: darker where the run has been, so the line reads the progress too. */}
+			{first ? null : <span aria-hidden="true" className={cn('absolute top-4 right-1/2 h-px w-full', walked ? 'bg-foreground/40' : 'bg-border')} data-slot="stage-connector" data-walked={walked ? '' : undefined} />}
+			<a
+				aria-current={status === 'current' ? 'step' : undefined}
+				className={cn('relative flex min-h-11 min-w-0 max-w-full flex-col items-center gap-1 rounded-sm px-1 py-1 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring', attention && 'text-warning-foreground')}
+				href={`#run-activity-${phase}`}
+			>
+				{/* An opaque disc under the dot, so the line stops at its edge whatever the dot's own wash. */}
+				<span aria-hidden="true" className="rounded-full bg-card">
+					<span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border font-mono text-xs', status === 'complete' && 'bg-muted', status === 'current' && 'border-foreground font-semibold', attention && 'border-warning bg-warning/16')}>{glyph}</span>
+				</span>
+				{/* On a narrow map the names go to the caption under it; by the map's own width, not the window's. */}
+				<span className="text-xs leading-tight max-sm:sr-only @3xl:text-sm">{catalog.stageLabels[phase as keyof typeof catalog.stageLabels]}</span>
+				<span className="sr-only">{catalog.stageStatusLabels[status]}</span>
+			</a>
+		</li>
+	);
+}
+
 export function RunProgress({
 	catalog,
 	events,
@@ -459,28 +485,18 @@ export function RunProgress({
 	const statuses = runStageStatuses(run.state, runEvents);
 	const hasHistory = current !== null;
 	const actionable = run.state === 'ready-to-ship' || run.state === 'waiting-user';
+	const currentIndex = RUN_PHASES.findIndex((phase) => statuses[phase] === 'current');
 	return (
-		<nav aria-label={catalog.stageMap.title} className="flex flex-col gap-3" data-slot="run-stage-map">
-			<ol className="flex flex-col gap-3 sm:flex-row sm:items-start sm:w-full sm:gap-0">
-				{RUN_PHASES.map((phase) => {
-					const status = statuses[phase];
-					const attention = status === 'current' && actionable;
-					return (
-						<li className="flex min-w-0 flex-1 items-start gap-2 sm:flex-col sm:items-center sm:gap-1" data-stage={phase} data-status={status} key={phase}>
-							<a
-								aria-current={status === 'current' ? 'step' : undefined}
-								className={cn('group flex min-h-11 min-w-0 items-center gap-2 rounded-sm px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-col sm:justify-center sm:text-center', attention && 'text-warning-foreground')}
-								href={`#run-activity-${phase}`}
-							>
-								<span aria-hidden="true" className={cn('flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border font-mono text-xs', status === 'complete' && 'bg-muted', status === 'current' && 'border-foreground font-semibold', attention && 'border-warning bg-warning/16')}>{status === 'complete' ? '✓' : status === 'current' ? '•' : '○'}</span>
-								<span className="text-sm leading-tight">{catalog.stageLabels[phase as keyof typeof catalog.stageLabels]}</span>
-								<span className="sr-only">{catalog.stageStatusLabels[status]}</span>
-							</a>
-							{phase !== 'done' ? <span aria-hidden="true" className="ml-3 mt-3 h-px flex-1 bg-border sm:ml-0 sm:mt-1 sm:h-px sm:w-full" /> : null}
-						</li>
-					);
-				})}
-			</ol>
+		<nav aria-label={catalog.stageMap.title} className="@container flex flex-col gap-3" data-slot="run-stage-map">
+			{/* Without a history there is nothing to draw: eight empty circles would say less than the sentence under them. */}
+			{hasHistory ? (
+				<>
+					<ol className="flex w-full items-start">
+						{RUN_PHASES.map((phase, index) => <RunStage attention={statuses[phase] === 'current' && actionable} catalog={catalog} first={index === 0} key={phase} phase={phase} status={statuses[phase]} />)}
+					</ol>
+					{currentIndex < 0 ? null : <p className="text-sm sm:hidden" data-slot="stage-caption">{catalog.stageMap.position(currentIndex + 1, RUN_PHASES.length, catalog.stageLabels[RUN_PHASES[currentIndex] as keyof typeof catalog.stageLabels])}</p>}
+				</>
+			) : null}
 			{hasHistory ? null : <p className="text-muted-foreground text-xs">{catalog.stageMap.noHistory}</p>}
 			{run.state === 'waiting-user' || run.state === 'waiting-provider' || run.state === 'failed' || run.state === 'interrupted' || run.state === 'cancelled' ? <p className={cn('text-xs', actionable ? 'text-warning-foreground' : 'text-muted-foreground')}><span className="font-medium">{catalog.stageMap.modifierLabel}:</span> {catalog.stateLabels[run.state]}</p> : null}
 			{hasHistory ? <span className="sr-only">{catalog.phaseLabel(catalog.stateLabels[current])}</span> : null}
