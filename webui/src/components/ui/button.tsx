@@ -14,9 +14,9 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../lib/cn.ts';
 
 export const buttonVariants = cva(
-	/* The generous curve echoes the wordmark arch. */
-	'relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-xl border font-medium text-sm outline-none transition-[box-shadow,transform] duration-100 active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 ' +
-		'before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] ' +
+	/* The corner every 32px control shares (input, select, toggle): in one row of controls, two radii read as a mistake. The brand's generous curve lives on the cards. */
+	'relative inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg border font-medium text-sm outline-none transition-[box-shadow,transform] duration-100 active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100 ' +
+		'before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] ' +
 		'pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 ' +
 		'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background ' +
 		/* One text size at every width: a button is not a field, and a 16px label in a row of 13px text takes a third of it. */

@@ -74,6 +74,7 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | A row names what it is about: a run row shows the issue's id and its title. The title takes no width of its own, so it fills the slack and never widens the table | Visual gate baselines |
 | Figures that come in groups open under the row. A closed row is one line | Behaviour tests |
 | Controls in a table toolbar share one height: 32px, 36px below `sm` | Visual gate |
+| Every control of that height shares one corner, 10px: button, input, select, toggle. The generous curve belongs to surfaces (cards, tables, popups) | Judgment |
 | A table gives the width its columns do not need to one column, the one the row is about (`primary`, the first by default). Slack spread over every column reads as holes | Judgment |
 | A secondary column declares the width it shows from (`hideBelow`), measured on the table itself and not on the window: beside an open sidebar a 1024px window leaves the table 672px. A narrow table keeps what the row is about and does not scroll sideways for it | Visual gate at 390px |
 | A row that has detail opens under itself with a chevron (`renderExpanded`). What it opens into is built only while it is open | Behaviour tests |
