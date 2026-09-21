@@ -8,7 +8,7 @@ import { CheckField, FormField, FormStack } from '../components/ui/card-layout.t
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import type { ProjectsCatalog } from '../locale.ts';
-import { BUTTON_CLASS, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
+import { Button } from '../components/ui/button.tsx';
 import { fieldReader } from './runs.tsx';
 
 export function RegisterProjectPanel({
@@ -52,9 +52,9 @@ export function RegisterProjectPanel({
 						<span className="text-muted-foreground text-xs">{catalog.register.containerGuidance}</span>
 					</FormField>
 					<CardFooter>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !onboardingConfirmed} type="submit">
+						<Button disabled={pending || !onboardingConfirmed} type="submit">
 						{catalog.register.submit}
-					</button>
+					</Button>
 					</CardFooter>
 				</FormStack>
 			</CardPanel>
@@ -112,9 +112,9 @@ export function ImportProjectPanel({
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p>
 						: null}
 					<CardFooter>
-							<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !onboardingConfirmed} type="submit">
+							<Button disabled={pending || !onboardingConfirmed} type="submit">
 							{catalog.import.submit}
-						</button>
+						</Button>
 					</CardFooter>
 				</FormStack>
 			</CardPanel>
@@ -228,9 +228,9 @@ export function CreateProjectPanel({
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.create.pending}</p>
 						: null}
 					<CardFooter>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !confirmed || !onboardingConfirmed || namedRepository === ''} type="submit">
+						<Button disabled={pending || !confirmed || !onboardingConfirmed || namedRepository === ''} type="submit">
 							{catalog.create.submit}
-						</button>
+						</Button>
 					</CardFooter>
 				</FormStack>
 			</CardPanel>
@@ -274,8 +274,7 @@ export function UnregisterProjectPanel({
 					<span>{catalog.remove.confirm(project.name)}</span>
 				</CheckField>
 				<CardFooter>
-					<button
-					className={BUTTON_CLASS}
+					<Button variant="destructive"
 					disabled={pending || !confirmed}
 					onClick={() => {
 						setConfirmed(false);
@@ -284,7 +283,7 @@ export function UnregisterProjectPanel({
 					type="button"
 				>
 					{catalog.remove.submit}
-				</button>
+				</Button>
 				</CardFooter>
 			</CardPanel>
 		</Card>

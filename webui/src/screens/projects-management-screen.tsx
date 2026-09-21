@@ -171,7 +171,7 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 			{operation === 'create' ? <CreateProjectPanel catalog={catalog} onCreateProject={props.onCreateProject} pending={props.pending} projectOnboardingPending={props.projectOnboardingPending} onboardingConfirmed={confirmed || snapshot?.manifestProposal === null} value={target} onValueChange={(value) => { setTarget(value); setProposalConfirmed(null); }} /> : null}
 			{operation === 'import' ? <ImportProjectPanel catalog={catalog} onImportProject={props.onImportProject} pending={props.pending} projectOnboardingPending={props.projectOnboardingPending} onboardingConfirmed={confirmed || snapshot?.manifestProposal === null} value={target} onValueChange={(value) => { setTarget(value); setProposalConfirmed(null); }} /> : null}
 			{operation === 'register' ? <RegisterProjectPanel catalog={catalog} onRegisterProject={props.onRegisterProject} pending={props.pending} onboardingConfirmed={confirmed || snapshot?.manifestProposal === null} value={target} onValueChange={(value) => { setTarget(value); setProposalConfirmed(null); }} /> : null}
-			{choice !== null ? <button className="self-start text-muted-foreground text-sm underline underline-offset-4" onClick={resetToProjectType} type="button">{onboarding.choice.back}</button> : null}
+			{choice !== null ? <Button className="self-start" size="sm" variant="ghost" onClick={resetToProjectType} type="button">{onboarding.choice.back}</Button> : null}
 			<Card>
 				<CardHeader><CardTitle>{onboarding.nextSteps.title}</CardTitle><CardDescription>{onboarding.nextSteps.description}</CardDescription></CardHeader>
 				<CardPanel>

@@ -627,13 +627,16 @@ export function RunCommands({
 			label: catalog.commandLabels.resume,
 			shown: actions.resume && run?.state !== 'waiting-user',
 			onClick: () => onResume(),
+			variant: 'default' as const,
 		},
 		// The other way out of an interrupted run: end it here, without reopening
 		// the provider session, so the next issue is no longer blocked by it.
-		{ label: catalog.commandLabels.abandon, shown: actions.abandon, onClick: onAbandon },
-		{ label: catalog.commandLabels.cancel, shown: actions.cancel, onClick: onCancel },
-		{ label: catalog.commandLabels.ship, shown: actions.ship, onClick: onShip },
+		{ label: catalog.commandLabels.abandon, shown: actions.abandon, onClick: onAbandon, variant: 'destructive' as const },
+		{ label: catalog.commandLabels.cancel, shown: actions.cancel, onClick: onCancel, variant: 'destructive' as const },
+		{ label: catalog.commandLabels.ship, shown: actions.ship, onClick: onShip, variant: 'default' as const },
 	].filter((command) => command.shown);
+	/* What the state asks for is the primary action and closes the row; what ends the run says so in the danger family and comes first. */
+	offered.sort((left, right) => Number(left.variant === 'default') - Number(right.variant === 'default'));
 	if (offered.length === 0) return null;
 	return (
 		<div className="flex flex-wrap gap-2">
@@ -643,6 +646,7 @@ export function RunCommands({
 					key={command.label}
 					label={command.label}
 					onClick={command.onClick}
+					variant={command.variant}
 				/>
 			))}
 		</div>

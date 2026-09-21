@@ -22,7 +22,7 @@ import type { Locale, WorkCatalog } from '../locale.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { actionsFor, activeRunIssueId } from '../run-view.ts';
-import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
+import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { fieldReader, formatCount } from './runs.tsx';
 import { draftChanged } from './runs-screen.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
@@ -142,9 +142,9 @@ export function IssueIntakePanel({
 					<Textarea className="min-h-20" mono id="issue-verify" name="verify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
 				<CardFooter>
-					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+					<Button disabled={pending} type="submit">
 					{catalog.intake.create}
-				</button>
+				</Button>
 				</CardFooter>
 			</FormStack>
 		</ContextPanel>
@@ -204,9 +204,9 @@ export function IssueSpecifyPanel({
 					<Textarea className="min-h-20" mono id="idea-verify" name="ideaVerify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
 				<CardFooter>
-					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+					<Button disabled={pending} type="submit">
 					{catalog.specification.submit}
-				</button>
+				</Button>
 				</CardFooter>
 			</FormStack>
 		</ContextPanel>
@@ -327,22 +327,20 @@ export function IssueReviewForm({
 				<span>{catalog.review.confirmAbandon(draft.id)}</span>
 			</CheckField>
 			<CardFooter>
-				<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
-				<button
-					className={PRIMARY_BUTTON_CLASS}
-					disabled={pending || dirty || !confirmed}
-					onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
-					type="button"
-				>{catalog.review.approve}</button>
-				<button
-					className={BUTTON_CLASS}
+				<Button variant="destructive"
 					disabled={pending || abandonReason.trim().length === 0 || !abandonConfirmed}
 					onClick={() => {
 						setAbandonConfirmed(false);
 						onAbandonIssue(draft.id, abandonReason.trim());
 					}}
 					type="button"
-				>{catalog.review.abandon}</button>
+				>{catalog.review.abandon}</Button>
+				<Button variant="outline" disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</Button>
+				<Button
+					disabled={pending || dirty || !confirmed}
+					onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
+					type="button"
+				>{catalog.review.approve}</Button>
 			</CardFooter>
 		</FormStack>
 	);
@@ -503,7 +501,7 @@ function PromoteForm({ catalog, prefix, defaultTitle, pending, onPromote }: { ca
 			<FormField measure="prose"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name={`${prefix}Acceptance`} required /></FormField>
 			<FormField measure="prose"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name={`${prefix}Boundaries`} /></FormField>
 			<FormField measure="prose"><span className="font-medium">{catalog.form.verify}</span><Input mono name={`${prefix}VerificationCommand`} placeholder={catalog.form.verificationPlaceholder} required /></FormField>
-			<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">{catalog.form.promote}</button>
+			<Button className="self-end" disabled={pending} type="submit">{catalog.form.promote}</Button>
 		</FormStack>
 	);
 }

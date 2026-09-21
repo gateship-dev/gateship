@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { OFF_GRID_SPACING } from '../../webui/src/design/exceptions.ts';
+import { OFF_GRID_SPACING, RAW_BUTTONS } from '../../webui/src/design/exceptions.ts';
 import { findOffGridSpacing, measureUsage } from '../../webui/src/design/usage.ts';
 
 const ROOT = join(import.meta.dir, '../../webui/src');
@@ -39,6 +39,14 @@ describe('design contract', () => {
 		expect(handWritten(sources)).toEqual([]);
 		// The check reads what it claims to: a planted label is found, and the kit, which owns the element, is left alone.
 		expect(handWritten({ 'screens/planted.tsx': '<label className="flex flex-col gap-1"><span>Name</span></label>', 'components/ui/card-layout.tsx': '<label data-slot="form-field" />' })).toEqual(['screens/planted.tsx']);
+	});
+
+	test('a screen writes no button of its own, or the one it writes is recorded with its reason', () => {
+		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).flatMap(([name, source]) => name.startsWith('screens/') ? [...source.matchAll(/<button\b/g)].map(() => name) : []).sort();
+		// Both directions, as for spacing: an unrecorded button is an accident, a recorded one that is gone is a stale excuse.
+		expect(handWritten(sources)).toEqual(RAW_BUTTONS.map((entry) => entry.file).sort());
+		for (const entry of RAW_BUTTONS) expect(entry.reason.length).toBeGreaterThan(20);
+		expect(handWritten({ 'screens/planted.tsx': '<button className={PRIMARY}>Save</button>', 'components/ui/button.tsx': '<button />' })).toEqual(['screens/planted.tsx']);
 	});
 
 	test('type stays on the scale and the ladder', () => {

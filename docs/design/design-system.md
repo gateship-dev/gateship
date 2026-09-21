@@ -93,7 +93,9 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | A boolean that acts the moment it is flipped is a `Switch`; one that waits for the form's save is a checkbox. Both wear the product's ink, never the acid | Behaviour tests |
 | A command is typed in `mono`. A form has one field per name, because a second one makes the browser return a list whose value is empty | Behaviour tests |
 | The actions of a block close it on its own edge, in a card's footer or at the foot of a nested form, in the same order everywhere | Judgment |
-| A panel has one constructive primary action. Secondary and destructive actions look different from it. `CardFooter` exists only with actions, and is `sticky` only under a form that runs to screens of text | Judgment, behaviour tests |
+| A panel has one constructive primary action, and it closes the row: last on the end edge, at the bottom when the actions stack. What cannot be undone comes first and wears the danger family as an outline, never a solid block that competes with the primary. On a run, the primary is what the state asks for (ship when ready, resume when interrupted) | Behaviour tests |
+| A button keeps one text size at every width. A screen writes no `<button>` of its own; the ones that are not a `Button` (a tab, a list row) are recorded with their reason in `webui/src/design/exceptions.ts` | Contract test, both directions |
+| `CardFooter` exists only with actions, and is `sticky` only under a form that runs to screens of text | Judgment, behaviour tests |
 | Reference text (how to sign in, how to set a channel up) folds once the thing it explains works, and opens by itself while it does not | Behaviour tests |
 | An empty state says what is missing and offers the next action when there is one. No empty framed region | Judgment |
 | Decorative charts are not part of the product. A chart has exact values one disclosure away, and tells its series apart by pattern as well as colour | Behaviour tests |

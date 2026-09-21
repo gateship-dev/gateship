@@ -121,7 +121,8 @@ export function CardFooter({
 	return (
 		<div
 			className={cn(
-				'-mx-4 -mb-4 mt-2 flex flex-col-reverse gap-2 border-border border-t bg-muted px-4 py-3 sm:flex-row sm:items-center sm:justify-end',
+				/* Actions close the card on its end edge, the primary one last: where the eye finishes, and at the bottom when they stack. */
+				'-mx-4 -mb-4 mt-2 flex flex-col gap-2 border-border border-t bg-muted px-4 py-3 sm:flex-row sm:items-center sm:justify-end',
 				/* Opaque while it floats: the wash alone lets the text under it show through. */
 				/* It rests on the column's fade (the last 16px of the scroll area), so nothing readable shows under it:
 				 * the column pads 16px, and 24px from `lg`, hence the 8px it steps down there. */

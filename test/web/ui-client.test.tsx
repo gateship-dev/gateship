@@ -988,6 +988,13 @@ describe('runs surface', () => {
 		expect(working).toContain('aria-current="step"');
 		expect(buttonIsEnabled(working, 'Cancel')).toBe(true);
 		expect(hasButton(working, 'Ship')).toBe(false);
+		// What ends a run says so in the danger family; what the state asks for is the primary action and closes the row.
+		const variantOf = (html: string, label: string): string | undefined => openingTags(html).find((tag) => tag.startsWith('<button') && html.includes(`${tag}${label}<`))?.match(/data-variant="([a-z]+)"/)?.[1];
+		expect(variantOf(working, 'Cancel')).toBe('destructive');
+		const ready = runsPage({ runs: [runIn('ready-to-ship')] });
+		expect(variantOf(ready, 'Ship')).toBe('default');
+		expect(ready).toContain('>Cancel<');
+		expect(ready.indexOf('>Ship<')).toBeGreaterThan(ready.indexOf('>Cancel<'));
 
 		// The run is already shipping itself: the command is only the retry.
 		const shipping = runsPage({ runs: [runIn('shipping')] });
@@ -2142,7 +2149,11 @@ describe('work surface', () => {
 		expect(card).toContain('Reason for abandonment');
 		expect(buttonIsEnabled(card, 'Abandon')).toBe(false);
 		expect([...card.matchAll(/data-slot="card-footer"/g)]).toHaveLength(1);
-		expect(card.lastIndexOf('data-slot="card-footer"')).toBe(card.lastIndexOf('data-slot="'));
+		// The footer closes the card: after it come only its own buttons.
+		expect(card.slice(card.lastIndexOf('data-slot="card-footer"') + 1)).not.toMatch(/data-slot="(?!button")/);
+		// What ends the draft comes first and in the danger family; approving, the primary action, closes the row.
+		const footerButtons = [...card.slice(card.lastIndexOf('data-slot="card-footer"')).matchAll(/data-variant="([a-z]+)"[^>]*>([^<]+)</g)].map((match) => `${match[2]}:${match[1]}`);
+		expect(footerButtons).toEqual(['Abandon:destructive', 'Save revision:outline', 'Approve:default']);
 		expect(card).not.toContain('fingerprint');
 		// GSHIP-629: absent from every already-filed issue, so nothing renders.
 		expect(card).not.toContain('Evidence captured when specified');
@@ -3231,15 +3242,15 @@ describe('settings surface', () => {
 		const providerSettings = panel(override, 'Local agents');
 		expect(providerSettings).toContain('Customized for this project.');
 		expect(buttonIsEnabled(override, 'Reset provider to global default')).toBe(true);
-		expect(providerSettings.lastIndexOf('data-slot="card-footer"')).toBe(
-			providerSettings.lastIndexOf('data-slot="'),
-		);
+		expect(providerSettings.slice(providerSettings.lastIndexOf('data-slot="card-footer"') + 1)).not.toMatch(/data-slot="(?!button")/);
 		const modelSettings = panel(override, 'Model and effort by role');
 		expect(modelSettings).toContain('Customized for this project.');
 		expect(buttonIsEnabled(override, 'Reset models to global defaults')).toBe(true);
 		const footer = modelSettings.slice(modelSettings.indexOf('data-slot="card-footer"'));
 		expect(footer).toContain('>Save models</button>');
 		expect(footer).toContain('>Reset models to global defaults</button>');
+		// The primary action closes the footer.
+		expect(footer.indexOf('>Save models<')).toBeGreaterThan(footer.indexOf('>Reset models to global defaults<'));
 	});
 
 	test('an empty brief remains editable', () => {

@@ -5,6 +5,7 @@ import type { AppProps } from '../app-props.ts';
 import type { AgentSettingSource, DiagnosticCadenceView, DiagnosticsView, ModelRoleName, ModelSettingsView, ModelSlotView, NotificationChannelId, NotificationChannelView, ProviderStatusView } from '../client.ts';
 import { emptyModelSettings, MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_CHANNEL_IDS } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
+import { Button } from '../components/ui/button.tsx';
 import { Tag } from '../components/ui/tag.tsx';
 import { CardFooter } from '../components/ui/card.tsx';
 import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
@@ -13,10 +14,9 @@ import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { Switch } from '../components/ui/switch.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
-import { cn } from '../lib/cn.ts';
 import type { Locale, SettingsCatalog } from '../locale.ts';
 import type { ProviderUsageView, ProviderUsageWindowView } from '../run-view.ts';
-import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS, SectionCard } from './operator-controls.tsx';
+import { ActionButton, ContextPanel, SectionCard } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
 import type { ProviderPanelProps } from './runs.tsx';
 import { fieldReader, formatCount, formatExactPercent, formatRunTimestamp, formatUsageTime, providerDescription, usageWindowLabel, usageWindowVariant } from './runs.tsx';
@@ -143,17 +143,16 @@ export function ClaudeCredentialConnectedCard({
 			{error === null ? null : <span className="text-destructive text-xs" role="alert">{error}</span>}
 			<div className="flex flex-wrap gap-2">
 				{provider.installed ? (
-					<button className={BUTTON_CLASS} onClick={onRotate} type="button">{text.rotate}</button>
+					<Button variant="outline" onClick={onRotate} type="button">{text.rotate}</Button>
 				) : null}
 				{error === null ? null : (
-					<button className={BUTTON_CLASS} onClick={onDismissError} type="button">{text.cancel}</button>
+					<Button variant="outline" onClick={onDismissError} type="button">{text.cancel}</Button>
 				)}
-				<button
-					className={cn(BUTTON_CLASS, 'self-end')}
+				<Button className="self-end" variant="destructive"
 					disabled={pending}
 					onClick={onDisconnectClaudeCredential}
 					type="button"
-				>{text.disconnect}</button>
+				>{text.disconnect}</Button>
 			</div>
 		</div>
 	);
@@ -233,8 +232,7 @@ export function ClaudeCredentialSection({
 					<span className="text-muted-foreground text-xs">{text.setupCommandLabel}</span>
 					<div className="flex flex-wrap items-center gap-2">
 						<code className="break-all">claude setup-token</code>
-						<button
-							className={BUTTON_CLASS}
+						<Button variant="outline"
 							onClick={() => {
 								const clipboard = (globalThis as unknown as {
 									navigator?: { clipboard?: { writeText?: (value: string) => Promise<void> } };
@@ -242,7 +240,7 @@ export function ClaudeCredentialSection({
 								void clipboard?.writeText?.('claude setup-token');
 							}}
 							type="button"
-						>{text.copyCommand}</button>
+						>{text.copyCommand}</Button>
 					</div>
 				</div>
 			) : (
@@ -288,14 +286,12 @@ export function ClaudeCredentialSection({
 						<span>{text.confirm}</span>
 					</CheckField>
 					<div className="flex flex-wrap gap-2">
-						<button
-							className={cn(PRIMARY_BUTTON_CLASS, 'self-end')}
+						<Button className="self-end"
 							disabled={pending || token.trim().length === 0 || !confirmed}
 							type="submit"
-						>{connected ? text.rotate : text.connect}</button>
+						>{connected ? text.rotate : text.connect}</Button>
 						{connected ? (
-							<button
-								className={BUTTON_CLASS}
+							<Button variant="outline"
 								onClick={() => {
 									// Giving up on this attempt: the refusal that forced the form
 									// open goes with it, or Cancel would leave the form open.
@@ -305,7 +301,7 @@ export function ClaudeCredentialSection({
 									setRotating(false);
 								}}
 								type="button"
-							>{text.cancel}</button>
+							>{text.cancel}</Button>
 						) : null}
 					</div>
 				</form>
@@ -436,9 +432,9 @@ export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'provi
 			))}
 		</ul>
 		{props.providerSource === 'project' ? (
-			<CardFooter><button className={BUTTON_CLASS} disabled={props.pending} onClick={props.onResetProvider} type="button">
+			<CardFooter><Button variant="outline" disabled={props.pending} onClick={props.onResetProvider} type="button">
 				{props.catalog.agentSources.resetProvider}
-			</button></CardFooter>
+			</Button></CardFooter>
 		) : null}
 		</SectionCard>
 	);
@@ -567,14 +563,14 @@ export function ModelSettingsPanel({
 					/>
 				))}
 				<CardFooter>
-					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
-						{catalog.models.save}
-					</button>
 					{modelSettingsSource === 'project' ? (
-						<button className={BUTTON_CLASS} disabled={pending} onClick={onResetModelSettings} type="button">
+						<Button variant="outline" disabled={pending} onClick={onResetModelSettings} type="button">
 							{catalog.agentSources.resetModels}
-						</button>
+						</Button>
 					) : null}
+					<Button disabled={pending} type="submit">
+						{catalog.models.save}
+					</Button>
 				</CardFooter>
 			</FormStack>
 		</SectionCard>
@@ -614,9 +610,9 @@ export function AgentDefaultsPanel({
 				{MODEL_PROVIDER_IDS.map((providerId) => (
 					<ModelProviderFields catalog={catalog} key={providerId} modelSettings={agentDefaults.modelSettings} providerId={providerId} />
 				))}
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<CardFooter><Button disabled={pending} type="submit">
 					{catalog.agentDefaults.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
 		</SectionCard>
 	);
@@ -812,18 +808,17 @@ export function NotificationChannelRow({
 				{channel.fileCredentialExists ? catalog.notifications.fileCredentialPresent : catalog.notifications.fileCredentialAbsent}
 			</p>
 			</div>
-			<div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end" data-slot="channel-actions">
-				<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
-					{catalog.notifications.saveResend}
-				</button>
-				<button
-					className={BUTTON_CLASS}
+			<div className="flex flex-col gap-2 sm:flex-row sm:justify-end" data-slot="channel-actions">
+				<Button variant="destructive"
 					disabled={pending || !channel.fileCredentialExists}
 					onClick={onRemoveResendCredential}
 					type="button"
 				>
 					{catalog.notifications.removeResendCredential}
-				</button>
+				</Button>
+				<Button disabled={pending} type="submit">
+					{catalog.notifications.saveResend}
+				</Button>
 			</div>
 		</form>
 	) : null;
@@ -991,9 +986,9 @@ export function ProjectBriefPanel({
 					</FormField>
 				))}
 				{/* The brief runs to screens of text: the way to save it stays in reach. */}
-				<CardFooter sticky><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<CardFooter sticky><Button disabled={pending} type="submit">
 					{catalog.brief.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
 		</SectionCard>
 	);
@@ -1083,9 +1078,9 @@ export function OperatorProfilePanel({
 						{catalog.operator.timezoneGuidance}
 					</span>
 				</FormField>
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<CardFooter><Button disabled={pending} type="submit">
 					{catalog.operator.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
 		</SectionCard>
 	);
@@ -1153,9 +1148,9 @@ export function DiagnosticSchedulePanel({
 
 				</p>
 				<p className="text-muted-foreground text-xs">{catalog.diagnostics.guidance}</p>
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<CardFooter><Button disabled={pending} type="submit">
 					{catalog.diagnostics.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);
