@@ -70,7 +70,8 @@ export function TableHead({ className, ...props }: React.ComponentProps<'th'>): 
 		<th
 			className={cn(
 				/* Heads are always sans: a table set in the data voice still labels its columns in prose. */
-				'h-10 whitespace-nowrap px-3 text-left align-middle font-medium font-sans text-muted-foreground leading-none',
+				/* Between columns 12px; at the table's two edges 16px, the inset a Stat uses, so stacked blocks share a text edge. */
+				'h-10 whitespace-nowrap px-3 text-left align-middle font-medium font-sans text-muted-foreground leading-none first:pl-4 last:pr-4',
 				className,
 			)}
 			data-slot="table-head"
@@ -85,7 +86,7 @@ export function TableCell({ className, ...props }: React.ComponentProps<'td'>): 
 			className={cn(
 				/* The row is 40px by declaration, not by padding arithmetic: a cell's height is its minimum, so a two-line cell still grows.
 				 * A cell that holds a 24px control gives up its own padding, or the control plus the row's border makes the row 41px. */
-				'h-10 whitespace-nowrap bg-clip-padding px-3 py-2 align-middle leading-none has-[>button]:py-0',
+				'h-10 whitespace-nowrap bg-clip-padding px-3 py-2 align-middle leading-none first:pl-4 last:pr-4 has-[>button]:py-0',
 				className,
 			)}
 			data-slot="table-cell"

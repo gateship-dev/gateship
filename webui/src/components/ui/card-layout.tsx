@@ -22,7 +22,9 @@ export function CardGrid({
 	compact = false,
 	equalHeight = false,
 }: LayoutProps & { compact?: boolean; equalHeight?: boolean }): React.ReactElement {
+	/* The columns answer to the room the grid has, not to the window: beside an open sidebar a 1024px window leaves it 680px. */
 	return (
+		<div className="@container" data-slot="card-grid-frame">
 		<Tag
 			className={cn(
 				'card-ring-group grid',
@@ -35,6 +37,7 @@ export function CardGrid({
 		>
 			{children}
 		</Tag>
+		</div>
 	);
 }
 

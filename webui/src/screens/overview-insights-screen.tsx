@@ -113,7 +113,7 @@ function MetricRows({ items, className }: { items: Array<[string, React.ReactNod
 }
 /** One question the page answers: the number that leads, then the ones that qualify it. */
 function MetricGroup({ title, value, hint, items, children }: { title: string; value: React.ReactNode; hint: React.ReactNode; items: Array<[string, React.ReactNode]>; children?: React.ReactNode }): React.ReactElement {
-	return <section aria-label={title} className="flex" data-slot="insights-group"><Stat className="flex-1" hint={hint} label={title} value={value}><MetricRows items={items} />{children}</Stat></section>;
+	return <section aria-label={title} className="flex" data-slot="insights-group"><Stat className="flex-1" hint={hint} label={title} value={value}><MetricRows className="max-w-md" items={items} />{children}</Stat></section>;
 }
 
 function AutonomyEvidenceSection({ history, labels, locale }: { history: HistoricalOverviewView; labels: Record<string, string>; locale: AppProps['locale'] }): React.ReactElement | null {
@@ -242,7 +242,7 @@ function InsightsData({ history, catalog, labels, locale, filter, sortBy, sortDi
 	const coverage = history.runsByCostCoverage;
 	const shipped = history.runsByOutcome.shipped;
 	return <>
-		<CardGrid className="lg:grid-cols-3" compact>
+		<CardGrid className="@3xl:grid-cols-3" compact>
 			<MetricGroup title={catalog.delivery} value={`${shipped}/${history.totalRuns}`} hint={catalog.shipped} items={[[catalog.failed, history.runsByOutcome.failed], [catalog.cancelled, history.runsByOutcome.cancelled], [catalog.incomplete, history.runsByOutcome.incomplete], [catalog.dispatchToMerge, formatDuration(history.medianDispatchToMergeMs)]]} />
 			<MetricGroup title={catalog.autonomy} value={`${history.shippedWithoutIntervention}/${shipped}`} hint={catalog.shippedWithoutIntervention} items={[[catalog.firstReviewPasses, `${history.firstReviewPasses}/${history.firstReviewPassKnownRuns}`], [catalog.reviewRounds, history.fixRounds], [catalog.operatorInterventions, history.operatorInterventions], [catalog.resolvedQuestions, history.resolvedCycleQuestions], [catalog.providerHolds, history.providerHolds], [catalog.ciCorrections, history.ciCorrections]]} />
 			<MetricGroup title={catalog.economy} value={formatCost(history.knownCostUsd)} hint={partialCost ? `${catalog.knownCost} · ${LOCALE_CATALOG[locale].runsOperational.cost.partialCoverage}` : catalog.knownCost} items={[[catalog.costCoverage, coverage === undefined ? `${history.runsWithKnownCost}/${history.totalRuns}` : `${coverage.complete}/${history.totalRuns}`], [catalog.inputTokens, formatTokens(history.reportedTokens.inputTokens, locale)], [catalog.outputTokens, formatTokens(history.reportedTokens.outputTokens, locale)]]}>

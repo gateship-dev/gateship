@@ -89,7 +89,7 @@ function ProjectStatusTable({ overview, catalog, locale }: { overview: ProjectOp
 export function OverviewData({ props, overview, catalog, attention }: { props: AppProps; overview: ProjectOperationalOverviewView; catalog: OverviewCatalog; attention: number }): React.ReactElement {
 	/* Each figure that has a list behind it leads there. Attention does not: its list is the table right below. */
 	return <>
-		<CardGrid className="grid-cols-2 xl:grid-cols-4" compact equalHeight>
+		<CardGrid className="grid-cols-2 @4xl:grid-cols-4" compact equalHeight>
 			<Stat label={catalog.metrics.attention} tone={attention > 0 ? 'attention' : 'default'} value={attention} />
 			<Stat href="/overview/runs" label={catalog.metrics.activeRuns} value={overview.summary.nonTerminalRuns} />
 			<Stat href="/overview/queues" label={catalog.metrics.approvedIssues} value={overview.summary.backlog.planned} />

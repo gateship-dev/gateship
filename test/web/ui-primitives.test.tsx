@@ -231,6 +231,23 @@ describe('ui primitives', () => {
 		const link = renderToStaticMarkup(<Stat href="/overview/queues" label="Issues aprovadas" value={2} />);
 		expect(link).toMatch(/^<a [^>]*href="\/overview\/queues"/);
 		expect(link).toContain('focus-visible:ring-2');
+		// A link says so at rest, because a touch screen has no hover to ask; a figure that leads nowhere carries no arrow.
+		expect(link).toContain('data-slot="stat-arrow"');
+		expect(link).toMatch(/^<a class="group\/stat /);
+		expect(html).not.toContain('data-slot="stat-arrow"');
+	});
+
+	test('a lone figure sits on the foot of its card, and a figure with detail puts it beside itself once the card is wide', () => {
+		const lone = renderToStaticMarkup(<Stat label="Issues aprovadas" value={2} />);
+		expect(lone).toMatch(/^<div class="[^"]*flex flex-col/);
+		expect(lone).toContain('mt-auto pt-2');
+		const led = renderToStaticMarkup(<Stat hint="Enviadas" label="Entrega" value="1/4"><p>Falhas 0</p></Stat>);
+		expect(led).not.toContain('mt-auto');
+		// By the card's own width, not the window's.
+		expect(led).toContain('class="@container"');
+		expect(led).toContain('@xl:flex-row');
+		expect(led.indexOf('data-slot="stat-head"')).toBeLessThan(led.indexOf('data-slot="stat-detail"'));
+		expect(led.slice(led.indexOf('data-slot="stat-detail"'))).toContain('Falhas 0');
 	});
 
 	test('tabs keep every label in a named horizontal scroller with reduced motion support', () => {
