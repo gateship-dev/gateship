@@ -21,6 +21,7 @@ import { CardGrid, CardSplit, CardStack, CheckField, FormField, FormStack } from
 import { EmptyState } from '../../webui/src/components/ui/empty-state.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
 import { Separator } from '../../webui/src/components/ui/separator.tsx';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../webui/src/components/ui/collapsible.tsx';
 import { Count } from '../../webui/src/components/ui/count.tsx';
 import { Reference } from '../../webui/src/components/ui/reference.tsx';
 import { Stat } from '../../webui/src/components/ui/stat.tsx';
@@ -158,10 +159,20 @@ describe('ui primitives', () => {
 		expect(html).toContain('duas issues');
 		expect(html).not.toContain('open=""');
 		expect(renderToStaticMarkup(<CardDisclosure open />)).toContain('open=""');
-		// The summary carries a chevron that turns with the named group. A caller's
-		// own plain `group` must not merge that name away, or the chevron stops turning.
-		expect(html).toContain('group-open/disclosure:rotate-90');
-		expect(renderToStaticMarkup(<CardDisclosure className="group" />)).toMatch(/class="[^"]*group\/disclosure"/);
+		// One chevron for everything that opens, turned by its own <details> alone: a group, named or not,
+		// would also turn the chevron of every disclosure nested inside an open one.
+		const owns = '[&amp;[open]&gt;summary&gt;[data-slot=disclosure-chevron]]:rotate-90';
+		expect(html).toContain(owns);
+		expect(html).toContain('data-slot="disclosure-chevron"');
+		expect(html).not.toMatch(/group-open/);
+		const nested = renderToStaticMarkup(<Collapsible defaultOpen><CollapsibleTrigger>outer</CollapsibleTrigger><CollapsibleContent><Collapsible><CollapsibleTrigger>inner</CollapsibleTrigger></Collapsible></CollapsibleContent></Collapsible>);
+		expect(nested).not.toMatch(/group-open|class="[^"]*\bgroup\b/);
+		expect((nested.match(/data-slot="disclosure-chevron"/g) ?? []).length).toBe(2);
+		// A row of a list opens the same way, without a frame of its own and with the denser glyph in the same 16px slot.
+		const bare = renderToStaticMarkup(<Collapsible bare><CollapsibleTrigger bare>row</CollapsibleTrigger></Collapsible>);
+		expect(bare).not.toContain('rounded-lg border');
+		expect(bare).toContain('size-3.5');
+		expect(bare).toMatch(/class="flex size-4 [^"]*" data-slot="disclosure-chevron"/);
 	});
 
 	test('content titles use sans, metric labels use the eyebrow voice, and the footer exists only with actions', () => {

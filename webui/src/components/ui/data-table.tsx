@@ -35,6 +35,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import React, { useMemo, useState } from 'react';
 import { cn } from '../../lib/cn.ts';
 import { Button } from './button.tsx';
+import { DisclosureChevron } from './disclosure-chevron.tsx';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './empty.tsx';
 import { Input } from './input.tsx';
@@ -312,7 +313,7 @@ function DataTableBodyRow<TData extends RowData>({ row, open, span, text, render
 				{renderExpanded === undefined ? null : (
 					<TableCell className="w-8 pr-0">
 						<Button aria-expanded={open} aria-label={open ? text.collapseRow : text.expandRow} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" onClick={onToggle}>
-							<HugeiconsIcon aria-hidden="true" className={cn('motion-safe:transition-transform', open && 'rotate-90')} icon={ArrowRight01Icon} size={14} strokeWidth={2.5} />
+							<DisclosureChevron dense open={open} />
 						</Button>
 					</TableCell>
 				)}

@@ -1,7 +1,5 @@
 // webui/src/screens/runs.tsx
 
-import { ArrowRight01Icon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react';
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProviderStatusView } from '../client.ts';
@@ -16,6 +14,7 @@ import { DEFAULT_LOCALE, LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, RunInspectorCatalog, RunsOperationalCatalog, RunsWorkflowCatalog, SettingsCatalog } from '../locale.ts';
 import { actionsFor, isRunActive, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
 import type { ProviderUsageWindowView, RunCostCoverage, RunCostRole, RunCostRoleUsage, RunEventView, RunExecutorHandoffView, RunProviderWaitView, RunView, WorkflowCohort } from '../run-view.ts';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
 import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
 
@@ -371,17 +370,14 @@ function RunActivityEntry({
 			</span>
 		</>
 	);
-	const row = 'flex min-h-8 flex-wrap items-baseline gap-x-3 gap-y-1 py-1';
 	return (
 		<li className="min-w-0 border-b text-sm last:border-0" id={anchor === null ? undefined : `run-activity-${anchor}`} key={event.seq}>
-			{detail === null ? <div className={cn(row, 'pl-6')}>{line}</div> : (
-				<details className="group/entry">
-					<summary className={cn(row, 'cursor-pointer list-none rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden')}>
-						<HugeiconsIcon aria-hidden="true" className="w-3 shrink-0 self-center text-muted-foreground group-open/entry:rotate-90 motion-safe:transition-transform" icon={ArrowRight01Icon} size={12} strokeWidth={2.5} />
-						{line}
-					</summary>
-					<pre className="mb-2 max-w-full whitespace-pre-wrap break-words pl-6 font-mono text-muted-foreground text-xs">{detail}</pre>
-				</details>
+			{/* An entry with nothing behind it keeps the chevron's 24px, so every line starts on one edge. */}
+			{detail === null ? <div className="flex min-h-8 flex-wrap items-baseline gap-x-3 gap-y-1 py-1 pl-6">{line}</div> : (
+				<Collapsible bare>
+					<CollapsibleTrigger bare>{line}</CollapsibleTrigger>
+					<CollapsibleContent bare><pre className="mb-2 max-w-full whitespace-pre-wrap break-words pl-6 font-mono text-muted-foreground text-xs">{detail}</pre></CollapsibleContent>
+				</Collapsible>
 			)}
 		</li>
 	);
@@ -806,8 +802,13 @@ function SpecFactsPanel({
 	const { specProfile: profile, corrections, cycleQuestions, reconciliations } = evaluation;
 	const count = (value: number | null): string => value === null ? catalog.specFacts.unknown : String(value);
 	const duration = (value: number | null): string => value === null ? catalog.specFacts.unknown : `${Math.round(value / 1000)}s`;
+	/* Inside the run's card, so it is a collapsible: a card-level disclosure lives at page level only. */
 	return (
-		<ContextPanel description={catalog.specFacts.description} title={catalog.specFacts.title}>
+		<Collapsible data-slot="spec-facts">
+			<CollapsibleTrigger>{catalog.specFacts.title}</CollapsibleTrigger>
+			<CollapsibleContent>
+				<div className="flex flex-col gap-4 p-3">
+				<p className="text-muted-foreground text-sm">{catalog.specFacts.description}</p>
 			<dl className="grid gap-2 text-sm sm:grid-cols-facts">
 				<dt className="text-muted-foreground">{catalog.specFacts.version}</dt><dd>{profile.version}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.fingerprint}</dt><dd className="break-all font-mono text-xs">{profile.fingerprint ?? catalog.specFacts.unknown}</dd>
@@ -828,7 +829,9 @@ function SpecFactsPanel({
 					<dt className="text-muted-foreground">{catalog.specFacts.reconciliation}</dt><dd>{evaluation.durationReconciliation.reconciles === null ? catalog.specFacts.unknown : evaluation.durationReconciliation.reconciles ? catalog.specFacts.yes : catalog.specFacts.no}</dd>
 				</dl>
 			</div>
-		</ContextPanel>
+				</div>
+			</CollapsibleContent>
+		</Collapsible>
 	);
 }
 

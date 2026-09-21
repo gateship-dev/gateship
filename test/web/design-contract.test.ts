@@ -49,6 +49,12 @@ describe('design contract', () => {
 		expect(handWritten({ 'screens/planted.tsx': '<button className={PRIMARY}>Save</button>', 'components/ui/button.tsx': '<button />' })).toEqual(['screens/planted.tsx']);
 	});
 
+	test('a screen writes no disclosure of its own: what opens is a CardDisclosure at page level and a Collapsible inside a card', () => {
+		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).filter(([name, source]) => name.startsWith('screens/') && /<(details|summary)\b/.test(source)).map(([name]) => name);
+		expect(handWritten(sources)).toEqual([]);
+		expect(handWritten({ 'screens/planted.tsx': '<details className="group/entry"><summary>more</summary></details>', 'components/ui/collapsible.tsx': '<details data-slot="collapsible" />' })).toEqual(['screens/planted.tsx']);
+	});
+
 	test('type stays on the scale and the ladder', () => {
 		const usage = measureUsage(sources, []);
 		expect(Object.keys(usage.text).filter((size) => size.startsWith('[') || size === '3xl' || size === '4xl')).toEqual([]);

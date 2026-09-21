@@ -1151,7 +1151,7 @@ export const LOCALE_CATALOG = {
 				overviewQueues: 'Filas',
 				overviewInsights: 'Análises',
 				projects: 'Projetos',
-				runs: 'Runs',
+				runs: 'Execuções',
 				work: 'Fila',
 				settings: 'Ajustes',
 				globalSettings: 'Ajustes globais',

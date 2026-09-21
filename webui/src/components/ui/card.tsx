@@ -6,10 +6,9 @@
 // details/summary disclosure pair (a disclosure has to be a real <details>;
 // collapsed is a rendering state, never an unmounted branch, ADR-0067).
 
-import { ArrowRight01Icon } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react';
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
+import { DisclosureChevron, OWNS_CHEVRON } from './disclosure-chevron.tsx';
 
 /*
  * The frame has three pieces: the surface, the child-card
@@ -59,8 +58,7 @@ export function CardDisclosure({
 	className,
 	...props
 }: React.ComponentProps<'details'>): React.ReactElement {
-	/* Outside `cn`: tailwind-merge reads a caller's plain `group` as overriding the named one, and the chevron would stop turning. */
-	return <details className={`${cn(FRAME, className)} group/disclosure`} data-slot="card-frame" {...props} />;
+	return <details className={cn(FRAME, OWNS_CHEVRON, className)} data-slot="card-frame" {...props} />;
 }
 
 export function CardHeader({
@@ -83,14 +81,13 @@ export function CardSummary({
 	return (
 		<summary
 			className={cn(
-				'flex cursor-pointer list-none items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden',
+				'flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden',
 				className,
 			)}
 			data-slot="card-frame-header"
 			{...props}
 		>
-			{/* The chevron is the summary's own: every disclosure opens with the same affordance. */}
-			<HugeiconsIcon aria-hidden="true" className="shrink-0 text-muted-foreground group-open/disclosure:rotate-90 motion-safe:transition-transform" icon={ArrowRight01Icon} size={16} strokeWidth={2.25} />
+			<DisclosureChevron />
 			<span className={cn(HEADER_GRID, 'min-w-0 flex-1')}>{children}</span>
 		</summary>
 	);

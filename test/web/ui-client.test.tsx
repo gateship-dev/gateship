@@ -710,7 +710,7 @@ test('a project root is Runs, keeps the explicit Runs address, and omits Convers
 		const root = renderAt('/projects/project-current', { locale });
 		const explicitRuns = renderAt('/projects/project-current/runs', { locale });
 		const settings = renderAt('/projects/project-current/settings', { locale });
-		const runsLabel = locale === 'en-US' ? 'Runs' : 'Runs';
+		const runsLabel = locale === 'en-US' ? 'Runs' : 'Execuções';
 		const conversationLabel = locale === 'en-US' ? 'Conversation' : 'Conversa';
 
 		for (const html of [root, explicitRuns]) {
@@ -812,6 +812,13 @@ function switcherTrigger(html: string): string {
 }
 
 /** One disclosed panel alone, cut at the disclosure that carries it. */
+/** The run card's own collapsible: inside a card a disclosure is a Collapsible, never a second card. */
+function specFacts(html: string): string {
+	const start = html.indexOf('data-slot="spec-facts"');
+	if (start < 0) throw new Error('specification facts are not on the screen');
+	return html.slice(start, html.indexOf('</details>', start));
+}
+
 function panel(html: string, title: string): string {
 	const start = html.indexOf(`>${title}</h2>`);
 	if (start < 0) throw new Error(`panel ${title} is not on the screen`);
@@ -1183,7 +1190,7 @@ describe('runs surface', () => {
 		// The unscoped route still opens the latest run, and says so.
 		const current = renderAt('/runs', { locale: 'pt-BR', runs: [waitingRun] });
 		expect(openingTags(current).find((tag) => tag.startsWith('<main')))
-			.toContain('aria-label="Runs"');
+			.toContain('aria-label="Execuções"');
 		expect(current).toContain('Execução mais recente');
 		expect(home({ locale: 'pt-BR', runs: [runIn('working')] })).toContain('data-slot="notifications-trigger"');
 		expect(home({ locale: 'pt-BR' })).toContain('data-slot="notifications-trigger"');
@@ -1431,7 +1438,7 @@ describe('runs surface', () => {
 				}),
 			})],
 		});
-		const facts = panel(html, 'Fatos da especificação');
+		const facts = specFacts(html);
 		expect(facts).toContain('v2');
 		expect(facts).toContain('f'.repeat(64));
 		expect(facts).toContain('acceptance 2');
@@ -1469,20 +1476,20 @@ describe('runs surface', () => {
 				}),
 			})],
 		});
-		const facts = panel(html, 'Fatos da especificação');
+		const facts = specFacts(html);
 		expect(facts).toContain('teto 3, reservados 3, concluídos 2');
 		expect(facts).toContain('Parou no limite de recuperação');
 		expect(facts).toContain('a última repetiu o achado anterior');
 
 		// No recovery policy on record: the sentence names that plainly, never a
 		// fabricated ceiling.
-		const noPolicyFacts = panel(runsPage({ locale: 'pt-BR',
+		const noPolicyFacts = specFacts(runsPage({ locale: 'pt-BR',
 			runs: [runIn('done', {
 				evaluation: evaluation('revision-recovery-none', 'shipped', {
 					recovery: { policy: null, reserved: 0, finished: 0, limitReached: false, convergence: null },
 				}),
 			})],
-		}), 'Fatos da especificação');
+		}));
 		expect(noPolicyFacts).toContain('sem política de recuperação');
 		expect(noPolicyFacts).not.toContain('Parou no limite de recuperação');
 	});
@@ -1782,7 +1789,9 @@ describe('runs surface', () => {
 		for (const [locale, unknown] of [['en-US', 'Unknown event'], ['pt-BR', 'Evento desconhecido']] as const) {
 			const html = runsPage({ locale, runs: [runIn('working')], events: [event] });
 			// The event line is its own disclosure: the payload opens under it, and only an event that has one can open.
-			expect((html.match(/<details class="group\/entry"/g) ?? []).length).toBe(1);
+			expect((html.match(/<details [^>]*data-bare=""/g) ?? []).length).toBe(1);
+			// It is the kit's disclosure, in its row form, with the chevron every disclosure wears.
+			expect(elementWith(html, 'data-bare=""')).toContain('data-slot="collapsible"');
 			expect(html).toContain(unknown);
 			expect(html).toContain('linha 1');
 			expect(html).toContain('linha 3');
