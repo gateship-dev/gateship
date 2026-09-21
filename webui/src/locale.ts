@@ -201,6 +201,9 @@ export interface RunInspectorCatalog {
 	homeAccessibleLabel: string;
 	currentRunTitle: string;
 	latestRunTitle: string;
+	runNotFound: string;
+	runNotFoundDetail: string;
+	runLoading: string;
 	mergedLabel: string;
 	runTitle: string;
 	allRunsLabel: string;
@@ -746,6 +749,9 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Run inspector',
 			currentRunTitle: 'Current run',
 			latestRunTitle: 'Latest run',
+			runNotFound: 'Run not found',
+			runNotFoundDetail: 'This project has no run with this id. It may belong to another project, or the address may be incomplete.',
+			runLoading: 'Loading the run…',
 			mergedLabel: 'Merged',
 			runTitle: 'Run',
 			allRunsLabel: 'All runs of this project',
@@ -1224,6 +1230,9 @@ export const LOCALE_CATALOG = {
 			homeAccessibleLabel: 'Inspetor da execução',
 			currentRunTitle: 'Execução atual',
 			latestRunTitle: 'Execução mais recente',
+			runNotFound: 'Execução não encontrada',
+			runNotFoundDetail: 'Este projeto não tem execução com este id. Ela pode ser de outro projeto, ou o endereço pode estar incompleto.',
+			runLoading: 'Carregando a execução…',
 			mergedLabel: 'Mesclada',
 			runTitle: 'Execução',
 			allRunsLabel: 'Todas as execuções deste projeto',

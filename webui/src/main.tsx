@@ -49,6 +49,7 @@ import {
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEventsPage,
+	fetchRun,
 	fetchRuns,
 	fetchSelfUpdate,
 	type RunEventPage,
@@ -217,6 +218,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	resolvedProposals: ResolvedProposalView[];
 	resolvedProposalsOmittedCount: number;
 	runs: RunView[];
+	/** The address names a run, and neither the recent list nor the service knows it. */
+	requestedRunMissing: boolean;
 	events: RunEventView[];
 	runEventsHasPrevious: boolean;
 	runEventsLoading: boolean;
@@ -487,6 +490,19 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	}, [loadInitialSnapshot, scope]);
 
 	const requestedRunId = runIdOf(pathname);
+	/* The recent list holds fifty runs and the table links to all of them: a run the list no longer carries is read by its id. */
+	const [olderRun, setOlderRun] = useState<{ id: string; run: RunView | null } | null>(null);
+	const runsLoaded = operationalReadState.loaded.Runs === true;
+	const listed = requestedRunId === null || runs.some((run) => run.id === requestedRunId);
+	useEffect(() => {
+		if (requestedRunId === null || listed || !runsLoaded) return;
+		let disposed = false;
+		void fetchRun(scope, requestedRunId).then((run) => { if (!disposed) setOlderRun({ id: requestedRunId, run }); }).catch(() => { if (!disposed) setOlderRun({ id: requestedRunId, run: null }); });
+		return () => { disposed = true; };
+	}, [requestedRunId, listed, runsLoaded, scope]);
+	const olderRunView = olderRun !== null && olderRun.id === requestedRunId ? olderRun.run : null;
+	const shownRuns = listed || olderRunView === null ? runs : [...runs, olderRunView];
+	const requestedRunMissing = !listed && runsLoaded && olderRun !== null && olderRun.id === requestedRunId && olderRun.run === null;
 	const selectedRunId = displayedRunId(requestedRunId, runs);
 	const selectedRunIdRef = useRef<string | null>(selectedRunId);
 	selectedRunIdRef.current = selectedRunId;
@@ -675,7 +691,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		proposals,
 		resolvedProposals,
 		resolvedProposalsOmittedCount,
-		runs,
+		runs: shownRuns,
+		requestedRunMissing,
 		events: displayedEvents,
 		runEventsHasPrevious: runEventsHasPrevious || (selectedRunId !== null && liveGapBefore[selectedRunId] !== undefined),
 		runEventsLoading,
@@ -739,6 +756,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		resolvedProposals,
 		resolvedProposalsOmittedCount,
 		runs,
+		requestedRunMissing,
 		events,
 		runEventsHasPrevious,
 		runEventsLoading,
@@ -1032,6 +1050,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			resolvedProposals={resolvedProposals}
 			resolvedProposalsOmittedCount={resolvedProposalsOmittedCount}
 			route={routeOf(pathname)}
+			requestedRunMissing={requestedRunMissing}
 			runs={runs}
 			selectedIssueId={selectedIssueId}
 			selectedProvider={selectedProvider}

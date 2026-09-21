@@ -1115,6 +1115,17 @@ export async function fetchRuns(scope: ProjectScope): Promise<RunView[]> {
 	return payload?.runs ?? [];
 }
 
+/**
+ * One run by its id. The recent list holds fifty; the runs table links to every
+ * run the project ever had, so an address can name one the list no longer
+ * carries. Null when the service does not know the id.
+ */
+export async function fetchRun(scope: ProjectScope, runId: string): Promise<RunView | null> {
+	const response = await fetch(`${runsPathOf(scope)}/${encodeURIComponent(runId)}`);
+	if (response.status === 404) return null;
+	return (await readJson<{ run: RunView }>(response, 'Run')).run;
+}
+
 export interface ProvidersSnapshot {
 	providers: ProviderStatusView[];
 	selected: ProviderStatusView['id'];

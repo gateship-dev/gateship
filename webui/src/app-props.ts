@@ -78,6 +78,8 @@ export interface AppProps {
 	notificationChannels: NotificationChannelsView;
 	selfUpdate: SelfUpdateView;
 	runs: readonly RunView[];
+	/** The address names a run, and neither the recent list nor the service knows it. */
+	requestedRunMissing?: boolean;
 	selectedIssueId: string | null;
 	version: string;
 	staleService: StaleServiceView | null;

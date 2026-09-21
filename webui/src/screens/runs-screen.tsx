@@ -3,7 +3,9 @@
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { IssueReviewDraft } from '../client.ts';
+import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { CardSplit, CardStack } from '../components/ui/card-layout.tsx';
+import { Skeleton } from '../components/ui/skeleton.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { routeSelection, routeOf, runIdOf } from '../routes.ts';
@@ -48,6 +50,7 @@ export function RunsSurface(props: AppProps): React.ReactElement {
 		? props.runs[0] ?? null
 		: props.runs.find((candidate) => candidate.id === requestedRunId) ?? null;
 	const catalog = localeCatalog.runInspector;
+	if (requestedRunId !== null && run === null && runsLoaded) return <RunLookup missing={props.requestedRunMissing === true} projectId={projectId} props={props} runId={requestedRunId} />;
 	const activityFailure = props.operationalFailures?.['Run activity'];
 	const activityLoaded = props.operationalLoaded?.['Run activity'] === true;
 	const activityPending = props.operationalPending?.['Run activity'] === true;
@@ -87,4 +90,32 @@ export function draftChanged(draft: IssueReviewDraft, objective: string, accepta
 		|| JSON.stringify(boundaries) !== JSON.stringify(draft.boundaries ?? []) || JSON.stringify(verify) !== JSON.stringify(draft.verify);
 }
 
-/** The editable contract of one draft: its revision, its approval, and its abandonment. */
+/** The editable contract of one draft: its revision, its approval, and its abandonment. *//*
+ * An address that names a run the recent list does not carry: it is being read
+ * by its id, or the service does not know it. Either way the page never says
+ * "no runs recorded", which is false for a project with a history.
+ */
+function RunLookup({ props, projectId, runId, missing }: { props: AppProps; projectId: string | null; runId: string; missing: boolean }): React.ReactElement {
+	const localeCatalog = LOCALE_CATALOG[props.locale];
+	const catalog = localeCatalog.runInspector;
+	return (
+		<SurfaceColumn label={localeCatalog.shell.routeLabels.runs} status={props.status}>
+			{projectId === null ? null : <a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(projectId)}/runs`}>{catalog.allRunsLabel}</a>}
+			<Card data-slot="run-lookup" data-state={missing ? 'missing' : 'loading'}>
+				<CardHeader>
+					<div className="flex min-w-0 flex-col gap-1">
+						<span className="type-eyebrow text-muted-foreground">{catalog.runTitle}</span>
+						<CardTitle className="self-start">{missing ? catalog.runNotFound : <span aria-busy="true" role="status">{catalog.runLoading}</span>}</CardTitle>
+					</div>
+				</CardHeader>
+				<CardPanel>
+					{missing
+						? <><p className="max-w-prose text-muted-foreground text-sm">{catalog.runNotFoundDetail}</p><p className="type-data break-all text-muted-foreground text-xs">{runId}</p></>
+						: <><Skeleton className="h-6 w-full" /><Skeleton className="h-4 w-2/3" /></>}
+				</CardPanel>
+			</Card>
+		</SurfaceColumn>
+	);
+}
+
+

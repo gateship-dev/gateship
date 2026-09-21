@@ -1967,6 +1967,26 @@ describe('runs surface', () => {
 		expect(html).not.toContain('Apagar workspace');
 	});
 
+	test('an address that names a run the recent list does not carry reads it by id, and never claims the project has no runs', () => {
+		const runs = [runIn('done', { id: 'run-recent', issueId: 'CAM-950' })];
+		const loaded = { Runs: true } as AppProps['operationalLoaded'];
+		// While the run is read by its id: the page says so, and keeps the way back.
+		const reading = renderAt('/projects/project-current/runs/run-from-last-year', { runs, operationalLoaded: loaded });
+		expect(elementWith(reading, 'data-slot="run-lookup"')).toContain('data-state="loading"');
+		expect(reading).toContain('Loading the run…');
+		expect(reading).toContain('href="/projects/project-current/runs"');
+		// The service does not know it: not found, with the id it was asked for.
+		const missing = renderAt('/projects/project-current/runs/run-from-last-year', { runs, operationalLoaded: loaded, requestedRunMissing: true });
+		expect(elementWith(missing, 'data-slot="run-lookup"')).toContain('data-state="missing"');
+		expect(missing).toContain('Run not found');
+		expect(missing).toContain('run-from-last-year');
+		for (const html of [reading, missing]) { expect(html).not.toContain('No runs recorded yet'); expect(html).not.toContain('data-slot="run-stage-map"'); }
+		// Once the run arrives it is a run like any other.
+		const found = renderAt('/projects/project-current/runs/run-from-last-year', { runs: [...runs, runIn('done', { id: 'run-from-last-year', issueId: 'CAM-101' })], operationalLoaded: loaded });
+		expect(found).toContain('>CAM-101<');
+		expect(found).not.toContain('data-slot="run-lookup"');
+	});
+
 	test("a project's Runs is its list of runs, one run is inspected at its own path, and the unscoped route keeps the latest run", () => {
 		const runs = [runIn('interrupted', { id: 'run-a', issueId: 'CAM-900' }), runIn('done', { id: 'run-b', issueId: 'CAM-899' })];
 		// The list is the control center's table scoped by the path: no run card, no second history below it.
