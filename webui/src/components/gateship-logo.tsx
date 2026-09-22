@@ -39,13 +39,30 @@ const WORDMARK =
 const PORTAL_FILL = 'var(--logo-portal)';
 const STAIR_FILL = 'var(--logo-stair)';
 
+/*
+ * The stair as the five steps it is built of, bottom to top: two blocks of
+ * shaft on the diagonal, the block where shaft meets head, the tip, and the
+ * two wings of the head. Each block is one 250-unit cell of the mark's grid.
+ * The loading mark shows them appear in this order.
+ */
+const STAIR_STEPS: readonly (readonly [number, number])[][] = [
+	[[750, 1625]],
+	[[1000, 1375]],
+	[[1250, 1125]],
+	[[1500, 875]],
+	[[1000, 875], [1250, 875], [1500, 1125], [1500, 1375]],
+];
+
 /** Gate + stair only, on the mark's own square canvas. */
 export function GateshipMark({
 	className,
 	portal = false,
+	steps = false,
 }: {
 	className?: string;
 	portal?: boolean;
+	/** The stair as its five steps, each marked with `data-step`, for the loading mark to build. */
+	steps?: boolean;
 }): React.ReactElement {
 	return (
 		<svg
@@ -67,7 +84,9 @@ export function GateshipMark({
 				stroke="currentColor"
 				strokeWidth={250}
 			/>
-			<path d={STAIR} fill={portal ? STAIR_FILL : 'currentColor'} />
+			{steps
+				? STAIR_STEPS.map((cells, index) => cells.map(([x, y]) => <rect data-step={index + 1} fill={portal ? STAIR_FILL : 'currentColor'} height={250} key={`${x}-${y}`} width={250} x={x} y={y} />))
+				: <path d={STAIR} fill={portal ? STAIR_FILL : 'currentColor'} />}
 		</svg>
 	);
 }

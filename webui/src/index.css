@@ -543,28 +543,39 @@ html.gship-harness-reduced-motion *::after {
 	}
 }
 
-/* The mark drawing its arch: the gate path carries pathLength=1, so one dash of 1 is the whole stroke. */
+/* The mark building its stair: each of the five steps rises in turn, from the bottom, and the wipe follows the same way up. */
 @utility loading-mark {
-	& path[stroke] {
-		stroke-dasharray: 1;
-		stroke-dashoffset: 0;
+	& [data-step] {
+		opacity: 1;
 	}
 
 	@media (prefers-reduced-motion: no-preference) {
-		& path[stroke] {
-			animation: mark-draw 1.8s ease-in-out infinite;
+		& [data-step] {
+			animation: mark-step 2.4s ease-in-out infinite;
+			animation-delay: calc((var(--step) - 1) * 0.24s);
 		}
+
+		& [data-step='1'] { --step: 1; }
+		& [data-step='2'] { --step: 2; }
+		& [data-step='3'] { --step: 3; }
+		& [data-step='4'] { --step: 4; }
+		& [data-step='5'] { --step: 5; }
 	}
 }
 
-@keyframes mark-draw {
-	0% {
-		stroke-dashoffset: 1;
+@keyframes mark-step {
+	0%,
+	100% {
+		opacity: 0;
 	}
 
-	60%,
-	100% {
-		stroke-dashoffset: 0;
+	8%,
+	64% {
+		opacity: 1;
+	}
+
+	72% {
+		opacity: 0;
 	}
 }
 

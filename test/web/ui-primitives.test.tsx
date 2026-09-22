@@ -24,6 +24,7 @@ import { Separator } from '../../webui/src/components/ui/separator.tsx';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../webui/src/components/ui/collapsible.tsx';
 import { Count } from '../../webui/src/components/ui/count.tsx';
 import { Reference } from '../../webui/src/components/ui/reference.tsx';
+import { GateshipMark } from '../../webui/src/components/gateship-logo.tsx';
 import { PageLoading } from '../../webui/src/components/ui/page-loading.tsx';
 import { Stat } from '../../webui/src/components/ui/stat.tsx';
 import { OperationalReadPanel } from '../../webui/src/operational-unavailable.tsx';
@@ -327,6 +328,10 @@ describe('ui primitives', () => {
 		expect(page).toContain('data-slot="loading-mark"');
 		expect(page).toContain('loading-mark');
 		expect(page).toContain('viewBox="0 0 2750 2750"');
+		// The stair is built as its five steps, bottom to top, each one a cell of the mark's grid.
+		expect([...new Set([...page.matchAll(/data-step="(\d)"/g)].map((match) => match[1]))]).toEqual(['1', '2', '3', '4', '5']);
+		// The static mark keeps its one stair path.
+		expect(renderToStaticMarkup(<GateshipMark />)).not.toContain('data-step');
 		expect(page).toContain('Loading queues…');
 		expect(page).not.toContain('data-slot="skeleton"');
 		// The panel is a block inside a page that is already there: it keeps the skeleton, in the frame the panel will have.
