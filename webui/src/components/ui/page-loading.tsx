@@ -12,7 +12,7 @@ import { cn } from '../../lib/cn.ts';
 import { GateshipMark } from '../gateship-logo.tsx';
 
 export function LoadingMark({ className }: { className?: string }): React.ReactElement {
-	return <span aria-hidden="true" className={cn('loading-mark block text-foreground', className)} data-slot="loading-mark"><GateshipMark className="size-14" steps /></span>;
+	return <span aria-hidden="true" className={cn('loading-mark block text-foreground', className)} data-slot="loading-mark"><GateshipMark className="size-14" portal steps /></span>;
 }
 
 export function PageLoading({ label, className, ...props }: React.ComponentProps<'div'> & { /** What is being loaded, for whoever cannot see the mark. */ label: string }): React.ReactElement {

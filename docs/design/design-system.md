@@ -50,6 +50,7 @@ inspector that copies `slot[variant,size] WxH` for talking about one element.
 | Saans is not bundled. The interface uses the system sans until a repository asset and its licence are added | Judgment |
 | Acid (`#c8ff00`) belongs to the mark and the wordmark alone. No surface, badge, counter, dot or button in the interface uses the attention family | Behaviour tests |
 | Work waiting on the operator is said by order (most urgent first), by its state in the warning family and by text. No rule or border on the leading edge of a row, in any colour | Behaviour tests, judgment |
+| The five state families share one lightness and one chroma in each theme, so no state shouts over another: on light, the base at L 0.64 C 0.17 and the text on a wash at L 0.50 C 0.13 (oklch). A palette's own steps do not do this: its purple 700 carried twice the chroma of its emerald 700 | Visual gate (AA), judgment |
 | State is never colour alone. It comes with text, shape or position | Judgment |
 | Every surface is judged in both themes before it is accepted | Visual gate baselines, judgment |
 

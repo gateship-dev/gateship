@@ -196,8 +196,8 @@ html.gship-harness-reduced-motion *::after {
 	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
 	--accent: --alpha(var(--color-black) / 4%);
 	--accent-foreground: var(--color-neutral-800);
-	--destructive: var(--color-red-500);
-	--destructive-foreground: var(--color-red-700);
+	--destructive: oklch(0.64 0.17 27);
+	--destructive-foreground: oklch(0.5 0.13 27);
 	--border: --alpha(var(--color-black) / 12%);
 	--input: --alpha(var(--color-black) / 16%);
 	/* Focus is neutral and remains distinct from the attention family. */
@@ -264,15 +264,18 @@ html.gship-harness-reduced-motion *::after {
 	 * harmonized with the acid; solids paint dots and tints, foregrounds are
 	 * the AA text steps.
 	 */
-	--info: var(--color-blue-500);
-	--info-foreground: var(--color-blue-700);
+	/* One lightness and one chroma for the five families, so no state shouts over another: the palette's own
+	 * 700s ran from a chroma of 0.12 (emerald) to 0.27 (purple), and purple read loud beside a quiet green.
+	 * The dot (base) sits at L 0.64 C 0.17, the text on a wash at L 0.50 C 0.13, which keeps AA on white. */
+	--info: oklch(0.64 0.17 262);
+	--info-foreground: oklch(0.5 0.13 262);
 	/* Kept out of the Gateship import: Gateship has no "merged" state. */
-	--merged: var(--color-purple-500);
-	--merged-foreground: var(--color-purple-700);
-	--success: var(--color-emerald-500);
-	--success-foreground: var(--color-emerald-700);
-	--warning: var(--color-amber-500);
-	--warning-foreground: var(--color-amber-700);
+	--merged: oklch(0.64 0.17 305);
+	--merged-foreground: oklch(0.5 0.13 305);
+	--success: oklch(0.64 0.17 163);
+	--success-foreground: oklch(0.5 0.13 163);
+	--warning: oklch(0.64 0.17 70);
+	--warning-foreground: oklch(0.5 0.13 70);
 
 	/* Gateship's code-block values, directly. */
 	--code: var(--color-white);
