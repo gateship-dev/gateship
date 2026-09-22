@@ -551,8 +551,11 @@ html.gship-harness-reduced-motion *::after {
 	}
 
 	@media (prefers-reduced-motion: no-preference) {
+		/* Longhands on purpose: the minifier folds a nameless `animation` shorthand into `animation: none`, which zeroes the duration. */
 		& [data-step] {
-			animation: 2.4s linear infinite;
+			animation-duration: 2.4s;
+			animation-timing-function: linear;
+			animation-iteration-count: infinite;
 		}
 
 		& [data-step='1'] { animation-name: mark-step-1; }
