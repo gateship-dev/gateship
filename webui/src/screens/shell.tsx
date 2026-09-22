@@ -17,7 +17,7 @@ import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, Sun02Icon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, Radar01Icon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, Sun02Icon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
@@ -186,7 +186,8 @@ export function humanVersionOf(version: string): string {
  * held to one 16px slot so rows lane-align.
  */
 export const NAV_GLYPHS = {
-	overview: Grid2X2Icon,
+	/* Now is a sweep over what is happening, never a grid: the grid belongs to the switcher's every-project square, and two grids one above the other read as one thing said twice. */
+	overview: Radar01Icon,
 	runs: Activity01Icon,
 	work: ListViewIcon,
 	settings: Settings01Icon,
