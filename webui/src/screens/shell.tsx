@@ -744,7 +744,7 @@ export function ShellControls({
 		</Button>
 	) : null;
 	return (
-		<div className="scroll-container scroll-gutter-end w-full shrink-0 overflow-hidden border-b border-border px-4 py-3 lg:px-6">
+		<div className="w-full shrink-0 border-b border-border px-4 py-3 lg:px-6">
 			{/* The row is the panel's, not the content's: the toggles sit on the panel's edges whatever measure the content keeps, and the title on the panel's centre. */}
 			{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- equal flexible sides keep the title on the true centre while the controls on either side differ in width */}
 			<div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" data-slot="shell-controls-layout">
