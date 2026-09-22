@@ -543,7 +543,8 @@ html.gship-harness-reduced-motion *::after {
 	}
 }
 
-/* The mark building its stair: the two blocks of the shaft rise in turn, then the whole arrowhead, and the wipe follows the same way up. */
+/* The mark building its stair: the three blocks of the shaft appear in turn, then the arrowhead, each with a hard cut;
+ * the whole stair holds, vanishes at once, and the gate stands empty before it starts again. */
 @utility loading-mark {
 	& [data-step] {
 		opacity: 1;
@@ -551,31 +552,21 @@ html.gship-harness-reduced-motion *::after {
 
 	@media (prefers-reduced-motion: no-preference) {
 		& [data-step] {
-			animation: mark-step 2s ease-in-out infinite;
-			animation-delay: calc((var(--step) - 1) * 0.28s);
+			animation: 2.4s linear infinite;
 		}
 
-		& [data-step='1'] { --step: 1; }
-		& [data-step='2'] { --step: 2; }
-		& [data-step='3'] { --step: 3; }
+		& [data-step='1'] { animation-name: mark-step-1; }
+		& [data-step='2'] { animation-name: mark-step-2; }
+		& [data-step='3'] { animation-name: mark-step-3; }
+		& [data-step='4'] { animation-name: mark-step-4; }
 	}
 }
 
-@keyframes mark-step {
-	0%,
-	100% {
-		opacity: 0;
-	}
-
-	8%,
-	64% {
-		opacity: 1;
-	}
-
-	72% {
-		opacity: 0;
-	}
-}
+/* Doubled stops make the cut: nothing between an off frame and the next on frame. */
+@keyframes mark-step-1 { 0%, 14.99% { opacity: 0; } 15%, 79.99% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes mark-step-2 { 0%, 26.99% { opacity: 0; } 27%, 79.99% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes mark-step-3 { 0%, 38.99% { opacity: 0; } 39%, 79.99% { opacity: 1; } 80%, 100% { opacity: 0; } }
+@keyframes mark-step-4 { 0%, 50.99% { opacity: 0; } 51%, 79.99% { opacity: 1; } 80%, 100% { opacity: 0; } }
 
 @keyframes scroll-fade-x {
 	0% {

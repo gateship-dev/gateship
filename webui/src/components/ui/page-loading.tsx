@@ -1,7 +1,7 @@
 // webui/src/components/ui/page-loading.tsx
 //
 // A page that has nothing to show yet shows the mark, its stair building
-// itself from the bottom over and over, the shaft block by block and then the arrowhead, and says what it waits
+// itself from the bottom over and over, the shaft block by block and then the arrowhead, in hard cuts, and says what it waits
 // for. A skeleton is for a block inside a
 // page that is already there (a panel, the rows of a table); a page does not
 // wear the shape of content it does not have. Under reduced motion the mark
