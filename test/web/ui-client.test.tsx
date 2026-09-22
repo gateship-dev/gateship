@@ -7,6 +7,7 @@
 // never the component source text.
 
 import { describe, expect, test } from 'bun:test';
+import { DashboardSquare01Icon, OneSquareIcon, SquareIcon } from '@hugeicons/core-free-icons';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -106,7 +107,7 @@ import {
 	unregisterProject,
 } from '../../webui/src/client.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
-import { presentationPlatform, projectTileLabel, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
+import { presentationPlatform, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
 import {
 	canReturnToLiveEdge,
 	createLiveEdgeController,
@@ -783,6 +784,11 @@ function panelIsOpen(html: string, title: string): boolean {
 /** Every opening tag the render emitted, attributes included, in order. */
 function openingTags(html: string): readonly string[] {
 	return [...html.matchAll(/<[a-z][a-z0-9]*(?:\s[^>]*)?>/g)].map((match) => match[0]);
+}
+
+/** An icon's own outline, as the markup draws it: what tells one glyph of the set from another. */
+function iconPath(icon: typeof SquareIcon): string {
+	return String(icon[icon.length - 1]![1]['d']);
 }
 
 /** The opening tag of the first element carrying `attribute`, with its value. */
@@ -4710,7 +4716,7 @@ describe('operator shell', () => {
 			// One visible Now row; the sr-only registry adds the every-project link the menu carries.
 			expect(navigationList(nav, 'global-navigation').match(/href="\/overview"/g)).toHaveLength(1);
 			expect(trigger).toContain(`>${CURRENT_PROJECT.name}<`);
-			expect(trigger).toContain('aria-keyshortcuts="Alt+2"');
+			expect(trigger).toContain('aria-keyshortcuts="Alt+1"');
 			// Navigation itself stays on served paths. The shell-level skip link is
 			// the one deliberate in-page anchor.
 			expect(nav).not.toContain('href="#');
@@ -4848,7 +4854,7 @@ describe('operator shell', () => {
 		});
 	});
 
-	test('project switcher gives the first eight projects Alt shortcuts and shows the selected key on its trigger', () => {
+	test('project switcher gives the first nine projects Alt shortcuts and shows the selected key on its trigger', () => {
 		const projects = Array.from({ length: 10 }, (_, index) => ({
 			...CURRENT_PROJECT,
 			id: `project-${index + 1}`,
@@ -4858,24 +4864,26 @@ describe('operator shell', () => {
 		const platform = presentationPlatform();
 		const html = renderAt('/overview', { projects });
 		const selectedHtml = renderAt('/projects/project-1', { projects });
-		const pastDigitsHtml = renderAt('/projects/project-9', { projects });
+		const pastDigitsHtml = renderAt('/projects/project-10', { projects });
 		const shortcuts = [...html.matchAll(/<kbd[^>]*data-slot="shortcut-project"[^>]*>([^<]+)<\/kbd>/g)].map((match) => match[1]);
 		const registryLink = (markup: string, id: string): string => openingTags(markup).find((tag) => tag.startsWith('<a') && tag.includes(`href="/projects/${id}"`))!;
 
-		expect(shortcuts).toEqual(Array.from({ length: 8 }, (_, index) => shortcutLabel('project', index, platform)));
-		expect(registryLink(html, 'project-1')).toContain('aria-keyshortcuts="Alt+2"');
-		expect(registryLink(html, 'project-8')).toContain('aria-keyshortcuts="Alt+9"');
-		expect(registryLink(html, 'project-9')).not.toContain('aria-keyshortcuts');
+		expect(shortcuts).toEqual(Array.from({ length: 9 }, (_, index) => shortcutLabel('project', index, platform)));
+		expect(registryLink(html, 'project-1')).toContain('aria-keyshortcuts="Alt+1"');
+		expect(registryLink(html, 'project-9')).toContain('aria-keyshortcuts="Alt+9"');
 		expect(registryLink(html, 'project-10')).not.toContain('aria-keyshortcuts');
 		expect(html).not.toContain('Alt+10');
 		// Open, the trigger gives the chip's room to the name: the menu's rows teach the shortcut, the trigger still declares it.
 		expect(switcherTrigger(html)).not.toContain('<kbd');
-		expect(switcherTrigger(html)).toContain('aria-keyshortcuts="Alt+1"');
+		expect(switcherTrigger(html)).toContain('aria-keyshortcuts="Alt+A"');
 		expect(switcherTrigger(selectedHtml)).not.toContain('<kbd');
-		expect(switcherTrigger(selectedHtml)).toContain('aria-keyshortcuts="Alt+2"');
+		expect(switcherTrigger(selectedHtml)).toContain('aria-keyshortcuts="Alt+1"');
 		expect(registryLink(selectedHtml, 'project-1')).toContain('aria-current="page"');
 		expect(registryLink(selectedHtml, 'project-2')).not.toContain('aria-current');
-		expect(switcherTrigger(pastDigitsHtml)).toContain('>Project 9<');
+		expect(switcherTrigger(pastDigitsHtml)).toContain('>Project 10<');
+		// Past the ninth there is no digit left: the square is the empty one, never another project's number.
+		expect(switcherTrigger(pastDigitsHtml)).toContain(iconPath(SquareIcon));
+		expect(switcherTrigger(pastDigitsHtml)).not.toContain(iconPath(OneSquareIcon));
 		expect(switcherTrigger(pastDigitsHtml)).not.toContain('<kbd');
 		expect(switcherTrigger(pastDigitsHtml)).not.toContain('aria-keyshortcuts');
 	});
@@ -4886,18 +4894,19 @@ describe('operator shell', () => {
 		const idle = LOCALE_CATALOG['en-US'].runInspector.attentionLabels.Idle;
 
 		expect(unresolved).toContain('>All projects<');
-		expect(unresolved).toContain('aria-keyshortcuts="Alt+1"');
+		expect(unresolved).toContain('aria-keyshortcuts="Alt+A"');
 		expect(unresolved).not.toContain('data-slot="project-state-dot"');
 		expect(selected).toContain(`>${CURRENT_PROJECT.name}<`);
 		expect(elementWith(selected, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
 		// Idle is the resting state: the hollow dot shows it and the word stays for a screen reader, so the name keeps the room.
 		expect(selected).toContain(`<span class="sr-only">${idle}</span>`);
-		// The project wears its digit in the same square open or collapsed.
-		expect(selected).toContain('>2</span>');
+		// The project wears its digit in the same square open or collapsed, drawn by the icon set like every other glyph in the rail.
+		expect(selected).toContain(iconPath(OneSquareIcon));
+		expect(unresolved).toContain(iconPath(DashboardSquare01Icon));
 		expect(selected.indexOf(`>${CURRENT_PROJECT.name}<`)).toBeLessThan(selected.indexOf('data-slot="project-state-dot"'));
 	});
 
-	test('project shortcuts navigate with Alt+Digit2 through Alt+Digit9 and reject other combinations', () => {
+	test('project shortcuts navigate with Alt+Digit1 through Alt+Digit9 and reject other combinations', () => {
 		const projects = Array.from({ length: 10 }, (_, index) => ({
 			...CURRENT_PROJECT,
 			id: `project-${index + 1}`,
@@ -4914,9 +4923,9 @@ describe('operator shell', () => {
 			return { handled, prevented };
 		};
 
-		expect(invoke('é', 'Digit2', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('¡', 'Digit1', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(invoke('(', 'Digit9', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
-		expect(locations).toEqual(['/projects/project-1', '/projects/project-8']);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9']);
 		expect(invoke('2', undefined, { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(invoke('3', '', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(invoke('3', 'Numpad3', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
@@ -4924,8 +4933,8 @@ describe('operator shell', () => {
 		expect(invoke('2', 'Digit2', { altKey: true, metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
 		expect(invoke('9', 'Digit9', { altKey: true, metaKey: false, ctrlKey: true })).toEqual({ handled: false, prevented: false });
 		expect(invoke('0', 'Digit0', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
-		// Alt+1 belongs to every project, never to the first registered one.
-		expect(invoke('1', 'Digit1', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		// Alt+A belongs to every project, never to a registered one.
+		expect(invoke('å', 'KeyA', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
 		let missingPrevented = false;
 		expect(handleProjectShortcut(
 			{ key: '4', code: 'Digit4', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
@@ -4933,7 +4942,18 @@ describe('operator shell', () => {
 			{ location: { assign: (url) => { locations.push(url); } } },
 		)).toBe(false);
 		expect(missingPrevented).toBe(false);
-		expect(locations).toEqual(['/projects/project-1', '/projects/project-8', '/projects/project-1', '/projects/project-2']);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-2', '/projects/project-3']);
+		// Inside a field the key writes a character: on a Mac Alt+2 is a glyph and Alt+A is an accent, so neither may navigate.
+		let fieldPrevented = false;
+		for (const target of [{ tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { isContentEditable: true }]) {
+			expect(handleProjectShortcut(
+				{ key: '2', code: 'Digit2', altKey: true, metaKey: false, ctrlKey: false, target, preventDefault: () => { fieldPrevented = true; } },
+				projects,
+				{ location: { assign: (url) => { locations.push(url); } } },
+			)).toBe(false);
+		}
+		expect(fieldPrevented).toBe(false);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-2', '/projects/project-3']);
 	});
 
 		test('shortcut presentation follows platform signals while commands stay canonical', () => {
@@ -4943,7 +4963,7 @@ describe('operator shell', () => {
 		expect(presentationPlatform({ platform: 'Android' })).toBe('unknown');
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview', { locale });
-			const everyProject = elementWith(html, 'aria-keyshortcuts="Alt+1"');
+			const everyProject = elementWith(html, 'aria-keyshortcuts="Alt+A"');
 			const toggleStart = html.indexOf('data-slot="sidebar-toggle"');
 			const sidebarToggle = html.slice(html.lastIndexOf('<button', toggleStart), html.indexOf('</button>', toggleStart));
 			expect(everyProject).toContain('data-slot="project-switcher"');
@@ -4953,25 +4973,27 @@ describe('operator shell', () => {
 			expect(sidebarToggle).not.toContain('aria-keyshortcuts');
 			expect(sidebarToggle).not.toContain('<kbd');
 		}
-		expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥1');
-		expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥2');
-		expect(shortcutLabel('overview', undefined, 'Windows')).toBe('Alt+1');
-		expect(shortcutLabel('project', 7, 'Linux')).toBe('Alt+9');
-		expect(shortcutLabel('overview', undefined, 'unknown')).toBe('Alt+1');
+		expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥A');
+		expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥1');
+		expect(shortcutLabel('overview', undefined, 'Windows')).toBe('Alt+A');
+		expect(shortcutLabel('project', 8, 'Linux')).toBe('Alt+9');
+		expect(shortcutLabel('overview', undefined, 'unknown')).toBe('Alt+A');
 		const event = (code: string, altKey: boolean, onPrevent: () => void): PanelKeyEvent => ({ key: code.slice(-1), code, altKey, metaKey: false, ctrlKey: false, preventDefault: onPrevent });
 		const assigned: string[] = [];
 		const runtime = { location: { assign: (url: string) => { assigned.push(url); } } };
 		let prevented = 0;
-		expect(handleOverviewShortcut(event('Digit1', true, () => { prevented += 1; }), runtime)).toBe(true);
+		expect(handleOverviewShortcut(event('KeyA', true, () => { prevented += 1; }), runtime)).toBe(true);
 		expect({ assigned, prevented }).toEqual({ assigned: ['/overview'], prevented: 1 });
 		// With the app's handler the shortcut is the switcher's first choice: it
 		// clears the project filter instead of only routing.
 		let cleared = 0;
 		const navigated: string[] = [];
-		expect(handleOverviewShortcut(event('Digit1', true, () => { prevented += 1; }), runtime, (destination) => { navigated.push(destination); }, () => { cleared += 1; })).toBe(true);
+		expect(handleOverviewShortcut(event('KeyA', true, () => { prevented += 1; }), runtime, (destination) => { navigated.push(destination); }, () => { cleared += 1; })).toBe(true);
 		expect({ assigned, navigated, cleared, prevented }).toEqual({ assigned: ['/overview'], navigated: [], cleared: 1, prevented: 2 });
-		expect(handleOverviewShortcut(event('Digit1', false, () => { prevented += 1; }), runtime)).toBe(false);
-		expect(handleOverviewShortcut(event('Digit0', true, () => { prevented += 1; }), runtime)).toBe(false);
+		expect(handleOverviewShortcut(event('KeyA', false, () => { prevented += 1; }), runtime)).toBe(false);
+		expect(handleOverviewShortcut(event('Digit1', true, () => { prevented += 1; }), runtime)).toBe(false);
+		// The letter belongs to the field it is typed in: on a Mac Alt+A writes an accent.
+		expect(handleOverviewShortcut({ key: 'å', code: 'KeyA', altKey: true, metaKey: false, ctrlKey: false, target: { tagName: 'INPUT' }, preventDefault: () => { prevented += 1; } }, runtime)).toBe(false);
 		expect({ assigned, prevented }).toEqual({ assigned: ['/overview'], prevented: 2 });
 	});
 
@@ -5041,16 +5063,16 @@ describe('operator shell', () => {
 			expect(nowTag).not.toContain('aria-keyshortcuts');
 			expect(now).toContain('<svg');
 			expect(now).not.toContain('<kbd');
-			expect(trigger).toContain('aria-keyshortcuts="Alt+1"');
+			expect(trigger).toContain('aria-keyshortcuts="Alt+A"');
 		}
 		// The square is the trigger in both modes, the same 16px whether the name is beside it or not; the key itself is taught by the menu's rows and by the rail's hint.
 		for (const html of [collapsed, expanded]) {
 			expect(switcherTrigger(html)).toContain('data-slot="switcher-key"');
-			expect(switcherTrigger(html)).toContain(`>${projectTileLabel(undefined)}</span>`);
+			expect(switcherTrigger(html)).toContain(iconPath(DashboardSquare01Icon));
 			expect(switcherTrigger(html)).not.toContain('<kbd');
 		}
 		// The hint itself only exists once it opens (a portal), so the static document carries the declaration instead.
-		expect(switcherTrigger(collapsed)).toContain('aria-keyshortcuts="Alt+1"');
+		expect(switcherTrigger(collapsed)).toContain('aria-keyshortcuts="Alt+A"');
 		expect(openingTags(navigationList(collapsed, 'global-navigation')).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Now"');
 		expect(switcherTrigger(collapsed)).toContain('aria-label="All projects"');
 		expect(switcherTrigger(expanded)).toContain('>All projects<');
@@ -5265,7 +5287,7 @@ describe('operator shell', () => {
 		expect(switcher).toContain('aria-label="gateship"');
 		expect(switcher).not.toContain('title="gateship"');
 		expect(switcher).not.toContain('>gateship<');
-		expect(switcher).toContain('aria-keyshortcuts="Alt+2"');
+		expect(switcher).toContain('aria-keyshortcuts="Alt+1"');
 		expect(switcher).toContain('data-slot="switcher-key"');
 		expect(elementWith(switcher, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
 		expect(nav).not.toContain('data-slot="sidebar-attention"');

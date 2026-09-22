@@ -17,10 +17,10 @@ import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
 import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, Notification02Icon, Settings01Icon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, Sun02Icon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
-import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, projectTileLabel, shortcutLabel } from '../keyboard-shortcuts.ts';
+import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
 import { navigationCounts } from '../overview-counts.ts';
 import type { NavigationCounts } from '../overview-counts.ts';
 
@@ -222,12 +222,18 @@ const SWITCHER_ITEM_CLASS =
 	'data-highlighted:bg-accent data-highlighted:text-accent-foreground';
 
 /* The leading slot every switcher row shares, in the trigger and in its menu:
- * 16px net on the icon axis (a 24px box pulled in 4px each side), so a key
- * chip and a 16px icon centre on the same x. A chip wider than the box
- * ("Alt+1" off a Mac) grows it instead of running into the name. */
+ * one 16px glyph, on the same x as every icon in the rail. */
 const LEAD_SLOT_CLASS = 'flex shrink-0 justify-center';
-/* A project is its digit, in a 16px square: the same width whether the sidebar is open or a rail, where a key chip was wider than every glyph beside it. */
-const TILE_CLASS = 'flex h-4 min-w-4 shrink-0 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-muted-foreground text-xs leading-none';
+/* A project wears the digit that selects it, drawn by the icon set itself, so
+ * the square is the rail's glyph and not a chip of another material. Every
+ * project at once is no digit in that list, so it is the grid of them; past
+ * the ninth there is no digit left and the square stays empty. */
+const PROJECT_TILE_ICONS = [OneSquareIcon, TwoSquareIcon, ThreeSquareIcon, FourSquareIcon, FiveSquareIcon, SixSquareIcon, SevenSquareIcon, EightSquareIcon, NineSquareIcon] as const;
+
+function projectTileIcon(index: number | undefined): Parameters<typeof HugeiconsIcon>[0]['icon'] {
+	if (index === undefined) return DashboardSquare01Icon;
+	return PROJECT_TILE_ICONS[index] ?? SquareIcon;
+}
 const KEY_CHIP_CLASS = 'shrink-0 whitespace-nowrap rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground';
 
 /* The shortcut closes the row, as a menu's shortcut does everywhere; the mark that says which row is current leads it. */
@@ -259,15 +265,14 @@ function StateDot({ attention, className }: { attention: OperatorAttention; clas
 	return <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT_CLASS[attention], className)} data-slot="project-state-dot" data-state={attention} />;
 }
 
-/* The leading slot of the switcher is the shortcut that selects what it shows.
- * The chip is centred on the icon axis: it is wider than a 16px glyph, so it
- * overhangs its slot by 6px on each side. On the rail the state has no text
- * column left, so its dot docks on the chip's corner as a presence badge. */
-function SwitcherKey({ label, badge }: { label: string; badge: ShellStatus | null }): React.ReactElement {
-	const dot = badge === null ? null : <StateDot attention={badge.attention} className="-top-0.5 -right-0.5 absolute ring-2 ring-sidebar" />;
+/* The leading slot of the switcher is the square that numbers what it shows.
+ * On the rail the state has no text column left, so its dot docks on the
+ * square's corner as a presence badge. */
+function SwitcherKey({ icon, badge }: { icon: Parameters<typeof HugeiconsIcon>[0]['icon']; badge: ShellStatus | null }): React.ReactElement {
+	const dot = badge === null ? null : <StateDot attention={badge.attention} className="-top-1 -right-1 absolute ring-2 ring-sidebar" />;
 	return (
 		<span className={LEAD_SLOT_CLASS}>
-			<span className="relative flex"><span className={TILE_CLASS} data-slot="switcher-key">{label}</span>{dot}</span>
+			<span className="relative flex" data-slot="switcher-key"><ShellIcon aria-hidden="true" icon={icon} />{dot}</span>
 		</span>
 	);
 }
@@ -291,15 +296,15 @@ function ProjectSwitcherTrigger({
 	open,
 }: Pick<ProjectSwitcherProps, 'status' | 'catalog'> & {
 	selected: AppProps['projects'][number] | null;
-	tile: string;
+	tile: Parameters<typeof HugeiconsIcon>[0]['icon'];
 	open: boolean;
 }): React.ReactElement {
 	const state = selected === null ? null : status;
-	if (!open) return <SwitcherKey badge={state} label={tile} />;
+	if (!open) return <SwitcherKey badge={state} icon={tile} />;
 	/* The same square open or collapsed: the project's digit, so collapsing changes no width and the name keeps its room. */
 	return (
 		<>
-			<SwitcherKey badge={null} label={tile} />
+			<SwitcherKey badge={null} icon={tile} />
 			<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">{selected?.name ?? catalog.allProjectsLabel}</span>
 			{state === null ? null : (
 				<span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
@@ -389,11 +394,11 @@ function ProjectSwitcherRegistry({
 
 /* Every project in view owns the first digit; a registered project owns its
  * own; a project past the digits has no key to show. */
-function switcherKey(selected: AppProps['projects'][number] | null, projects: AppProps['projects']): { tile: string; label: string | null; aria: string | undefined } {
+function switcherKey(selected: AppProps['projects'][number] | null, projects: AppProps['projects']): { tile: Parameters<typeof HugeiconsIcon>[0]['icon']; label: string | null; aria: string | undefined } {
 	const platform = presentationPlatform();
-	if (selected === null) return { tile: projectTileLabel(undefined), label: shortcutLabel('overview', undefined, platform), aria: KEYBOARD_SHORTCUTS.overview.aria };
+	if (selected === null) return { tile: projectTileIcon(undefined), label: shortcutLabel('overview', undefined, platform), aria: KEYBOARD_SHORTCUTS.overview.aria };
 	const index = projects.indexOf(selected);
-	const tile = projectTileLabel(index);
+	const tile = projectTileIcon(index);
 	/* Past the ninth project there is no key to teach, but the square still numbers it. */
 	if (index >= PROJECT_SHORTCUT_COUNT) return { tile, label: null, aria: undefined };
 	return { tile, label: shortcutLabel('project', index, platform), aria: projectShortcutAria(index) };

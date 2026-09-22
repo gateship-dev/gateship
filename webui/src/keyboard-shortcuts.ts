@@ -19,23 +19,26 @@ export function presentationPlatform(signals?: PlatformSignals): PresentationPla
 
 type Modifier = 'alt' | 'control' | 'meta';
 
-/* The switcher's choices take the digits in menu order, one hand on the
- * left of the row: 1 is every project, the registered projects follow from 2.
- * Eight projects carry a shortcut; the rest stay reachable from the menu. */
+/* The registered projects take the digits in menu order, one hand on the left
+ * of the row: the first project is 1, so a project's key and the number it
+ * wears are the same. Every project at once is not a number in that list, so
+ * it takes the letter of its name. Nine projects carry a shortcut; the rest
+ * stay reachable from the menu. */
 export const KEYBOARD_SHORTCUTS = {
-	overview: { code: 'Digit1', key: '1', modifiers: ['alt'] as const, aria: 'Alt+1' },
+	overview: { code: 'KeyA', key: 'a', modifiers: ['alt'] as const, aria: 'Alt+A' },
 	/* The destinations are a list, so they take the list keys: one step down or up, wrapping at the ends. */
 	nextDestination: { code: 'ArrowDown', key: 'ArrowDown', modifiers: ['alt'] as const, aria: 'Alt+ArrowDown' },
 	previousDestination: { code: 'ArrowUp', key: 'ArrowUp', modifiers: ['alt'] as const, aria: 'Alt+ArrowUp' },
 	projects: [
-		{ code: 'Digit2', key: '2', modifiers: ['alt'] as const }, { code: 'Digit3', key: '3', modifiers: ['alt'] as const },
-		{ code: 'Digit4', key: '4', modifiers: ['alt'] as const }, { code: 'Digit5', key: '5', modifiers: ['alt'] as const },
-		{ code: 'Digit6', key: '6', modifiers: ['alt'] as const }, { code: 'Digit7', key: '7', modifiers: ['alt'] as const },
-		{ code: 'Digit8', key: '8', modifiers: ['alt'] as const }, { code: 'Digit9', key: '9', modifiers: ['alt'] as const },
+		{ code: 'Digit1', key: '1', modifiers: ['alt'] as const }, { code: 'Digit2', key: '2', modifiers: ['alt'] as const },
+		{ code: 'Digit3', key: '3', modifiers: ['alt'] as const }, { code: 'Digit4', key: '4', modifiers: ['alt'] as const },
+		{ code: 'Digit5', key: '5', modifiers: ['alt'] as const }, { code: 'Digit6', key: '6', modifiers: ['alt'] as const },
+		{ code: 'Digit7', key: '7', modifiers: ['alt'] as const }, { code: 'Digit8', key: '8', modifiers: ['alt'] as const },
+		{ code: 'Digit9', key: '9', modifiers: ['alt'] as const },
 	],
 } as const;
 
-/** How many registered projects carry a digit (2 to 9). */
+/** How many registered projects carry a digit (1 to 9). */
 export const PROJECT_SHORTCUT_COUNT = KEYBOARD_SHORTCUTS.projects.length;
 
 export type ShortcutEvent = { key: string; code?: string; altKey: boolean; metaKey: boolean; ctrlKey: boolean; shiftKey?: boolean };
@@ -56,13 +59,8 @@ export function shortcutLabel(kind: 'overview' | 'project' | 'destinations', ind
 	const alt = platform === 'macOS' ? '⌥' : 'Alt+';
 	/* One chip for the pair: the two keys walk the same list, so naming them apart would read as two shortcuts. */
 	if (kind === 'destinations') return `${alt}↑↓`;
-	if (kind === 'project' && index !== undefined) return `${alt}${index + 2}`;
-	return `${alt}1`;
+	if (kind === 'project' && index !== undefined) return `${alt}${index + 1}`;
+	return `${alt}A`;
 }
 
-/** The square a project wears in the switcher: its digit, and the wildcard for every project at once. */
-export function projectTileLabel(index: number | undefined): string {
-	return index === undefined ? '∗' : String(index + 2);
-}
-
-export function projectShortcutAria(index: number): string { return `Alt+${index + 2}`; }
+export function projectShortcutAria(index: number): string { return `Alt+${index + 1}`; }

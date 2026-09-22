@@ -41,6 +41,14 @@ export { projectIdOf, routeOf, runIdOf } from './routes.ts';
 export type { AppProps } from './app-props.ts';
 export type { OperatorRoute } from './routes.ts';
 
+/* A key pressed inside a field belongs to the field: on a Mac Alt+arrow moves the caret by word and Alt with a letter or a digit writes a character. */
+function isTextEntry(target: PanelKeyEvent['target']): boolean {
+	if (target === undefined || target === null) return false;
+	if (target.isContentEditable === true) return true;
+	const tag = (target.tagName ?? '').toLowerCase();
+	return tag === 'input' || tag === 'textarea' || tag === 'select';
+}
+
 export function handleProjectShortcut(
 	event: PanelKeyEvent,
 	projects: AppProps['projects'],
@@ -48,7 +56,7 @@ export function handleProjectShortcut(
 	navigate?: (destination: string) => void,
 ): boolean {
 	const index = KEYBOARD_SHORTCUTS.projects.findIndex((shortcut) => matchesShortcut(event, shortcut));
-	if (index < 0) return false;
+	if (index < 0 || isTextEntry(event.target)) return false;
 	const project = projects[index];
 	if (project === undefined) return false;
 	event.preventDefault();
@@ -56,14 +64,6 @@ export function handleProjectShortcut(
 	if (navigate === undefined) runtime.location?.assign(destination);
 	else navigate(destination);
 	return true;
-}
-
-/* A key pressed inside a field belongs to the field: Alt+arrow moves a caret by word on some platforms. */
-function isTextEntry(target: PanelKeyEvent['target']): boolean {
-	if (target === undefined || target === null) return false;
-	if (target.isContentEditable === true) return true;
-	const tag = (target.tagName ?? '').toLowerCase();
-	return tag === 'input' || tag === 'textarea' || tag === 'select';
 }
 
 /** Alt with an arrow walks the destinations, wrapping at the ends; from a page that is not one, down opens the first and up the last. */
@@ -87,7 +87,7 @@ export function handleDestinationShortcut(
 }
 
 export function handleOverviewShortcut(event: PanelKeyEvent, runtime = panelRuntime(), navigate?: (destination: string) => void, selectAllProjects?: () => void): boolean {
-	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.overview)) return false;
+	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.overview) || isTextEntry(event.target)) return false;
 	event.preventDefault();
 	/* Same action as the switcher's first choice: every project in view. */
 	if (selectAllProjects !== undefined) selectAllProjects();
