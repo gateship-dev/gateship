@@ -22,6 +22,8 @@ import { ProjectsManagementSurface } from './screens/projects-management-screen.
 import { RunsSurface } from './screens/runs-screen.tsx';
 import { SettingsSurface } from './screens/settings-screen.tsx';
 import {
+	destinationHrefs,
+	destinationIndex,
 	panelRuntime,
 	type PanelKeyEvent,
 	ShellControls,
@@ -51,6 +53,34 @@ export function handleProjectShortcut(
 	if (project === undefined) return false;
 	event.preventDefault();
 	const destination = `/projects/${encodeURIComponent(project.id)}`;
+	if (navigate === undefined) runtime.location?.assign(destination);
+	else navigate(destination);
+	return true;
+}
+
+/* A key pressed inside a field belongs to the field: Alt+arrow moves a caret by word on some platforms. */
+function isTextEntry(target: PanelKeyEvent['target']): boolean {
+	if (target === undefined || target === null) return false;
+	if (target.isContentEditable === true) return true;
+	const tag = (target.tagName ?? '').toLowerCase();
+	return tag === 'input' || tag === 'textarea' || tag === 'select';
+}
+
+/** Alt with an arrow walks the destinations, wrapping at the ends; from a page that is not one, down opens the first and up the last. */
+export function handleDestinationShortcut(
+	event: PanelKeyEvent,
+	hrefs: readonly string[],
+	currentIndex: number,
+	runtime = panelRuntime(),
+	navigate?: (destination: string) => void,
+): boolean {
+	const forward = matchesShortcut(event, KEYBOARD_SHORTCUTS.nextDestination);
+	if (!forward && !matchesShortcut(event, KEYBOARD_SHORTCUTS.previousDestination)) return false;
+	if (isTextEntry(event.target) || hrefs.length === 0) return false;
+	event.preventDefault();
+	const step = forward ? 1 : -1;
+	const index = currentIndex < 0 ? (forward ? 0 : hrefs.length - 1) : (currentIndex + step + hrefs.length) % hrefs.length;
+	const destination = hrefs[index]!;
 	if (navigate === undefined) runtime.location?.assign(destination);
 	else navigate(destination);
 	return true;
@@ -97,11 +127,14 @@ export function App(props: AppProps): React.ReactElement {
 			if (handleOverviewShortcut(event, runtime, props.onNavigate, props.onSelectAllProjects)) {
 				return;
 			}
+			if (handleDestinationShortcut(event, destinationHrefs(selection, props.projects), destinationIndex(selection), runtime, props.onNavigate)) {
+				return;
+			}
 			handleProjectShortcut(event, props.projects, runtime, props.onNavigate);
 		};
 		runtime.addEventListener?.('keydown', onKeyDown);
 		return () => runtime.removeEventListener?.('keydown', onKeyDown);
-	}, [props.projects, props.onSelectAllProjects, toggleSidebar]);
+	}, [props.projects, props.onSelectAllProjects, selection, toggleSidebar]);
 	return (
 		<AppShell
 			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} notifications={notifications} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}

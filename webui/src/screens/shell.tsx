@@ -20,7 +20,7 @@ import { Popover } from '@base-ui/react/popover';
 import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, Notification02Icon, Settings01Icon, Sun02Icon, Tick02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
-import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
+import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, projectTileLabel, shortcutLabel } from '../keyboard-shortcuts.ts';
 import { navigationCounts } from '../overview-counts.ts';
 import type { NavigationCounts } from '../overview-counts.ts';
 
@@ -225,26 +225,23 @@ const SWITCHER_ITEM_CLASS =
  * 16px net on the icon axis (a 24px box pulled in 4px each side), so a key
  * chip and a 16px icon centre on the same x. A chip wider than the box
  * ("Alt+1" off a Mac) grows it instead of running into the name. */
-const LEAD_SLOT_CLASS = '-mx-1 flex min-w-6 shrink-0 justify-center';
+const LEAD_SLOT_CLASS = 'flex shrink-0 justify-center';
+/* A project is its digit, in a 16px square: the same width whether the sidebar is open or a rail, where a key chip was wider than every glyph beside it. */
+const TILE_CLASS = 'flex h-4 min-w-4 shrink-0 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-muted-foreground text-xs leading-none';
 const KEY_CHIP_CLASS = 'shrink-0 whitespace-nowrap rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground';
 
-function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement {
+/* The shortcut closes the row, as a menu's shortcut does everywhere; the mark that says which row is current leads it. */
+function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement | null {
 	const platform = presentationPlatform();
-	if (allProjects) {
-		return <span className={LEAD_SLOT_CLASS}><kbd className={KEY_CHIP_CLASS} data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</kbd></span>;
-	}
-	return (
-		<span className={LEAD_SLOT_CLASS}>
-			{index === undefined ? null : <kbd className={KEY_CHIP_CLASS} data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>}
-		</span>
-	);
+	if (allProjects) return <kbd className={KEY_CHIP_CLASS} data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</kbd>;
+	return index === undefined ? null : <kbd className={KEY_CHIP_CLASS} data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>;
 }
 
-/* The row the switcher currently shows carries a check at the trailing edge,
- * the chevron's column; the fill is left to hover and keyboard focus so one
- * row lights at a time. */
-function CurrentMark({ current }: { current: boolean }): React.ReactElement | null {
-	return current ? <ShellIcon aria-hidden="true" className="opacity-70" icon={Tick02Icon} /> : null;
+/* The row the switcher currently shows carries a check in the leading column,
+ * where every platform's menus put it, and the shortcut closes the row. The
+ * column is there whether or not the row is current, so the names line up. */
+function CurrentMark({ current }: { current: boolean }): React.ReactElement {
+	return <span className="flex size-4 shrink-0 items-center justify-center" data-slot="current-mark">{current ? <ShellIcon aria-hidden="true" className="opacity-70" icon={Tick02Icon} /> : null}</span>;
 }
 
 /* The project's state is a dot. Expanded it sits beside the state's name;
@@ -266,12 +263,11 @@ function StateDot({ attention, className }: { attention: OperatorAttention; clas
  * The chip is centred on the icon axis: it is wider than a 16px glyph, so it
  * overhangs its slot by 6px on each side. On the rail the state has no text
  * column left, so its dot docks on the chip's corner as a presence badge. */
-function SwitcherKey({ label, badge }: { label: string | null; badge: ShellStatus | null }): React.ReactElement {
+function SwitcherKey({ label, badge }: { label: string; badge: ShellStatus | null }): React.ReactElement {
 	const dot = badge === null ? null : <StateDot attention={badge.attention} className="-top-0.5 -right-0.5 absolute ring-2 ring-sidebar" />;
-	if (label === null) return <span className="relative flex shrink-0"><ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} />{dot}</span>;
 	return (
 		<span className={LEAD_SLOT_CLASS}>
-			<span className="relative flex"><kbd className={KEY_CHIP_CLASS} data-slot="switcher-key">{label}</kbd>{dot}</span>
+			<span className="relative flex"><span className={TILE_CLASS} data-slot="switcher-key">{label}</span>{dot}</span>
 		</span>
 	);
 }
@@ -291,19 +287,19 @@ function ProjectSwitcherTrigger({
 	selected,
 	status,
 	catalog,
-	keyLabel,
+	tile,
 	open,
 }: Pick<ProjectSwitcherProps, 'status' | 'catalog'> & {
 	selected: AppProps['projects'][number] | null;
-	keyLabel: string | null;
+	tile: string;
 	open: boolean;
 }): React.ReactElement {
 	const state = selected === null ? null : status;
-	if (!open) return <SwitcherKey badge={state} label={keyLabel} />;
-	/* Open, the trigger leads with the folder and gives the name the room: the shortcut is taught by the menu's rows, where every project shows its own. */
+	if (!open) return <SwitcherKey badge={state} label={tile} />;
+	/* The same square open or collapsed: the project's digit, so collapsing changes no width and the name keeps its room. */
 	return (
 		<>
-			<SwitcherKey badge={null} label={null} />
+			<SwitcherKey badge={null} label={tile} />
 			<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">{selected?.name ?? catalog.allProjectsLabel}</span>
 			{state === null ? null : (
 				<span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
@@ -344,9 +340,9 @@ function ProjectSwitcherMenu({
 						}}
 						render={<a href="/overview" />}
 					>
-						<ProjectShortcut allProjects index={undefined} />
-						<span className="min-w-0 flex-1">{catalog.allProjectsLabel}</span>
 						<CurrentMark current={selection.projectId === null} />
+						<span className="min-w-0 flex-1">{catalog.allProjectsLabel}</span>
+						<ProjectShortcut allProjects index={undefined} />
 					</Menu.Item>
 					{projects.map((project, index) => (
 						<Menu.Item
@@ -356,11 +352,11 @@ function ProjectSwitcherMenu({
 							key={project.id}
 							render={<a href={`/projects/${encodeURIComponent(project.id)}`} />}
 						>
-							<ProjectShortcut index={index < PROJECT_SHORTCUT_COUNT ? index : undefined} />
+							<CurrentMark current={project.id === selection.projectId} />
 							<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 								{project.name}
 							</span>
-							<CurrentMark current={project.id === selection.projectId} />
+							<ProjectShortcut index={index < PROJECT_SHORTCUT_COUNT ? index : undefined} />
 						</Menu.Item>
 					))}
 					{/* Projects and settings are rows of the sidebar, always in view: the menu is the filter alone. */}
@@ -393,12 +389,14 @@ function ProjectSwitcherRegistry({
 
 /* Every project in view owns the first digit; a registered project owns its
  * own; a project past the digits has no key to show. */
-function switcherKey(selected: AppProps['projects'][number] | null, projects: AppProps['projects']): { label: string | null; aria: string | undefined } {
+function switcherKey(selected: AppProps['projects'][number] | null, projects: AppProps['projects']): { tile: string; label: string | null; aria: string | undefined } {
 	const platform = presentationPlatform();
-	if (selected === null) return { label: shortcutLabel('overview', undefined, platform), aria: KEYBOARD_SHORTCUTS.overview.aria };
+	if (selected === null) return { tile: projectTileLabel(undefined), label: shortcutLabel('overview', undefined, platform), aria: KEYBOARD_SHORTCUTS.overview.aria };
 	const index = projects.indexOf(selected);
-	if (index >= PROJECT_SHORTCUT_COUNT) return { label: null, aria: undefined };
-	return { label: shortcutLabel('project', index, platform), aria: projectShortcutAria(index) };
+	const tile = projectTileLabel(index);
+	/* Past the ninth project there is no key to teach, but the square still numbers it. */
+	if (index >= PROJECT_SHORTCUT_COUNT) return { tile, label: null, aria: undefined };
+	return { tile, label: shortcutLabel('project', index, platform), aria: projectShortcutAria(index) };
 }
 
 export function ProjectSwitcher({
@@ -440,7 +438,7 @@ export function ProjectSwitcher({
 						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left') : RAIL_NAV_ITEM_CLASS, 'data-[popup-open]:bg-sidebar-accent')}
 						data-slot="project-switcher"
 					>
-						<ProjectSwitcherTrigger catalog={catalog} keyLabel={key.label} open={open} selected={selected} status={status} />
+						<ProjectSwitcherTrigger catalog={catalog} open={open} selected={selected} status={status} tile={key.tile} />
 					</Menu.Trigger>
 				</HintTooltip>
 				<ProjectSwitcherMenu catalog={catalog} onSelectAllProjects={onSelectAllProjects} projects={projects} selection={selection} />
@@ -453,6 +451,30 @@ export function ProjectSwitcher({
 		<ProjectSwitcherRegistry catalog={catalog} projects={projects} selection={selection} />
 		</>
 	);
+}
+
+/** The destinations in their order, for the keys that walk them and for the rows that render them. */
+export function destinationHrefs(selection: ReturnType<typeof routeSelection>, projects: AppProps['projects']): readonly string[] {
+	const known = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId);
+	const project = known && selection.projectId !== null ? `/projects/${encodeURIComponent(selection.projectId)}` : null;
+	return [
+		'/overview',
+		project === null ? '/overview/runs' : `${project}/runs`,
+		project === null ? '/overview/queues' : `${project}/work`,
+		'/overview/insights',
+		...(project === null ? [] : [`${project}/settings`]),
+	];
+}
+
+/** Where the current surface sits in that list, or -1 when the page is not a destination. */
+export function destinationIndex(selection: ReturnType<typeof routeSelection>): number {
+	const surface = selection.surface;
+	if (surface === 'overview') return 0;
+	if (surface === 'overview-runs' || surface === 'runs') return 1;
+	if (surface === 'overview-queues' || surface === 'work') return 2;
+	if (surface === 'overview-insights') return 3;
+	if (surface === 'settings') return 4;
+	return -1;
 }
 
 /* One stable list of destinations. The project switcher above it is a filter,
@@ -487,11 +509,12 @@ function NavCount({ value }: { value: number | null }): React.ReactElement | nul
 	return <Count className="ml-auto" data-slot="navigation-count" form="plain">{value}</Count>;
 }
 
-/* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail. */
+/* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail.
+ * On the rail the hint carries the pair of keys that walks the list, the way the switcher's hint carries its own key. */
 function NavRow({ href, label, glyph, active, open, count = null }: { href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; open: boolean; count?: number | null }): React.ReactElement {
 	return (
 		<li className="shrink-0">
-			<HintTooltip disabled={open} label={label}>
+			<HintTooltip disabled={open} label={label} shortcut={shortcutLabel('destinations', undefined, presentationPlatform())}>
 				<a aria-current={active ? 'page' : undefined} aria-label={open ? undefined : label} className={open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS} data-sidebar-id={href} href={href}>
 					<NavGlyph name={glyph} />{open ? <><span>{label}</span><NavCount value={count} /></> : null}
 				</a>
@@ -610,6 +633,8 @@ export interface PanelKeyEvent {
 	altKey: boolean;
 	metaKey: boolean;
 	ctrlKey: boolean;
+	/** Where the key was pressed: a shortcut never takes a key away from a field. */
+	target?: { tagName?: string; isContentEditable?: boolean } | null;
 	preventDefault: () => void;
 }
 

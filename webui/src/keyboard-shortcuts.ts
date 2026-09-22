@@ -24,6 +24,9 @@ type Modifier = 'alt' | 'control' | 'meta';
  * Eight projects carry a shortcut; the rest stay reachable from the menu. */
 export const KEYBOARD_SHORTCUTS = {
 	overview: { code: 'Digit1', key: '1', modifiers: ['alt'] as const, aria: 'Alt+1' },
+	/* The destinations are a list, so they take the list keys: one step down or up, wrapping at the ends. */
+	nextDestination: { code: 'ArrowDown', key: 'ArrowDown', modifiers: ['alt'] as const, aria: 'Alt+ArrowDown' },
+	previousDestination: { code: 'ArrowUp', key: 'ArrowUp', modifiers: ['alt'] as const, aria: 'Alt+ArrowUp' },
 	projects: [
 		{ code: 'Digit2', key: '2', modifiers: ['alt'] as const }, { code: 'Digit3', key: '3', modifiers: ['alt'] as const },
 		{ code: 'Digit4', key: '4', modifiers: ['alt'] as const }, { code: 'Digit5', key: '5', modifiers: ['alt'] as const },
@@ -49,9 +52,17 @@ export function matchesShortcut(event: ShortcutEvent, shortcut: { code: string; 
 	return event.code === shortcut.code || ((event.code === undefined || event.code === '') && event.key === shortcut.key);
 }
 
-export function shortcutLabel(kind: 'overview' | 'project', index: number | undefined, platform: PresentationPlatform): string {
-	if (kind === 'project' && index !== undefined) return platform === 'macOS' ? `⌥${index + 2}` : `Alt+${index + 2}`;
-	return platform === 'macOS' ? '⌥1' : 'Alt+1';
+export function shortcutLabel(kind: 'overview' | 'project' | 'destinations', index: number | undefined, platform: PresentationPlatform): string {
+	const alt = platform === 'macOS' ? '⌥' : 'Alt+';
+	/* One chip for the pair: the two keys walk the same list, so naming them apart would read as two shortcuts. */
+	if (kind === 'destinations') return `${alt}↑↓`;
+	if (kind === 'project' && index !== undefined) return `${alt}${index + 2}`;
+	return `${alt}1`;
+}
+
+/** The square a project wears in the switcher: its digit, and the wildcard for every project at once. */
+export function projectTileLabel(index: number | undefined): string {
+	return index === undefined ? '∗' : String(index + 2);
 }
 
 export function projectShortcutAria(index: number): string { return `Alt+${index + 2}`; }

@@ -106,7 +106,7 @@ import {
 	unregisterProject,
 } from '../../webui/src/client.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
-import { presentationPlatform, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
+import { presentationPlatform, projectTileLabel, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
 import {
 	canReturnToLiveEdge,
 	createLiveEdgeController,
@@ -4892,7 +4892,8 @@ describe('operator shell', () => {
 		expect(elementWith(selected, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
 		// Idle is the resting state: the hollow dot shows it and the word stays for a screen reader, so the name keeps the room.
 		expect(selected).toContain(`<span class="sr-only">${idle}</span>`);
-		expect(selected).not.toContain('data-slot="switcher-key"');
+		// The project wears its digit in the same square open or collapsed.
+		expect(selected).toContain('>2</span>');
 		expect(selected.indexOf(`>${CURRENT_PROJECT.name}<`)).toBeLessThan(selected.indexOf('data-slot="project-state-dot"'));
 	});
 
@@ -5042,10 +5043,14 @@ describe('operator shell', () => {
 			expect(now).not.toContain('<kbd');
 			expect(trigger).toContain('aria-keyshortcuts="Alt+1"');
 		}
-		// On the rail the chip is the trigger; open, the name has its room and the menu shows the chips.
-		expect(elementWith(switcherTrigger(collapsed), 'data-slot="switcher-key"')).toContain('<kbd');
-		expect(switcherTrigger(collapsed)).toContain(`>${shortcutLabel('overview', undefined, presentationPlatform())}</kbd>`);
-		expect(switcherTrigger(expanded)).not.toContain('<kbd');
+		// The square is the trigger in both modes, the same 16px whether the name is beside it or not; the key itself is taught by the menu's rows and by the rail's hint.
+		for (const html of [collapsed, expanded]) {
+			expect(switcherTrigger(html)).toContain('data-slot="switcher-key"');
+			expect(switcherTrigger(html)).toContain(`>${projectTileLabel(undefined)}</span>`);
+			expect(switcherTrigger(html)).not.toContain('<kbd');
+		}
+		// The hint itself only exists once it opens (a portal), so the static document carries the declaration instead.
+		expect(switcherTrigger(collapsed)).toContain('aria-keyshortcuts="Alt+1"');
 		expect(openingTags(navigationList(collapsed, 'global-navigation')).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Now"');
 		expect(switcherTrigger(collapsed)).toContain('aria-label="All projects"');
 		expect(switcherTrigger(expanded)).toContain('>All projects<');
