@@ -363,28 +363,7 @@ function ProjectSwitcherMenu({
 							<CurrentMark current={project.id === selection.projectId} />
 						</Menu.Item>
 					))}
-					<Menu.Separator className="-mx-1 my-1 h-px bg-border" />
-					{selection.projectId === null ? null : (
-						<Menu.Item
-							aria-current={selection.surface === 'settings' ? 'page' : undefined}
-							className={SWITCHER_ITEM_CLASS}
-							data-slot="project-switcher-settings"
-							render={<a href={`/projects/${encodeURIComponent(selection.projectId)}/settings`} />}
-						>
-							<span className={LEAD_SLOT_CLASS}><ShellIcon aria-hidden="true" className="opacity-70" icon={Settings01Icon} /></span>
-							<span className="min-w-0 flex-1">{catalog.projectSettingsLabel}</span>
-							<CurrentMark current={selection.surface === 'settings'} />
-						</Menu.Item>
-					)}
-					<Menu.Item
-						aria-current={selection.surface === 'projects' ? 'page' : undefined}
-						className={SWITCHER_ITEM_CLASS}
-						render={<a href="/projects" />}
-					>
-						<span className={LEAD_SLOT_CLASS}><ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} /></span>
-						<span className="min-w-0 flex-1">{catalog.manageProjectsLabel}</span>
-						<CurrentMark current={selection.surface === 'projects'} />
-					</Menu.Item>
+					{/* Projects and settings are rows of the sidebar, always in view: the menu is the filter alone. */}
 				</Menu.Popup>
 			</Menu.Positioner>
 		</Menu.Portal>
@@ -548,10 +527,10 @@ export function ShellNavigation({
 			{/* Below lg the destinations live in the tab bar at the foot of the screen. */}
 			<ul className="mt-4 hidden flex-col gap-1 lg:flex" data-slot="global-navigation">
 				{navigationItems(selection, catalog, counts, projects).map((item) => <NavRow active={item.active} count={item.count} glyph={item.glyph} href={item.href} key={item.id} label={item.label} open={open} />)}
+				{/* A selected project's settings close its own group: the rows above change with the switcher, the group below never does. */}
+				{projectSettingsHref === null ? null : <NavRow active={selection.surface === 'settings'} glyph="settings" href={projectSettingsHref} label={catalog.projectSettingsLabel} open={open} />}
 			</ul>
 			<ul className="mt-auto hidden flex-col gap-1 lg:flex" data-slot="settings-navigation">
-				{/* A selected project brings its own settings into the list, above the rest; the global ones keep the last row either way. */}
-				{projectSettingsHref === null ? null : <NavRow active={selection.surface === 'settings'} glyph="settings" href={projectSettingsHref} label={catalog.projectSettingsLabel} open={open} />}
 				{/* The registry is reached from the switcher's menu, and from here: a page needs a row to be current on. */}
 				<NavRow active={selection.surface === 'projects'} glyph="projects" href="/projects" label={catalog.routeLabels.projects} open={open} />
 				<NavRow active={selection.surface === 'global-settings'} glyph="globalSettings" href="/settings" label={catalog.routeLabels.globalSettings} open={open} />

@@ -4690,18 +4690,18 @@ describe('operator shell', () => {
 			const nav = html.slice(start, html.indexOf('</nav>', start));
 			const list = navigationList(nav, 'global-navigation');
 			const links = openingTags(list).filter((tag) => tag.startsWith('<a'));
-			const currentHref = route === '/projects/project-current/settings'
-				? []
-				: [route === '/projects/project-current' ? '/projects/project-current/runs' : route];
+			const currentHref = [route === '/projects/project-current' ? '/projects/project-current/runs' : route];
 			const trigger = switcherTrigger(nav);
 
 			expect(start).toBeGreaterThanOrEqual(0);
-			expect([...list.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1])).toEqual(['Now', 'Runs', 'Queue', 'Insights']);
+			// The project's own settings close its group; the group below never changes with the switcher.
+			expect([...list.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1])).toEqual(['Now', 'Runs', 'Queue', 'Insights', 'Project settings']);
 			expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual([
 				'/overview',
 				'/projects/project-current/runs',
 				'/projects/project-current/work',
 				'/overview/insights',
+				'/projects/project-current/settings',
 			]);
 			expect(links.filter((tag) => tag.includes('aria-current="page"')).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(currentHref);
 			expect(nav.indexOf('data-slot="project-switcher-item"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
@@ -4727,21 +4727,22 @@ describe('operator shell', () => {
 			const links = (list: string): string[] => openingTags(list).filter((tag) => tag.startsWith('<a'));
 
 			expect(html.indexOf('data-slot="global-navigation"')).toBeLessThan(html.indexOf('data-slot="settings-navigation"'));
-			// A selected project brings its own settings into the list; the global ones keep the last row.
-			expect(links(settings).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/projects/project-current/settings', '/projects', '/settings']);
-			expect(settings).toContain(`>${expected.projectSettings}</span>`);
+			// The lower group is fixed: the registry and the global settings, which keep the last row. The project's settings sit with the project's rows.
+			expect(links(settings).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/projects', '/settings']);
+			expect(settings).not.toContain(`>${expected.projectSettings}</span>`);
+			expect(navigationList(html, 'global-navigation')).toContain(`>${expected.projectSettings}</span>`);
 			expect(settings).toContain(`>${expected.globalSettings}</span>`);
 			expect(settings).not.toContain('aria-current="page"');
 			// Each settings page marks its own row, so the operator always has a current one.
-			const onProject = links(navigationList(settingsPage({ locale: expected.locale }), 'settings-navigation'));
-			expect(onProject.map((tag) => tag.includes('aria-current="page"'))).toEqual([true, false, false]);
+			const onProject = links(navigationList(settingsPage({ locale: expected.locale }), 'global-navigation'));
+			expect(onProject.map((tag) => tag.includes('aria-current="page"'))).toEqual([false, false, false, false, true]);
 			// The registry page has a row of its own to be current on.
 			const onRegistry = links(navigationList(renderAt('/projects', { locale: expected.locale }), 'settings-navigation'));
 			expect(onRegistry.map((tag) => tag.includes('aria-current="page"'))).toEqual([true, false]);
 			const onGlobal = links(navigationList(globalSettingsPage({ locale: expected.locale }), 'settings-navigation'));
 			expect(onGlobal.at(-1)).toContain('aria-current="page"');
 			// With every project in view there is no project to configure, and the row is gone.
-			expect(links(navigationList(renderAt('/overview', { locale: expected.locale }), 'settings-navigation'))).toHaveLength(2);
+			expect(links(navigationList(renderAt('/overview', { locale: expected.locale }), 'global-navigation'))).toHaveLength(4);
 		}
 	});
 
@@ -4798,6 +4799,7 @@ describe('operator shell', () => {
 				`/projects/${OTHER_PROJECT.id}/runs`,
 				`/projects/${OTHER_PROJECT.id}/work`,
 				'/overview/insights',
+				`/projects/${OTHER_PROJECT.id}/settings`,
 			]);
 			expect(links.filter((tag) => tag.includes('aria-current="page"'))).toEqual([links[0]!]);
 		}
