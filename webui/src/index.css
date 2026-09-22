@@ -488,18 +488,6 @@ html.gship-harness-reduced-motion *::after {
 	scrollbar-gutter: stable both-edges;
 }
 
-/*
- * The content column reserves its scrollbar on the end side only, so a page
- * that scrolls and one that does not share one width. The shell's controls row
- * reserves the same gutter (it never scrolls: `overflow: hidden` still honours
- * `stable`), so both rows share one left edge and one right edge at every
- * breakpoint. `both-edges` here pushed the content 8 to 11px inside the
- * controls above it.
- */
-@utility scroll-gutter-end {
-	scrollbar-gutter: stable;
-}
-
 /* CSS-only position-aware fade. Without a scroll timeline the initial
  * opaque mask keeps short content unmasked. */
 @utility scroll-fade {
