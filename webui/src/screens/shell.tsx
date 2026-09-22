@@ -47,13 +47,13 @@ export const NAV_LINK_CLASS =
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
 	'aria-[current=page]:text-sidebar-accent-foreground';
 
-/* Collapsed, the sidebar is an icon rail. Every tile is a 32px square, the
- * expanded row's height, centred on x=44, the axis the expanded icons already
- * sit on, so collapsing moves no icon in either direction. The rail is 76px
- * wide because the sidebar's right inset is half its left one (see
- * ShellSidebar). */
+/* Collapsed, the sidebar is an icon rail. Every tile is the expanded row cut
+ * to its icon: the row's height, the row's 12px on either side of the glyph,
+ * and the row's edges, so one margin (24px) stands between the window and the
+ * tile, the tile and the panel, the panel and its first control. The icon
+ * keeps x=36 in both states, so collapsing moves no icon. */
 const RAIL_NAV_ITEM_CLASS =
-	'mx-auto flex size-8 items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
+	'flex h-8 w-full items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
