@@ -5576,6 +5576,9 @@ describe('shared live edge and responsive surface content', () => {
 		}
 		const controls = elementWith(runsPage(), 'data-slot="shell-controls-layout"');
 		expect(controls).toContain('grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]');
+		// The controls row is the panel's, not the content's: its toggles keep the panel's edges whatever measure the content keeps.
+		expect(controls).not.toContain('max-w-(--content-measure)');
+		expect(controls).toContain('w-full');
 		expect(runsPage()).toContain('data-slot="shell-surface-title"');
 	});
 

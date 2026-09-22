@@ -123,7 +123,7 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | --- | --- |
 | The sidebar is one flat list that never reorders: Now, Runs, Queue, Insights. The project switcher above it is a filter; with a project selected, Runs and Queue open that project's own surfaces | Behaviour tests |
 | The lower group holds Project settings (only with a project selected), Projects and Global settings, which keeps the last row | Behaviour tests |
-| Every page has a row that is current on it, and its title matches that row. The title sits on the true centre of the controls row | Behaviour tests |
+| Every page has a row that is current on it, and its title matches that row. The controls row is the panel's, not the content's: its toggles sit on the panel's edges whatever measure the content keeps, and the title on the panel's true centre | Behaviour tests |
 | The switcher's trigger belongs to the project's name. Open, it carries no shortcut chip (the menu's rows teach the shortcut) and writes the state out only when it moves or waits; idle is the hollow dot. On the rail the chip is the trigger | Behaviour tests |
 | A count says how many, and says nothing when there are none: `Count` renders no element at zero, in a sidebar row, a tab, a view toggle or the bell. Unknown is a dash, never a zero | Behaviour tests |
 | A screen has one left edge and one right edge, shared by the controls row and every block under it, at every breakpoint. The outer ring is that edge: cards, groups of figures, tables and queues all carry it. The content column reserves its scrollbar on the end side only, and the controls row reserves the same gutter | Visual gate baselines, judgment |
