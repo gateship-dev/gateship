@@ -29,5 +29,8 @@ export function Count({
 	...props
 }: React.ComponentProps<'span'> & { form?: keyof typeof FORM; tone?: keyof typeof TONE }): React.ReactElement | null {
 	if (children === 0 || children === '0') return null;
-	return <span className={cn('font-mono text-xs tabular-nums', FORM[form], TONE[tone][form], className)} data-slot="count" {...props}>{children}</span>;
+	/* The weight is declared, never inherited: a count beside a current tab or a
+	 * selected row would otherwise wear that row's emphasis and read as the
+	 * loudest thing in it. A number says how many; the label carries the stress. */
+	return <span className={cn('font-mono font-normal text-xs tabular-nums', FORM[form], TONE[tone][form], className)} data-slot="count" {...props}>{children}</span>;
 }

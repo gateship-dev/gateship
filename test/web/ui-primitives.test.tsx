@@ -243,6 +243,9 @@ describe('ui primitives', () => {
 		expect(renderToStaticMarkup(<Reference>GSHIP-902</Reference>)).toMatch(/^<span [^>]*type-data/);
 		expect(renderToStaticMarkup(<Reference href="/projects/p/runs/r">69864f95</Reference>)).toMatch(/^<a [^>]*href="\/projects\/p\/runs\/r"/);
 		expect(renderToStaticMarkup(<Count tone="warning">3</Count>)).toContain('tabular-nums');
+		// A count declares its weight: beside a current tab or a selected row it must not inherit that row's emphasis.
+		expect(renderToStaticMarkup(<Count tone="warning">3</Count>)).toContain('font-normal');
+		expect(renderToStaticMarkup(<Count form="plain">3</Count>)).toContain('font-normal');
 	});
 
 	test('the attention stat speaks in the warning family, never in the acid of the mark, and a stat with a list behind it is a link', () => {
