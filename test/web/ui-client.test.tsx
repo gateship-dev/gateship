@@ -15,6 +15,7 @@ import {
 	type AppProps,
 	handleOverviewShortcut,
 	handleProjectShortcut,
+	handleShellShortcut,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
@@ -4956,6 +4957,57 @@ describe('operator shell', () => {
 		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-2', '/projects/project-3']);
 	});
 
+	test('the standing keys open the registry and the settings, and fold the sidebar', () => {
+		const locations: string[] = [];
+		const runtime = { location: { assign: (url: string) => { locations.push(url); } } };
+		let folded = 0;
+		const fold = (): void => { folded += 1; };
+		const invoke = (code: string, key: string, target?: { tagName?: string }): { handled: boolean; prevented: boolean } => {
+			let prevented = false;
+			const handled = handleShellShortcut({ key, code, altKey: true, metaKey: false, ctrlKey: false, target, preventDefault: () => { prevented = true; } }, runtime, undefined, fold);
+			return { handled, prevented };
+		};
+
+		expect(invoke('KeyP', 'π')).toEqual({ handled: true, prevented: true });
+		expect(invoke('Comma', '≤')).toEqual({ handled: true, prevented: true });
+		expect(locations).toEqual(['/projects', '/settings']);
+		expect(invoke('KeyB', '∫')).toEqual({ handled: true, prevented: true });
+		expect(folded).toBe(1);
+		expect(locations).toEqual(['/projects', '/settings']);
+		// Inside a field every one of them writes a character on a Mac, so the field keeps the key.
+		expect(invoke('KeyP', 'π', { tagName: 'INPUT' })).toEqual({ handled: false, prevented: false });
+		expect(invoke('KeyB', '∫', { tagName: 'TEXTAREA' })).toEqual({ handled: false, prevented: false });
+		expect({ locations, folded }).toEqual({ locations: ['/projects', '/settings'], folded: 1 });
+		// Without a modifier, and without something to fold, nothing is taken from the browser.
+		let untouched = false;
+		expect(handleShellShortcut({ key: 'p', code: 'KeyP', altKey: false, metaKey: false, ctrlKey: false, preventDefault: () => { untouched = true; } }, runtime)).toBe(false);
+		expect(handleShellShortcut({ key: '∫', code: 'KeyB', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { untouched = true; } }, runtime)).toBe(false);
+		expect(untouched).toBe(false);
+	});
+
+	test('a row shows its key where the key is true: on hover when it owns one, on the current row when the list owns it', () => {
+		const html = renderAt('/overview');
+		const rowOf = (href: string): string => { const start = html.indexOf(`data-sidebar-id="${href}"`); return html.slice(html.lastIndexOf('<a', start), html.indexOf('</a>', start)); };
+		const platform = presentationPlatform();
+
+		// The registry and the global settings each answer to one key, so the chip names that key and waits for the pointer or the focus ring.
+		for (const [href, kind] of [['/projects', 'manageProjects'], ['/settings', 'globalSettings']] as const) {
+			const row = rowOf(href);
+			expect(row).toContain(`aria-keyshortcuts="${kind === 'manageProjects' ? 'Alt+P' : 'Alt+,'}"`);
+			expect(row).toContain(shortcutLabel(kind, undefined, platform));
+			expect(row).toContain('opacity-0');
+			expect(row).toContain('group-hover/nav:opacity-100');
+			expect(row).toContain('group-focus-visible/nav:opacity-100');
+		}
+		// The arrows are relative, so they are printed once, on the row they start from, and never declared as that row's own key.
+		const current = rowOf('/overview');
+		expect(current).toContain(shortcutLabel('destinations', undefined, platform));
+		expect(current).not.toContain('opacity-0');
+		expect(current).not.toContain('aria-keyshortcuts');
+		expect(rowOf('/overview/runs')).not.toContain('<kbd');
+		expect(rowOf('/overview/queues')).not.toContain('<kbd');
+	});
+
 		test('shortcut presentation follows platform signals while commands stay canonical', () => {
 		expect(presentationPlatform({ platform: 'MacIntel' })).toBe('macOS');
 		expect(presentationPlatform({ userAgentData: { platform: 'Windows' }, platform: 'Linux x86_64' })).toBe('Windows');
@@ -4970,7 +5022,7 @@ describe('operator shell', () => {
 			expect(html).not.toContain('Alt+0');
 			expect(sidebarToggle).toContain(`aria-label="${LOCALE_CATALOG[locale].shell.sidebarToggle.collapse}"`);
 			expect(sidebarToggle).toContain('max-lg:hidden');
-			expect(sidebarToggle).not.toContain('aria-keyshortcuts');
+			expect(sidebarToggle).toContain('aria-keyshortcuts="Alt+B"');
 			expect(sidebarToggle).not.toContain('<kbd');
 		}
 		expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥A');
@@ -5012,7 +5064,9 @@ describe('operator shell', () => {
 		expect(sidebarToggle).not.toContain('h-9');
 		expect(notifications).toContain('size-9');
 		expect(notifications).toContain('sm:size-8');
-		expect(sidebarToggle).not.toContain('aria-keyshortcuts');
+		// The toggle carries its key for assistive technology; the chip itself lives in the hint, which is a portal and only exists once it opens.
+		expect(sidebarToggle).toContain('aria-keyshortcuts="Alt+B"');
+		expect(sidebarToggle).not.toContain('<kbd');
 		expect(interactiveIcons.length).toBeGreaterThan(0);
 		for (const icon of interactiveIcons) {
 			expect(icon).toContain('class="size-4');
@@ -5062,9 +5116,13 @@ describe('operator shell', () => {
 			expect(nowTag).toContain('aria-current="page"');
 			expect(nowTag).not.toContain('aria-keyshortcuts');
 			expect(now).toContain('<svg');
-			expect(now).not.toContain('<kbd');
+			// Whatever the row shows, it is never the switcher's key: that one selects every project, not this destination.
+			expect(now).not.toContain(shortcutLabel('overview', undefined, presentationPlatform()));
 			expect(trigger).toContain('aria-keyshortcuts="Alt+A"');
 		}
+		// The pair that walks the list rides the row the operator is standing on, and only there; collapsed, the rail's hint carries it instead.
+		expect(navigationList(expanded, 'global-navigation')).toContain('data-slot="nav-shortcut"');
+		expect(navigationList(collapsed, 'global-navigation')).not.toContain('<kbd');
 		// The square is the trigger in both modes, the same 16px whether the name is beside it or not; the key itself is taught by the menu's rows and by the rail's hint.
 		for (const html of [collapsed, expanded]) {
 			expect(switcherTrigger(html)).toContain('data-slot="switcher-key"');
@@ -5332,6 +5390,12 @@ describe('operator shell', () => {
 
 		expect(counts(null, undefined)).toEqual([]);
 		expect(counts(null, overview)).toEqual(['1', '3', '7']);
+		// A row that carries both keeps them in reading order: how many first, then the key that gets you there.
+		const withCount = renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open overview={overview} projects={[CURRENT_PROJECT, OTHER_PROJECT]} route="/overview" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={null} staleService={null} version="" workspaceNotices={[]} />);
+		const nowRow = withCount.slice(withCount.lastIndexOf('<a', withCount.indexOf('data-sidebar-id="/overview"')), withCount.indexOf('</a>', withCount.indexOf('data-sidebar-id="/overview"')));
+		expect(nowRow.indexOf('data-slot="navigation-count"')).toBeLessThan(nowRow.indexOf('data-slot="nav-shortcut"'));
+		// The count already takes the free space, so the chip does not ask for it a second time: two auto margins would split the gap and strand the count mid-row.
+		expect(elementWith(nowRow, 'data-slot="nav-shortcut"')).not.toContain('ml-auto');
 		expect(counts(CURRENT_PROJECT.id, overview)).toEqual(['1', '1', '2']);
 		// An unknown backlog renders nothing, and neither does a zero: no active run is said by the absence of a figure.
 		expect(counts(OTHER_PROJECT.id, overview)).toEqual(['1']);

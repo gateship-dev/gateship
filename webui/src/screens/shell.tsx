@@ -124,12 +124,16 @@ export function notificationItems(
 export function NotificationsPopover({ items, catalog }: { items: readonly NotificationItem[]; catalog: ShellCatalog['notifications'] }): React.ReactElement {
 	const actionableCount = items.filter((item) => item.actionable).length;
 	const announcement = items.length === 0 ? catalog.empty : items.map((item) => `${item.title}: ${item.detail}`).join(' ');
-	return <Popover.Root>
+	const [open, setOpen] = useState(false);
+	return <Popover.Root onOpenChange={setOpen}>
 		<span aria-atomic="true" aria-live="polite" className="sr-only" data-slot="notifications-live">{announcement}</span>
+		{/* The hint names the bell while it is only a bell; once the popup is open the popup is its own label (GSHIP-874: both write the same attribute on this node). */}
+		<HintTooltip disabled={open} label={catalog.label} side="bottom">
 		<Popover.Trigger aria-label={catalog.label} className={cn(buttonVariants({ size: 'icon', variant: 'outline' }), 'relative')} data-slot="notifications-trigger">
 			<ShellIcon icon={Notification02Icon} />
 			{actionableCount === 0 ? null : <Count aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1" tone="strong">{actionableCount}</Count>}
 		</Popover.Trigger>
+		</HintTooltip>
 		{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- a popup is as wide as its reading measure or as the viewport lets it be, whichever is smaller: no single token says both */}
 		<Popover.Portal><Popover.Positioner align="end" className="z-50" sideOffset={8}><Popover.Popup aria-label={catalog.label} className="w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg/5 outline-none">
 			<div className="flex items-center gap-2 px-2 py-2"><HugeiconsIcon className="size-4" icon={Alert02Icon} size={16} strokeWidth={2.25} /><strong className="text-sm">{catalog.label}</strong><span className="ml-auto font-mono text-xs text-muted-foreground">{catalog.count(actionableCount)}</span></div>
@@ -515,14 +519,34 @@ function NavCount({ value }: { value: number | null }): React.ReactElement | nul
 	return <Count className="ml-auto" data-slot="navigation-count" form="plain">{value}</Count>;
 }
 
-/* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail.
- * On the rail the hint carries the pair of keys that walks the list, the way the switcher's hint carries its own key. */
-function NavRow({ href, label, glyph, active, open, count = null }: { href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; open: boolean; count?: number | null }): React.ReactElement {
+/* A row's key, and where that key is allowed to show. `current` is the pair
+ * that walks the list: the arrows are relative, so they only mean something on
+ * the row you are standing on, and printing them on all five would read as five
+ * different shortcuts. `hover` is a key that belongs to one row alone, so it
+ * shows when you point at that row or tab to it. On the rail neither chip fits
+ * and the hint carries the key instead, as it carries the name. */
+interface NavShortcut { label: string; aria?: string | undefined; chip: 'current' | 'hover' }
+
+/* The chip keeps its slot at rest, so pointing at a row moves no text. */
+const HOVER_CHIP_CLASS = 'opacity-0 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100';
+/* A chip on a row sets no colour of its own: on the current row a muted fill
+ * over the row's own tint measured 4.31:1, under the AA floor. It is an
+ * outline in the row's ink, so it follows the row wherever the row goes. */
+const NAV_CHIP_CLASS = 'shrink-0 whitespace-nowrap rounded border border-border px-1 font-mono text-xs leading-4';
+
+/* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail. */
+function NavRow({ href, label, glyph, active, open, count = null, shortcut = null }: { href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; open: boolean; count?: number | null; shortcut?: NavShortcut | null }): React.ReactElement {
+	const chip = shortcut === null || !open || (shortcut.chip === 'current' && !active) ? null : (
+		/* The chip closes the row, so it takes the free space unless a count is
+		 * already there to take it. Zero counts for nothing here, the same way it
+		 * renders nothing: a count of none leaves the row as if it had none. */
+		<kbd className={cn(NAV_CHIP_CLASS, (count ?? 0) === 0 && 'ml-auto', shortcut.chip === 'hover' && HOVER_CHIP_CLASS)} data-slot="nav-shortcut">{shortcut.label}</kbd>
+	);
 	return (
 		<li className="shrink-0">
-			<HintTooltip disabled={open} label={label} shortcut={shortcutLabel('destinations', undefined, presentationPlatform())}>
-				<a aria-current={active ? 'page' : undefined} aria-label={open ? undefined : label} className={open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS} data-sidebar-id={href} href={href}>
-					<NavGlyph name={glyph} />{open ? <><span>{label}</span><NavCount value={count} /></> : null}
+			<HintTooltip disabled={open} label={label} shortcut={shortcut?.label}>
+				<a aria-current={active ? 'page' : undefined} aria-keyshortcuts={shortcut?.aria} aria-label={open ? undefined : label} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, 'group/nav')} data-sidebar-id={href} href={href}>
+					<NavGlyph name={glyph} />{open ? <><span>{label}</span><NavCount value={count} />{chip}</> : null}
 				</a>
 			</HintTooltip>
 		</li>
@@ -547,6 +571,9 @@ export function ShellNavigation({
 	counts: NavigationCounts | null;
 }): React.ReactElement {
 	const projectSettingsHref = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId) ? `/projects/${encodeURIComponent(selection.projectId)}/settings` : null;
+	const platform = presentationPlatform();
+	const walk: NavShortcut = { label: shortcutLabel('destinations', undefined, platform), chip: 'current' };
+	const standing = (kind: 'manageProjects' | 'globalSettings'): NavShortcut => ({ label: shortcutLabel(kind, undefined, platform), aria: KEYBOARD_SHORTCUTS[kind].aria, chip: 'hover' });
 	return (
 		<TooltipGroup>
 		<nav aria-label={catalog.operatorNavigationLabel} className="lg:flex lg:flex-1 lg:flex-col">
@@ -555,14 +582,14 @@ export function ShellNavigation({
 			</div>
 			{/* Below lg the destinations live in the tab bar at the foot of the screen. */}
 			<ul className="mt-4 hidden flex-col gap-1 lg:flex" data-slot="global-navigation">
-				{navigationItems(selection, catalog, counts, projects).map((item) => <NavRow active={item.active} count={item.count} glyph={item.glyph} href={item.href} key={item.id} label={item.label} open={open} />)}
+				{navigationItems(selection, catalog, counts, projects).map((item) => <NavRow active={item.active} count={item.count} glyph={item.glyph} href={item.href} key={item.id} label={item.label} open={open} shortcut={walk} />)}
 				{/* A selected project's settings close its own group: the rows above change with the switcher, the group below never does. */}
-				{projectSettingsHref === null ? null : <NavRow active={selection.surface === 'settings'} glyph="settings" href={projectSettingsHref} label={catalog.projectSettingsLabel} open={open} />}
+				{projectSettingsHref === null ? null : <NavRow active={selection.surface === 'settings'} glyph="settings" href={projectSettingsHref} label={catalog.projectSettingsLabel} open={open} shortcut={walk} />}
 			</ul>
 			<ul className="mt-auto hidden flex-col gap-1 lg:flex" data-slot="settings-navigation">
 				{/* The registry is reached from the switcher's menu, and from here: a page needs a row to be current on. */}
-				<NavRow active={selection.surface === 'projects'} glyph="projects" href="/projects" label={catalog.routeLabels.projects} open={open} />
-				<NavRow active={selection.surface === 'global-settings'} glyph="globalSettings" href="/settings" label={catalog.routeLabels.globalSettings} open={open} />
+				<NavRow active={selection.surface === 'projects'} glyph="projects" href="/projects" label={catalog.routeLabels.projects} open={open} shortcut={standing('manageProjects')} />
+				<NavRow active={selection.surface === 'global-settings'} glyph="globalSettings" href="/settings" label={catalog.routeLabels.globalSettings} open={open} shortcut={standing('globalSettings')} />
 			</ul>
 		</nav>
 		</TooltipGroup>
@@ -742,36 +769,50 @@ export function ShellControls({
 		setWide(next);
 	};
 	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
+	/* Each of these is a glyph with no label beside it, so its name lives in a
+	 * hint, and the one that has a key shows the key there. A chip has nowhere
+	 * to sit on a 32px square. */
+	const sidebarLabel = sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand;
+	const localeLabel = targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)';
+	const themeLabel = dark ? catalog.themeToggle.light : catalog.themeToggle.dark;
+	const widthLabel = wide ? catalog.widthToggle.compact : catalog.widthToggle.wide;
+	const inspectorLabel = inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand;
 	const inspectorToggle = (): React.ReactElement | null => showInspectorToggle ? (
-		<Button
-			aria-label={inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand}
-			onClick={onToggleInspector}
-			size="icon"
-			type="button"
-			variant="outline"
-		>
-			<PanelToggleGlyph side="right" />
-		</Button>
+		<HintTooltip label={inspectorLabel} side="bottom">
+			<Button
+				aria-label={inspectorLabel}
+				onClick={onToggleInspector}
+				size="icon"
+				type="button"
+				variant="outline"
+			>
+				<PanelToggleGlyph side="right" />
+			</Button>
+		</HintTooltip>
 	) : null;
 	return (
+		<TooltipGroup>
 		<div className="w-full shrink-0 border-b border-border px-4 py-3 lg:px-6">
 			{/* The row is the panel's, not the content's: the toggles sit on the panel's edges whatever measure the content keeps, and the title on the panel's centre. */}
 			{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- equal flexible sides keep the title on the true centre while the controls on either side differ in width */}
 			<div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" data-slot="shell-controls-layout">
 				<div className="flex min-w-0 justify-start">
 					{/* The sidebar toggle lives in the content area, not the sidebar. */}
-					<Button
-						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
-						aria-expanded={sidebarOpen}
-						className="max-lg:hidden"
-						data-slot="sidebar-toggle"
-						onClick={onToggleSidebar}
-						size="icon"
-						type="button"
-						variant="outline"
-					>
-						<PanelToggleGlyph side="left" />
-					</Button>
+					<HintTooltip label={sidebarLabel} shortcut={shortcutLabel('sidebar', undefined, presentationPlatform())} side="bottom">
+						<Button
+							aria-label={sidebarLabel}
+							aria-expanded={sidebarOpen}
+							aria-keyshortcuts={KEYBOARD_SHORTCUTS.sidebar.aria}
+							className="max-lg:hidden"
+							data-slot="sidebar-toggle"
+							onClick={onToggleSidebar}
+							size="icon"
+							type="button"
+							variant="outline"
+						>
+							<PanelToggleGlyph side="left" />
+						</Button>
+					</HintTooltip>
 					{/* Below lg this row is the app bar: the mark leads it, the page's name stays on the centre. */}
 					<h1 className="flex items-center lg:hidden"><GateshipMark className="size-6" portal /><span className="sr-only">Gateship</span></h1>
 				</div>
@@ -780,39 +821,46 @@ export function ShellControls({
 				</div>
 				<div className="flex min-w-0 items-center justify-end gap-2">
 					<NotificationsPopover catalog={catalog.notifications} items={notifications} />
-						<Button
-							aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
-							id="gateship-locale"
-							onClick={() => onSelectLocale(targetLocale)}
-							size="icon"
-							type="button"
-							variant="outline"
-						>
-							<span className="font-mono text-xs">{targetLocale === 'pt-BR' ? 'PT' : 'EN'}</span>
-						</Button>
-						<Button
-							aria-label={dark ? catalog.themeToggle.light : catalog.themeToggle.dark}
-							onClick={toggleTheme}
-							size="icon"
-							type="button"
-							variant="outline"
-						>
-							<ShellIcon icon={dark ? Sun02Icon : Moon02Icon} />
-						</Button>
-						<Button
-							aria-label={wide ? catalog.widthToggle.compact : catalog.widthToggle.wide}
-							className="hidden 2xl:inline-flex"
-							onClick={toggleWidth}
-							size="icon"
-							type="button"
-							variant="outline"
-						>
-							<ShellIcon icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon} />
-						</Button>
+						<HintTooltip label={localeLabel} side="bottom">
+							<Button
+								aria-label={localeLabel}
+								id="gateship-locale"
+								onClick={() => onSelectLocale(targetLocale)}
+								size="icon"
+								type="button"
+								variant="outline"
+							>
+								<span className="font-mono text-xs">{targetLocale === 'pt-BR' ? 'PT' : 'EN'}</span>
+							</Button>
+						</HintTooltip>
+						<HintTooltip label={themeLabel} side="bottom">
+							<Button
+								aria-label={themeLabel}
+								onClick={toggleTheme}
+								size="icon"
+								type="button"
+								variant="outline"
+							>
+								<ShellIcon icon={dark ? Sun02Icon : Moon02Icon} />
+							</Button>
+						</HintTooltip>
+						<HintTooltip label={widthLabel} side="bottom">
+							<Button
+								aria-label={widthLabel}
+								className="hidden 2xl:inline-flex"
+								onClick={toggleWidth}
+								size="icon"
+								type="button"
+								variant="outline"
+							>
+								<ShellIcon icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon} />
+							</Button>
+						</HintTooltip>
 					{inspectorToggle()}
 				</div>
 			</div>
 		</div>
+		</TooltipGroup>
 	);
 }
 

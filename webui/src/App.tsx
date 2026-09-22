@@ -86,6 +86,31 @@ export function handleDestinationShortcut(
 	return true;
 }
 
+/** The three standing keys: the registry, the global settings and the sidebar itself. */
+export function handleShellShortcut(
+	event: PanelKeyEvent,
+	runtime = panelRuntime(),
+	navigate?: (destination: string) => void,
+	toggleSidebar?: () => void,
+): boolean {
+	if (isTextEntry(event.target)) return false;
+	if (matchesShortcut(event, KEYBOARD_SHORTCUTS.sidebar)) {
+		if (toggleSidebar === undefined) return false;
+		event.preventDefault();
+		toggleSidebar();
+		return true;
+	}
+	const pages = [['manageProjects', '/projects'], ['globalSettings', '/settings']] as const;
+	for (const [kind, destination] of pages) {
+		if (!matchesShortcut(event, KEYBOARD_SHORTCUTS[kind])) continue;
+		event.preventDefault();
+		if (navigate === undefined) runtime.location?.assign(destination);
+		else navigate(destination);
+		return true;
+	}
+	return false;
+}
+
 export function handleOverviewShortcut(event: PanelKeyEvent, runtime = panelRuntime(), navigate?: (destination: string) => void, selectAllProjects?: () => void): boolean {
 	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.overview) || isTextEntry(event.target)) return false;
 	event.preventDefault();
@@ -128,6 +153,9 @@ export function App(props: AppProps): React.ReactElement {
 				return;
 			}
 			if (handleDestinationShortcut(event, destinationHrefs(selection, props.projects), destinationIndex(selection), runtime, props.onNavigate)) {
+				return;
+			}
+			if (handleShellShortcut(event, runtime, props.onNavigate, toggleSidebar)) {
 				return;
 			}
 			handleProjectShortcut(event, props.projects, runtime, props.onNavigate);
