@@ -379,27 +379,8 @@ html.gship-harness-reduced-motion *::after {
 }
 
 :root.gship-wide {
+	/* Every block fills the panel, as a full-width layout does elsewhere; a reading measure lives on the block that needs it (a field, a card's description). */
 	--content-measure: none;
-}
-
-/*
- * The wide preference releases the measure for lists alone, and only as far as
- * a list needs it. A form, a row of figures or a paragraph only gets longer
- * lines, and a table with a few short columns only gets holes between them.
- * So every block keeps the measure, and a data table starts at the measure and
- * grows past it when its columns ask for the room (more columns switched on,
- * long values), up to the width the preference released. A surface that
- * carries the outer ring counts the ring in its width (`--ring-inset`), so
- * ringed and unringed blocks end on the same line.
- */
-:root.gship-wide :is([data-slot='card-stack'], [data-slot='tabs-content'], [data-slot='card-stack'] > section) > :not([data-slot='tabs']):not([data-slot='data-table']):not(section:has(> [data-slot='data-table'])) {
-	max-width: calc(80rem - var(--ring-inset, 0px));
-}
-
-:root.gship-wide :is([data-slot='card-stack'], [data-slot='tabs-content'], [data-slot='card-stack'] > section) > [data-slot='data-table'] {
-	width: fit-content;
-	min-width: min(100% - 14px, 80rem - 14px);
-	max-width: calc(100% - 14px);
 }
 
 /*

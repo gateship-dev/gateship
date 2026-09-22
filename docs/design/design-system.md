@@ -144,7 +144,7 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | Below `lg` the shell is an app: the switcher on top, the controls row as the app bar (mark, centred title, actions) and a tab bar at the foot with the four lists and More, which holds the settings and the registry. The tab bar is the last row of the column, not a layer over the content | Behaviour tests, visual gate baselines |
 | Grids collapse to one column; a grid of fields stacks, and each field keeps a real label | Visual gate, behaviour tests |
 | Interactive targets offer at least 44px to a coarse pointer. Labels wrap instead of being clipped | Kit defaults, judgment |
-| The wide preference releases the measure for lists alone, and only as far as a list needs it. Every block keeps the 80rem measure; a data table starts there and grows when its columns ask for the room | Judgment |
+| The centred layout is a container of 80rem on the panel's centre, with 24px gutters, as the large products do; when the panel is a little wider than the measure the small remainder splits to both sides. The wide preference releases the measure: every block fills the panel, a table included, and a reading measure lives on the block that needs it (a field, a card's description) | Judgment |
 | Only the content panel scrolls on desktop. A bar that floats over it is opaque (`--color-muted-solid`) and rests on the column's fade | Judgment |
 
 ## Interaction and accessibility
