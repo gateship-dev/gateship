@@ -15,6 +15,7 @@ import { SelectField } from '../components/ui/select.tsx';
 import { Switch } from '../components/ui/switch.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
 import type { Locale, SettingsCatalog } from '../locale.ts';
+import { applyThemeChoice, readThemeChoice, type ThemeChoice } from '../theme.ts';
 import type { ProviderUsageView, ProviderUsageWindowView } from '../run-view.ts';
 import { ActionButton, ContextPanel, SectionCard } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
@@ -1026,6 +1027,66 @@ export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & {
 					<p className="text-muted-foreground">{project.detail}</p>
 				)}
 			</div>
+		</SectionCard>
+	);
+}
+
+/**
+ * How this screen looks and which language it speaks. Both were buttons in the
+ * shell's top row, where an operational console should carry the work and not
+ * the preferences that are set once. Neither reaches the service: they live in
+ * this browser, so they apply the moment they are chosen and have no save.
+ *
+ * The theme offers the system as a choice because it always was one -- no
+ * stored value means the screen follows the operating system, and the boot
+ * script keeps following it as the system changes. The single button could
+ * only say light or dark, so the first press took that state away for good.
+ */
+export function InterfacePanel({
+	locale,
+	onSelectLocale,
+	catalog,
+}: Pick<AppProps, 'locale' | 'onSelectLocale'> & { catalog: SettingsCatalog }): React.ReactElement {
+	const browser = globalThis as unknown as {
+		localStorage?: { getItem: (key: string) => string | null; setItem: (key: string, value: string) => void; removeItem: (key: string) => void };
+		matchMedia?: (query: string) => { matches: boolean };
+		document?: { documentElement: { classList: { toggle: (token: string, force: boolean) => void } } };
+	};
+	const [theme, setTheme] = useState<ThemeChoice>(() => readThemeChoice(() => browser.localStorage?.getItem('gship-theme') ?? null));
+	const chooseTheme = (choice: ThemeChoice): void => {
+		const dark = applyThemeChoice(choice, browser.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false, (key, value) => {
+			if (value === null) browser.localStorage?.removeItem(key);
+			else browser.localStorage?.setItem(key, value);
+		});
+		browser.document?.documentElement.classList.toggle('dark', dark);
+		setTheme(choice);
+	};
+	return (
+		<SectionCard description={catalog.interface.description} title={catalog.interface.title}>
+			<FormField htmlFor="interface-theme">
+				<span className="font-medium">{catalog.interface.theme}</span>
+				<SelectField
+					className="w-full sm:w-64"
+					id="interface-theme"
+					items={[
+						{ value: 'system', label: catalog.interface.themeChoices.system },
+						{ value: 'light', label: catalog.interface.themeChoices.light },
+						{ value: 'dark', label: catalog.interface.themeChoices.dark },
+					]}
+					onValueChange={(value) => chooseTheme(value as ThemeChoice)}
+					value={theme}
+				/>
+			</FormField>
+			<FormField htmlFor="interface-language">
+				<span className="font-medium">{catalog.interface.language}</span>
+				<SelectField
+					className="w-full sm:w-64"
+					id="interface-language"
+					items={[{ value: 'en-US', label: 'English (US)' }, { value: 'pt-BR', label: 'Português (Brasil)' }]}
+					onValueChange={(value) => onSelectLocale(value as Locale)}
+					value={locale}
+				/>
+			</FormField>
 		</SectionCard>
 	);
 }

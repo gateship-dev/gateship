@@ -1073,9 +1073,10 @@ if (!rootElement) {
 const locale = readLocalePreference(() => window.localStorage.getItem(LOCALE_STORAGE_KEY));
 document.documentElement.lang = locale;
 
-// Theme follows the system until the operator chooses: the sidebar toggle
-// stores an explicit 'light' | 'dark' under this key, and a stored choice
-// always beats the OS preference. The stylesheet's dark tokens hang off a
+// Theme follows the system until the operator chooses: the interface card in
+// the global settings stores an explicit 'light' | 'dark' under this key, and
+// removes it to go back to following the system. A stored choice always beats
+// the OS preference. The stylesheet's dark tokens hang off a
 // `.dark` class, the one switching mechanism this screen uses.
 const THEME_STORAGE_KEY = 'gship-theme';
 const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1085,8 +1086,9 @@ const applyScheme = (): void => {
 	document.documentElement.classList.toggle('dark', dark);
 };
 applyScheme();
-// The content measure mirrors the theme mechanism: ShellControls stores an
-// explicit choice, and the surfaces read it through one root class.
+// The content measure mirrors the theme mechanism: the row at the top of the
+// content stores an explicit choice, and the surfaces read it through one root
+// class.
 if (window.localStorage.getItem('gship-width') === 'wide') {
 	document.documentElement.classList.add('gship-wide');
 }

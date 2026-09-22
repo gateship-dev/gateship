@@ -109,6 +109,7 @@ import {
 } from '../../webui/src/client.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
 import { presentationPlatform, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
+import { applyThemeChoice, readThemeChoice, themeIsDark } from '../../webui/src/theme.ts';
 import {
 	canReturnToLiveEdge,
 	createLiveEdgeController,
@@ -2539,14 +2540,14 @@ describe('settings surface', () => {
 
 		for (const [html, labels] of [
 			[english, ['Project settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief']],
-			[portuguese, ['Ajustes do projeto', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto']],
+			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
 		}
 		for (const [html, labels] of [
 			[globalEnglish, ['Settings', 'Agent defaults', 'Operator', 'Gateship updates', 'Notifications', 'Save profile']],
-			[globalPortuguese, ['Ajustes', 'Padrões dos agentes', 'Operador', 'Atualizações do Gateship', 'Notificações', 'Salvar perfil']],
+			[globalPortuguese, ['Configurações', 'Padrões dos agentes', 'Operador', 'Atualizações do Gateship', 'Notificações', 'Salvar perfil']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['Eduardo', 'America/Sao_Paulo']);
@@ -4643,29 +4644,60 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('the persistent language control offers the other locale on every surface', () => {
-		// The control is a single button in the shell's top-right row: its
-		// face and label name the locale it switches TO.
+	test('the interface card holds the theme and the language, and the theme offers the system it always followed', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
-			for (const route of SURFACE_PATHS) {
-				const html = renderAt(route, { locale });
+			const html = globalSettingsPage({ locale });
+			const catalog = LOCALE_CATALOG[locale].settings.interface;
 
-				expect(html).toContain('id="gateship-locale"');
-				expect(html).toContain(
-					`aria-label="${locale === 'en-US' ? 'Português (Brasil)' : 'English (US)'}"`,
-				);
-				expect(html).toContain(locale === 'en-US' ? '>PT<' : '>EN<');
-			}
+			expect(html).toContain(catalog.title);
+			expect(html).toContain(catalog.theme);
+			expect(html).toContain(catalog.language);
+			// The trigger shows what is chosen; the list of choices is a portal that
+			// only exists once it opens. Three states, because three is what the
+			// mechanism always had: no stored choice follows the operating system.
+			expect(html).toContain(catalog.themeChoices.system);
+			expect(new Set(Object.values(catalog.themeChoices)).size).toBe(3);
+			expect(html).toContain(locale === 'en-US' ? 'English (US)' : 'Português (Brasil)');
+			// Nothing to save: both apply at once and are this browser's, not the service's.
+			expect(html.slice(html.indexOf(catalog.title), html.indexOf(catalog.language))).not.toContain('type="submit"');
 		}
 	});
 
-	test('the language control remains available while onboarding blocks the route surface', () => {
-		const project: ProjectStatusView = { state: 'empty', name: 'workspace', detail: 'not ready' };
-		for (const route of ['/', '/runs', '/work'] as const) {
-			const html = renderAt(route, { project });
-			expect(html).toContain('Connect a GitHub project');
-			expect(html).toContain('id="gateship-locale"');
+	test('the theme choice is read, resolved and stored as three states', () => {
+		expect(readThemeChoice(() => 'dark')).toBe('dark');
+		expect(readThemeChoice(() => 'light')).toBe('light');
+		for (const stored of [null, '', 'system', 'Dark']) expect(readThemeChoice(() => stored)).toBe('system');
+		expect(readThemeChoice(() => { throw new Error('blocked'); })).toBe('system');
+		expect(themeIsDark('system', true)).toBe(true);
+		expect(themeIsDark('system', false)).toBe(false);
+		expect(themeIsDark('light', true)).toBe(false);
+		expect(themeIsDark('dark', false)).toBe(true);
+		// Choosing the system clears the key: a stored 'system' would read as a
+		// choice at boot and pin the screen to whatever the system was that day.
+		const written: (string | null)[] = [];
+		expect(applyThemeChoice('system', true, (_key, value) => { written.push(value); })).toBe(true);
+		expect(applyThemeChoice('light', true, (_key, value) => { written.push(value); })).toBe(false);
+		expect(written).toEqual([null, 'light']);
+		// Storage that refuses still leaves the screen in the chosen theme.
+		expect(applyThemeChoice('dark', false, () => { throw new Error('blocked'); })).toBe(true);
+	});
+
+	test('the language and the theme are settings, not chrome: no surface carries them in its top row', () => {
+		// Both were single buttons in the shell's top-right row. They are chosen
+		// once, so they belong with the settings and not beside the work.
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			for (const route of SURFACE_PATHS) {
+				const html = renderAt(route, { locale });
+				const controls = html.slice(html.indexOf('data-slot="shell-controls-layout"'));
+
+				expect(controls).not.toContain('id="gateship-locale"');
+				expect(controls).not.toContain('aria-label="Português (Brasil)"');
+				expect(controls).not.toContain('aria-label="English (US)"');
+				expect(controls).not.toContain(locale === 'en-US' ? '>PT<' : '>EN<');
+			}
 		}
+		// The screen still speaks the locale it was given; only the control moved.
+		expect(renderAt('/overview', { locale: 'pt-BR' })).toContain('Agora');
 	});
 
 	test('only exact supported stored values become locales', () => {
@@ -4727,7 +4759,7 @@ describe('operator shell', () => {
 	test('navigation keeps localized global settings in its own list after the destinations', () => {
 		for (const expected of [
 			{ locale: 'en-US' as const, globalSettings: 'Global settings', projectSettings: 'Project settings' },
-			{ locale: 'pt-BR' as const, globalSettings: 'Ajustes globais', projectSettings: 'Ajustes do projeto' },
+			{ locale: 'pt-BR' as const, globalSettings: 'Configurações', projectSettings: 'Ajustes' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
 			const settings = navigationList(html, 'settings-navigation');
@@ -5142,7 +5174,7 @@ describe('operator shell', () => {
 		const nav = html.slice(start, html.indexOf('</nav>', start));
 
 		expect(nav).toContain('aria-label="Navegação"');
-		for (const label of ['Agora', 'Execuções', 'Fila', 'Análises', 'Ajustes globais']) {
+		for (const label of ['Agora', 'Execuções', 'Fila', 'Análises', 'Configurações']) {
 			expect(nav).toContain(`>${label}</span>`);
 		}
 		expect(switcherTrigger(nav)).toContain(`>${CURRENT_PROJECT.name}<`);
@@ -5194,9 +5226,6 @@ describe('operator shell', () => {
 		const header = shellHeader(html);
 		expect(html).toContain('data-slot="notifications-trigger"');
 		expect(html).toContain('aria-label="Notifications"');
-		expect(html).toContain('aria-label="Português (Brasil)"');
-		expect(header).not.toContain('role="group" aria-label="Language"');
-		expect(header).not.toContain('role="group" aria-label="Idioma"');
 		expect(header).not.toContain('Needs you');
 		// No version reported: the header shows the title alone.
 		expect(home()).not.toMatch(/v\d+\.\d+\.\d+/);

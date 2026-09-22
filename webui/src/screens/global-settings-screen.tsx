@@ -6,7 +6,7 @@ import { Tabs, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
-import { AgentDefaultsPanel, NotificationsPanel, OperatorProfilePanel, SelfUpdatePanel } from './settings.tsx';
+import { AgentDefaultsPanel, InterfacePanel, NotificationsPanel, OperatorProfilePanel, SelfUpdatePanel } from './settings.tsx';
 import { useTabParam } from '../lib/use-tab-param.ts';
 
 const GLOBAL_TABS = ['agents', 'operator', 'notifications', 'updates'] as const;
@@ -33,13 +33,14 @@ export function GlobalSettingsSurface(props: AppProps): React.ReactElement {
 				onSaveAgentDefaults={props.onSaveAgentDefaults}
 				pending={props.pending}
 			/></OperationalReadPanel></TabsPanel>
+				{/* Who the operator is, then how their screen is set: the profile is the service's, the interface is this browser's, so they are two cards and not two halves of one form. */}
 				<TabsPanel value="operator"><OperationalReadPanel detail={failed('Operator profile')} loaded={loaded('Operator profile')} locale={props.locale} pending={pending('Operator profile')} resource="Operator profile"><OperatorProfilePanel
 						catalog={catalog}
 						onSaveOperatorProfile={props.onSaveOperatorProfile}
 						operatorProfile={props.operatorProfile}
 						pending={props.pending}
 						suggestedTimezone={props.suggestedTimezone}
-					/></OperationalReadPanel></TabsPanel>
+					/></OperationalReadPanel><InterfacePanel catalog={catalog} locale={props.locale} onSelectLocale={props.onSelectLocale} /></TabsPanel>
 				<TabsPanel value="notifications"><OperationalReadPanel detail={failed('Notifications')} loaded={loaded('Notifications')} locale={props.locale} pending={pending('Notifications')} resource="Notifications"><NotificationsPanel
 						catalog={catalog}
 						notificationChannels={props.notificationChannels}

@@ -165,7 +165,7 @@ export function App(props: AppProps): React.ReactElement {
 	}, [props.projects, props.onSelectAllProjects, selection, toggleSidebar]);
 	return (
 		<AppShell
-			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} notifications={notifications} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}
+			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} notifications={notifications} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}
 			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} onSelectAllProjects={props.onSelectAllProjects} open={sidebarOpen} overview={props.overview} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} selectedProjectId={selectedProjectId} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
 			tabBar={<ShellTabBar locale={props.locale} overview={props.overview} projects={props.projects} route={props.route} selectedProjectId={selectedProjectId} />}

@@ -18,7 +18,7 @@ import { Menu } from '@base-ui/react/menu';
 import { KeyChip } from '../components/ui/key-chip.tsx';
 import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, Radar01Icon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, Sun02Icon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, ListViewIcon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, Radar01Icon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
@@ -713,15 +713,14 @@ export function useSidebarOpen(): [boolean, () => void] {
 }
 
 /**
- * The shell's persistent preferences, one row at the top right of the
- * content area (operator decision, 2026-08-25, replacing the segmented
- * pills at the sidebar's foot): language, theme and content measure, each a
- * single outline button whose face names the state it switches TO. Theme
- * and measure store an explicit choice that main.tsx re-applies at boot.
+ * The row at the top of the content area: the sidebar's own toggle on the
+ * left, the page's name on the centre, and on the right what the operator
+ * acts on here -- what needs them, the measure this screen is read at, and
+ * the inspector. Theme and language left this row for the settings page
+ * (operator decision, 2026-09-22): a console's chrome carries the work, not
+ * the two preferences that are chosen once and never again.
  */
 export function ShellControls({
-	locale,
-	onSelectLocale,
 	catalog,
 	title,
 	sidebarOpen,
@@ -730,7 +729,7 @@ export function ShellControls({
 	onToggleInspector,
 	showInspectorToggle,
 	notifications,
-}: Pick<AppProps, 'locale' | 'onSelectLocale'> & {
+}: {
 	catalog: ShellCatalog;
 	title: string;
 	sidebarOpen: boolean;
@@ -740,22 +739,9 @@ export function ShellControls({
 	showInspectorToggle: boolean;
 	notifications: readonly NotificationItem[];
 }): React.ReactElement {
-	const [dark, setDark] = useState(() => {
-		const runtime = panelRuntime();
-		const stored = runtime.localStorage?.getItem('gship-theme') ?? null;
-		if (stored !== null) return stored === 'dark';
-		return runtime.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-	});
 	const [wide, setWide] = useState(
 		() => panelRuntime().localStorage?.getItem('gship-width') === 'wide',
 	);
-	const toggleTheme = (): void => {
-		const next = !dark;
-		const runtime = panelRuntime();
-		runtime.localStorage?.setItem('gship-theme', next ? 'dark' : 'light');
-		runtime.document?.documentElement.classList.toggle('dark', next);
-		setDark(next);
-	};
 	const toggleWidth = (): void => {
 		const next = !wide;
 		const runtime = panelRuntime();
@@ -763,13 +749,10 @@ export function ShellControls({
 		runtime.document?.documentElement.classList.toggle('gship-wide', next);
 		setWide(next);
 	};
-	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
 	/* Each of these is a glyph with no label beside it, so its name lives in a
 	 * hint, and the one that has a key shows the key there. A chip has nowhere
 	 * to sit on a 32px square. */
 	const sidebarLabel = sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand;
-	const localeLabel = targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)';
-	const themeLabel = dark ? catalog.themeToggle.light : catalog.themeToggle.dark;
 	const widthLabel = wide ? catalog.widthToggle.compact : catalog.widthToggle.wide;
 	const inspectorLabel = inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand;
 	const inspectorToggle = (): React.ReactElement | null => showInspectorToggle ? (
@@ -816,29 +799,6 @@ export function ShellControls({
 				</div>
 				<div className="flex min-w-0 items-center justify-end gap-2">
 					<NotificationsPopover catalog={catalog.notifications} items={notifications} />
-						<HintTooltip label={localeLabel} side="bottom">
-							<Button
-								aria-label={localeLabel}
-								id="gateship-locale"
-								onClick={() => onSelectLocale(targetLocale)}
-								size="icon"
-								type="button"
-								variant="outline"
-							>
-								<span className="font-mono text-xs">{targetLocale === 'pt-BR' ? 'PT' : 'EN'}</span>
-							</Button>
-						</HintTooltip>
-						<HintTooltip label={themeLabel} side="bottom">
-							<Button
-								aria-label={themeLabel}
-								onClick={toggleTheme}
-								size="icon"
-								type="button"
-								variant="outline"
-							>
-								<ShellIcon icon={dark ? Sun02Icon : Moon02Icon} />
-							</Button>
-						</HintTooltip>
 						<HintTooltip label={widthLabel} side="bottom">
 							<Button
 								aria-label={widthLabel}
