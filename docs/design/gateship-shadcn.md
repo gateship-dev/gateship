@@ -39,7 +39,7 @@ que espera o operador, coluna responsiva, linha que abre e paginação local.
 
 Os demais componentes nasceram no repositório e seguem o mesmo idioma: `badge`,
 `button`, `callout`, `card`, `card-layout`, `chart`, `collapsible`,
-`count`, `disclosure-chevron`, `empty-state`, `input`, `item`, `progress`, `reference`, `select`,
+`count`, `disclosure-chevron`, `empty-state`, `input`, `item`, `page-loading`, `progress`, `reference`, `select`,
 `separator`, `skeleton`, `stat`, `status-dot`, `switch`, `table`, `tabs`, `tag` e
 `textarea`.
 

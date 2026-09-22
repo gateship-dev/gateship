@@ -24,7 +24,9 @@ import { Separator } from '../../webui/src/components/ui/separator.tsx';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../webui/src/components/ui/collapsible.tsx';
 import { Count } from '../../webui/src/components/ui/count.tsx';
 import { Reference } from '../../webui/src/components/ui/reference.tsx';
+import { PageLoading } from '../../webui/src/components/ui/page-loading.tsx';
 import { Stat } from '../../webui/src/components/ui/stat.tsx';
+import { OperationalReadPanel } from '../../webui/src/operational-unavailable.tsx';
 import { Switch } from '../../webui/src/components/ui/switch.tsx';
 import { StatusDot } from '../../webui/src/components/ui/status-dot.tsx';
 import { Tag } from '../../webui/src/components/ui/tag.tsx';
@@ -316,6 +318,22 @@ describe('ui primitives', () => {
 		// Ink when on, never the acid of the mark.
 		expect(on).toContain('data-checked:bg-primary');
 		expect(on).not.toMatch(/attention/);
+	});
+
+	test('a page that waits shows the mark drawing its arch; a block that waits inside a page shows a skeleton', () => {
+		const page = renderToStaticMarkup(<PageLoading label="Loading queues…" />);
+		expect(page).toContain('role="status"');
+		expect(page).toContain('aria-busy="true"');
+		expect(page).toContain('data-slot="loading-mark"');
+		expect(page).toContain('loading-mark');
+		expect(page).toContain('viewBox="0 0 2750 2750"');
+		expect(page).toContain('Loading queues…');
+		expect(page).not.toContain('data-slot="skeleton"');
+		// The panel is a block inside a page that is already there: it keeps the skeleton, in the frame the panel will have.
+		const panel = renderToStaticMarkup(<OperationalReadPanel detail={undefined} loaded={false} locale="en-US" pending resource="Providers">ready</OperationalReadPanel>);
+		expect(panel).toContain('data-slot="skeleton"');
+		expect(panel).toContain('data-slot="card-frame"');
+		expect(panel).not.toContain('data-slot="loading-mark"');
 	});
 
 	test('a count says how many, and says nothing when there are none', () => {

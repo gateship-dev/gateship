@@ -8,7 +8,7 @@ import { Badge, type BadgeVariant } from '../components/ui/badge.tsx';
 import { StatusDot } from '../components/ui/status-dot.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
-import { Skeleton } from '../components/ui/skeleton.tsx';
+import { PageLoading } from '../components/ui/page-loading.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, OverviewCatalog } from '../locale.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
@@ -145,7 +145,7 @@ export function OverviewQueuesSurface({ props }: { props: AppProps }): React.Rea
 	const queues = sortQueuesByUrgency(data?.queues.filter((queue) => filter === undefined || queue.project.id === filter) ?? []);
 	const errors = queueErrorsForFilter(data?.errors ?? [], filter);
 	return <SurfaceColumn label={queueCatalog.title} status={props.status}>
-		{data === null && error === null ? <div role="status" aria-label={queueCatalog.loading}><Skeleton className="h-28 w-full" /><span className="sr-only">{queueCatalog.loading}</span></div> : null}
+		{data === null && error === null ? <PageLoading label={queueCatalog.loading} /> : null}
 		{error !== null ? <Alert variant="destructive"><HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2.25} /><AlertTitle>{queueCatalog.error}</AlertTitle><AlertDescription>{error}</AlertDescription><AlertAction><Button size="sm" type="button" variant="outline" onClick={() => setRetryAttempt((attempt) => attempt + 1)}>{queueCatalog.retry}</Button></AlertAction></Alert> : null}
 		{data !== null ? <QueueEmptyState catalog={queueCatalog} errors={errors} filter={filter} locale={props.locale} projectCount={props.projects.length} queues={queues} /> : null}
 		<div className="flex flex-col gap-4">{queues.map((queue) => <QueueRow catalog={queueCatalog} key={queue.project.id} locale={props.locale} queue={queue} />)}</div>

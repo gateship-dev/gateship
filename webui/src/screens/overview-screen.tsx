@@ -7,7 +7,7 @@ import { Card, CardPanel } from '../components/ui/card.tsx';
 import { CardGrid } from '../components/ui/card-layout.tsx';
 import { DataTable, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
-import { Skeleton } from '../components/ui/skeleton.tsx';
+import { PageLoading } from '../components/ui/page-loading.tsx';
 import { Stat } from '../components/ui/stat.tsx';
 import { StatusDot } from '../components/ui/status-dot.tsx';
 import { Tag } from '../components/ui/tag.tsx';
@@ -106,7 +106,7 @@ export function OverviewSurface(props: AppProps): React.ReactElement {
 	const overview = props.overview ?? null;
 	const attention = overview === null ? 0 : overviewAttention(overview);
 	return <SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.routeLabels.now} status={props.status}>
-		{props.overviewLoading && overview === null ? <div role="status" aria-label={catalog.loading}><Skeleton className="h-20 w-full" /><span className="sr-only">{catalog.loading}</span></div> : null}
+		{props.overviewLoading && overview === null ? <PageLoading label={catalog.loading} /> : null}
 		{overview === null && props.overviewError !== null && props.overviewError !== undefined ? <Card><CardPanel><p role="alert">{catalog.error}</p><p className="text-muted-foreground text-xs">{props.overviewError}</p></CardPanel></Card> : null}
 		{(overview === null || overview.projects.length === 0) && !props.overviewLoading && !props.overviewError && props.projects.length === 0 ? <EmptyState>{catalog.empty}</EmptyState> : null}
 		{props.overviewError ? <p className="text-warning-foreground text-sm" role="alert">{catalog.error}: {props.overviewError}</p> : null}

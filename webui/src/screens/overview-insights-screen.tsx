@@ -6,6 +6,7 @@ import type { AppProps } from '../app-props.ts';
 import { Alert02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Badge } from '../components/ui/badge.tsx';
+import { PageLoading } from '../components/ui/page-loading.tsx';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { CardGrid } from '../components/ui/card-layout.tsx';
@@ -285,7 +286,7 @@ export function OverviewInsightsSurface({ props }: { props: AppProps }): React.R
 	/* No project select: the sidebar switcher is the project filter, and a `?projectId=` link still scopes the history. */
 	return <SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.routeLabels.overviewInsights} status={props.status}>
 		<DataTableToolbar><ToggleGroup aria-label={catalog.window} className="flex-wrap" data-slot="insights-window" spacing={1} value={[query.window]} variant="outline" onValueChange={(value) => { const next = value[0]; if (next !== undefined) update({ window: next as OverviewWindow }); }}>{windows.map(([value, label]) => <ToggleGroupItem aria-label={label} key={value} value={value}>{label}</ToggleGroupItem>)}</ToggleGroup></DataTableToolbar>
-		{loading ? <p className="text-muted-foreground text-sm" role="status">{catalog.loading}</p> : null}
+		{loading ? <PageLoading label={catalog.loading} /> : null}
 		{error !== null ? <Alert variant="destructive"><HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2.25} /><AlertTitle>{catalog.error}</AlertTitle><AlertDescription>{error}</AlertDescription></Alert> : null}
 		{history === null || invalidCohortOffset(data) ? null : history.totalRuns === 0 ? <EmptyState>{catalog.noData}</EmptyState> : <InsightsData catalog={catalog} labels={labels} history={history} locale={props.locale} filter={query.cohortFilter} sortBy={query.cohortSortBy} sortDirection={query.cohortSortDirection} />}
 	</SurfaceColumn>;

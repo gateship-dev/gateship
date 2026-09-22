@@ -5,7 +5,7 @@ import type { AppProps } from '../app-props.ts';
 import type { IssueReviewDraft } from '../client.ts';
 import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { CardSplit, CardStack } from '../components/ui/card-layout.tsx';
-import { Skeleton } from '../components/ui/skeleton.tsx';
+import { PageLoading } from '../components/ui/page-loading.tsx';
 import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { routeSelection, routeOf, runIdOf } from '../routes.ts';
@@ -101,19 +101,20 @@ function RunLookup({ props, projectId, runId, missing }: { props: AppProps; proj
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.runs} status={props.status}>
 			{projectId === null ? null : <a className={TEXT_LINK_CLASS} href={`/projects/${encodeURIComponent(projectId)}/runs`}>{catalog.allRunsLabel}</a>}
-			<Card data-slot="run-lookup" data-state={missing ? 'missing' : 'loading'}>
-				<CardHeader>
-					<div className="flex min-w-0 flex-col gap-1">
-						<span className="type-eyebrow text-muted-foreground">{catalog.runTitle}</span>
-						<CardTitle className="self-start">{missing ? catalog.runNotFound : <span aria-busy="true" role="status">{catalog.runLoading}</span>}</CardTitle>
-					</div>
-				</CardHeader>
-				<CardPanel>
-					{missing
-						? <><p className="max-w-prose text-muted-foreground text-sm">{catalog.runNotFoundDetail}</p><p className="type-data break-all text-muted-foreground text-xs">{runId}</p></>
-						: <><Skeleton className="h-6 w-full" /><Skeleton className="h-4 w-2/3" /></>}
-				</CardPanel>
-			</Card>
+			{missing ? (
+				<Card data-slot="run-lookup" data-state="missing">
+					<CardHeader>
+						<div className="flex min-w-0 flex-col gap-1">
+							<span className="type-eyebrow text-muted-foreground">{catalog.runTitle}</span>
+							<CardTitle className="self-start">{catalog.runNotFound}</CardTitle>
+						</div>
+					</CardHeader>
+					<CardPanel>
+						<p className="max-w-prose text-muted-foreground text-sm">{catalog.runNotFoundDetail}</p>
+						<p className="type-data break-all text-muted-foreground text-xs">{runId}</p>
+					</CardPanel>
+				</Card>
+			) : <PageLoading data-slot="run-lookup" data-state="loading" label={catalog.runLoading} />}
 		</SurfaceColumn>
 	);
 }

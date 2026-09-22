@@ -543,6 +543,31 @@ html.gship-harness-reduced-motion *::after {
 	}
 }
 
+/* The mark drawing its arch: the gate path carries pathLength=1, so one dash of 1 is the whole stroke. */
+@utility loading-mark {
+	& path[stroke] {
+		stroke-dasharray: 1;
+		stroke-dashoffset: 0;
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		& path[stroke] {
+			animation: mark-draw 1.8s ease-in-out infinite;
+		}
+	}
+}
+
+@keyframes mark-draw {
+	0% {
+		stroke-dashoffset: 1;
+	}
+
+	60%,
+	100% {
+		stroke-dashoffset: 0;
+	}
+}
+
 @keyframes scroll-fade-x {
 	0% {
 		mask-image: linear-gradient(to right, black 0, black calc(100% - var(--scroll-fade-size)), transparent 100%);

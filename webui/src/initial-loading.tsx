@@ -1,24 +1,14 @@
 import React from 'react';
 import { ShellContentFrame } from './app-shell.tsx';
 import { Button } from './components/ui/button.tsx';
+import { PageLoading } from './components/ui/page-loading.tsx';
 import type { Locale } from './locale.ts';
 
 /** A local main-area boundary while an operational scope is being hydrated. */
 export function InitialOperationalLoading({ locale }: { locale: Locale }): React.ReactElement {
 	return <main aria-busy="true" aria-label={locale === 'pt-BR' ? 'Carregamento operacional' : 'Operational loading'} className="scroll-container scroll-gutter-end scroll-fade flex min-h-0 w-full min-w-0 flex-1 overflow-y-auto p-4 lg:p-6" id="main-content" tabIndex={-1}>
-		<ShellContentFrame className="flex flex-col gap-6" role="status">
-			<span className="sr-only">{locale === 'pt-BR' ? 'Carregando dados operacionais…' : 'Loading operational data…'}</span>
-			<div aria-hidden="true" className="flex flex-col gap-3">
-				<div className="h-7 w-48 rounded-md bg-muted" />
-				<div className="h-4 w-80 max-w-full rounded-md bg-muted" />
-			</div>
-			<div aria-hidden="true" className="rounded-2xl border border-border bg-card p-5">
-				<div className="flex flex-col gap-4">
-					<div className="h-4 w-1/3 rounded-md bg-muted" />
-					<div className="h-4 w-full rounded-md bg-muted" />
-					<div className="h-4 w-4/5 rounded-md bg-muted" />
-				</div>
-			</div>
+		<ShellContentFrame className="flex flex-1 flex-col">
+			<PageLoading label={locale === 'pt-BR' ? 'Carregando dados operacionais…' : 'Loading operational data…'} />
 		</ShellContentFrame>
 	</main>;
 }
