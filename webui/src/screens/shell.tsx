@@ -15,6 +15,7 @@ import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
+import { KeyChip } from '../components/ui/key-chip.tsx';
 import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
 import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, ListViewIcon, Moon02Icon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, Radar01Icon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, Sun02Icon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
@@ -239,13 +240,12 @@ function projectTileIcon(index: number | undefined): Parameters<typeof Hugeicons
 	if (index === undefined) return DashboardSquare01Icon;
 	return PROJECT_TILE_ICONS[index] ?? SquareIcon;
 }
-const KEY_CHIP_CLASS = 'shrink-0 whitespace-nowrap rounded border border-border bg-muted px-1 font-mono text-xs leading-4 text-muted-foreground';
 
 /* The shortcut closes the row, as a menu's shortcut does everywhere; the mark that says which row is current leads it. */
 function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement | null {
 	const platform = presentationPlatform();
-	if (allProjects) return <kbd className={KEY_CHIP_CLASS} data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</kbd>;
-	return index === undefined ? null : <kbd className={KEY_CHIP_CLASS} data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>;
+	if (allProjects) return <KeyChip data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</KeyChip>;
+	return index === undefined ? null : <KeyChip data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</KeyChip>;
 }
 
 /* The row the switcher currently shows carries a check in the leading column,
@@ -527,12 +527,7 @@ function NavCount({ value }: { value: number | null }): React.ReactElement | nul
  * and the hint carries the key instead, as it carries the name. */
 interface NavShortcut { label: string; aria?: string | undefined; chip: 'current' | 'hover' }
 
-/* The chip keeps its slot at rest, so pointing at a row moves no text. */
-const HOVER_CHIP_CLASS = 'opacity-0 group-hover/nav:opacity-100 group-focus-visible/nav:opacity-100';
-/* A chip on a row sets no colour of its own: on the current row a muted fill
- * over the row's own tint measured 4.31:1, under the AA floor. It is an
- * outline in the row's ink, so it follows the row wherever the row goes. */
-const NAV_CHIP_CLASS = 'shrink-0 whitespace-nowrap rounded border border-border px-1 font-mono text-xs leading-4';
+
 
 /* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail. */
 function NavRow({ href, label, glyph, active, open, count = null, shortcut = null }: { href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; open: boolean; count?: number | null; shortcut?: NavShortcut | null }): React.ReactElement {
@@ -540,7 +535,7 @@ function NavRow({ href, label, glyph, active, open, count = null, shortcut = nul
 		/* The chip closes the row, so it takes the free space unless a count is
 		 * already there to take it. Zero counts for nothing here, the same way it
 		 * renders nothing: a count of none leaves the row as if it had none. */
-		<kbd className={cn(NAV_CHIP_CLASS, (count ?? 0) === 0 && 'ml-auto', shortcut.chip === 'hover' && HOVER_CHIP_CLASS)} data-slot="nav-shortcut">{shortcut.label}</kbd>
+		<KeyChip className={cn((count ?? 0) === 0 && 'ml-auto')} data-slot="nav-shortcut" reveal={shortcut.chip === 'hover' ? 'hover' : 'always'}>{shortcut.label}</KeyChip>
 	);
 	return (
 		<li className="shrink-0">

@@ -49,6 +49,13 @@ describe('design contract', () => {
 		expect(handWritten({ 'screens/planted.tsx': '<button className={PRIMARY}>Save</button>', 'components/ui/button.tsx': '<button />' })).toEqual(['screens/planted.tsx']);
 	});
 
+	test('one chip says a shortcut, and the kit owns the element it is made of', () => {
+		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).filter(([name, source]) => name !== 'components/ui/key-chip.tsx' && /<kbd\b/.test(source)).map(([name]) => name).sort();
+		expect(handWritten(sources)).toEqual([]);
+		// A chip written by hand carries its own colour, and a colour of its own is the one thing this chip must not have: a row it sits on changes tint under the pointer and when it is current.
+		expect(handWritten({ 'screens/planted.tsx': '<kbd className="rounded border bg-muted px-1 text-muted-foreground">⌥K</kbd>', 'components/ui/key-chip.tsx': '<kbd data-slot="key-chip" />' })).toEqual(['screens/planted.tsx']);
+	});
+
 	test('a screen writes no disclosure of its own: what opens is a CardDisclosure at page level and a Collapsible inside a card', () => {
 		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).filter(([name, source]) => name.startsWith('screens/') && /<(details|summary)\b/.test(source)).map(([name]) => name);
 		expect(handWritten(sources)).toEqual([]);

@@ -14,6 +14,7 @@
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
+import { KeyChip } from './key-chip.tsx';
 
 /** Hover intent, then instant between neighbours: the convention of every
  * desktop toolbar. One provider per group of adjacent triggers. */
@@ -51,7 +52,7 @@ export function HintTooltip({
 					>
 						<span className="font-medium">{label}</span>
 						{detail === undefined ? null : <span className="opacity-70">{detail}</span>}
-						{shortcut === undefined ? null : <kbd className="rounded border border-tooltip-border bg-tooltip-foreground/10 px-1 font-mono text-xs leading-4" data-slot="tooltip-shortcut">{shortcut}</kbd>}
+						{shortcut === undefined ? null : <KeyChip data-slot="tooltip-shortcut" surface="tooltip">{shortcut}</KeyChip>}
 					</TooltipPrimitive.Popup>
 				</TooltipPrimitive.Positioner>
 			</TooltipPrimitive.Portal>
