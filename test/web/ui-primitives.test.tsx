@@ -328,8 +328,8 @@ describe('ui primitives', () => {
 		expect(page).toContain('data-slot="loading-mark"');
 		expect(page).toContain('loading-mark');
 		expect(page).toContain('viewBox="0 0 2750 2750"');
-		// The stair is built as its five steps, bottom to top, each one a cell of the mark's grid.
-		expect([...new Set([...page.matchAll(/data-step="(\d)"/g)].map((match) => match[1]))]).toEqual(['1', '2', '3', '4', '5']);
+		// The stair is built as its three steps, bottom to top: the shaft's two blocks, then the whole arrowhead.
+		expect([...page.matchAll(/data-step="(\d)"/g)].map((match) => match[1])).toEqual(['1', '2', '3', '3', '3', '3', '3', '3']);
 		// The static mark keeps its one stair path.
 		expect(renderToStaticMarkup(<GateshipMark />)).not.toContain('data-step');
 		expect(page).toContain('Loading queues…');

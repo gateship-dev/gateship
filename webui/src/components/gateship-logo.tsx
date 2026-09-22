@@ -40,17 +40,15 @@ const PORTAL_FILL = 'var(--logo-portal)';
 const STAIR_FILL = 'var(--logo-stair)';
 
 /*
- * The stair as the five steps it is built of, bottom to top: two blocks of
- * shaft on the diagonal, the block where shaft meets head, the tip, and the
- * two wings of the head. Each block is one 250-unit cell of the mark's grid.
- * The loading mark shows them appear in this order.
+ * The stair as the three steps it is built of, bottom to top: the two blocks
+ * of the shaft on the diagonal, then the whole arrowhead at once. Each block is
+ * one 250-unit cell of the mark's grid. The loading mark shows them appear in
+ * this order.
  */
 const STAIR_STEPS: readonly (readonly [number, number])[][] = [
 	[[750, 1625]],
 	[[1000, 1375]],
-	[[1250, 1125]],
-	[[1500, 875]],
-	[[1000, 875], [1250, 875], [1500, 1125], [1500, 1375]],
+	[[1000, 875], [1250, 875], [1500, 875], [1250, 1125], [1500, 1125], [1500, 1375]],
 ];
 
 /** Gate + stair only, on the mark's own square canvas. */
@@ -61,7 +59,7 @@ export function GateshipMark({
 }: {
 	className?: string;
 	portal?: boolean;
-	/** The stair as its five steps, each marked with `data-step`, for the loading mark to build. */
+	/** The stair as its three steps, each marked with `data-step`, for the loading mark to build. */
 	steps?: boolean;
 }): React.ReactElement {
 	return (

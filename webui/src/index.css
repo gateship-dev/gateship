@@ -543,7 +543,7 @@ html.gship-harness-reduced-motion *::after {
 	}
 }
 
-/* The mark building its stair: each of the five steps rises in turn, from the bottom, and the wipe follows the same way up. */
+/* The mark building its stair: the two blocks of the shaft rise in turn, then the whole arrowhead, and the wipe follows the same way up. */
 @utility loading-mark {
 	& [data-step] {
 		opacity: 1;
@@ -551,15 +551,13 @@ html.gship-harness-reduced-motion *::after {
 
 	@media (prefers-reduced-motion: no-preference) {
 		& [data-step] {
-			animation: mark-step 2.4s ease-in-out infinite;
-			animation-delay: calc((var(--step) - 1) * 0.24s);
+			animation: mark-step 2s ease-in-out infinite;
+			animation-delay: calc((var(--step) - 1) * 0.28s);
 		}
 
 		& [data-step='1'] { --step: 1; }
 		& [data-step='2'] { --step: 2; }
 		& [data-step='3'] { --step: 3; }
-		& [data-step='4'] { --step: 4; }
-		& [data-step='5'] { --step: 5; }
 	}
 }
 
