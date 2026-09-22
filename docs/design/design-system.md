@@ -46,7 +46,7 @@ inspector that copies `slot[variant,size] WxH` for talking about one element.
 | Nothing spills out of its box by more than 8px where it can be seen. A scroll container and a deliberate clip are not spills | Visual gate |
 | The page never scrolls horizontally | Visual gate |
 | Colours come from tokens. No raw colour, no arbitrary value, no inline style, no class Tailwind does not know | Design lint |
-| Sans is the voice of titles, navigation, labels, table heads, prose and the moment something happened. Mono is the voice of identifiers, commands, durations, costs and counters | Kit defaults (`TableHead` is always sans, `type-data`, `type-eyebrow`), judgment at the call site |
+| Sans is the voice of titles, navigation, labels, prose and the moment something happened. Mono is the voice of identifiers, commands, durations, costs and counters, and of the label that names a block or a column. A column head is `type-eyebrow`, the same caps mono as a section's label, so a name is never read as one of the values under it | Kit defaults (`TableHead`, `type-data`, `type-eyebrow`), judgment at the call site |
 | Saans is not bundled. The interface uses the system sans until a repository asset and its licence are added | Judgment |
 | Acid (`#c8ff00`) belongs to the mark and the wordmark alone. No surface, badge, counter, dot or button in the interface uses the attention family | Behaviour tests |
 | Work waiting on the operator is said by order (most urgent first), by its state in the warning family and by text. No rule or border on the leading edge of a row, in any colour | Behaviour tests, judgment |
@@ -70,7 +70,7 @@ shadcn registry (`base-nova`, built on Base UI) and are adapted; see
 | A screen composes the kit and does not restyle it. Colour, typography and spacing a component owns are changed through a variant in the kit, never a class at the call site. Layout classes are free | Design lint `no-restyle` |
 | Class names are static strings, so they can be read | Design lint `require-static-classes` |
 | A page that has nothing to show yet shows the mark building its stair from the bottom in hard cuts, the shaft block by block and then the arrowhead (`PageLoading`) and says what it waits for. A skeleton is for a block that waits inside a page that is already there: a panel, the rows of a table. A page does not wear the shape of content it does not have. Under reduced motion the mark stands still | Behaviour tests |
-| A list of comparable rows is the kit's `DataTable`: one frame, sans heads, 40px rows, its own empty row, skeleton rows on first load, dimmed rows on refresh. A cell that holds a control gives up its padding, so the row stays 40px | Behaviour tests, visual gate baselines |
+| A list of comparable rows is the kit's `DataTable`: one frame, heads in the eyebrow, 40px rows, its own empty row, skeleton rows on first load, dimmed rows on refresh. A cell that holds a control gives up its padding, so the row stays 40px | Behaviour tests, visual gate baselines |
 | The controls over a table are one group: 8px between its rows, a block's distance to the table. The pagination under it shares the toolbar's two edges | Behaviour tests, judgment |
 | A moment is one column, day and time in sans with tabular figures, and the year only when it is not the current one | Behaviour tests |
 | A row names what it is about: a run row shows the issue's id and its title. The title takes no width of its own, so it fills the slack and never widens the table | Visual gate baselines |

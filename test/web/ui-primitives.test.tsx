@@ -101,9 +101,9 @@ describe('ui primitives', () => {
 	test('data tables leave row processing to the server and keep header voice apart from cell voice', () => {
 		const html = renderToStaticMarkup(<TableFixture data={[{ id: 'a', name: 'Nome', state: 'Pronto' }]} />);
 		const server = renderToStaticMarkup(<TableFixture server data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }, { id: 'b', name: 'Resposta do servidor B', state: 'Em fila' }]} />);
-		// A column's classes reach its cells; its header keeps the sans voice and only follows the alignment.
+		// A column's classes reach its cells; its header is the eyebrow of the column and only follows the alignment.
 		const stateHead = html.slice(html.lastIndexOf('<th', html.indexOf('State')), html.indexOf('State'));
-		expect(stateHead).toContain('font-sans');
+		expect(stateHead).toContain('type-eyebrow');
 		expect(stateHead).toContain('text-right');
 		expect(stateHead).not.toContain('font-mono');
 		expect(html).toMatch(/<td[^>]*class="[^"]*font-mono[^"]*text-right/);

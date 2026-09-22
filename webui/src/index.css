@@ -159,7 +159,8 @@ html.gship-harness-reduced-motion *::after {
 	.type-page-title { font-family: var(--font-heading); font-size: var(--text-2xl); font-weight: var(--font-weight-semibold); letter-spacing: -0.01em; }
 	.type-editorial-title { font-family: var(--font-heading); font-weight: var(--font-weight-medium); }
 	.type-body { font-family: var(--font-sans); }
-	.type-eyebrow { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: var(--font-weight-medium); letter-spacing: 0.12em; text-transform: uppercase; }
+	/* The caps and the mono face already set a label apart; tracking on top of them is a third signal saying the same thing, and it is the one that pushes the last letter off a centred box. */
+	.type-eyebrow { font-family: var(--font-mono); font-size: var(--text-xs); font-weight: var(--font-weight-normal); text-transform: uppercase; }
 	.type-data { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 }
 

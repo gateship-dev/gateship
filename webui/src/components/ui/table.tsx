@@ -69,9 +69,9 @@ export function TableHead({ className, ...props }: React.ComponentProps<'th'>): 
 	return (
 		<th
 			className={cn(
-				/* Heads are always sans: a table set in the data voice still labels its columns in prose. */
+				/* A head is the eyebrow of its column: the caps mono every section label wears, so a column's name is never read as one of its values. */
 				/* Between columns 12px; at the table's two edges 16px, the inset a Stat uses, so stacked blocks share a text edge. */
-				'h-10 whitespace-nowrap px-3 text-left align-middle font-medium font-sans text-muted-foreground leading-none first:pl-4 last:pr-4',
+				'type-eyebrow h-10 whitespace-nowrap px-3 text-left align-middle text-muted-foreground leading-none first:pl-4 last:pr-4',
 				className,
 			)}
 			data-slot="table-head"

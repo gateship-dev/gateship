@@ -193,7 +193,7 @@ export function DataTableColumnHeader<TData extends RowData>({
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
-				render={<Button aria-label={column.getCanSort() ? `${title}, ${state}` : title} className={cn('-mx-2 h-7 gap-1 px-2 font-medium font-sans text-muted-foreground data-popup-open:bg-accent', className)} size="sm" type="button" variant="ghost" />}
+				render={<Button aria-label={column.getCanSort() ? `${title}, ${state}` : title} className={cn('type-eyebrow -mx-2 h-7 gap-1 px-2 text-muted-foreground data-popup-open:bg-accent', className)} size="sm" type="button" variant="ghost" />}
 			>
 				{title}
 				{/* The glyph promises a sort; a column that only hides gets none. */}
