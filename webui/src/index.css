@@ -485,6 +485,17 @@ html.gship-harness-reduced-motion *::after {
 }
 
 /* Symmetric gutters, for a popup list whose rows must sit centred whether or not it scrolls. */
+/* The edge of a pinned table column. A border would belong to the collapsed
+ * table grid and stay where the column started; an inset shadow belongs to the
+ * cell, so the line travels with it while the rows scroll underneath. */
+@utility pin-edge-end {
+	box-shadow: inset -1px 0 0 var(--border);
+}
+
+@utility pin-edge-start {
+	box-shadow: inset 1px 0 0 var(--border);
+}
+
 @utility scroll-container-stable {
 	scrollbar-gutter: stable both-edges;
 }

@@ -232,6 +232,7 @@ function CohortTable({ history, catalog, locale, filter, sortBy, sortDirection }
 		head={<DataTableToolbar><DataTableFilter label={catalog.cohorts} placeholder={catalog.cohorts} locale={locale} table={table} /><DataTableViewOptions locale={locale} table={table} /></DataTableToolbar>}
 		locale={locale}
 		renderExpanded={(row) => <CohortRowDetail catalog={catalog} cohort={row} />}
+		storageKey="cohorts"
 		table={table}
 	/>;
 }

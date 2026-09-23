@@ -3567,7 +3567,9 @@ function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: R
 	// One cohort on one page is not a pager's job: the table that fits the smallest page shows no footer.
 	expect(onePage).not.toContain(catalog.cohortPage(1, 1, 1));
 	expect(onePage).not.toContain('data-slot="data-table-pagination"');
-	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(2);
+	// One table of cohorts: its Workflow head names itself in its text, in its sort menu's label, and in its width grip's label.
+	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(3);
+	expect(firstPage).toContain(`aria-label="${locale === 'en-US' ? 'Resize' : 'Redimensionar'} ${catalog.workflowRevision}"`);
 	expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
 	expect(firstPage).toContain(`aria-label="${locale === 'en-US' ? 'Previous page' : 'Página anterior'}"`);
 	expect(lastPage).toContain(`aria-label="${locale === 'en-US' ? 'Next page' : 'Próxima página'}"`);

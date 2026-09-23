@@ -259,6 +259,7 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 			locale={props.locale}
 			notice={<OverviewRunsAlerts catalog={catalog} error={error} page={page} onRetry={onRetry} />}
 			status={status}
+			storageKey="runs"
 			table={table}
 		/>
 	);

@@ -146,7 +146,7 @@ function installTransport(): void {
 	const runtime = globalThis as unknown as { window?: { fetch: (input: unknown, init?: unknown) => Promise<Response> } };
 	if (runtime.window === undefined || runtime.window.fetch.name === 'gateshipHarnessFetch') return;
 	const memory = new Map<string, string>();
-	Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); } } });
+	Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } } });
 	const json = (body: unknown): Response => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
 	runtime.window.fetch = async function gateshipHarnessFetch(input: unknown, init?: unknown): Promise<Response> { return harnessResponse(String(input), (init as { method?: string } | undefined)?.method, json); };
 }

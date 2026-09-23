@@ -89,7 +89,7 @@ export function RegisteredProjectsTable({ props }: { props: AppProps }): React.R
 	return (
 		<section aria-labelledby="registered-projects">
 			<h2 className="sr-only" id="registered-projects">{catalog.list.title}</h2>
-			<DataTable emptyDetail={catalog.list.emptyDetail} emptyState={catalog.list.empty} locale={props.locale} table={table} />
+			<DataTable emptyDetail={catalog.list.emptyDetail} emptyState={catalog.list.empty} locale={props.locale} storageKey="registry" table={table} />
 		</section>
 	);
 }

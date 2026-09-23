@@ -66,6 +66,53 @@ test.describe('@smoke Central invariants', () => {
 		expect(planted.misalignedTables.length).toBe(1);
 	});
 
+	test('a column takes the width it is dragged to, stores it, pins the name while the rows scroll, and gives it back', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		// The harness keeps storage in memory for each load, so every run starts from the browser's own layout.
+		await page.goto('/harness.html?frame=1440&route=/overview/runs&scenario=dense&locale=en-US&theme=light');
+		const width = (id: string): Promise<number> => page.locator(`th[data-column-id="${id}"]`).evaluate((head) => Math.round((head as unknown as { getBoundingClientRect: () => { width: number } }).getBoundingClientRect().width));
+		const grip = page.locator('th[data-column-id="run"] [data-slot=column-resize-grip]');
+		await expect(grip).toHaveAttribute('role', 'separator');
+		const before = await width('run');
+		const box = (await grip.boundingBox())!;
+		// Drag the Run column 600px wider: past what the frame has, so the rows must scroll inside it.
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(box.x + 600, box.y + box.height / 2, { steps: 8 });
+		await page.mouse.up();
+		const dragged = await width('run');
+		expect(dragged).toBeGreaterThan(before + 500);
+		const scroll = await page.locator('[data-slot=data-table] [data-slot=table-container]').evaluate((container) => { const box = container as unknown as { scrollWidth: number; clientWidth: number; scrollLeft: number }; box.scrollLeft = 400; return { overflow: box.scrollWidth > box.clientWidth, scrolled: box.scrollLeft }; });
+		expect(scroll.overflow).toBe(true);
+		expect(scroll.scrolled).toBeGreaterThan(0);
+		// The name of the row stays at the start, the row's menu at the end, while everything between them passes under.
+		await expect(page.locator('th[data-column-id="issueId"]')).toHaveClass(/sticky/);
+		await expect(page.locator('th[data-column-id="actions"]')).toHaveClass(/sticky/);
+		// The page itself never scrolls sideways: only the rows do, inside their frame.
+		expect(await page.evaluate(() => { const root = (globalThis as unknown as { document: { documentElement: { scrollWidth: number; clientWidth: number } } }).document.documentElement; return root.scrollWidth - root.clientWidth; })).toBe(0);
+		// The width is this browser's: the drag is written under the table's own key, the one the next visit reads.
+		const stored = await page.evaluate(() => JSON.parse((globalThis as unknown as { localStorage: { getItem: (key: string) => string | null } }).localStorage.getItem('gship-table:runs:widths') ?? 'null') as { current: Record<string, number>; dragged: string } | null);
+		expect(stored?.dragged).toBe('run');
+		expect(stored?.current['run']).toBe(dragged);
+		// The keyboard moves the same grip: right by 8, with shift by 32.
+		await page.locator('th[data-column-id="run"] [data-slot=column-resize-grip]').focus();
+		await page.keyboard.press('ArrowRight');
+		expect(await width('run')).toBe(dragged + 8);
+		// Escape during a drag puts the width back where the drag found it.
+		const again = (await page.locator('th[data-column-id="run"] [data-slot=column-resize-grip]').boundingBox())!;
+		await page.mouse.move(again.x + again.width / 2, again.y + again.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(again.x - 200, again.y + again.height / 2, { steps: 4 });
+		await page.keyboard.press('Escape');
+		await page.mouse.up();
+		expect(await width('run')).toBe(dragged + 8);
+		// Reset from the view menu returns the browser's own layout, where nothing scrolls.
+		await page.getByRole('button', { name: 'Columns' }).click();
+		await page.getByRole('menuitem', { name: 'Reset widths' }).click();
+		expect(await width('run')).toBe(before);
+		expect(await page.locator('[data-slot=data-table] [data-slot=table-container]').evaluate((container) => { const box = container as unknown as { scrollWidth: number; clientWidth: number }; return box.scrollWidth - box.clientWidth; })).toBeLessThanOrEqual(1);
+	});
+
 	test('covers focus, sidebar geometry, menus, sorting, pagination and internal table scrolling', async ({ page }) => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto('/harness.html?frame=1440&route=/overview/runs&scenario=dense&locale=en-US&theme=dark');

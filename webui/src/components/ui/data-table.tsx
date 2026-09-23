@@ -32,9 +32,10 @@ import {
 } from '@tanstack/react-table';
 import { ArrowDown01Icon, ArrowLeft01Icon, ArrowLeftDoubleIcon, ArrowRight01Icon, ArrowRightDoubleIcon, ArrowUp01Icon, Cancel01Icon, PlusSignCircleIcon, Search01Icon, Settings02Icon, UnfoldMoreIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../../lib/cn.ts';
 import { Button } from './button.tsx';
+import { KEY_STEP, KEY_STEP_LARGE, MIN_COLUMN_WIDTH, renderedWidths, useColumnSizing, type ColumnSizingControls } from './column-sizing.ts';
 import { Count } from './count.tsx';
 import { DisclosureChevron } from './disclosure-chevron.tsx';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
@@ -140,6 +141,9 @@ const copy = {
 		collapseRow: 'Hide details',
 		clearFacet: 'Clear',
 		clearSearch: 'Clear search',
+		resizeColumn: (column: string) => `Resize ${column}`,
+		fitWidths: 'Fit to width',
+		resetWidths: 'Reset widths',
 		clearFilters: 'Clear filters',
 		facetChosen: (count: number) => `${count} selected`,
 	},
@@ -167,6 +171,9 @@ const copy = {
 		collapseRow: 'Ocultar detalhes',
 		clearFacet: 'Limpar',
 		clearSearch: 'Limpar busca',
+		resizeColumn: (column: string) => `Redimensionar ${column}`,
+		fitWidths: 'Ajustar à largura',
+		resetWidths: 'Restaurar larguras',
 		clearFilters: 'Limpar filtros',
 		facetChosen: (count: number) => `${count} selecionados`,
 	},
@@ -363,6 +370,7 @@ export function DataTableColumnHeader<TData extends RowData>({
 /** The view-options menu: one checkbox per hideable column, and a reset. */
 export function DataTableViewOptions<TData extends RowData>({ table, locale = 'en-US', className }: TableControlProps<TData>): React.ReactElement {
 	const text = copy[locale];
+	const widths = useContext(WidthsContext);
 	const columns = table.getAllLeafColumns().filter((column) => column.getCanHide());
 	return (
 		<DropdownMenu>
@@ -382,6 +390,11 @@ export function DataTableViewOptions<TData extends RowData>({ table, locale = 'e
 				</DropdownMenuGroup>
 				<DropdownMenuSeparator />
 				<DropdownMenuItem onClick={() => table.resetColumnVisibility(true)}>{text.reset}</DropdownMenuItem>
+				{/* Two ways back once widths were dragged: fit keeps the one set last and spreads the rest; reset starts over from the browser's layout. */}
+				{widths === null || !widths.resized ? null : <>
+					<DropdownMenuItem onClick={widths.fit}>{text.fitWidths}</DropdownMenuItem>
+					<DropdownMenuItem onClick={widths.reset}>{text.resetWidths}</DropdownMenuItem>
+				</>}
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
@@ -452,21 +465,21 @@ export function DataTablePagination<TData extends RowData>({
 }
 
 /* One data row and, while it is open, the detail under it. */
-function DataTableBodyRow<TData extends RowData>({ row, open, span, text, renderExpanded, onToggle }: {
+function DataTableBodyRow<TData extends RowData>({ row, open, span, text, renderExpanded, onToggle, layout }: {
 	row: ReturnType<GateshipTable<TData>['getRowModel']>['rows'][number]; open: boolean; span: number;
-	text: { expandRow: string; collapseRow: string }; renderExpanded?: (row: TData) => React.ReactNode; onToggle: () => void;
+	text: { expandRow: string; collapseRow: string }; renderExpanded?: (row: TData) => React.ReactNode; onToggle: () => void; layout: TableLayout;
 }): React.ReactElement {
 	return (
 		<>
 			<TableRow data-expanded={open ? '' : undefined}>
 				{renderExpanded === undefined ? null : (
-					<TableCell className="w-8 pr-0">
+					<TableCell className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style}>
 						<Button aria-expanded={open} aria-label={open ? text.collapseRow : text.expandRow} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" onClick={onToggle}>
 							<DisclosureChevron dense open={open} />
 						</Button>
 					</TableCell>
 				)}
-				{row.getVisibleCells().map((cell) => <TableCell className={cellClass(cell.column)} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
+				{row.getVisibleCells().map((cell) => { const place = layout.cell(cell.column.id); return <TableCell className={cn(cellClass(cell.column), place.className)} key={cell.id} style={place.style}><FlexRender cell={cell} /></TableCell>; })}
 			</TableRow>
 			{/* `data-state` keeps the detail out of any count of data rows. */}
 			{open && renderExpanded !== undefined ? <TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="expanded"><TableCell className="whitespace-normal p-4" colSpan={span}>{renderExpanded(row.original)}</TableCell></TableRow> : null}
@@ -491,6 +504,153 @@ export function useClientPage<TData>(rows: readonly TData[], matches: (row: TDat
 }
 
 export type DataTableStatus = 'ready' | 'loading' | 'updating' | 'error';
+
+/** Where a cell sits once the operator has set widths: its width, and whether it stays put while the rows scroll sideways. */
+interface CellPlace { className?: string; style?: React.CSSProperties }
+interface TableLayout { table: CellPlace; head: (id: string) => CellPlace; cell: (id: string) => CellPlace; expand: CellPlace }
+
+const NO_PLACE: CellPlace = {};
+const AUTO_LAYOUT: TableLayout = { table: NO_PLACE, head: () => NO_PLACE, cell: () => NO_PLACE, expand: NO_PLACE };
+/* The expand column is the one width the kit fixes itself: a 24px control and its 8px. */
+const EXPAND_WIDTH = 32;
+
+/* The few DOM members the geometry reads, typed here because the kit also compiles without the DOM library. */
+type HeadElement = { dataset: Record<string, string | undefined>; getBoundingClientRect: () => { width: number } };
+type ScrollElement = { clientWidth: number; scrollLeft: number; querySelectorAll: (selector: string) => Iterable<HeadElement>; addEventListener: (type: 'scroll', listener: () => void, options?: { passive: boolean }) => void; removeEventListener: (type: 'scroll', listener: () => void) => void };
+type SurfaceElement = { querySelector: (selector: string) => ScrollElement | null; querySelectorAll: (selector: string) => Iterable<HeadElement> };
+type GeometryBrowser = { getComputedStyle?: (element: HeadElement) => { display: string }; ResizeObserver?: new (callback: () => void) => { observe: (element: ScrollElement) => void; disconnect: () => void } };
+const geometryBrowser = (): GeometryBrowser => globalThis as unknown as GeometryBrowser;
+const displayed = (head: HeadElement): boolean => geometryBrowser().getComputedStyle?.(head).display !== 'none';
+
+/** The frame's inner width, the columns the container shows right now, and whether rows sit scrolled under the pinned ones. */
+function useFrameReading(surface: React.RefObject<HTMLDivElement | null>, columnsKey: string): { frame: number; shown: string[]; scrolled: boolean } {
+	const [reading, setReading] = useState<{ frame: number; shown: string[]; scrolled: boolean }>({ frame: 0, shown: [], scrolled: false });
+	useEffect(() => {
+		const container = (surface.current as unknown as SurfaceElement | null)?.querySelector('[data-slot=table-container]') ?? null;
+		const Observer = geometryBrowser().ResizeObserver;
+		if (container === null || Observer === undefined) return;
+		const read = (): void => {
+			const shown = [...container.querySelectorAll('th[data-column-id]')].filter(displayed).map((head) => head.dataset['columnId'] ?? '');
+			setReading({ frame: container.clientWidth, shown, scrolled: container.scrollLeft > 0 });
+		};
+		const observer = new Observer(read);
+		observer.observe(container);
+		container.addEventListener('scroll', read, { passive: true });
+		read();
+		return () => { observer.disconnect(); container.removeEventListener('scroll', read); };
+	}, [surface, columnsKey]);
+	return reading;
+}
+
+/* A name wraps, so its own width is a reading measure and not the length of its longest line. */
+const NAME_NATURAL_MAX = 320;
+
+type MeasuredTable = { style: { width: string } };
+
+/**
+ * The width each showing column needs for its own content, read the moment
+ * before the first drag. In the browser's layout the primary column holds the
+ * frame's slack as well; measured as laid out, it would carry that slack into
+ * the fixed layout and, pinned, cover the rows scrolling under it. So the
+ * table is set to its content's width for the instant of the reading, which no
+ * paint ever shows, and a name is capped at a reading measure.
+ */
+function measureHeads(surface: React.RefObject<HTMLDivElement | null>): Record<string, number> {
+	const root = surface.current as unknown as SurfaceElement | null;
+	const table = (root?.querySelector('table') ?? null) as unknown as MeasuredTable | null;
+	const previous = table?.style.width ?? '';
+	if (table !== null) table.style.width = 'max-content';
+	const widths: Record<string, number> = {};
+	for (const head of root?.querySelectorAll('th[data-column-id]') ?? []) {
+		if (!displayed(head)) continue;
+		/* Up, never to the nearest: a column rounded down by a fraction of a pixel breaks its widest value onto a second line. */
+		const width = Math.ceil(head.getBoundingClientRect().width);
+		widths[head.dataset['columnId'] ?? ''] = head.dataset['columnKind'] === 'name' ? Math.min(width, NAME_NATURAL_MAX) : width;
+	}
+	if (table !== null) table.style.width = previous;
+	return widths;
+}
+
+/**
+ * The fixed layout, once the operator has dragged. Every shown column wears
+ * its width; the primary one adds the frame's slack. While the widths add up
+ * to more than the frame, the columns up to the primary one stay at the start
+ * and the action column at the end, with the rows scrolling between them: a
+ * checkbox or a menu with no name beside it is no use.
+ */
+function fixedLayout(sizing: NonNullable<ColumnSizingControls['sizing']>, shown: readonly string[], primary: string | undefined, frame: number, expand: boolean, scrolled: boolean, kinds: Readonly<Record<string, ColumnKind | undefined>>): TableLayout {
+	const extra = expand ? EXPAND_WIDTH : 0;
+	const { widths, total } = renderedWidths(sizing, shown, primary, frame, extra);
+	const overflowing = total > frame + 1;
+	const primaryIndex = primary === undefined ? -1 : shown.indexOf(primary);
+	const starts = new Map<string, number>();
+	let offset = extra;
+	for (const id of shown.slice(0, primaryIndex + 1)) { starts.set(id, offset); offset += widths[id] ?? 0; }
+	const lastStart = primaryIndex >= 0 ? shown[primaryIndex] : undefined;
+	const pinned = (id: string): CellPlace => {
+		if (!overflowing) return NO_PLACE;
+		const start = starts.get(id);
+		if (start !== undefined) return { className: cn('sticky left-(--pin-left) z-10 bg-card', id === lastStart && scrolled && 'pin-edge-end'), style: { '--pin-left': `${start}px` } as React.CSSProperties };
+		if (kinds[id] === 'action') return { className: 'pin-edge-start sticky right-0 z-10 bg-card' };
+		return NO_PLACE;
+	};
+	const sized = (id: string): CellPlace => { const pin = pinned(id); return { className: cn('w-(--col-w)', pin.className), style: { ...pin.style, '--col-w': `${widths[id] ?? MIN_COLUMN_WIDTH}px` } as React.CSSProperties }; };
+	return {
+		table: { className: 'table-fixed w-(--table-w)', style: { '--table-w': `${Math.max(total, frame)}px` } as React.CSSProperties },
+		head: sized,
+		cell: pinned,
+		expand: overflowing ? { className: 'sticky left-0 z-10 bg-card' } : NO_PLACE,
+	};
+}
+
+/** Everything the table needs to wear the operator's widths: the drag controls, the layout they produce, and the two ways back for the view menu. */
+function useTableWidths<TData extends RowData>(storageKey: string | undefined, surface: React.RefObject<HTMLDivElement | null>, columns: readonly GateshipColumn<TData>[], primaryId: string | undefined, expand: boolean): { sizing: ColumnSizingControls; layout: TableLayout; widths: { resized: boolean; fit: () => void; reset: () => void } } {
+	const sizing = useColumnSizing(storageKey);
+	const reading = useFrameReading(surface, columns.map((column) => column.id).join(' '));
+	const kinds = Object.fromEntries(columns.map((column) => [column.id, metaOf(column).kind]));
+	const layout = sizing.sizing === null ? AUTO_LAYOUT : fixedLayout(sizing.sizing, reading.shown, primaryId, reading.frame, expand, reading.scrolled, kinds);
+	/* Fit spreads what the frame has left over the columns that can take a width: the menu and the expand column keep theirs. */
+	const fit = (): void => {
+		const current = sizing.sizing;
+		if (current === null) return;
+		const used = reading.shown.reduce((total, id) => total + (current.current[id] ?? 0), expand ? EXPAND_WIDTH : 0);
+		sizing.fit(reading.shown.filter((id) => kinds[id] !== 'action'), reading.frame - used);
+	};
+	return { sizing, layout, widths: { resized: sizing.sizing !== null, fit, reset: sizing.reset } };
+}
+
+/* The view menu reaches the widths through the frame it sits in. */
+const WidthsContext = React.createContext<{ resized: boolean; fit: () => void; reset: () => void } | null>(null);
+
+/**
+ * The grip on a head's right edge: 8px to catch, a 2px line in the border
+ * colour while it is pointed at, held or focused. It is a window splitter, so
+ * the keyboard moves it too: arrows by 8px, with shift by 32. A double click
+ * returns the column to the width the browser gave it.
+ */
+function ColumnGrip({ label, width, onStart, onNudge, onRestore }: { label: string; width: number | undefined; onStart: (clientX: number) => void; onNudge: (delta: number) => void; onRestore: () => void }): React.ReactElement {
+	return (
+		<span
+			aria-label={label}
+			aria-orientation="vertical"
+			aria-valuemin={MIN_COLUMN_WIDTH}
+			aria-valuenow={width}
+			className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none outline-none after:absolute after:inset-y-2 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:rounded-full after:bg-border after:opacity-0 hover:after:opacity-100 focus-visible:after:bg-ring focus-visible:after:opacity-100 active:after:opacity-100"
+			data-slot="column-resize-grip"
+			role="separator"
+			tabIndex={0}
+			onDoubleClick={onRestore}
+			onKeyDown={(event) => {
+				if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+				event.preventDefault();
+				const step = event.shiftKey ? KEY_STEP_LARGE : KEY_STEP;
+				onNudge(event.key === 'ArrowLeft' ? -step : step);
+			}}
+			onPointerDown={(event) => { event.preventDefault(); onStart(event.clientX); }}
+		/>
+	);
+}
+
 
 /* The zones a frame stacks around its rows. The head and the notice close with a rule under them, the foot opens with one over it.
  * The notice is a band of the frame itself: an alert's own border and corners inside the table's would be a card inside a card, so they go and the band keeps the alert's tint. */
@@ -543,8 +703,11 @@ export function DataTable<TData extends RowData>({
 	head,
 	notice,
 	foot,
+	storageKey,
 	className,
 }: TableControlProps<TData> & {
+	/** Names the table in this browser's storage. Given, its columns can be dragged to a width, and the widths survive navigation. */
+	storageKey?: string;
 	/** The rows of controls that act on this table: search, facets, the view menu. One DataTableToolbar per row. */
 	head?: React.ReactNode;
 	/** One Alert about this table's data, between its controls and its rows. */
@@ -570,38 +733,30 @@ export function DataTable<TData extends RowData>({
 	/* A wide table gives its slack to one column; spread over all of them it reads as holes between the facts. */
 	const primaryId = (columns.find((column) => metaOf(column).primary === true) ?? columns[0])?.id;
 	const busy = status === 'loading' || status === 'updating';
+	const surface = useRef<HTMLDivElement>(null);
+	const { sizing, layout, widths } = useTableWidths(storageKey, surface, columns, primaryId, renderExpanded !== undefined);
 	return (
+		<WidthsContext.Provider value={storageKey === undefined ? null : widths}>
 		<div aria-busy={busy} className={cn('card-ring @container rounded-2xl', className)} data-slot="data-table" data-status={status}>
 			{/* The ring is the edge every surface shares, so a table carries the same one a card does; the clip lives one level in, or it would cut the ring. */}
-			<div className="overflow-hidden rounded-2xl border bg-card" data-slot="data-table-surface">
+			<div className="overflow-hidden rounded-2xl border bg-card" data-slot="data-table-surface" ref={surface}>
 			{busy ? <span className="sr-only" role="status">{status === 'loading' ? text.loading : text.updating}</span> : null}
 			{/* Everything that acts on these rows lives in their frame, on the cells' own 16px inset. A zone with nothing in it takes no room. */}
 			<DataTableZone slot="data-table-head">{head}</DataTableZone>
 			<DataTableZone slot="data-table-notice">{notice}</DataTableZone>
-			<GateshipTable>
+			<GateshipTable className={layout.table.className} style={layout.table.style}>
 				<TableHeader>
-					{table.getHeaderGroups().map((headerGroup) => (
-						<TableRow key={headerGroup.id}>
-							{renderExpanded === undefined ? null : <TableHead className="w-8 pr-0"><span className="sr-only">{text.expandRow}</span></TableHead>}
-							{headerGroup.headers.map((header) => (
-								<TableHead aria-sort={header.column.getCanSort() ? ariaSort(header.column.getIsSorted()) : undefined} className={cn(alignClass(header.column), header.column.id === primaryId && 'w-full')} key={header.id}>
-									{header.isPlaceholder ? null : typeof header.column.columnDef.header === 'string'
-										? <DataTableColumnHeader column={header.column} locale={locale} title={header.column.columnDef.header} />
-										: <FlexRender header={header} />}
-								</TableHead>
-							))}
-						</TableRow>
-					))}
+					<DataTableHeadRow expand={renderExpanded !== undefined} layout={layout} locale={locale} primaryId={primaryId} sizing={storageKey === undefined ? undefined : sizing} surface={surface} table={table} />
 				</TableHeader>
 				<TableBody className={cn('transition-opacity', status === 'updating' && 'opacity-60')}>
 					{status === 'loading' && rows.length === 0
 						? Array.from({ length: skeletonRows }, (_, index) => (
 							<TableRow data-state="loading" key={`skeleton-${index}`}>
-								{renderExpanded === undefined ? null : <TableCell className="w-8 pr-0" />}
-								{columns.map((column) => <TableCell className={cellClass(column)} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
+								{renderExpanded === undefined ? null : <TableCell className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style} />}
+								{columns.map((column) => { const place = layout.cell(column.id); return <TableCell className={cn(cellClass(column), place.className)} key={column.id} style={place.style}><Skeleton className="h-4 w-full max-w-32" /></TableCell>; })}
 							</TableRow>
 						))
-						: rows.map((row) => <DataTableBodyRow key={row.id} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}
+						: rows.map((row) => <DataTableBodyRow key={row.id} layout={layout} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}
 					{/* `data-state` tells a data row from a stand-in: anything counting rows reads `tr:not([data-state])`. */}
 					{rows.length === 0 && status !== 'loading' ? <DataTableEmptyRow action={emptyAction} detail={emptyDetail ?? text.noResultsDetail} span={span} title={emptyState ?? text.noResults} /> : null}
 				</TableBody>
@@ -609,6 +764,45 @@ export function DataTable<TData extends RowData>({
 			<DataTableZone slot="data-table-foot">{foot}</DataTableZone>
 			</div>
 		</div>
+		</WidthsContext.Provider>
+	);
+}
+
+/* One column's head. In the browser's layout the primary one takes the slack; once widths are set, each wears its own. */
+function DataTableHeadCell<TData extends RowData>({ header, locale, primary, layout, sizing, measure }: {
+	header: ReturnType<GateshipTable<TData>['getHeaderGroups']>[number]['headers'][number]; locale: TableLocale; primary: boolean; layout: TableLayout;
+	sizing: ColumnSizingControls | undefined; measure: () => Record<string, number>;
+}): React.ReactElement {
+	const column = header.column;
+	const place = layout.head(column.id);
+	const auto = sizing === undefined || sizing.sizing === null;
+	const title = column.columnDef.header;
+	return (
+		<TableHead aria-sort={column.getCanSort() ? ariaSort(column.getIsSorted()) : undefined} className={cn('relative', alignClass(column), auto && primary && 'w-full', place.className)} data-column-id={column.id} data-column-kind={metaOf(column).kind} style={place.style}>
+			{header.isPlaceholder ? null : typeof title === 'string' ? <DataTableColumnHeader column={column} locale={locale} title={title} /> : <FlexRender header={header} />}
+			{sizing === undefined || metaOf(column).kind === 'action' ? null : (
+				<ColumnGrip label={copy[locale].resizeColumn(columnLabel(column))} width={sizing.sizing?.current[column.id]} onNudge={(delta) => sizing.nudge(column.id, delta, measure)} onRestore={() => sizing.restore(column.id)} onStart={(clientX) => sizing.startDrag(column.id, clientX, measure)} />
+			)}
+		</TableHead>
+	);
+}
+
+/* The head row: each column's name, its sort menu, and the grip that sets its width. */
+function DataTableHeadRow<TData extends RowData>({ table, locale, primaryId, expand, layout, sizing, surface }: {
+	table: GateshipTable<TData>; locale: TableLocale; primaryId: string | undefined; expand: boolean; layout: TableLayout;
+	sizing: ColumnSizingControls | undefined; surface: React.RefObject<HTMLDivElement | null>;
+}): React.ReactElement {
+	const text = copy[locale];
+	const measure = (): Record<string, number> => measureHeads(surface);
+	return (
+		<>
+			{table.getHeaderGroups().map((headerGroup) => (
+				<TableRow key={headerGroup.id}>
+					{expand ? <TableHead className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style}><span className="sr-only">{text.expandRow}</span></TableHead> : null}
+					{headerGroup.headers.map((header) => <DataTableHeadCell header={header} key={header.id} layout={layout} locale={locale} measure={measure} primary={header.column.id === primaryId} sizing={sizing} />)}
+				</TableRow>
+			))}
+		</>
 	);
 }
 

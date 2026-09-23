@@ -556,6 +556,7 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 				emptyDetail={list.search === '' ? '' : undefined}
 				defaultExpanded={defaultOpenId === undefined ? undefined : [defaultOpenId]}
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.diagnostics.noPending : catalog.diagnostics.noResolved}
+				storageKey="findings"
 				foot={<>
 					<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
 					{view === 'resolved' && diagnostics.resolvedFindingsOmittedCount > 0 ? <DataTableNote>{catalog.diagnostics.omitted(formatCount(diagnostics.resolvedFindingsOmittedCount, locale))}</DataTableNote> : null}
@@ -713,6 +714,7 @@ export function ProposalsPanel({
 				emptyDetail={list.search === '' ? '' : undefined}
 				defaultExpanded={defaultOpenId === undefined ? undefined : [defaultOpenId]}
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.proposals.emptyPending : catalog.proposals.emptyResolved}
+				storageKey="proposals"
 				foot={<>
 					<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
 					{resolving && resolvedProposalsOmittedCount > 0 ? <DataTableNote>{catalog.proposals.omitted(resolvedProposalsOmittedCount, formatCount(resolvedProposalsOmittedCount, locale))}</DataTableNote> : null}

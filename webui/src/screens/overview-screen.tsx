@@ -83,7 +83,7 @@ function ProjectStatusTable({ overview, catalog, locale }: { overview: ProjectOp
 	const table = useGateshipTable({ columns, data, features: gateshipTableFeatures, getRowId: (entry) => entry.project.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: data.length });
 	return <section aria-labelledby="overview-project-status">
 		<h2 className="sr-only" id="overview-project-status">{catalog.projectStatus}</h2>
-		<DataTable locale={locale} table={table} />
+		<DataTable locale={locale} storageKey="now-projects" table={table} />
 	</section>;
 }
 
