@@ -7,7 +7,7 @@
 // me, what shipped, what failed. Rows that wait on the operator carry the
 // acid rule, the product's one acid signal.
 
-import { Alert02Icon, Copy01Icon, LinkSquare02Icon, MoreHorizontalIcon, Cancel01Icon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, Copy01Icon, LinkSquare02Icon, MoreHorizontalIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import React, { useEffect, useMemo, useState } from 'react';
 import type { OverviewRunsPageView, OverviewRunsQuery } from '../client.ts';
@@ -16,9 +16,8 @@ import type { AppProps } from '../app-props.ts';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { DataTable, DataTableFacet, DataTableFilter, DataTablePagination, DataTableToolbar, DataTableViewOptions, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { DataTable, DataTableClearFilters, DataTableFacet, DataTableFilter, DataTablePagination, DataTableToolbar, DataTableViewOptions, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu.tsx';
-import { SelectField } from '../components/ui/select.tsx';
 import { StatusDot } from '../components/ui/status-dot.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx';
 import { HintTooltip } from '../components/ui/tooltip.tsx';
@@ -153,24 +152,25 @@ function overviewRunsColumns(catalog: OverviewRunsCatalog, inspector: RunInspect
 	];
 }
 
+/** How many filters narrow the list: the search, a project other than the path's, a state, a provider, a period. */
+function filterCount(query: OverviewRunsQuery, scopeProjectId?: string): number {
+	return [Boolean(query.search), query.projectId !== scopeProjectId, query.state !== undefined, query.providerId !== undefined, query.period !== undefined && query.period !== 'all'].filter(Boolean).length;
+}
+
 function hasFilters(query: OverviewRunsQuery, scopeProjectId?: string): boolean {
-	return Boolean(query.search) || query.projectId !== scopeProjectId || query.state !== undefined || query.providerId !== undefined || (query.period !== undefined && query.period !== 'all');
+	return filterCount(query, scopeProjectId) > 0;
 }
 
 /* No project select: the sidebar switcher is the project filter. A `?projectId=` link still scopes the list, and Clear filters lifts it. */
 function OverviewRunsFilters({ query, update, catalog, inspector, scopeProjectId, locale }: { query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog; scopeProjectId?: string; locale: Locale }): React.ReactElement {
-	const select = 'w-auto min-w-36';
 	return (
 		<>
 			{/* The source takes one value per column, so each facet is a single choice until it takes a list. */}
 			<DataTableFacet locale={locale} options={RUN_STATES.map((state) => ({ value: state, label: inspector.stateLabels[state] }))} selected={query.state === undefined ? [] : [query.state]} title={catalog.state} onChange={(next) => update({ state: next[0] as OverviewRunsQuery['state'] })} />
 			<DataTableFacet locale={locale} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} selected={query.providerId === undefined ? [] : [query.providerId]} title={catalog.provider} onChange={(next) => update({ providerId: next[0] as OverviewRunsQuery['providerId'] })} />
-			<SelectField aria-label={catalog.period} className={select} items={[{ value: 'all', label: catalog.all }, { value: '7d', label: catalog.last7d }, { value: '30d', label: catalog.last30d }]} value={query.period ?? 'all'} onValueChange={(value) => update({ period: value as OverviewRunsQuery['period'] })} />
-			{hasFilters(query, scopeProjectId) ? (
-				<Button type="button" variant="ghost" onClick={() => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined })}>
-					{catalog.clearFilters}<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={14} strokeWidth={2.5} />
-				</Button>
-			) : null}
+			{/* The period is a facet of presets: the source takes a window, not a range, so the custom range waits for it. Clearing it is every run. */}
+			<DataTableFacet locale={locale} options={[{ value: '7d', label: catalog.last7d }, { value: '30d', label: catalog.last30d }]} selected={query.period === undefined || query.period === 'all' ? [] : [query.period]} title={catalog.period} onChange={(next) => update({ period: (next[0] ?? 'all') as OverviewRunsQuery['period'] })} />
+			<DataTableClearFilters count={filterCount(query, scopeProjectId)} locale={locale} onClear={() => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined })} />
 		</>
 	);
 }

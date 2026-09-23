@@ -30,11 +30,12 @@ import {
 	type ReactTable,
 	type TableOptions,
 } from '@tanstack/react-table';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowLeftDoubleIcon, ArrowRight01Icon, ArrowRightDoubleIcon, ArrowUp01Icon, PlusSignCircleIcon, Settings02Icon, UnfoldMoreIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowLeftDoubleIcon, ArrowRight01Icon, ArrowRightDoubleIcon, ArrowUp01Icon, Cancel01Icon, PlusSignCircleIcon, Search01Icon, Settings02Icon, UnfoldMoreIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../lib/cn.ts';
 import { Button } from './button.tsx';
+import { Count } from './count.tsx';
 import { DisclosureChevron } from './disclosure-chevron.tsx';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './empty.tsx';
@@ -111,6 +112,9 @@ export function useGateshipTable<TData extends RowData>(options: GateshipTableOp
 }
 
 export type TableLocale = 'en-US' | 'pt-BR';
+
+/** How long a search field has to be still before the rows follow it. */
+const SEARCH_SETTLE_MS = 250;
 const copy = {
 	'en-US': {
 		filterPlaceholder: 'Filter rows…',
@@ -135,6 +139,8 @@ const copy = {
 		expandRow: 'Show details',
 		collapseRow: 'Hide details',
 		clearFacet: 'Clear',
+		clearSearch: 'Clear search',
+		clearFilters: 'Clear filters',
 		facetChosen: (count: number) => `${count} selected`,
 	},
 	'pt-BR': {
@@ -160,6 +166,8 @@ const copy = {
 		expandRow: 'Mostrar detalhes',
 		collapseRow: 'Ocultar detalhes',
 		clearFacet: 'Limpar',
+		clearSearch: 'Limpar busca',
+		clearFilters: 'Limpar filtros',
 		facetChosen: (count: number) => `${count} selecionados`,
 	},
 } as const;
@@ -249,6 +257,21 @@ export function DataTableFacet({ title, options, selected, onChange, multiple = 
 	);
 }
 
+/**
+ * The way out of every filter at once. It exists only while something is
+ * applied, and it says how many things that is, so the operator knows what
+ * the click will undo before making it. The count wears the button's own ink.
+ */
+export function DataTableClearFilters({ count, onClear, locale = 'en-US' }: { count: number; onClear: () => void; locale?: TableLocale }): React.ReactElement | null {
+	if (count === 0) return null;
+	return (
+		<Button data-slot="data-table-clear-filters" type="button" variant="ghost" onClick={onClear}>
+			{copy[locale].clearFilters}
+			<Count form="plain">{count}</Count>
+		</Button>
+	);
+}
+
 /** A line about the table's rows that is not one of them: what a view means, how many were left out. It lives in the notice or the foot zone, on the cells' inset. */
 export function DataTableNote({ children, className, ...props }: React.ComponentProps<'p'>): React.ReactElement {
 	return <p className={cn('flex flex-wrap items-center gap-2 px-4 py-3 text-muted-foreground text-sm', className)} data-slot="data-table-note" {...props}>{children}</p>;
@@ -266,19 +289,34 @@ export function DataTableFilter<TData extends RowData>({
 	const text = copy[locale];
 	const column = columnId === undefined ? undefined : table.getColumn(columnId);
 	const value = String(column?.getFilterValue() ?? table.state.globalFilter ?? '');
+	const [draft, setDraft] = useState(value);
+	const apply = (next: string): void => {
+		if (column) column.setFilterValue(next);
+		else table.setGlobalFilter(next);
+	};
+	/* What the table filters by can change from outside, a "clear filters" or a link: the field follows it. */
+	useEffect(() => { setDraft(value); }, [value]);
+	/* Typing is not searching: the rows follow the field once it has been still for 250ms, so a server-backed table asks once per word, not once per key. */
+	useEffect(() => {
+		if (draft === value) return;
+		const timer = setTimeout(() => apply(draft), SEARCH_SETTLE_MS);
+		return () => clearTimeout(timer);
+	}, [draft]);
 	return (
 		<Input
 			aria-label={label ?? placeholder ?? text.filterPlaceholder}
 			className={cn('min-w-40 flex-1 sm:max-w-sm', className)}
 			data-slot="data-table-filter"
+			leading={<HugeiconsIcon icon={Search01Icon} size={16} strokeWidth={2.25} />}
 			placeholder={placeholder ?? text.filterPlaceholder}
+			trailing={draft === '' ? undefined : (
+				<Button aria-label={text.clearSearch} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" onClick={() => { setDraft(''); apply(''); }}>
+					<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={14} strokeWidth={2.5} />
+				</Button>
+			)}
 			type="search"
-			value={value}
-			onChange={(event) => {
-				const next = (event.currentTarget as unknown as { value: string }).value;
-				if (column) column.setFilterValue(next);
-				else table.setGlobalFilter(next);
-			}}
+			value={draft}
+			onChange={(event) => setDraft((event.currentTarget as unknown as { value: string }).value)}
 		/>
 	);
 }

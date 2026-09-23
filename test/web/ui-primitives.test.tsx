@@ -42,6 +42,9 @@ import { cn } from '../../webui/src/lib/cn.ts';
 import { ContextPanel, SectionCard } from '../../webui/src/screens/operator-controls.tsx';
 import {
 	DataTable,
+	DataTableClearFilters,
+	DataTableFacet,
+	DataTableFilter,
 	DataTableViewOptions,
 	DataTablePagination,
 	DataTableToolbar,
@@ -138,6 +141,45 @@ describe('ui primitives', () => {
 		expect(small).not.toContain('data-slot="data-table-pagination"');
 		// The zone stays in the markup with nothing in it, and an empty zone takes no room: no rule, no 48px band under the rows.
 		expect(small).toMatch(/<div class="[^"]*empty:hidden[^"]*" data-slot="data-table-foot"><\/div>/);
+	});
+
+	test('a facet names its column in full ink and shows what is chosen as tags, then a count past two', () => {
+		const options = [{ value: 'done', label: 'Done' }, { value: 'failed', label: 'Failed' }, { value: 'cancelled', label: 'Cancelled' }];
+		const empty = renderToStaticMarkup(<DataTableFacet options={options} selected={[]} title="State" onChange={() => {}} />);
+		const one = renderToStaticMarkup(<DataTableFacet options={options} selected={['failed']} title="State" onChange={() => {}} />);
+		const three = renderToStaticMarkup(<DataTableFacet multiple options={options} selected={['done', 'failed', 'cancelled']} title="State" onChange={() => {}} />);
+		// The name is the button's own text, never a placeholder: nothing mutes it.
+		expect(empty).toContain('>State</span>');
+		expect(empty).not.toContain('text-muted-foreground');
+		expect(empty).toContain('aria-label="State"');
+		expect(empty).not.toContain('data-slot="tag"');
+		// Chosen, the value follows the name after a hairline, and the label says both.
+		expect(one).toContain('aria-label="State: Failed"');
+		expect(one).toContain('>Failed<');
+		expect((one.match(/data-slot="tag"/g) ?? []).length).toBe(1);
+		expect(three).toContain('3 selected');
+		expect((three.match(/data-slot="tag"/g) ?? []).length).toBe(1);
+	});
+
+	test('clearing filters exists only while something is applied, and says how many', () => {
+		expect(renderToStaticMarkup(<DataTableClearFilters count={0} onClear={() => {}} />)).toBe('');
+		const three = renderToStaticMarkup(<DataTableClearFilters count={3} locale="pt-BR" onClear={() => {}} />);
+		expect(three).toContain('Limpar filtros');
+		expect(three).toContain('data-slot="count"');
+		expect(three).toContain('>3</span>');
+	});
+
+	test('the search field says what it is with a magnifier and offers a clear only once it holds text', () => {
+		function SearchFixture({ value }: { value: string }): React.ReactElement {
+			const table = useGateshipTable({ columns: TABLE_FIXTURE_COLUMNS, data: [], features: gateshipTableFeatures, state: { globalFilter: value } });
+			return <DataTableFilter locale="pt-BR" placeholder="Buscar" table={table} />;
+		}
+		const blank = renderToStaticMarkup(<SearchFixture value="" />);
+		const typed = renderToStaticMarkup(<SearchFixture value="GSHIP-9" />);
+		expect(blank).toContain('<svg');
+		expect(blank).not.toContain('aria-label="Limpar busca"');
+		expect(typed).toContain('value="GSHIP-9"');
+		expect(typed).toContain('aria-label="Limpar busca"');
 	});
 
 	test('card composition owns its standard, compact, split and form rhythm', () => {
