@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DrawerLayout, ItemDrawer, neighbour, successorOf } from '../../webui/src/components/ui/item-drawer.tsx';
 import { readQueryParam } from '../../webui/src/lib/use-query-param.ts';
+import { EvidenceProse } from '../../webui/src/screens/work-screen.tsx';
 
 describe('item drawer', () => {
 	const ids = ['a', 'b', 'c'];
@@ -42,5 +43,16 @@ describe('item drawer', () => {
 		expect(open).not.toContain('aria-modal');
 		// Without a foot there is no empty band.
 		expect(renderToStaticMarkup(<ItemDrawer open title="x" onClose={() => {}}>d</ItemDrawer>)).not.toContain('data-slot="item-drawer-foot"');
+	});
+
+	test("an analyzer's evidence reads as prose: the first line leads, the rest are paragraphs, and what sits between backticks is code", () => {
+		const html = renderToStaticMarkup(<EvidenceProse text={'Effect never cleaned up\n`setTimeout` creates a timer.\nReturn `() => clearTimeout(id)` or `unsubscribe`.'} />);
+		expect(html).toContain('<p class="font-medium">Effect never cleaned up</p>');
+		expect((html.match(/<p /g) ?? []).length).toBe(3);
+		expect((html.match(/<code /g) ?? []).length).toBe(3);
+		expect(html).toContain('>setTimeout</code>');
+		expect(html).not.toContain('`');
+		// A blank line is nothing, not an empty paragraph.
+		expect((renderToStaticMarkup(<EvidenceProse text={'Lead\n\nBody'} />).match(/<p /g) ?? []).length).toBe(2);
 	});
 });

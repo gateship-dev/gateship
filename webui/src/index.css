@@ -436,12 +436,12 @@ html.gship-harness-reduced-motion *::after {
 		border-radius: calc(var(--radius-2xl) + 7px);
 	}
 
-	/* Members give their ring and its counted margin to the group. */
-	& :is([data-slot='card-frame'], [data-slot='stat'])::after {
+	/* Members give their ring and its counted margin to the group: a card, a stat, a table, and the drawer a table opens beside it. */
+	& :is([data-slot='card-frame'], [data-slot='stat'], [data-slot='data-table'], [data-slot='item-drawer'])::after {
 		display: none;
 	}
 
-	& :is([data-slot='card-frame'], [data-slot='stat']) {
+	& :is([data-slot='card-frame'], [data-slot='stat'], [data-slot='data-table'], [data-slot='item-drawer']) {
 		margin: 0;
 	}
 }

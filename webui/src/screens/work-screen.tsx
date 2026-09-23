@@ -483,9 +483,11 @@ type PromoteInput = Parameters<AppProps['onPromoteProposal']>[1];
  * field names. It exists only while its row is open: eighty of these mounted
  * behind a closed tab was hundreds of fields nobody was filling.
  */
-function PromoteForm({ catalog, prefix, defaultTitle, pending, onPromote }: { catalog: WorkCatalog; prefix: 'proposal' | 'diagnostic'; defaultTitle: string; pending: boolean; onPromote: (input: PromoteInput) => void }): React.ReactElement {
+/* The form's own submit lives in the drawer's foot, beside dismiss, and reaches the form by its id: one row of actions, never two. */
+function PromoteForm({ catalog, prefix, defaultTitle, onPromote }: { catalog: WorkCatalog; prefix: 'proposal' | 'diagnostic'; defaultTitle: string; onPromote: (input: PromoteInput) => void }): React.ReactElement {
 	return (
 		<FormStack
+			id={`${prefix}-promote`}
 			onSubmit={(event) => {
 				event.preventDefault();
 				const value = fieldReader(event.currentTarget);
@@ -503,16 +505,38 @@ function PromoteForm({ catalog, prefix, defaultTitle, pending, onPromote }: { ca
 			<FormField measure="prose"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name={`${prefix}Acceptance`} required /></FormField>
 			<FormField measure="prose"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name={`${prefix}Boundaries`} /></FormField>
 			<FormField measure="prose"><span className="font-medium">{catalog.form.verify}</span><Input mono name={`${prefix}VerificationCommand`} placeholder={catalog.form.verificationPlaceholder} required /></FormField>
-			<Button className="self-end" disabled={pending} type="submit">{catalog.form.promote}</Button>
 		</FormStack>
 	);
 }
 
 /** What a row opens into: the evidence as captured, then whatever the row still admits. */
+/** A run of evidence text with its code spans set apart: what is between backticks is read character by character. */
+function inlineCode(text: string): React.ReactNode[] {
+	return text.split(/(`[^`]+`)/).filter((part) => part !== '').map((part, index) => part.startsWith('`') && part.endsWith('`')
+		? <code className="rounded bg-muted px-1 font-mono text-xs" key={index}>{part.slice(1, -1)}</code>
+		: <React.Fragment key={index}>{part}</React.Fragment>);
+}
+
+/**
+ * An analyzer's evidence is three lines: what it saw, why it matters, what to
+ * do. The first is the finding's own name and leads in the row's weight; the
+ * rest are paragraphs in the body's ink, because they are the reading, not a
+ * note beside it.
+ */
+export function EvidenceProse({ text }: { text: string }): React.ReactElement {
+	const [lead, ...rest] = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+	return (
+		<div className="flex flex-col gap-2" data-slot="evidence">
+			{lead === undefined ? null : <p className="font-medium">{inlineCode(lead)}</p>}
+			{rest.map((line, index) => <p className="break-words text-muted-foreground" key={index}>{inlineCode(line)}</p>)}
+		</div>
+	);
+}
+
 function SuggestionDetail({ evidence, meta, children }: { evidence: string; meta?: React.ReactNode; children?: React.ReactNode }): React.ReactElement {
 	return (
 		<div className="flex max-w-3xl flex-col gap-4 text-sm" data-slot="suggestion-detail">
-			<p className="whitespace-pre-wrap break-words text-muted-foreground">{evidence}</p>
+			<EvidenceProse text={evidence} />
 			{meta}
 			{children}
 		</div>
@@ -609,7 +633,10 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 				table={table}
 			/>
 			<ItemDrawer
-				footer={open?.status === 'pending' ? <Button disabled={pending} type="button" variant="outline" onClick={() => dismissOpen(open)}>{catalog.diagnostics.dismiss}</Button> : undefined}
+				footer={open?.status === 'pending' ? <>
+					<Button disabled={pending} type="button" variant="outline" onClick={() => dismissOpen(open)}>{catalog.diagnostics.dismiss}</Button>
+					<Button disabled={pending} form="diagnostic-promote" type="submit">{catalog.form.promote}</Button>
+				</> : undefined}
 				locale={locale}
 				open={open !== null}
 				title={open?.rule ?? ''}
@@ -617,7 +644,7 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 			>
 				{open === null ? null : (
 					<SuggestionDetail evidence={open.evidence} meta={<p className="type-data flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{diagnosticFindingLocation(open)}</code><span>{catalog.diagnostics.toolVersion(open.toolVersion)}</span><code>{open.sourceSha.slice(0, 12)}</code></p>}>
-						{open.status === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={catalog.diagnostics.defaultIssueTitle(open.rule, open.file).slice(0, 120)} pending={pending} prefix="diagnostic" onPromote={(input) => onPromote(open.id, input)} /> : null}
+						{open.status === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={catalog.diagnostics.defaultIssueTitle(open.rule, open.file).slice(0, 120)} prefix="diagnostic" onPromote={(input) => onPromote(open.id, input)} /> : null}
 					</SuggestionDetail>
 				)}
 			</ItemDrawer>
@@ -806,7 +833,10 @@ function ProposalDrawer({ open, resolving, pending, catalog, locale, onClose, on
 }): React.ReactElement {
 	return (
 		<ItemDrawer
-			footer={open !== null && !resolving ? <Button disabled={pending} type="button" variant="outline" onClick={() => onDismiss(open)}>{catalog.proposals.dismiss}</Button> : undefined}
+			footer={open !== null && !resolving ? <>
+				<Button disabled={pending} type="button" variant="outline" onClick={() => onDismiss(open)}>{catalog.proposals.dismiss}</Button>
+				<Button disabled={pending} form="proposal-promote" type="submit">{catalog.form.promote}</Button>
+			</> : undefined}
 			locale={locale}
 			open={open !== null}
 			title={open?.title ?? ''}
@@ -814,7 +844,7 @@ function ProposalDrawer({ open, resolving, pending, catalog, locale, onClose, on
 		>
 			{open === null ? null : (
 				<SuggestionDetail evidence={open.evidence} meta={<p className="flex flex-wrap items-center gap-2 text-muted-foreground"><Reference>{open.sourceIssueId}</Reference><Reference>{open.sourceRunId}</Reference></p>}>
-					{resolving ? null : <PromoteForm catalog={catalog} defaultTitle={open.title} pending={pending} prefix="proposal" onPromote={(input) => onPromote(open.id, input)} />}
+					{resolving ? null : <PromoteForm catalog={catalog} defaultTitle={open.title} prefix="proposal" onPromote={(input) => onPromote(open.id, input)} />}
 				</SuggestionDetail>
 			)}
 		</ItemDrawer>
