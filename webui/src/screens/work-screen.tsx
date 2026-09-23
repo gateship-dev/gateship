@@ -540,13 +540,13 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 	const list = useClientPage(rows, findingMatches);
 	const columns = useMemo<GateshipColumnDef<DiagnosticFindingView>[]>(() => {
 		const defs: GateshipColumnDef<DiagnosticFindingView>[] = [
-			{ id: 'severity', header: catalog.list.columns.severity, cell: ({ row }) => <Badge variant={diagnosticSeverityVariant(row.original.severity)}>{catalog.diagnostics.severityLabels[row.original.severity]}</Badge> },
-			{ id: 'rule', header: catalog.list.columns.rule, meta: { className: 'whitespace-normal break-words font-medium', primary: true }, cell: ({ row }) => row.original.rule },
-			{ id: 'location', header: catalog.list.columns.location, meta: { className: 'type-data max-w-80 truncate text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => diagnosticFindingLocation(row.original) },
-			{ id: 'occurrences', header: catalog.list.columns.occurrences, meta: { align: 'end', className: 'type-data', hideBelow: 'sm' }, cell: ({ row }) => formatCount(row.original.occurrenceCount, locale) },
+			{ id: 'severity', header: catalog.list.columns.severity, meta: { kind: 'label' }, cell: ({ row }) => <Badge variant={diagnosticSeverityVariant(row.original.severity)}>{catalog.diagnostics.severityLabels[row.original.severity]}</Badge> },
+			{ id: 'rule', header: catalog.list.columns.rule, meta: { kind: 'name', className: 'font-medium', primary: true }, cell: ({ row }) => row.original.rule },
+			{ id: 'location', header: catalog.list.columns.location, meta: { kind: 'code', className: 'max-w-80 truncate text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => diagnosticFindingLocation(row.original) },
+			{ id: 'occurrences', header: catalog.list.columns.occurrences, meta: { kind: 'measure', hideBelow: 'sm' }, cell: ({ row }) => formatCount(row.original.occurrenceCount, locale) },
 			...(view === 'pending'
-				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { align: 'end' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismiss(row.original.id)}>{catalog.diagnostics.dismiss}</Button> }]
-				: [{ id: 'status', header: catalog.list.columns.status, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant="neutral">{catalog.diagnostics.statusLabels[row.original.status]}</Badge>{row.original.promotedIssueId === null ? null : <Reference>{row.original.promotedIssueId}</Reference>}</span> }]),
+				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { kind: 'action' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismiss(row.original.id)}>{catalog.diagnostics.dismiss}</Button> }]
+				: [{ id: 'status', header: catalog.list.columns.status, meta: { kind: 'label' }, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant="neutral">{catalog.diagnostics.statusLabels[row.original.status]}</Badge>{row.original.promotedIssueId === null ? null : <Reference>{row.original.promotedIssueId}</Reference>}</span> }]),
 		];
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
 	}, [catalog, locale, onDismiss, pending, view]);
@@ -697,12 +697,12 @@ export function ProposalsPanel({
 	const list = useClientPage(rows, proposalMatches);
 	const columns = useMemo<GateshipColumnDef<AnyProposal>[]>(() => {
 		const defs: GateshipColumnDef<AnyProposal>[] = [
-			{ id: 'title', header: catalog.list.columns.title, meta: { className: 'whitespace-normal break-words font-medium', primary: true }, cell: ({ row }) => row.original.title },
-			{ id: 'origin', header: catalog.list.columns.origin, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Reference>{row.original.sourceIssueId}</Reference> },
-			{ id: 'run', header: catalog.list.columns.run, meta: { className: 'type-data text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.sourceRunId}>{row.original.sourceRunId.slice(0, 8)}</span> },
+			{ id: 'title', header: catalog.list.columns.title, meta: { kind: 'name', className: 'font-medium', primary: true }, cell: ({ row }) => row.original.title },
+			{ id: 'origin', header: catalog.list.columns.origin, meta: { kind: 'code', hideBelow: 'sm' }, cell: ({ row }) => <Reference>{row.original.sourceIssueId}</Reference> },
+			{ id: 'run', header: catalog.list.columns.run, meta: { kind: 'code', className: 'text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.sourceRunId}>{row.original.sourceRunId.slice(0, 8)}</span> },
 			...(view === 'pending'
-				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { align: 'end' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: AnyProposal } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismissProposal(row.original.id)}>{catalog.proposals.dismiss}</Button> }]
-				: [{ id: 'status', header: catalog.list.columns.status, cell: ({ row }: { row: { original: AnyProposal } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant={row.original.status === 'promoted' ? 'success' : 'neutral'}>{catalog.proposals.statusLabels[row.original.status ?? 'dismissed']}</Badge>{row.original.status === 'promoted' && row.original.promotedIssueId != null ? <><span className="text-muted-foreground">{catalog.proposals.became}</span><Reference>{row.original.promotedIssueId}</Reference></> : null}</span> }]),
+				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { kind: 'action' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: AnyProposal } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismissProposal(row.original.id)}>{catalog.proposals.dismiss}</Button> }]
+				: [{ id: 'status', header: catalog.list.columns.status, meta: { kind: 'label' }, cell: ({ row }: { row: { original: AnyProposal } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant={row.original.status === 'promoted' ? 'success' : 'neutral'}>{catalog.proposals.statusLabels[row.original.status ?? 'dismissed']}</Badge>{row.original.status === 'promoted' && row.original.promotedIssueId != null ? <><span className="text-muted-foreground">{catalog.proposals.became}</span><Reference>{row.original.promotedIssueId}</Reference></> : null}</span> }]),
 		];
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
 	}, [catalog, onDismissProposal, pending, view]);

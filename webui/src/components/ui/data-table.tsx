@@ -60,12 +60,50 @@ export type GateshipTableOptions<TData extends RowData> = TableOptions<GateshipT
 export type GateshipColumnDef<TData extends RowData, TValue = unknown> = ColumnDef<GateshipTableFeatures, TData, TValue>;
 export type GateshipTable<TData extends RowData> = ReactTable<GateshipTableFeatures, TData>;
 /**
- * What a column may say about itself: classes for its cells (a mono voice,
- * a width), where it aligns (the header follows), and the label its menus
- * use. Header text keeps the table's sans voice whatever the cells wear.
+ * The kind of value a column holds. It is the one thing a column says about
+ * its voice: the kit turns it into a face, a size, an alignment and a figure
+ * style, so the same kind of value reads the same way in every table and a
+ * screen never writes a font class of its own.
+ *
+ * `name` is what a human wrote or chose and is the row's subject, so it is the
+ * only kind allowed to wrap. `label` is a closed set of states, already
+ * carrying its own colour. `code` is machine-issued and read to copy or check,
+ * never compared, so it is mono, left and one step down, because mono at the
+ * row's size reads larger than the sans beside it. `measure` is compared by
+ * magnitude, so it is mono with tabular figures, right aligned and at the
+ * row's own size. `moment` stays sans by the operator's decision of
+ * 2026-09-19, because a date is read like a word, with tabular figures so a
+ * column of them still lines up. `action` is the row's menu and has no text.
  */
-/** `hideBelow` drops a secondary column, head and cells alike, under that breakpoint: a narrow screen keeps what the row is about. */
-export interface GateshipColumnMeta { className?: string; align?: 'start' | 'end'; label?: string; hideBelow?: 'sm' | 'md'; /** The column the row is about. It takes the width the others do not need; without one, the first column does. */ primary?: boolean }
+export type ColumnKind = 'name' | 'label' | 'code' | 'measure' | 'moment' | 'action';
+
+/* Face, size, figures and wrapping. Colour and weight stay the cell's own business: they say how loud a value is, not what kind of value it is. */
+const KIND_CELL: Readonly<Record<ColumnKind, string>> = {
+	name: 'whitespace-normal break-words',
+	label: 'whitespace-nowrap',
+	code: 'font-mono text-xs',
+	measure: 'font-mono tabular-nums',
+	moment: 'tabular-nums',
+	action: '',
+};
+
+/* What the head shares with its cells: where the column sits and how wide it is. The head's own face is always the eyebrow. */
+const KIND_COLUMN: Readonly<Record<ColumnKind, string>> = {
+	name: '',
+	label: '',
+	code: '',
+	measure: 'text-right',
+	moment: '',
+	action: 'w-10 text-right',
+};
+
+/**
+ * What a column may say about itself: the kind of value it holds, classes for
+ * its cells (a width, a colour), the label its menus use, and the breakpoint
+ * it shows from. `hideBelow` drops a secondary column, head and cells alike,
+ * under that breakpoint: a narrow screen keeps what the row is about.
+ */
+export interface GateshipColumnMeta { kind?: ColumnKind; className?: string; label?: string; hideBelow?: 'sm' | 'md'; /** The column the row is about. It takes the width the others do not need; without one, the first column does. */ primary?: boolean }
 
 export function useGateshipTable<TData extends RowData>(options: GateshipTableOptions<TData>): GateshipTable<TData> {
 	return useTable(options);
@@ -130,10 +168,16 @@ function metaOf<TData extends RowData>(column: GateshipColumn<TData>): GateshipC
 
 /* By the table's own width, not the window's: beside an open sidebar a 1024px window leaves the table 672px. */
 const HIDE_BELOW = { sm: 'hidden @xl:table-cell', md: 'hidden @3xl:table-cell' } as const;
-/** What a column imposes on its head and its cells alike: alignment, and the breakpoint it shows from. */
+/** What a column imposes on its head and its cells alike: where it sits, how wide it is, and the breakpoint it shows from. */
 function alignClass<TData extends RowData>(column: GateshipColumn<TData>): string | undefined {
 	const meta = metaOf(column);
-	return cn(meta.align === 'end' ? 'text-right' : undefined, meta.hideBelow === undefined ? undefined : HIDE_BELOW[meta.hideBelow]) || undefined;
+	return cn(meta.kind === undefined ? undefined : KIND_COLUMN[meta.kind], meta.hideBelow === undefined ? undefined : HIDE_BELOW[meta.hideBelow]) || undefined;
+}
+
+/** What only the cells wear: the voice of the kind, then whatever the column adds. */
+function cellClass<TData extends RowData>(column: GateshipColumn<TData>): string | undefined {
+	const meta = metaOf(column);
+	return cn(meta.kind === undefined ? undefined : KIND_CELL[meta.kind], meta.className, alignClass(column)) || undefined;
 }
 
 function columnLabel<TData extends RowData>(column: GateshipColumn<TData>): string {
@@ -317,7 +361,7 @@ function DataTableBodyRow<TData extends RowData>({ row, open, span, text, render
 						</Button>
 					</TableCell>
 				)}
-				{row.getVisibleCells().map((cell) => <TableCell className={cn(metaOf(cell.column).className, alignClass(cell.column))} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
+				{row.getVisibleCells().map((cell) => <TableCell className={cellClass(cell.column)} key={cell.id}><FlexRender cell={cell} /></TableCell>)}
 			</TableRow>
 			{/* `data-state` keeps the detail out of any count of data rows. */}
 			{open && renderExpanded !== undefined ? <TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="expanded"><TableCell className="whitespace-normal p-4" colSpan={span}>{renderExpanded(row.original)}</TableCell></TableRow> : null}
@@ -407,7 +451,7 @@ export function DataTable<TData extends RowData>({
 						? Array.from({ length: skeletonRows }, (_, index) => (
 							<TableRow data-state="loading" key={`skeleton-${index}`}>
 								{renderExpanded === undefined ? null : <TableCell className="w-8 pr-0" />}
-								{columns.map((column) => <TableCell className={cn(metaOf(column).className, alignClass(column))} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
+								{columns.map((column) => <TableCell className={cellClass(column)} key={column.id}><Skeleton className="h-4 w-full max-w-32" /></TableCell>)}
 							</TableRow>
 						))
 						: rows.map((row) => <DataTableBodyRow key={row.id} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}

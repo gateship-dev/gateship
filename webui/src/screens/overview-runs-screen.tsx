@@ -122,35 +122,34 @@ function RowActions({ run, catalog }: { run: RunRow; catalog: OverviewRunsCatalo
 }
 
 function overviewRunsColumns(catalog: OverviewRunsCatalog, inspector: RunInspectorCatalog, locale: Locale): GateshipColumnDef<RunRow>[] {
-	const mono = 'font-mono tabular-nums';
 	const muted = <span className="text-muted-foreground">—</span>;
-	const models = (role: RunRow['roles'][number]['role'], header: string): GateshipColumnDef<RunRow> => ({ id: `${role}Models`, accessorFn: (row) => roleModels(row, role), header, enableSorting: false, meta: { className: 'font-mono text-xs', hideBelow: 'md' }, cell: ({ row }) => roleModels(row.original, role) || muted });
+	const models = (role: RunRow['roles'][number]['role'], header: string): GateshipColumnDef<RunRow> => ({ id: `${role}Models`, accessorFn: (row) => roleModels(row, role), header, enableSorting: false, meta: { kind: 'code', hideBelow: 'md' }, cell: ({ row }) => roleModels(row.original, role) || muted });
 	return [
 		/* The row is about the issue: its id, then what it is called. The title takes no width of its own, so it fills the slack the table has and never widens it. */
-		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, enableHiding: false, meta: { primary: true }, cell: ({ row }) => (
+		{ id: 'issueId', accessorKey: 'issueId', header: catalog.issue, enableSorting: true, enableHiding: false, meta: { kind: 'name', primary: true }, cell: ({ row }) => (
 			<a className="group/issue flex min-w-0 items-center gap-3" href={runHref(row.original)}>
 				<span className="font-medium font-mono underline-offset-4 group-hover/issue:underline">{row.original.issueId}</span>
 				{row.original.issueTitle == null ? null : <span className="relative hidden h-5 min-w-0 flex-1 @xl:block" data-slot="issue-title" title={row.original.issueTitle}><span className="absolute inset-0 truncate text-muted-foreground leading-5">{row.original.issueTitle}</span></span>}
 			</a>
 		) },
 		/* The short id is what an operator reads aloud or pastes; the whole id is one column away. */
-		{ id: 'run', accessorKey: 'runId', header: catalog.run, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.runId}>{row.original.runId.slice(0, 8)}</span> },
-		{ id: 'state', accessorKey: 'state', header: catalog.state, enableSorting: true, cell: ({ row }) => <StateBadge catalog={catalog} inspector={inspector} run={row.original} /> },
-		{ id: 'projectName', accessorKey: 'projectName', header: catalog.project, enableSorting: true, meta: { hideBelow: 'md' } },
+		{ id: 'run', accessorKey: 'runId', header: catalog.run, enableSorting: false, meta: { kind: 'code', className: 'text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.runId}>{row.original.runId.slice(0, 8)}</span> },
+		{ id: 'state', accessorKey: 'state', header: catalog.state, enableSorting: true, meta: { kind: 'label' }, cell: ({ row }) => <StateBadge catalog={catalog} inspector={inspector} run={row.original} /> },
+		{ id: 'projectName', accessorKey: 'projectName', header: catalog.project, enableSorting: true, meta: { kind: 'name', hideBelow: 'md' } },
 		/* A merged pull request already passed CI; the badge only says something while the PR is open. */
-		{ id: 'delivery', header: catalog.delivery, enableSorting: false, meta: { hideBelow: 'sm' }, cell: ({ row }) => row.original.pullRequest ? <span className="inline-flex items-center gap-2"><a className="inline-flex items-center gap-1 underline-offset-4 hover:underline" href={row.original.pullRequest.url} rel="noreferrer" target="_blank">PR #{row.original.pullRequest.prNumber}<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-60" icon={LinkSquare02Icon} size={14} strokeWidth={2.25} /></a>{row.original.ci && !row.original.merge ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : null}</span> : muted },
+		{ id: 'delivery', header: catalog.delivery, enableSorting: false, meta: { kind: 'code', hideBelow: 'sm' }, cell: ({ row }) => row.original.pullRequest ? <span className="inline-flex items-center gap-2"><a className="inline-flex items-center gap-1 underline-offset-4 hover:underline" href={row.original.pullRequest.url} rel="noreferrer" target="_blank">PR #{row.original.pullRequest.prNumber}<HugeiconsIcon aria-hidden="true" className="size-3.5 opacity-60" icon={LinkSquare02Icon} size={14} strokeWidth={2.25} /></a>{row.original.ci && !row.original.merge ? <Badge variant={ciBadgeVariant(row.original.ci.status as NonNullable<RunRow['pullRequest']>['ciStatus'])}>{inspector.ciLabels[row.original.ci.status as keyof typeof inspector.ciLabels]}</Badge> : null}</span> : muted },
 		/* Active time: the wall clock minus the wait on the operator, computed by the server so the sort agrees. */
-		{ id: 'duration', accessorFn: (row) => activeDuration(row) ?? -1, header: catalog.duration, enableSorting: true, meta: { className: mono, align: 'end', hideBelow: 'sm' }, cell: ({ row }) => duration(activeDuration(row.original)) },
-		{ id: 'updatedAt', accessorKey: 'updatedAt', header: catalog.updated, enableSorting: true, meta: { className: 'tabular-nums text-muted-foreground', hideBelow: 'sm' }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatWhen(row.original.updatedAt, locale)}</time> },
-		{ id: 'providerId', accessorKey: 'providerId', header: catalog.provider, enableSorting: true, meta: { hideBelow: 'md' }, cell: ({ row }) => row.original.providerId === 'claude' ? 'Claude Code' : 'Codex' },
+		{ id: 'duration', accessorFn: (row) => activeDuration(row) ?? -1, header: catalog.duration, enableSorting: true, meta: { kind: 'measure', hideBelow: 'sm' }, cell: ({ row }) => duration(activeDuration(row.original)) },
+		{ id: 'updatedAt', accessorKey: 'updatedAt', header: catalog.updated, enableSorting: true, meta: { kind: 'moment', className: 'text-muted-foreground', hideBelow: 'sm' }, cell: ({ row }) => <time dateTime={row.original.updatedAt}>{formatWhen(row.original.updatedAt, locale)}</time> },
+		{ id: 'providerId', accessorKey: 'providerId', header: catalog.provider, enableSorting: true, meta: { kind: 'label', hideBelow: 'md' }, cell: ({ row }) => row.original.providerId === 'claude' ? 'Claude Code' : 'Codex' },
 		models('orchestrator', catalog.roles.orchestrator),
 		models('executor', catalog.roles.executor),
 		models('reviewer', catalog.roles.reviewer),
-		{ id: 'rounds', accessorFn: (row) => row.evaluation.corrections.total, header: catalog.rounds, enableSorting: false, meta: { className: mono, align: 'end', hideBelow: 'md' } },
-		{ id: 'interventions', accessorFn: (row) => row.evaluation.operatorInterventions, header: catalog.interventions, enableSorting: false, meta: { className: mono, align: 'end', hideBelow: 'md' } },
-		{ id: 'cost', accessorFn: (row) => row.cost.totalCostUsd ?? -1, header: catalog.cost, enableSorting: true, meta: { className: mono, align: 'end', hideBelow: 'md' }, cell: ({ row }) => row.original.cost.totalCostUsd === null ? muted : formatCostUsd(row.original.cost.totalCostUsd, locale, 2) },
-		{ id: 'runId', accessorKey: 'runId', header: catalog.runId, enableSorting: false, meta: { className: 'font-mono text-muted-foreground text-xs', hideBelow: 'md' } },
-		{ id: 'actions', header: () => <span className="sr-only">{catalog.actions}</span>, enableSorting: false, enableHiding: false, meta: { className: 'w-10', align: 'end' }, cell: ({ row }) => <RowActions catalog={catalog} run={row.original} /> },
+		{ id: 'rounds', accessorFn: (row) => row.evaluation.corrections.total, header: catalog.rounds, enableSorting: false, meta: { kind: 'measure', hideBelow: 'md' } },
+		{ id: 'interventions', accessorFn: (row) => row.evaluation.operatorInterventions, header: catalog.interventions, enableSorting: false, meta: { kind: 'measure', hideBelow: 'md' } },
+		{ id: 'cost', accessorFn: (row) => row.cost.totalCostUsd ?? -1, header: catalog.cost, enableSorting: true, meta: { kind: 'measure', hideBelow: 'md' }, cell: ({ row }) => row.original.cost.totalCostUsd === null ? muted : formatCostUsd(row.original.cost.totalCostUsd, locale, 2) },
+		{ id: 'runId', accessorKey: 'runId', header: catalog.runId, enableSorting: false, meta: { kind: 'code', className: 'text-muted-foreground', hideBelow: 'md' } },
+		{ id: 'actions', header: () => <span className="sr-only">{catalog.actions}</span>, enableSorting: false, enableHiding: false, meta: { kind: 'action' }, cell: ({ row }) => <RowActions catalog={catalog} run={row.original} /> },
 	];
 }
 

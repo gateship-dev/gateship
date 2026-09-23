@@ -70,12 +70,12 @@ function ProjectStatusTable({ overview, catalog, locale }: { overview: ProjectOp
 	const data = useMemo(() => sortProjectsByUrgency(overview.projects), [overview.projects]);
 	const columns = useMemo<GateshipColumnDef<ProjectEntry>[]>(() => {
 		const defs: GateshipColumnDef<ProjectEntry>[] = [
-			{ id: 'project', header: catalog.project, meta: { className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.project.id)}`}>{row.original.project.name}</a>{row.original.project.current ? <span className="hidden @xl:inline-flex"><Tag>{projectCatalog.currentBadge}</Tag></span> : null}</span> },
-			{ id: 'activity', header: catalog.activity, meta: { className: 'max-w-56 overflow-hidden' }, cell: ({ row }) => <ProjectActivity catalog={catalog} entry={row.original} locale={locale} /> },
-			{ id: 'readiness', header: projectCatalog.readinessLabel, meta: { hideBelow: 'sm' }, cell: ({ row }) => <Badge variant={READINESS_TONE[row.original.project.readiness]}>{projectCatalog.readiness[row.original.project.readiness]}</Badge> },
-			{ id: 'backlog', header: catalog.backlogLabel, meta: { align: 'end', className: 'type-data', hideBelow: 'sm' }, cell: ({ row }) => row.original.backlog.state === 'available' ? row.original.backlog.counts.planned : <span className="font-sans text-muted-foreground">{catalog.partial}</span> },
-			{ id: 'lastDelivery', header: catalog.lastDelivery, meta: { hideBelow: 'md' }, cell: ({ row }) => <LastDelivery catalog={catalog} entry={row.original} /> },
-			{ id: 'date', header: runsCatalog.date, meta: { className: 'whitespace-nowrap tabular-nums text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => { const value = deliveredAt(row.original); return value === null ? null : <time dateTime={value}>{formatWhen(value, locale)}</time>; } },
+			{ id: 'project', header: catalog.project, meta: { kind: 'name', className: 'max-w-44 sm:max-w-52' }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-2"><a className={cn(TITLE_LINK_CLASS, 'truncate')} href={`/projects/${encodeURIComponent(row.original.project.id)}`}>{row.original.project.name}</a>{row.original.project.current ? <span className="hidden @xl:inline-flex"><Tag>{projectCatalog.currentBadge}</Tag></span> : null}</span> },
+			{ id: 'activity', header: catalog.activity, meta: { kind: 'label', className: 'max-w-56 overflow-hidden' }, cell: ({ row }) => <ProjectActivity catalog={catalog} entry={row.original} locale={locale} /> },
+			{ id: 'readiness', header: projectCatalog.readinessLabel, meta: { kind: 'label', hideBelow: 'sm' }, cell: ({ row }) => <Badge variant={READINESS_TONE[row.original.project.readiness]}>{projectCatalog.readiness[row.original.project.readiness]}</Badge> },
+			{ id: 'backlog', header: catalog.backlogLabel, meta: { kind: 'measure', hideBelow: 'sm' }, cell: ({ row }) => row.original.backlog.state === 'available' ? row.original.backlog.counts.planned : <span className="font-sans text-muted-foreground">{catalog.partial}</span> },
+			{ id: 'lastDelivery', header: catalog.lastDelivery, meta: { kind: 'label', hideBelow: 'md' }, cell: ({ row }) => <LastDelivery catalog={catalog} entry={row.original} /> },
+			{ id: 'date', header: runsCatalog.date, meta: { kind: 'moment', className: 'text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => { const value = deliveredAt(row.original); return value === null ? null : <time dateTime={value}>{formatWhen(value, locale)}</time>; } },
 		];
 		/* A handful of projects in a fixed order: nothing here sorts or hides. */
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));

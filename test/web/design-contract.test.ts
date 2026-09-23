@@ -49,6 +49,29 @@ describe('design contract', () => {
 		expect(handWritten({ 'screens/planted.tsx': '<button className={PRIMARY}>Save</button>', 'components/ui/button.tsx': '<button />' })).toEqual(['screens/planted.tsx']);
 	});
 
+	test('a column declares the kind of value it holds, and never the face that value wears', () => {
+		/* Every `meta:` literal a screen writes for a column. The kit turns a kind
+		 * into a face, a size, an alignment and a figure style; a class that does
+		 * any of that by hand is the same value reading two ways in two tables. */
+		const metas = (files: Record<string, string>): { file: string; meta: string }[] => Object.entries(files)
+			.filter(([name]) => name.startsWith('screens/'))
+			.flatMap(([file, source]) => [...source.matchAll(/meta:\s*\{[^{}]*\}/g)].map((match) => ({ file, meta: match[0] })));
+		const VOICE = /font-mono|font-sans|type-data|type-eyebrow|tabular-nums|text-xs|text-right|text-end|text-left/;
+		const dressed = (files: Record<string, string>): string[] => metas(files).filter((entry) => VOICE.test(entry.meta)).map((entry) => entry.file).sort();
+		const kindless = (files: Record<string, string>): string[] => metas(files).filter((entry) => !entry.meta.includes('kind:')).map((entry) => entry.file).sort();
+
+		expect(dressed(sources)).toEqual([]);
+		expect(kindless(sources)).toEqual([]);
+		expect(metas(sources).length).toBeGreaterThan(20);
+		const planted = {
+			'screens/planted.tsx': "{ id: 'cost', header: 'Cost', meta: { className: 'font-mono tabular-nums', align: 'end' } }",
+			'screens/planted-kindless.tsx': "{ id: 'cost', header: 'Cost', meta: { hideBelow: 'sm' } }",
+			'components/ui/data-table.tsx': "const KIND_CELL = { measure: 'font-mono tabular-nums' }",
+		};
+		expect(dressed(planted)).toEqual(['screens/planted.tsx']);
+		expect(kindless(planted)).toEqual(['screens/planted-kindless.tsx', 'screens/planted.tsx']);
+	});
+
 	test('one chip says a shortcut, and the kit owns the element it is made of', () => {
 		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).filter(([name, source]) => name !== 'components/ui/key-chip.tsx' && /<kbd\b/.test(source)).map(([name]) => name).sort();
 		expect(handWritten(sources)).toEqual([]);

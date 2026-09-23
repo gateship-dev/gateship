@@ -51,8 +51,8 @@ import {
 
 type TableFixtureRow = { id: string; name: string; state: string; execution?: string; providerId?: string };
 const TABLE_FIXTURE_COLUMNS: GateshipColumnDef<TableFixtureRow>[] = [
-	{ accessorKey: 'name', header: 'Name' },
-	{ accessorKey: 'state', header: 'State', meta: { className: 'font-mono', align: 'end' } },
+	{ accessorKey: 'name', header: 'Name', meta: { kind: 'name' } },
+	{ accessorKey: 'state', header: 'State', meta: { kind: 'measure' } },
 ];
 
 function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, server = false, loading = false, pageSize = 1, rowCount = 4 }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; server?: boolean; loading?: boolean; pageSize?: number; rowCount?: number }): React.ReactElement {
@@ -101,7 +101,7 @@ describe('ui primitives', () => {
 	test('data tables leave row processing to the server and keep header voice apart from cell voice', () => {
 		const html = renderToStaticMarkup(<TableFixture data={[{ id: 'a', name: 'Nome', state: 'Pronto' }]} />);
 		const server = renderToStaticMarkup(<TableFixture server data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }, { id: 'b', name: 'Resposta do servidor B', state: 'Em fila' }]} />);
-		// A column's classes reach its cells; its header is the eyebrow of the column and only follows the alignment.
+		// A column's kind reaches its cells; its header is the eyebrow of the column and only follows the alignment the kind asks for.
 		const stateHead = html.slice(html.lastIndexOf('<th', html.indexOf('State')), html.indexOf('State'));
 		expect(stateHead).toContain('type-eyebrow');
 		expect(stateHead).toContain('text-right');
