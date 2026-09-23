@@ -44,6 +44,7 @@ import {
 	DataTable,
 	DataTableViewOptions,
 	DataTablePagination,
+	DataTableToolbar,
 	gateshipTableFeatures,
 	useGateshipTable,
 	type GateshipColumnDef,
@@ -73,10 +74,10 @@ function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, server = false, l
 	return <><DataTable table={table} locale="pt-BR" status={loading ? 'loading' : 'ready'} /><DataTablePagination table={table} locale="pt-BR" /></>;
 }
 
-function TableControlsFixture(): React.ReactElement {
+function TableControlsFixture({ rowCount = 40 }: { rowCount?: number }): React.ReactElement {
 	const columns: GateshipColumnDef<TableFixtureRow>[] = [{ accessorKey: 'execution', header: 'Execução', enableSorting: false }, { accessorKey: 'providerId', header: 'Provider / modelo' }, ...TABLE_FIXTURE_COLUMNS];
-	const table = useGateshipTable({ columns, data: [{ id: 'a', name: 'Nome', state: 'Pronto', execution: 'run-1', providerId: 'Claude Code / modelo' }], features: gateshipTableFeatures, getRowId: (row) => row.id, rowCount: 1, state: { sorting: [], pagination: { pageIndex: 0, pageSize: 1 } } });
-	return <><DataTable table={table} locale="pt-BR" /><DataTablePagination table={table} locale="pt-BR" /><DataTableViewOptions table={table} locale="pt-BR" /></>;
+	const table = useGateshipTable({ columns, data: [{ id: 'a', name: 'Nome', state: 'Pronto', execution: 'run-1', providerId: 'Claude Code / modelo' }], features: gateshipTableFeatures, getRowId: (row) => row.id, manualPagination: true, rowCount, state: { sorting: [], pagination: { pageIndex: 0, pageSize: 20 } } });
+	return <DataTable foot={<DataTablePagination table={table} locale="pt-BR" />} head={<DataTableToolbar><DataTableViewOptions table={table} locale="pt-BR" /></DataTableToolbar>} table={table} locale="pt-BR" />;
 }
 
 describe('ui primitives', () => {
@@ -125,8 +126,18 @@ describe('ui primitives', () => {
 		expect(html).toContain('>Colunas</button>');
 		expect(html).toContain('aria-label="Linhas por página"');
 		expect(html).toContain('aria-label="Próxima página"');
-		expect(html).toContain('1–1 de 1');
+		expect(html).toContain('1–1 de 40');
 		expect(html).not.toContain(' of ');
+		// The controls and the pager are zones of the table's own frame, in reading order: controls, rows, pager.
+		const frame = html.indexOf('data-slot="data-table-surface"');
+		expect(frame).toBeLessThan(html.indexOf('data-slot="data-table-head"'));
+		expect(html.indexOf('data-slot="data-table-head"')).toBeLessThan(html.indexOf('<table'));
+		expect(html.indexOf('</table>')).toBeLessThan(html.indexOf('data-slot="data-table-foot"'));
+		// A table that fits the smallest page has no pager at all: a range of "1 to 1 of 1" beside buttons that cannot move is furniture.
+		const small = renderToStaticMarkup(<TableControlsFixture rowCount={1} />);
+		expect(small).not.toContain('data-slot="data-table-pagination"');
+		// The zone stays in the markup with nothing in it, and an empty zone takes no room: no rule, no 48px band under the rows.
+		expect(small).toMatch(/<div class="[^"]*empty:hidden[^"]*" data-slot="data-table-foot"><\/div>/);
 	});
 
 	test('card composition owns its standard, compact, split and form rhythm', () => {

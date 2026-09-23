@@ -25,12 +25,14 @@ for (const [name, route, scenario] of cases) {
 			// The contract's measurable half, read off the page about to be
 			// photographed. A picture only proves the page still looks like itself;
 			// these prove it was right to begin with.
-			const report = await page.evaluate(() => (globalThis as unknown as { gateshipMeasureDesign: () => { lowContrast: unknown[]; overflow: unknown[]; unevenToolbars: unknown[]; pageOverflow: number; fontSizes: string[]; textColors: string[] } | null }).gateshipMeasureDesign());
+			const report = await page.evaluate(() => (globalThis as unknown as { gateshipMeasureDesign: () => { lowContrast: unknown[]; overflow: unknown[]; unevenToolbars: unknown[]; pageOverflow: number; fontSizes: string[]; textColors: string[]; looseTableParts: string[]; misalignedTables: unknown[] } | null }).gateshipMeasureDesign());
 			expect(report).not.toBeNull();
 			expect(report?.lowContrast, 'text below WCAG AA').toEqual([]);
 			expect(report?.overflow, 'content spilling out of its box').toEqual([]);
 			expect(report?.unevenToolbars, 'toolbar controls of different heights').toEqual([]);
 			expect(report?.pageOverflow, 'horizontal page scroll').toBe(0);
+			expect(report?.looseTableParts, 'table controls outside their table').toEqual([]);
+			expect(report?.misalignedTables, 'a table whose controls, head and pager start on different lines').toEqual([]);
 			expect(report?.fontSizes.length, 'distinct font sizes on one screen').toBeLessThanOrEqual(6);
 			expect(report?.textColors.length, 'distinct text colours on one screen').toBeLessThanOrEqual(12);
 			// The product, not the harness controls above it: at 390px those fill the

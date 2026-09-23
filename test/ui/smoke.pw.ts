@@ -42,6 +42,30 @@ test.describe('@smoke Central invariants', () => {
 		}
 	});
 
+	test('the frame check reads what it claims: a loose control and a pager off the text edge are both found', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.goto('/harness.html?frame=1440&route=/overview/runs&scenario=dense&locale=en-US&theme=light');
+		await expect(page.locator('[data-slot=data-table]')).toBeVisible();
+		type Report = { looseTableParts: string[]; misalignedTables: { edges: number[] }[] };
+		const measure = (): Promise<Report> => page.evaluate(() => (globalThis as unknown as { gateshipMeasureDesign: () => Report }).gateshipMeasureDesign());
+		const clean = await measure();
+		expect(clean.looseTableParts).toEqual([]);
+		expect(clean.misalignedTables).toEqual([]);
+		// Planted: a toolbar written beside the table instead of in it, and the pager pushed 7px off the cells' text, the offset the old layout had.
+		await page.evaluate(() => {
+			const browser = globalThis as unknown as { document: { querySelector: (selector: string) => { parentElement: { insertBefore: (node: unknown, before: unknown) => void }; style: { paddingLeft: string } } | null; createElement: (tag: string) => { setAttribute: (name: string, value: string) => void; textContent: string } } };
+			const table = browser.document.querySelector('[data-slot=data-table]')!;
+			const loose = browser.document.createElement('div');
+			loose.setAttribute('data-slot', 'data-table-toolbar');
+			loose.textContent = 'loose';
+			table.parentElement.insertBefore(loose, table);
+			browser.document.querySelector('[data-slot=data-table-pagination]')!.style.paddingLeft = '23px';
+		});
+		const planted = await measure();
+		expect(planted.looseTableParts).toEqual(['data-table-toolbar']);
+		expect(planted.misalignedTables.length).toBe(1);
+	});
+
 	test('covers focus, sidebar geometry, menus, sorting, pagination and internal table scrolling', async ({ page }) => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto('/harness.html?frame=1440&route=/overview/runs&scenario=dense&locale=en-US&theme=dark');

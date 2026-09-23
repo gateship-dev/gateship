@@ -6,9 +6,9 @@ import { Button } from '../components/ui/button.tsx';
 import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx';
 import { Tag } from '../components/ui/tag.tsx';
 import { Card, CardDescription, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
-import { CheckField, FormField } from '../components/ui/card-layout.tsx';
+import { CheckField, FormField, PageToolbar } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
-import { DataTable, DataTableToolbar, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { DataTable, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { cn } from '../lib/cn.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { ProjectActivity, READINESS_TONE } from './overview-screen.tsx';
@@ -141,7 +141,8 @@ export function ProjectsManagementSurface(props: AppProps): React.ReactElement {
 	};
 	return (
 		<SurfaceColumn label={catalog.title} status={props.status}>
-			<DataTableToolbar><Button aria-expanded={adding} className="ml-auto" onClick={() => setAdding((current) => !current)} type="button" variant={adding ? 'outline' : 'default'}>{adding ? catalog.list.closeAdd : catalog.list.add}</Button></DataTableToolbar>
+			{/* Adding a project opens a form below the list: an action of the page, not a control of the table's rows. */}
+			<PageToolbar><Button aria-expanded={adding} className="ml-auto" onClick={() => setAdding((current) => !current)} type="button" variant={adding ? 'outline' : 'default'}>{adding ? catalog.list.closeAdd : catalog.list.add}</Button></PageToolbar>
 			<RegisteredProjectsTable props={props} />
 			{adding ? <>
 			<Card>

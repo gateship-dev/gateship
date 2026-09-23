@@ -2014,9 +2014,13 @@ describe('runs surface', () => {
 		const list = runsListPage({ runs });
 		expect(list).toContain('data-slot="data-table"');
 		expect(list).toContain('data-slot="overview-runs-views"');
-		// Views, search and filters are one group; a narrow table keeps issue and state, and when is one column.
+		// Views, search and filters are the table's own controls: two rows of its head zone, inside its frame, before its rows. A narrow table keeps issue and state, and when is one column.
 		expect((list.match(/data-slot="data-table-toolbar"/g) ?? []).length).toBe(2);
-		expect(list.indexOf('data-slot="overview-runs-controls"')).toBeLessThan(list.indexOf('data-slot="data-table-toolbar"'));
+		const frame = list.indexOf('data-slot="data-table-surface"');
+		expect(frame).toBeGreaterThan(-1);
+		expect(frame).toBeLessThan(list.indexOf('data-slot="data-table-head"'));
+		expect(list.indexOf('data-slot="data-table-head"')).toBeLessThan(list.indexOf('data-slot="data-table-toolbar"'));
+		expect(list.lastIndexOf('data-slot="data-table-toolbar"')).toBeLessThan(list.indexOf('<thead'));
 		const heads = list.slice(list.indexOf('<thead'), list.indexOf('</thead>')).split('<th ').slice(1);
 		const hidden = (label: string): string | undefined => /hidden @(xl|3xl):table-cell/.exec(heads.find((head) => head.includes(`>${label}<`)) ?? '')?.[1];
 		expect([hidden('Issue'), hidden('State'), hidden('Delivery'), hidden('Duration'), hidden('Updated'), hidden('Run')]).toEqual([undefined, undefined, 'xl', 'xl', 'xl', '3xl']);
@@ -3560,16 +3564,17 @@ function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: R
 	const onePage = renderInsightsWithLoadedOverview(locale, factualCohortOverview(pagedCohorts.slice(0, 1), { limit: 10, offset: 0, returned: 1, total: 1 }));
 	expect(firstPage).toContain(catalog.cohortPage(1, 2, 3));
 	expect(lastPage).toContain(catalog.cohortPage(3, 3, 3));
-	expect(onePage).toContain(catalog.cohortPage(1, 1, 1));
+	// One cohort on one page is not a pager's job: the table that fits the smallest page shows no footer.
+	expect(onePage).not.toContain(catalog.cohortPage(1, 1, 1));
+	expect(onePage).not.toContain('data-slot="data-table-pagination"');
 	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(2);
 	expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
 	expect(firstPage).toContain(`aria-label="${locale === 'en-US' ? 'Previous page' : 'Página anterior'}"`);
 	expect(lastPage).toContain(`aria-label="${locale === 'en-US' ? 'Next page' : 'Próxima página'}"`);
-	for (const label of locale === 'en-US' ? ['Previous page', 'Next page'] : ['Página anterior', 'Próxima página']) {
-		const buttons = openingTags(onePage).filter((tag) => tag.startsWith('<button') && tag.includes(`aria-label="${label}"`));
-		expect(buttons.length).toBeGreaterThan(0);
-		for (const button of buttons) expect(button).toContain('disabled=""');
-	}
+	// At the ends, the way further is disabled rather than gone.
+	const disabledOn = (html: string, label: string): boolean => openingTags(html).some((tag) => tag.startsWith('<button') && tag.includes(`aria-label="${label}"`) && tag.includes('disabled=""'));
+	expect(disabledOn(firstPage, locale === 'en-US' ? 'Previous page' : 'Página anterior')).toBe(true);
+	expect(disabledOn(lastPage, locale === 'en-US' ? 'Next page' : 'Próxima página')).toBe(true);
 }
 
 test('distingue os quatro resultados do gráfico por padrões não cromáticos em ambos os locales', () => {

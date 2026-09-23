@@ -16,7 +16,7 @@ import type { AppProps } from '../app-props.ts';
 import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { DataTable, DataTableFilter, DataTablePagination, DataTableToolbar, DataTableViewOptions, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { DataTable, DataTableFacet, DataTableFilter, DataTablePagination, DataTableToolbar, DataTableViewOptions, gateshipTableFeatures, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '../components/ui/dropdown-menu.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { StatusDot } from '../components/ui/status-dot.tsx';
@@ -158,12 +158,13 @@ function hasFilters(query: OverviewRunsQuery, scopeProjectId?: string): boolean 
 }
 
 /* No project select: the sidebar switcher is the project filter. A `?projectId=` link still scopes the list, and Clear filters lifts it. */
-function OverviewRunsFilters({ query, update, catalog, inspector, scopeProjectId }: { query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog; scopeProjectId?: string }): React.ReactElement {
+function OverviewRunsFilters({ query, update, catalog, inspector, scopeProjectId, locale }: { query: OverviewRunsQuery; update: Update; catalog: OverviewRunsCatalog; inspector: RunInspectorCatalog; scopeProjectId?: string; locale: Locale }): React.ReactElement {
 	const select = 'w-auto min-w-36';
 	return (
 		<>
-			<SelectField aria-label={catalog.state} className={select} items={[{ value: '', label: catalog.state }, ...RUN_STATES.map((state) => ({ value: state, label: inspector.stateLabels[state] }))]} value={query.state ?? ''} onValueChange={(value) => update({ state: (value || undefined) as OverviewRunsQuery['state'] })} />
-			<SelectField aria-label={catalog.provider} className={select} items={[{ value: '', label: catalog.provider }, { value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} value={query.providerId ?? ''} onValueChange={(value) => update({ providerId: (value || undefined) as OverviewRunsQuery['providerId'] })} />
+			{/* The source takes one value per column, so each facet is a single choice until it takes a list. */}
+			<DataTableFacet locale={locale} options={RUN_STATES.map((state) => ({ value: state, label: inspector.stateLabels[state] }))} selected={query.state === undefined ? [] : [query.state]} title={catalog.state} onChange={(next) => update({ state: next[0] as OverviewRunsQuery['state'] })} />
+			<DataTableFacet locale={locale} options={[{ value: 'claude', label: 'Claude Code' }, { value: 'codex', label: 'Codex' }]} selected={query.providerId === undefined ? [] : [query.providerId]} title={catalog.provider} onChange={(next) => update({ providerId: next[0] as OverviewRunsQuery['providerId'] })} />
 			<SelectField aria-label={catalog.period} className={select} items={[{ value: 'all', label: catalog.all }, { value: '7d', label: catalog.last7d }, { value: '30d', label: catalog.last30d }]} value={query.period ?? 'all'} onValueChange={(value) => update({ period: value as OverviewRunsQuery['period'] })} />
 			{hasFilters(query, scopeProjectId) ? (
 				<Button type="button" variant="ghost" onClick={() => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined })}>
@@ -238,30 +239,28 @@ function OverviewRunsTable({ props, query, update, onRetry, page, loading, error
 	const table = useOverviewRunsTable({ catalog, inspector, locale: props.locale, query, update, page });
 	const status = error !== null && page === null ? 'error' : loading && page === null ? 'loading' : loading ? 'updating' : 'ready';
 	const clear = (): void => update({ search: undefined, projectId: undefined, state: undefined, providerId: undefined, period: undefined, group: undefined });
+	/* Views, search and filters are this table's controls, so they live in its frame: two rows of the head zone, the failure in the notice zone, the pager in the foot. */
 	return (
-		<>
-			{/* Views, search and filters are one group of controls: 8px between its rows, a block's distance to the table. */}
-			<div className="flex flex-col gap-2" data-slot="overview-runs-controls">
-			<DataTableToolbar>
-				<QuickViews catalog={catalog} query={query} update={update} />
-				<DataTableFilter className="sm:max-w-64" locale={props.locale} placeholder={catalog.search} table={table} />
-				<DataTableViewOptions locale={props.locale} table={table} />
-			</DataTableToolbar>
-			<DataTableToolbar>
-				<OverviewRunsFilters catalog={catalog} inspector={inspector} query={query} scopeProjectId={scopeProjectId} update={update} />
-			</DataTableToolbar>
-			</div>
-			<OverviewRunsAlerts catalog={catalog} error={error} page={page} onRetry={onRetry} />
-			<DataTable
-				emptyAction={hasFilters(query, scopeProjectId) || query.group !== undefined ? <Button size="sm" type="button" variant="outline" onClick={clear}>{catalog.clearFilters}</Button> : undefined}
-				emptyDetail={catalog.emptyDetail}
-				emptyState={catalog.empty}
-				locale={props.locale}
-				status={status}
-				table={table}
-			/>
-			<DataTablePagination locale={props.locale} offset={page?.page.offset ?? query.offset ?? 0} total={page?.page.total ?? 0} onOffsetChange={(offset) => update({ offset })} onPageSizeChange={(limit) => update({ limit, offset: 0 })} table={table} />
-		</>
+		<DataTable
+			emptyAction={hasFilters(query, scopeProjectId) || query.group !== undefined ? <Button size="sm" type="button" variant="outline" onClick={clear}>{catalog.clearFilters}</Button> : undefined}
+			emptyDetail={catalog.emptyDetail}
+			emptyState={catalog.empty}
+			foot={<DataTablePagination locale={props.locale} offset={page?.page.offset ?? query.offset ?? 0} total={page?.page.total ?? 0} onOffsetChange={(offset) => update({ offset })} onPageSizeChange={(limit) => update({ limit, offset: 0 })} table={table} />}
+			head={<>
+				<DataTableToolbar>
+					<QuickViews catalog={catalog} query={query} update={update} />
+					<DataTableFilter className="sm:max-w-64" locale={props.locale} placeholder={catalog.search} table={table} />
+					<DataTableViewOptions locale={props.locale} table={table} />
+				</DataTableToolbar>
+				<DataTableToolbar>
+					<OverviewRunsFilters catalog={catalog} inspector={inspector} locale={props.locale} query={query} scopeProjectId={scopeProjectId} update={update} />
+				</DataTableToolbar>
+			</>}
+			locale={props.locale}
+			notice={<OverviewRunsAlerts catalog={catalog} error={error} page={page} onRetry={onRetry} />}
+			status={status}
+			table={table}
+		/>
 	);
 }
 

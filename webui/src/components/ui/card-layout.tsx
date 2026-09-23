@@ -54,6 +54,11 @@ export function CardSplit({ className, children }: Omit<LayoutProps, 'as'>): Rea
 }
 
 /** Form rhythm: 12px between fields and 4px within a field. */
+/** A row of controls that act on the whole page, above every block on it: a time window, a page's own action. A table's controls live in the table. */
+export function PageToolbar({ className, children, ...props }: React.ComponentProps<'div'>): React.ReactElement {
+	return <div className={cn('flex flex-wrap items-center gap-2', className)} data-slot="page-toolbar" {...props}>{children}</div>;
+}
+
 export function FormStack({ className, children, ...props }: React.ComponentProps<'form'>): React.ReactElement {
 	return <form className={cn('flex flex-col gap-3', className)} data-slot="form-stack" {...props}>{children}</form>;
 }

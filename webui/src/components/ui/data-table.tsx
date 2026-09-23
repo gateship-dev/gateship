@@ -30,18 +30,19 @@ import {
 	type ReactTable,
 	type TableOptions,
 } from '@tanstack/react-table';
-import { ArrowDown01Icon, ArrowLeft01Icon, ArrowLeftDoubleIcon, ArrowRight01Icon, ArrowRightDoubleIcon, ArrowUp01Icon, Settings02Icon, UnfoldMoreIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
+import { ArrowDown01Icon, ArrowLeft01Icon, ArrowLeftDoubleIcon, ArrowRight01Icon, ArrowRightDoubleIcon, ArrowUp01Icon, PlusSignCircleIcon, Settings02Icon, UnfoldMoreIcon, ViewOffIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import React, { useMemo, useState } from 'react';
 import { cn } from '../../lib/cn.ts';
 import { Button } from './button.tsx';
 import { DisclosureChevron } from './disclosure-chevron.tsx';
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './empty.tsx';
 import { Input } from './input.tsx';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './select.tsx';
 import { Skeleton } from './skeleton.tsx';
 import { Table as GateshipTable, TableBody, TableCell, TableHead, TableHeader, TableRow } from './table.tsx';
+import { Tag } from './tag.tsx';
 
 /** Shared features are deliberately explicit. Consumers still own columns and data. */
 export const gateshipTableFeatures = tableFeatures({
@@ -133,6 +134,8 @@ const copy = {
 		sortState: { ascending: 'sorted ascending', descending: 'sorted descending', none: 'not sorted' },
 		expandRow: 'Show details',
 		collapseRow: 'Hide details',
+		clearFacet: 'Clear',
+		facetChosen: (count: number) => `${count} selected`,
 	},
 	'pt-BR': {
 		filterPlaceholder: 'Filtrar linhas…',
@@ -156,6 +159,8 @@ const copy = {
 		sortState: { ascending: 'ordem crescente', descending: 'ordem decrescente', none: 'sem ordenação' },
 		expandRow: 'Mostrar detalhes',
 		collapseRow: 'Ocultar detalhes',
+		clearFacet: 'Limpar',
+		facetChosen: (count: number) => `${count} selecionados`,
 	},
 } as const;
 
@@ -185,8 +190,68 @@ function columnLabel<TData extends RowData>(column: GateshipColumn<TData>): stri
 	return metaOf(column).label ?? (typeof header === 'string' || typeof header === 'number' ? String(header) : column.id);
 }
 
+/**
+ * One row of a table's head zone: a 32px control with 8px above and below, and
+ * the 16px inset the cells keep, so the search box and the first cell's text
+ * start on the same line. It only means something inside a DataTable's `head`.
+ */
 export function DataTableToolbar({ children, className, ...props }: React.ComponentProps<'div'>): React.ReactElement {
-	return <div className={cn('flex flex-wrap items-center gap-2', className)} data-slot="data-table-toolbar" {...props}>{children}</div>;
+	return <div className={cn('flex min-h-12 flex-wrap items-center gap-2 px-4 py-2', className)} data-slot="data-table-toolbar" {...props}>{children}</div>;
+}
+
+export interface FacetOption { value: string; label: string; /** How many rows carry this value, when the source knows. */ count?: number }
+
+/**
+ * A filter on the values of one column. Its face is the column's name, in the
+ * button's own ink: a facet's name is a label, never a hint, so it reads at
+ * full contrast whether anything is chosen or not. With nothing chosen it
+ * leads with the add glyph, the way every faceted filter says "narrow by
+ * this". With values chosen they follow the name as tags, after a hairline,
+ * and past two the tags become a count. The popup lists the values, each
+ * with its count when the source knows it, and ends with a way to clear.
+ *
+ * `multiple` is for a source that accepts several values of one column,
+ * read as an OR; a source that takes one value gets a single choice.
+ */
+export function DataTableFacet({ title, options, selected, onChange, multiple = false, locale = 'en-US' }: {
+	title: string;
+	options: readonly FacetOption[];
+	selected: readonly string[];
+	onChange: (next: string[]) => void;
+	multiple?: boolean;
+	locale?: TableLocale;
+}): React.ReactElement {
+	const text = copy[locale];
+	const chosen = options.filter((option) => selected.includes(option.value));
+	const face = chosen.length === 0 ? title : `${title}: ${chosen.map((option) => option.label).join(', ')}`;
+	const label = (option: FacetOption): React.ReactNode => <><span className="min-w-0 flex-1">{option.label}</span>{option.count === undefined ? null : <span className="font-mono text-muted-foreground text-xs tabular-nums">{option.count}</span>}</>;
+	return (
+		<DropdownMenu>
+			<DropdownMenuTrigger render={<Button aria-label={face} data-slot="data-table-facet" type="button" variant="outline" />}>
+				{chosen.length === 0 ? <HugeiconsIcon aria-hidden="true" icon={PlusSignCircleIcon} size={16} strokeWidth={2.25} /> : null}
+				<span>{title}</span>
+				{chosen.length === 0 ? null : <>
+					<span aria-hidden="true" className="h-4 w-px bg-border" />
+					{chosen.length > 2 ? <Tag>{text.facetChosen(chosen.length)}</Tag> : chosen.map((option) => <Tag key={option.value}>{option.label}</Tag>)}
+				</>}
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="start" className="min-w-48" data-slot="data-table-facet-options">
+				{multiple
+					? options.map((option) => (
+						<DropdownMenuCheckboxItem checked={selected.includes(option.value)} closeOnClick={false} key={option.value} onCheckedChange={(checked) => onChange(checked ? [...selected, option.value] : selected.filter((value) => value !== option.value))}>{label(option)}</DropdownMenuCheckboxItem>
+					))
+					: <DropdownMenuRadioGroup value={selected[0] ?? ''} onValueChange={(value) => onChange([String(value)])}>
+						{options.map((option) => <DropdownMenuRadioItem key={option.value} value={option.value}>{label(option)}</DropdownMenuRadioItem>)}
+					</DropdownMenuRadioGroup>}
+				{chosen.length === 0 ? null : <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => onChange([])}>{text.clearFacet}</DropdownMenuItem></>}
+			</DropdownMenuContent>
+		</DropdownMenu>
+	);
+}
+
+/** A line about the table's rows that is not one of them: what a view means, how many were left out. It lives in the notice or the foot zone, on the cells' inset. */
+export function DataTableNote({ children, className, ...props }: React.ComponentProps<'p'>): React.ReactElement {
+	return <p className={cn('flex flex-wrap items-center gap-2 px-4 py-3 text-muted-foreground text-sm', className)} data-slot="data-table-note" {...props}>{children}</p>;
 }
 
 /** The text filter: a column's own filter when `columnId` is given, the table's global filter otherwise. */
@@ -299,7 +364,7 @@ export function DataTablePagination<TData extends RowData>({
 	total: totalOverride,
 	onOffsetChange,
 	onPageSizeChange,
-}: TableControlProps<TData> & { offset?: number; total?: number; onOffsetChange?: (offset: number) => void; onPageSizeChange?: (limit: number) => void }): React.ReactElement {
+}: TableControlProps<TData> & { offset?: number; total?: number; onOffsetChange?: (offset: number) => void; onPageSizeChange?: (limit: number) => void }): React.ReactElement | null {
 	const text = copy[locale];
 	const { pageSize, pageIndex } = table.state.pagination;
 	const manual = offset !== undefined && onOffsetChange !== undefined && onPageSizeChange !== undefined;
@@ -314,13 +379,15 @@ export function DataTablePagination<TData extends RowData>({
 		if (manual) onOffsetChange(next * pageSize);
 		else table.setPageIndex(next);
 	};
+	/* A range that reads "1 to 4 of 4" beside a pager that cannot move is furniture: a table that fits the smallest page has no footer. */
+	if (pageCount === 1 && total <= PAGE_SIZES[0]) return null;
 	const nav = (label: string, icon: typeof ArrowLeft01Icon, target: number, disabled: boolean, className?: string): React.ReactElement => (
 		<Button aria-label={label} className={cn('size-8', className)} disabled={disabled} size="icon" type="button" variant="outline" onClick={() => goTo(target)}>
 			<HugeiconsIcon aria-hidden="true" icon={icon} size={16} strokeWidth={2.25} />
 		</Button>
 	);
 	return (
-		<div className={cn('flex flex-wrap items-center justify-between gap-x-6 gap-y-3 text-sm', className)} data-slot="data-table-pagination">
+		<div className={cn('flex min-h-12 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2 text-sm', className)} data-slot="data-table-pagination">
 			<span aria-live="polite" className="font-mono text-muted-foreground text-xs tabular-nums">{text.range(from, to, total)}</span>
 			<div className="flex flex-wrap items-center gap-x-6 gap-y-3">
 				<label className="flex items-center gap-2 text-muted-foreground">
@@ -387,6 +454,36 @@ export function useClientPage<TData>(rows: readonly TData[], matches: (row: TDat
 
 export type DataTableStatus = 'ready' | 'loading' | 'updating' | 'error';
 
+/* The zones a frame stacks around its rows. The head and the notice close with a rule under them, the foot opens with one over it.
+ * The notice is a band of the frame itself: an alert's own border and corners inside the table's would be a card inside a card, so they go and the band keeps the alert's tint. */
+const ZONE_CLASS = {
+	'data-table-head': 'border-b',
+	'data-table-notice': 'divide-y border-b [&>[role=alert]]:rounded-none [&>[role=alert]]:border-0 [&>[role=alert]]:px-4 [&>[role=alert]]:py-3',
+	'data-table-foot': 'border-t',
+} as const;
+
+function DataTableZone({ slot, children }: { slot: keyof typeof ZONE_CLASS; children: React.ReactNode }): React.ReactElement | null {
+	if (children === undefined || children === null || children === false) return null;
+	return <div className={cn(ZONE_CLASS[slot], 'empty:hidden')} data-slot={slot}>{children}</div>;
+}
+
+/* The one row an empty result has: the reason, and the way out when filters caused it. */
+function DataTableEmptyRow({ title, detail, action, span }: { title: React.ReactNode; detail: React.ReactNode; action?: React.ReactNode; span: number }): React.ReactElement {
+	return (
+		<TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="empty">
+			<TableCell className="h-32 text-center" colSpan={span}>
+				<Empty className="p-2" role="status">
+					<EmptyHeader>
+						<EmptyTitle>{title}</EmptyTitle>
+						<EmptyDescription>{detail}</EmptyDescription>
+					</EmptyHeader>
+					{action}
+				</Empty>
+			</TableCell>
+		</TableRow>
+	);
+}
+
 /**
  * The table itself inside its bordered frame. A string header becomes a
  * DataTableColumnHeader on its own, so a column that sorts or hides gets
@@ -405,8 +502,17 @@ export function DataTable<TData extends RowData>({
 	skeletonRows = 5,
 	renderExpanded,
 	defaultExpanded,
+	head,
+	notice,
+	foot,
 	className,
 }: TableControlProps<TData> & {
+	/** The rows of controls that act on this table: search, facets, the view menu. One DataTableToolbar per row. */
+	head?: React.ReactNode;
+	/** One Alert about this table's data, between its controls and its rows. */
+	notice?: React.ReactNode;
+	/** The pager, a DataTablePagination. It hides itself when the table fits one small page. */
+	foot?: React.ReactNode;
 	status?: DataTableStatus;
 	emptyState?: React.ReactNode;
 	emptyDetail?: React.ReactNode;
@@ -431,6 +537,9 @@ export function DataTable<TData extends RowData>({
 			{/* The ring is the edge every surface shares, so a table carries the same one a card does; the clip lives one level in, or it would cut the ring. */}
 			<div className="overflow-hidden rounded-2xl border bg-card" data-slot="data-table-surface">
 			{busy ? <span className="sr-only" role="status">{status === 'loading' ? text.loading : text.updating}</span> : null}
+			{/* Everything that acts on these rows lives in their frame, on the cells' own 16px inset. A zone with nothing in it takes no room. */}
+			<DataTableZone slot="data-table-head">{head}</DataTableZone>
+			<DataTableZone slot="data-table-notice">{notice}</DataTableZone>
 			<GateshipTable>
 				<TableHeader>
 					{table.getHeaderGroups().map((headerGroup) => (
@@ -456,21 +565,10 @@ export function DataTable<TData extends RowData>({
 						))
 						: rows.map((row) => <DataTableBodyRow key={row.id} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}
 					{/* `data-state` tells a data row from a stand-in: anything counting rows reads `tr:not([data-state])`. */}
-					{rows.length === 0 && status !== 'loading' ? (
-						<TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="empty">
-							<TableCell className="h-32 text-center" colSpan={span}>
-								<Empty className="p-2" role="status">
-									<EmptyHeader>
-										<EmptyTitle>{emptyState ?? text.noResults}</EmptyTitle>
-										<EmptyDescription>{emptyDetail ?? text.noResultsDetail}</EmptyDescription>
-									</EmptyHeader>
-									{emptyAction}
-								</Empty>
-							</TableCell>
-						</TableRow>
-					) : null}
+					{rows.length === 0 && status !== 'loading' ? <DataTableEmptyRow action={emptyAction} detail={emptyDetail ?? text.noResultsDetail} span={span} title={emptyState ?? text.noResults} /> : null}
 				</TableBody>
 			</GateshipTable>
+			<DataTableZone slot="data-table-foot">{foot}</DataTableZone>
 			</div>
 		</div>
 	);

@@ -11,7 +11,7 @@ import { Tag } from '../components/ui/tag.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardAction, CardDescription, CardDisclosure, CardFooter, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
 import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
-import { DataTable, DataTableFilter, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useClientPage, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { DataTable, DataTableFilter, DataTableNote, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useClientPage, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { Tabs, TabsCount, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
@@ -20,7 +20,7 @@ import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx'
 import { cn } from '../lib/cn.ts';
 import type { Locale, WorkCatalog } from '../locale.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
-import { OperationalReadPanel } from '../operational-unavailable.tsx';
+import { OperationalReadPanel, OperationalUnavailable } from '../operational-unavailable.tsx';
 import { actionsFor, activeRunIssueId } from '../run-view.ts';
 import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { fieldReader, formatCount } from './runs.tsx';
@@ -552,15 +552,18 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 	}, [catalog, locale, onDismiss, pending, view]);
 	const table = useGateshipTable({ columns, data: list.page, features: gateshipTableFeatures, getRowId: (finding) => finding.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: list.total, state: { globalFilter: list.search, pagination: { pageIndex: Math.floor(list.offset / list.limit), pageSize: list.limit } }, onGlobalFilterChange: (value) => list.setSearch(String(value ?? '')) });
 	return (
-		<>
-			<DataTableToolbar>
-				<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingFindings, formatCount(diagnostics.findings.length, locale)]} resolved={[catalog.list.resolvedFindings, formatCount(diagnostics.resolvedFindings.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
-				<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchFindings} table={table} />
-			</DataTableToolbar>
 			<DataTable
 				emptyDetail={list.search === '' ? '' : undefined}
 				defaultExpanded={defaultOpenId === undefined ? undefined : [defaultOpenId]}
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.diagnostics.noPending : catalog.diagnostics.noResolved}
+				foot={<>
+					<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
+					{view === 'resolved' && diagnostics.resolvedFindingsOmittedCount > 0 ? <DataTableNote>{catalog.diagnostics.omitted(formatCount(diagnostics.resolvedFindingsOmittedCount, locale))}</DataTableNote> : null}
+				</>}
+				head={<DataTableToolbar>
+					<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingFindings, formatCount(diagnostics.findings.length, locale)]} resolved={[catalog.list.resolvedFindings, formatCount(diagnostics.resolvedFindings.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
+					<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchFindings} table={table} />
+				</DataTableToolbar>}
 				locale={locale}
 				renderExpanded={(finding) => (
 					<SuggestionDetail evidence={finding.evidence} meta={<p className="type-data flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{diagnosticFindingLocation(finding)}</code><span>{catalog.diagnostics.toolVersion(finding.toolVersion)}</span><code>{finding.sourceSha.slice(0, 12)}</code></p>}>
@@ -569,9 +572,6 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 				)}
 				table={table}
 			/>
-			<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
-			{view === 'resolved' && diagnostics.resolvedFindingsOmittedCount > 0 ? <p className="text-muted-foreground text-sm">{catalog.diagnostics.omitted(formatCount(diagnostics.resolvedFindingsOmittedCount, locale))}</p> : null}
-		</>
 	);
 }
 
@@ -682,7 +682,7 @@ export function ProposalsPanel({
 	proposals,
 	resolvedProposals,
 	resolvedProposalsOmittedCount,
-	resolvedUnavailable,
+	resolvedRead,
 	pending,
 	onDismissProposal,
 	onPromoteProposal,
@@ -691,7 +691,7 @@ export function ProposalsPanel({
 }: Pick<
 	AppProps,
 	'locale' | 'proposals' | 'resolvedProposals' | 'resolvedProposalsOmittedCount' | 'pending' | 'onDismissProposal' | 'onPromoteProposal'
-> & { catalog: WorkCatalog; resolvedUnavailable?: React.ReactNode; defaultView?: SuggestionView; defaultOpenId?: string }): React.ReactElement {
+> & { catalog: WorkCatalog; /** How the settled proposals were read: a failure is the table's notice, a first load is its skeleton rows. */ resolvedRead?: { failure: string | undefined; loading: boolean }; defaultView?: SuggestionView; defaultOpenId?: string }): React.ReactElement {
 	const [view, setView] = useState<SuggestionView>(defaultView);
 	const rows: readonly AnyProposal[] = view === 'pending' ? proposals : resolvedProposals;
 	const list = useClientPage(rows, proposalMatches);
@@ -707,18 +707,26 @@ export function ProposalsPanel({
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
 	}, [catalog, onDismissProposal, pending, view]);
 	const table = useGateshipTable({ columns, data: list.page, features: gateshipTableFeatures, getRowId: (proposal) => proposal.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: list.total, state: { globalFilter: list.search, pagination: { pageIndex: Math.floor(list.offset / list.limit), pageSize: list.limit } }, onGlobalFilterChange: (value) => list.setSearch(String(value ?? '')) });
+	const resolving = view === 'resolved';
 	return (
-		<>
-			<DataTableToolbar>
-				<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingProposals, formatCount(proposals.length, locale)]} resolved={[catalog.list.resolvedProposals, formatCount(resolvedProposals.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
-				<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchProposals} table={table} />
-			</DataTableToolbar>
-			{view === 'resolved' ? <p className="flex flex-wrap items-center gap-2 text-muted-foreground text-sm"><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</p> : null}
-			{view === 'resolved' ? resolvedUnavailable : null}
 			<DataTable
 				emptyDetail={list.search === '' ? '' : undefined}
 				defaultExpanded={defaultOpenId === undefined ? undefined : [defaultOpenId]}
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.proposals.emptyPending : catalog.proposals.emptyResolved}
+				foot={<>
+					<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
+					{resolving && resolvedProposalsOmittedCount > 0 ? <DataTableNote>{catalog.proposals.omitted(resolvedProposalsOmittedCount, formatCount(resolvedProposalsOmittedCount, locale))}</DataTableNote> : null}
+				</>}
+				head={<DataTableToolbar>
+					<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingProposals, formatCount(proposals.length, locale)]} resolved={[catalog.list.resolvedProposals, formatCount(resolvedProposals.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
+					<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchProposals} table={table} />
+				</DataTableToolbar>}
+				/* What the settled view is, and why it may be short: facts about these rows, so they sit in the rows' frame. */
+				notice={resolving ? <>
+					<DataTableNote><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</DataTableNote>
+					{resolvedRead?.failure === undefined ? null : <OperationalUnavailable detail={resolvedRead.failure} locale={locale} resource="Resolved proposals" />}
+				</> : undefined}
+				status={resolving && resolvedRead?.loading === true && rows.length === 0 ? 'loading' : 'ready'}
 				locale={locale}
 				renderExpanded={(proposal) => (
 					<SuggestionDetail evidence={proposal.evidence} meta={<p className="flex flex-wrap items-center gap-2 text-muted-foreground"><Reference>{proposal.sourceIssueId}</Reference><Reference>{proposal.sourceRunId}</Reference></p>}>
@@ -727,9 +735,6 @@ export function ProposalsPanel({
 				)}
 				table={table}
 			/>
-			<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
-			{view === 'resolved' && resolvedProposalsOmittedCount > 0 ? <p className="text-muted-foreground text-sm">{catalog.proposals.omitted(resolvedProposalsOmittedCount, formatCount(resolvedProposalsOmittedCount, locale))}</p> : null}
-		</>
 	);
 }
 
@@ -831,7 +836,7 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 						proposals={props.proposals}
 						resolvedProposals={props.resolvedProposals}
 						resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
-						resolvedUnavailable={<OperationalReadPanel detail={failed('Resolved proposals')} loaded={loaded('Resolved proposals')} locale={props.locale} pending={pending('Resolved proposals')} resource="Resolved proposals"><span /></OperationalReadPanel>}
+						resolvedRead={{ failure: failed('Resolved proposals'), loading: pending('Resolved proposals') && !loaded('Resolved proposals') }}
 					/></OperationalReadPanel>
 				</TabsPanel>
 			</Tabs>

@@ -10,6 +10,8 @@ export interface ContrastFinding { text: string; ratio: number; color: string; b
 /** `slot`, `text` and `classes` exist so a failing gate names the element, not just its size. */
 export interface OverflowFinding { slot: string; clientWidth: number; scrollWidth: number; text: string; classes: string }
 export interface ToolbarFinding { slot: string; heights: number[] }
+/** A table whose controls, rows and pager do not start on one line: `edges` are the left content edges, in order, of its first control row, its head, its pager. */
+export interface TableEdgeFinding { edges: number[] }
 
 export interface DesignReport {
 	/** Distinct computed font sizes among visible text; a screen should need few. */
@@ -28,6 +30,10 @@ export interface DesignReport {
 	unevenToolbars: ToolbarFinding[];
 	/** The page's own horizontal overflow: any value above zero is a defect. */
 	pageOverflow: number;
+	/** Table controls, pagers and notes found outside a table's frame: a table is one object. */
+	looseTableParts: string[];
+	/** Tables whose zones do not share one left edge. */
+	misalignedTables: TableEdgeFinding[];
 }
 
 type Browser = { getComputedStyle: (element: Element) => CSSStyleDeclaration };
@@ -180,6 +186,36 @@ export function measureToolbars(root: ParentNode, document: Document, selector =
 	return findings;
 }
 
+/** Where an element's content starts: its box's left edge plus its own left padding. */
+function contentEdge(element: Element, browser: Browser): number {
+	return Math.round(element.getBoundingClientRect().left + Number.parseFloat(browser.getComputedStyle(element).paddingLeft));
+}
+
+/**
+ * A table is one object: its controls, its notes and its pager live inside its
+ * frame, and they start where its cells' text starts. Today's three edges in
+ * one block (293, 300, 317 at 1440 on Runs) are what this reads.
+ */
+export function measureTableFrames(root: ParentNode, document: Document): { loose: string[]; misaligned: TableEdgeFinding[] } {
+	const browser = browserOf(document);
+	const loose: string[] = [];
+	for (const part of root.querySelectorAll('[data-slot=data-table-toolbar], [data-slot=data-table-pagination], [data-slot=data-table-note]')) {
+		if (visible(part, browser) && part.closest('[data-slot=data-table]') === null) loose.push(part.getAttribute('data-slot') ?? 'part');
+	}
+	const misaligned: TableEdgeFinding[] = [];
+	for (const table of root.querySelectorAll('[data-slot=data-table]')) {
+		if (!visible(table, browser)) continue;
+		const parts = [
+			table.querySelector('[data-slot=data-table-toolbar]'),
+			[...table.querySelectorAll('th')].find((head) => visible(head, browser)) ?? null,
+			table.querySelector('[data-slot=data-table-pagination]'),
+		].filter((part): part is Element => part !== null && visible(part, browser));
+		const edges = parts.map((part) => contentEdge(part, browser));
+		if (edges.length > 1 && Math.max(...edges) - Math.min(...edges) > 1) misaligned.push({ edges });
+	}
+	return { loose, misaligned };
+}
+
 export function measureDesign(root: ParentNode, document: Document): DesignReport {
 	const browser = browserOf(document);
 	const fontSizes = new Set<string>();
@@ -206,5 +242,6 @@ export function measureDesign(root: ParentNode, document: Document): DesignRepor
 		overflow: measureOverflow(root, document),
 		unevenToolbars: measureToolbars(root, document),
 		pageOverflow: Math.max(0, scrolling.scrollWidth - scrolling.clientWidth),
+		...(({ loose, misaligned }) => ({ looseTableParts: loose, misalignedTables: misaligned }))(measureTableFrames(root, document)),
 	};
 }
