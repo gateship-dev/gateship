@@ -37,7 +37,7 @@ type DrawerLocale = keyof typeof copy;
 export function DrawerLayout({ open, className, children, ...props }: React.ComponentProps<'div'> & { open: boolean }): React.ReactElement {
 	/* Open beside the table, the two share one ring: the double edge is the block's, and the drawer is part of the block, not a second one. */
 	// oxlint-disable-next-line shadcn/no-arbitrary-values -- the second column is the inspector width the shell declares, and only exists while the drawer is open
-	return <div className={cn('relative', open && 'xl:card-ring-group xl:grid xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)] xl:items-start xl:gap-6', className)} data-open={open ? '' : undefined} data-slot="drawer-layout" {...props}>{children}</div>;
+	return <div className={cn('relative', open && 'xl:card-ring-group xl:grid xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)] xl:items-stretch xl:gap-6', className)} data-open={open ? '' : undefined} data-slot="drawer-layout" {...props}>{children}</div>;
 }
 
 /* Tailwind's `xl`, the width at which the drawer is a column beside the table instead of a layer over it. */
@@ -95,8 +95,8 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 			aria-label={label ?? (typeof title === 'string' ? title : undefined)}
 			className={cn(
 				'fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-card outline-none md:w-96 md:border-l md:shadow-lg/10',
-				/* In the layout's column: a card beside the table, held to the top of the window while the rows scroll. */
-				'xl:sticky xl:top-6 xl:z-auto xl:max-h-[calc(100dvh-3rem)] xl:w-auto xl:rounded-2xl xl:border xl:shadow-none',
+				/* In the layout's column it is as tall as the table beside it, so the two blocks end on one line; the page scrolls it, and its foot holds the bottom of the window. */
+				'xl:static xl:z-auto xl:w-auto xl:rounded-2xl xl:border xl:shadow-none',
 				className,
 			)}
 			data-slot="item-drawer"
@@ -110,9 +110,9 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 					<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={16} strokeWidth={2.25} />
 				</Button>
 			</div>
-			<div className="scroll-container min-h-0 flex-1 overflow-y-auto px-4 py-4" data-slot="item-drawer-body">{children}</div>
-			{/* The action edge every card has: the muted band at the foot, the primary action last, where the eye finishes. */}
-			{footer === undefined || footer === null ? null : <div className="flex flex-wrap items-center justify-end gap-2 border-t bg-muted px-4 py-3" data-slot="item-drawer-foot">{footer}</div>}
+			<div className="scroll-container min-h-0 flex-1 overflow-y-auto px-4 py-4 xl:overflow-visible" data-slot="item-drawer-body">{children}</div>
+			{/* The action edge every card has, at the table's own foot height: the muted band, the primary action last. Above xl the page scrolls the drawer, so the band holds the bottom of the window while the rest passes under it, opaque so nothing reads through. */}
+			{footer === undefined || footer === null ? null : <div className="flex min-h-12 flex-wrap items-center justify-end gap-2 border-t bg-muted px-4 py-2 xl:sticky xl:bottom-0 xl:rounded-b-[calc(var(--radius-2xl)-1px)] xl:bg-muted-solid" data-slot="item-drawer-foot">{footer}</div>}
 		</aside>
 	);
 	const body = (globalThis as unknown as MediaRuntime).document?.body;

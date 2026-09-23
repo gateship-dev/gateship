@@ -1,4 +1,5 @@
 import type React from 'react';
+import { useEffect, useRef } from 'react';
 import { cn } from './lib/cn.ts';
 
 export const MAIN_CONTENT_ID = 'main-content';
@@ -19,6 +20,29 @@ export function ShellContentFrame({
 }
 
 /** Structural shell. Navigation and controls remain independent slots. */
+type PanelElement = { querySelector: (selector: string) => { offsetWidth: number; clientWidth: number } | null; style: { setProperty: (name: string, value: string) => void } };
+type PanelRuntime = { ResizeObserver?: new (callback: () => void) => { observe: (element: unknown) => void; disconnect: () => void } };
+
+function ShellPanel({ children }: { children: React.ReactNode }): React.ReactElement {
+	const panel = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const element = panel.current as unknown as PanelElement | null;
+		const Observer = (globalThis as unknown as PanelRuntime).ResizeObserver;
+		if (element === null || Observer === undefined) return;
+		const read = (): void => {
+			const main = element.querySelector('main');
+			element.style.setProperty('--content-scrollbar', `${main === null ? 0 : main.offsetWidth - main.clientWidth}px`);
+		};
+		const observer = new Observer(read);
+		observer.observe(element);
+		const main = element.querySelector('main');
+		if (main !== null) observer.observe(main);
+		read();
+		return () => observer.disconnect();
+	}, []);
+	return <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--border)_64%,transparent)] bg-(--shell-panel) [--content-scrollbar:0px]" data-slot="shell-panel" ref={panel}>{children}</div>;
+}
+
 export function AppShell({
 	skipLabel,
 	sidebar,
@@ -43,10 +67,11 @@ export function AppShell({
 			</a>
 			{sidebar}
 			<div className="flex min-h-0 w-full min-w-0 flex-1 flex-col p-2 lg:p-3">
-				<div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--border)_64%,transparent)] bg-(--shell-panel)">
+				{/* The content column owns the scrollbar. Where the platform draws a classic one it takes width from the content and not from the controls above it, so the panel measures that width and the controls give it back: the two right edges stay one, and nothing is reserved where no bar is drawn. */}
+				<ShellPanel>
 					{controls}
 					{children}
-				</div>
+				</ShellPanel>
 			</div>
 			{tabBar}
 		</div>
