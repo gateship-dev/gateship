@@ -470,6 +470,12 @@ export interface WorkCatalog {
 		became: string;
 		omitted: (count: number, formattedCount: string) => string;
 	};
+	/** An action on several selected rows: the question the button asks, and the account of what it did. */
+	bulk: {
+		dismissFindings: (count: number) => string;
+		dismissProposals: (count: number) => string;
+		partial: (settled: number, failed: number) => string;
+	};
 }
 
 export interface SettingsCatalog {
@@ -1057,6 +1063,11 @@ export const LOCALE_CATALOG = {
 				became: 'became',
 				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'resolved proposal' : 'resolved proposals'} not shown.`,
 			},
+			bulk: {
+				dismissFindings: (count) => `Dismiss ${count} ${count === 1 ? 'finding' : 'findings'}`,
+				dismissProposals: (count) => `Dismiss ${count} ${count === 1 ? 'proposal' : 'proposals'}`,
+				partial: (settled, failed) => `${settled} dismissed. The service refused ${failed}, each with its reason:`,
+			},
 		},
 		settings: {
 			title: 'Settings',
@@ -1535,6 +1546,11 @@ export const LOCALE_CATALOG = {
 				statusLabels: { promoted: 'Promovida', dismissed: 'Descartada' },
 				became: 'virou',
 				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'proposta resolvida' : 'propostas resolvidas'} não exibidas.`,
+			},
+			bulk: {
+				dismissFindings: (count) => `Descartar ${count} ${count === 1 ? 'achado' : 'achados'}`,
+				dismissProposals: (count) => `Descartar ${count} ${count === 1 ? 'proposta' : 'propostas'}`,
+				partial: (settled, failed) => `${settled} descartados. O serviço recusou ${failed}, cada um com o seu motivo:`,
 			},
 		},
 		settings: {

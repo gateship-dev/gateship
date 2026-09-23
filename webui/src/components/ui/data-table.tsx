@@ -143,6 +143,11 @@ const copy = {
 		clearSearch: 'Clear search',
 		resizeColumn: (column: string) => `Resize ${column}`,
 		fitWidths: 'Fit to width',
+		selectRow: 'Select row',
+		selectPage: 'Select every row on this page',
+		selectedCount: (count: number) => `${count} selected`,
+		clearSelection: 'Clear selection',
+		cancel: 'Cancel',
 		resetWidths: 'Reset widths',
 		clearFilters: 'Clear filters',
 		facetChosen: (count: number) => `${count} selected`,
@@ -173,6 +178,11 @@ const copy = {
 		clearSearch: 'Limpar busca',
 		resizeColumn: (column: string) => `Redimensionar ${column}`,
 		fitWidths: 'Ajustar à largura',
+		selectRow: 'Selecionar linha',
+		selectPage: 'Selecionar todas as linhas desta página',
+		selectedCount: (count: number) => `${count} selecionadas`,
+		clearSelection: 'Limpar seleção',
+		cancel: 'Cancelar',
 		resetWidths: 'Restaurar larguras',
 		clearFilters: 'Limpar filtros',
 		facetChosen: (count: number) => `${count} selecionados`,
@@ -465,13 +475,15 @@ export function DataTablePagination<TData extends RowData>({
 }
 
 /* One data row and, while it is open, the detail under it. */
-function DataTableBodyRow<TData extends RowData>({ row, open, span, text, renderExpanded, onToggle, layout }: {
+function DataTableBodyRow<TData extends RowData>({ row, open, span, text, renderExpanded, onToggle, layout, select }: {
 	row: ReturnType<GateshipTable<TData>['getRowModel']>['rows'][number]; open: boolean; span: number;
 	text: { expandRow: string; collapseRow: string }; renderExpanded?: (row: TData) => React.ReactNode; onToggle: () => void; layout: TableLayout;
+	select?: { checked: boolean; label: string; onToggle: (shift: boolean) => void } | undefined;
 }): React.ReactElement {
 	return (
 		<>
-			<TableRow data-expanded={open ? '' : undefined}>
+			<TableRow data-expanded={open ? '' : undefined} data-selected={select?.checked === true ? '' : undefined}>
+				{select === undefined ? null : <TableCell className={cn('w-10 pr-0', layout.select.className)} style={layout.select.style}><RowCheckbox checked={select.checked} label={select.label} onToggle={select.onToggle} /></TableCell>}
 				{renderExpanded === undefined ? null : (
 					<TableCell className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style}>
 						<Button aria-expanded={open} aria-label={open ? text.collapseRow : text.expandRow} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" onClick={onToggle}>
@@ -507,12 +519,16 @@ export type DataTableStatus = 'ready' | 'loading' | 'updating' | 'error';
 
 /** Where a cell sits once the operator has set widths: its width, and whether it stays put while the rows scroll sideways. */
 interface CellPlace { className?: string; style?: React.CSSProperties }
-interface TableLayout { table: CellPlace; head: (id: string) => CellPlace; cell: (id: string) => CellPlace; expand: CellPlace }
+interface TableLayout { table: CellPlace; head: (id: string) => CellPlace; cell: (id: string) => CellPlace; select: CellPlace; expand: CellPlace }
+/** The kit's own leading columns: a row's checkbox, then its chevron. */
+interface LeadColumns { select: boolean; expand: boolean }
 
 const NO_PLACE: CellPlace = {};
-const AUTO_LAYOUT: TableLayout = { table: NO_PLACE, head: () => NO_PLACE, cell: () => NO_PLACE, expand: NO_PLACE };
-/* The expand column is the one width the kit fixes itself: a 24px control and its 8px. */
+const AUTO_LAYOUT: TableLayout = { table: NO_PLACE, head: () => NO_PLACE, cell: () => NO_PLACE, select: NO_PLACE, expand: NO_PLACE };
+/* The two widths the kit fixes itself: a row's checkbox, 16px with 12px either side, and its chevron, a 24px control and its 8px. */
+const SELECT_WIDTH = 40;
 const EXPAND_WIDTH = 32;
+const leadWidth = (lead: LeadColumns): number => (lead.select ? SELECT_WIDTH : 0) + (lead.expand ? EXPAND_WIDTH : 0);
 
 /* The few DOM members the geometry reads, typed here because the kit also compiles without the DOM library. */
 type HeadElement = { dataset: Record<string, string | undefined>; getBoundingClientRect: () => { width: number } };
@@ -578,8 +594,8 @@ function measureHeads(surface: React.RefObject<HTMLDivElement | null>): Record<s
  * and the action column at the end, with the rows scrolling between them: a
  * checkbox or a menu with no name beside it is no use.
  */
-function fixedLayout(sizing: NonNullable<ColumnSizingControls['sizing']>, shown: readonly string[], primary: string | undefined, frame: number, expand: boolean, scrolled: boolean, kinds: Readonly<Record<string, ColumnKind | undefined>>): TableLayout {
-	const extra = expand ? EXPAND_WIDTH : 0;
+function fixedLayout(sizing: NonNullable<ColumnSizingControls['sizing']>, shown: readonly string[], primary: string | undefined, frame: number, lead: LeadColumns, scrolled: boolean, kinds: Readonly<Record<string, ColumnKind | undefined>>): TableLayout {
+	const extra = leadWidth(lead);
 	const { widths, total } = renderedWidths(sizing, shown, primary, frame, extra);
 	const overflowing = total > frame + 1;
 	const primaryIndex = primary === undefined ? -1 : shown.indexOf(primary);
@@ -599,24 +615,122 @@ function fixedLayout(sizing: NonNullable<ColumnSizingControls['sizing']>, shown:
 		table: { className: 'table-fixed w-(--table-w)', style: { '--table-w': `${Math.max(total, frame)}px` } as React.CSSProperties },
 		head: sized,
 		cell: pinned,
-		expand: overflowing ? { className: 'sticky left-0 z-10 bg-card' } : NO_PLACE,
+		select: overflowing ? { className: 'sticky left-0 z-10 bg-card' } : NO_PLACE,
+		expand: overflowing ? { className: 'sticky left-(--pin-left) z-10 bg-card', style: { '--pin-left': `${lead.select ? SELECT_WIDTH : 0}px` } as React.CSSProperties } : NO_PLACE,
 	};
 }
 
 /** Everything the table needs to wear the operator's widths: the drag controls, the layout they produce, and the two ways back for the view menu. */
-function useTableWidths<TData extends RowData>(storageKey: string | undefined, surface: React.RefObject<HTMLDivElement | null>, columns: readonly GateshipColumn<TData>[], primaryId: string | undefined, expand: boolean): { sizing: ColumnSizingControls; layout: TableLayout; widths: { resized: boolean; fit: () => void; reset: () => void } } {
+function useTableWidths<TData extends RowData>(storageKey: string | undefined, surface: React.RefObject<HTMLDivElement | null>, columns: readonly GateshipColumn<TData>[], primaryId: string | undefined, lead: LeadColumns): { sizing: ColumnSizingControls; layout: TableLayout; widths: { resized: boolean; fit: () => void; reset: () => void } } {
 	const sizing = useColumnSizing(storageKey);
 	const reading = useFrameReading(surface, columns.map((column) => column.id).join(' '));
 	const kinds = Object.fromEntries(columns.map((column) => [column.id, metaOf(column).kind]));
-	const layout = sizing.sizing === null ? AUTO_LAYOUT : fixedLayout(sizing.sizing, reading.shown, primaryId, reading.frame, expand, reading.scrolled, kinds);
+	const layout = sizing.sizing === null ? AUTO_LAYOUT : fixedLayout(sizing.sizing, reading.shown, primaryId, reading.frame, lead, reading.scrolled, kinds);
 	/* Fit spreads what the frame has left over the columns that can take a width: the menu and the expand column keep theirs. */
 	const fit = (): void => {
 		const current = sizing.sizing;
 		if (current === null) return;
-		const used = reading.shown.reduce((total, id) => total + (current.current[id] ?? 0), expand ? EXPAND_WIDTH : 0);
+		const used = reading.shown.reduce((total, id) => total + (current.current[id] ?? 0), leadWidth(lead));
 		sizing.fit(reading.shown.filter((id) => kinds[id] !== 'action'), reading.frame - used);
 	};
 	return { sizing, layout, widths: { resized: sizing.sizing !== null, fit, reset: sizing.reset } };
+}
+
+/* A row's checkbox. The page's own sets `indeterminate`, which only exists as a property of the element. */
+function RowCheckbox({ checked, indeterminate = false, label, onToggle }: { checked: boolean; indeterminate?: boolean; label: string; onToggle: (shift: boolean) => void }): React.ReactElement {
+	const box = useRef<HTMLInputElement>(null);
+	useEffect(() => { const element = box.current as unknown as { indeterminate: boolean } | null; if (element !== null) element.indeterminate = indeterminate; }, [indeterminate]);
+	return <input aria-label={label} checked={checked} className="size-4 align-middle" data-slot="row-select" onChange={() => {}} onClick={(event) => onToggle(event.shiftKey)} ref={box} type="checkbox" />;
+}
+
+/**
+ * The selection after a click on row `index`. The clicked row decides the
+ * direction: a row that was off turns on, and with shift every row from the
+ * one clicked last (`from`) to this one follows it, whichever way they went.
+ */
+export function toggleRows(current: ReadonlySet<string>, ids: readonly string[], index: number, from: number | null): ReadonlySet<string> {
+	const id = ids[index];
+	if (id === undefined) return current;
+	const next = new Set(current);
+	const on = !current.has(id);
+	const range = from === null ? [id] : ids.slice(Math.min(from, index), Math.max(from, index) + 1);
+	for (const each of range) if (on) next.add(each); else next.delete(each);
+	return next;
+}
+
+/** The page's checkbox: every row on, unless every row already was. */
+export function togglePageRows(current: ReadonlySet<string>, ids: readonly string[]): ReadonlySet<string> {
+	return ids.length > 0 && ids.every((id) => current.has(id)) ? new Set() : new Set(ids);
+}
+
+/**
+ * Which rows of the page are selected. Selection is the page's: it is dropped
+ * whenever the rows on the page change, by a filter, a page turn or rows that
+ * left because an action settled them, because a selection the operator
+ * cannot see is one they cannot check. Shift extends from the row clicked
+ * last, as every list does.
+ */
+function useRowSelection(ids: readonly string[]): { selected: ReadonlySet<string>; toggle: (index: number, shift: boolean) => void; togglePage: () => void; clear: () => void } {
+	const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+	const anchor = useRef<number | null>(null);
+	const pageKey = ids.join(' ');
+	useEffect(() => { setSelected(new Set()); anchor.current = null; }, [pageKey]);
+	const toggle = (index: number, shift: boolean): void => {
+		const from = shift ? anchor.current : null;
+		setSelected((current) => toggleRows(current, ids, index, from));
+		anchor.current = index;
+	};
+	const togglePage = (): void => setSelected((current) => togglePageRows(current, ids));
+	return { selected, toggle, togglePage, clear: () => setSelected(new Set()) };
+}
+
+/**
+ * The head's first band while rows are selected: how many, what can be done
+ * to them, and the way out. It sits in the head zone and pushes nothing over:
+ * the controls under it stay live, so the operator can narrow the list while
+ * holding a selection. The count is the live region.
+ */
+function DataTableSelectionBar({ count, actions, onClear, locale }: { count: number; actions: React.ReactNode; onClear: () => void; locale: TableLocale }): React.ReactElement {
+	const text = copy[locale];
+	return (
+		<div className="flex min-h-12 flex-wrap items-center gap-2 px-4 py-2" data-slot="data-table-selection">
+			<span aria-live="polite" className="font-medium text-sm tabular-nums">{text.selectedCount(count)}</span>
+			{actions}
+			<Button className="ml-auto" type="button" variant="ghost" onClick={onClear}>{text.clearSelection}</Button>
+		</div>
+	);
+}
+
+/** What the selection gives the table: a checkbox per row, the page's checkbox, and the head zone with the selection bar on top while anything is chosen. */
+function useSelectionWiring(ids: readonly string[], selection: { actions: (ids: readonly string[], clear: () => void) => React.ReactNode } | undefined, head: React.ReactNode, locale: TableLocale): {
+	rowSelect: (id: string, index: number) => { checked: boolean; label: string; onToggle: (shift: boolean) => void } | undefined;
+	pageSelect: { checked: boolean; indeterminate: boolean; onToggle: () => void } | undefined;
+	headZone: React.ReactNode;
+} {
+	const picking = useRowSelection(ids);
+	if (selection === undefined) return { rowSelect: () => undefined, pageSelect: undefined, headZone: head };
+	const chosen = ids.filter((id) => picking.selected.has(id));
+	return {
+		rowSelect: (id, index) => ({ checked: picking.selected.has(id), label: copy[locale].selectRow, onToggle: (shift) => picking.toggle(index, shift) }),
+		pageSelect: { checked: ids.length > 0 && chosen.length === ids.length, indeterminate: chosen.length > 0 && chosen.length < ids.length, onToggle: picking.togglePage },
+		headZone: chosen.length === 0 ? head : <><DataTableSelectionBar actions={selection.actions(chosen, picking.clear)} count={chosen.length} locale={locale} onClear={picking.clear} />{head}</>,
+	};
+}
+
+/**
+ * One action on every selected row. It asks before it acts, and the question
+ * names the count and the verb, so what is about to happen is on the button
+ * the operator presses. It never claims the act cannot be undone.
+ */
+export function DataTableBulkAction({ label, confirm, onRun, locale = 'en-US' }: { label: string; confirm: string; onRun: () => void; locale?: TableLocale }): React.ReactElement {
+	const [asking, setAsking] = useState(false);
+	if (!asking) return <Button data-slot="data-table-bulk-action" type="button" variant="outline" onClick={() => setAsking(true)}>{label}</Button>;
+	return (
+		<>
+			<Button data-slot="data-table-bulk-confirm" type="button" variant="destructive" onClick={() => { setAsking(false); onRun(); }}>{confirm}</Button>
+			<Button type="button" variant="ghost" onClick={() => setAsking(false)}>{copy[locale].cancel}</Button>
+		</>
+	);
 }
 
 /* The view menu reaches the widths through the frame it sits in. */
@@ -665,6 +779,27 @@ function DataTableZone({ slot, children }: { slot: keyof typeof ZONE_CLASS; chil
 	return <div className={cn(ZONE_CLASS[slot], 'empty:hidden')} data-slot={slot}>{children}</div>;
 }
 
+/* What a screen reader hears while rows arrive or refresh: the table's own state, once. */
+function DataTableBusy({ status, locale }: { status: DataTableStatus; locale: TableLocale }): React.ReactElement | null {
+	if (status !== 'loading' && status !== 'updating') return null;
+	return <span className="sr-only" role="status">{status === 'loading' ? copy[locale].loading : copy[locale].updating}</span>;
+}
+
+/* The stand-ins a first load draws: the columns the rows will have, the kit's own leading ones included, with a bar where each value will be. */
+function DataTableSkeletonRows<TData extends RowData>({ columns, layout, lead, rows }: { columns: readonly GateshipColumn<TData>[]; layout: TableLayout; lead: LeadColumns; rows: number }): React.ReactElement {
+	return (
+		<>
+			{Array.from({ length: rows }, (_, index) => (
+				<TableRow data-state="loading" key={`skeleton-${index}`}>
+					{lead.select ? <TableCell className={cn('w-10 pr-0', layout.select.className)} style={layout.select.style} /> : null}
+					{lead.expand ? <TableCell className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style} /> : null}
+					{columns.map((column) => { const place = layout.cell(column.id); return <TableCell className={cn(cellClass(column), place.className)} key={column.id} style={place.style}><Skeleton className="h-4 w-full max-w-32" /></TableCell>; })}
+				</TableRow>
+			))}
+		</>
+	);
+}
+
 /* The one row an empty result has: the reason, and the way out when filters caused it. */
 function DataTableEmptyRow({ title, detail, action, span }: { title: React.ReactNode; detail: React.ReactNode; action?: React.ReactNode; span: number }): React.ReactElement {
 	return (
@@ -704,8 +839,11 @@ export function DataTable<TData extends RowData>({
 	notice,
 	foot,
 	storageKey,
+	selection,
 	className,
 }: TableControlProps<TData> & {
+	/** Rows that can be acted on together. Given, every row leads with a checkbox, and while any is selected the head opens with the selection bar, whose actions this returns. */
+	selection?: { actions: (ids: readonly string[], clear: () => void) => React.ReactNode };
 	/** Names the table in this browser's storage. Given, its columns can be dragged to a width, and the widths survive navigation. */
 	storageKey?: string;
 	/** The rows of controls that act on this table: search, facets, the view menu. One DataTableToolbar per row. */
@@ -727,36 +865,33 @@ export function DataTable<TData extends RowData>({
 	const text = copy[locale];
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(defaultExpanded));
 	const toggle = (id: string): void => setExpanded((current) => { const next = new Set(current); if (!next.delete(id)) next.add(id); return next; });
-	const span = table.getVisibleLeafColumns().length + (renderExpanded === undefined ? 0 : 1);
 	const rows = table.getRowModel().rows;
+	const lead: LeadColumns = { select: selection !== undefined, expand: renderExpanded !== undefined };
+	const span = table.getVisibleLeafColumns().length + Number(lead.select) + Number(lead.expand);
+	const { rowSelect, pageSelect, headZone } = useSelectionWiring(rows.map((row) => row.id), selection, head, locale);
 	const columns = table.getVisibleLeafColumns();
 	/* A wide table gives its slack to one column; spread over all of them it reads as holes between the facts. */
 	const primaryId = (columns.find((column) => metaOf(column).primary === true) ?? columns[0])?.id;
 	const busy = status === 'loading' || status === 'updating';
 	const surface = useRef<HTMLDivElement>(null);
-	const { sizing, layout, widths } = useTableWidths(storageKey, surface, columns, primaryId, renderExpanded !== undefined);
+	const { sizing, layout, widths } = useTableWidths(storageKey, surface, columns, primaryId, lead);
 	return (
 		<WidthsContext.Provider value={storageKey === undefined ? null : widths}>
 		<div aria-busy={busy} className={cn('card-ring @container rounded-2xl', className)} data-slot="data-table" data-status={status}>
 			{/* The ring is the edge every surface shares, so a table carries the same one a card does; the clip lives one level in, or it would cut the ring. */}
 			<div className="overflow-hidden rounded-2xl border bg-card" data-slot="data-table-surface" ref={surface}>
-			{busy ? <span className="sr-only" role="status">{status === 'loading' ? text.loading : text.updating}</span> : null}
+			<DataTableBusy locale={locale} status={status} />
 			{/* Everything that acts on these rows lives in their frame, on the cells' own 16px inset. A zone with nothing in it takes no room. */}
-			<DataTableZone slot="data-table-head">{head}</DataTableZone>
+			<DataTableZone slot="data-table-head">{headZone}</DataTableZone>
 			<DataTableZone slot="data-table-notice">{notice}</DataTableZone>
 			<GateshipTable className={layout.table.className} style={layout.table.style}>
 				<TableHeader>
-					<DataTableHeadRow expand={renderExpanded !== undefined} layout={layout} locale={locale} primaryId={primaryId} sizing={storageKey === undefined ? undefined : sizing} surface={surface} table={table} />
+					<DataTableHeadRow expand={lead.expand} layout={layout} locale={locale} primaryId={primaryId} select={pageSelect} sizing={storageKey === undefined ? undefined : sizing} surface={surface} table={table} />
 				</TableHeader>
 				<TableBody className={cn('transition-opacity', status === 'updating' && 'opacity-60')}>
 					{status === 'loading' && rows.length === 0
-						? Array.from({ length: skeletonRows }, (_, index) => (
-							<TableRow data-state="loading" key={`skeleton-${index}`}>
-								{renderExpanded === undefined ? null : <TableCell className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style} />}
-								{columns.map((column) => { const place = layout.cell(column.id); return <TableCell className={cn(cellClass(column), place.className)} key={column.id} style={place.style}><Skeleton className="h-4 w-full max-w-32" /></TableCell>; })}
-							</TableRow>
-						))
-						: rows.map((row) => <DataTableBodyRow key={row.id} layout={layout} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} span={span} text={text} onToggle={() => toggle(row.id)} />)}
+						? <DataTableSkeletonRows columns={columns} layout={layout} lead={lead} rows={skeletonRows} />
+						: rows.map((row, index) => <DataTableBodyRow key={row.id} layout={layout} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} select={rowSelect(row.id, index)} span={span} text={text} onToggle={() => toggle(row.id)} />)}
 					{/* `data-state` tells a data row from a stand-in: anything counting rows reads `tr:not([data-state])`. */}
 					{rows.length === 0 && status !== 'loading' ? <DataTableEmptyRow action={emptyAction} detail={emptyDetail ?? text.noResultsDetail} span={span} title={emptyState ?? text.noResults} /> : null}
 				</TableBody>
@@ -788,9 +923,10 @@ function DataTableHeadCell<TData extends RowData>({ header, locale, primary, lay
 }
 
 /* The head row: each column's name, its sort menu, and the grip that sets its width. */
-function DataTableHeadRow<TData extends RowData>({ table, locale, primaryId, expand, layout, sizing, surface }: {
+function DataTableHeadRow<TData extends RowData>({ table, locale, primaryId, expand, layout, sizing, surface, select }: {
 	table: GateshipTable<TData>; locale: TableLocale; primaryId: string | undefined; expand: boolean; layout: TableLayout;
 	sizing: ColumnSizingControls | undefined; surface: React.RefObject<HTMLDivElement | null>;
+	select?: { checked: boolean; indeterminate: boolean; onToggle: () => void } | undefined;
 }): React.ReactElement {
 	const text = copy[locale];
 	const measure = (): Record<string, number> => measureHeads(surface);
@@ -798,6 +934,7 @@ function DataTableHeadRow<TData extends RowData>({ table, locale, primaryId, exp
 		<>
 			{table.getHeaderGroups().map((headerGroup) => (
 				<TableRow key={headerGroup.id}>
+					{select === undefined ? null : <TableHead className={cn('w-10 pr-0', layout.select.className)} style={layout.select.style}><RowCheckbox checked={select.checked} indeterminate={select.indeterminate} label={text.selectPage} onToggle={select.onToggle} /></TableHead>}
 					{expand ? <TableHead className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style}><span className="sr-only">{text.expandRow}</span></TableHead> : null}
 					{headerGroup.headers.map((header) => <DataTableHeadCell header={header} key={header.id} layout={layout} locale={locale} measure={measure} primary={header.column.id === primaryId} sizing={sizing} />)}
 				</TableRow>

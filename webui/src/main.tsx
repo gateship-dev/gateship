@@ -11,6 +11,7 @@
 import { type ReactElement, StrictMode, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, projectIdOf, routeOf, runIdOf } from './App.tsx';
+import { bulkOutcome, type BulkOutcome } from './app-props.ts';
 import {
 	abandonIssue,
 	type AgentDefaultsView,
@@ -263,6 +264,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	clearClaudeCredentialError: () => void;
 	enableNotifications: () => void;
 	send: (command: () => Promise<string>) => void;
+	settleEach: (ids: readonly string[], act: (id: string) => Promise<unknown>) => Promise<BulkOutcome>;
 } {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
 	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
@@ -444,6 +446,20 @@ function useOperationalRun(scope: string | null, pathname: string): {
 				setPending(false);
 				refresh();
 			});
+	}, [refresh]);
+
+	/**
+	 * One action on several rows, each row its own request. Every row is tried
+	 * whatever happened to the one before, the list is read again once at the
+	 * end, and the caller learns which rows settled and which were refused, with
+	 * the service's reason, so a partial failure is reported row by row.
+	 */
+	const settleEach = useCallback(async (ids: readonly string[], act: (id: string) => Promise<unknown>): Promise<BulkOutcome> => {
+		setPending(true);
+		const outcome = bulkOutcome(ids, await Promise.allSettled(ids.map((id) => act(id))));
+		setPending(false);
+		refresh();
+		return outcome;
 	}, [refresh]);
 
 	/**
@@ -738,6 +754,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		clearClaudeCredentialError,
 		enableNotifications,
 		send,
+		settleEach,
 	};
 }
 
@@ -800,6 +817,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		clearClaudeCredentialError,
 		enableNotifications,
 		send,
+		settleEach,
 	} = useOperationalRun(scope, pathname);
 	const requestedRunId = runIdOf(pathname);
 	const selectedRunId = displayedRunId(requestedRunId, runs);
@@ -918,9 +936,11 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				}));
 			}}
 			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId, scope))}
+			onDismissProposals={(proposalIds) => settleEach(proposalIds, (proposalId) => dismissProposal(proposalId, scope))}
 			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId, scope))}
 			onDismissDiagnosticFinding={(findingId) =>
 				send(() => dismissDiagnosticFinding(findingId, scope))}
+			onDismissDiagnosticFindings={(findingIds) => settleEach(findingIds, (findingId) => dismissDiagnosticFinding(findingId, scope))}
 			onPromoteDiagnosticFinding={(findingId, draft) => {
 				send(() => promoteDiagnosticFinding(findingId, draft, scope).then((created) =>
 					`${created.id} created from the diagnostic.`));

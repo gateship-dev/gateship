@@ -1,9 +1,10 @@
 // webui/src/screens/work-screen.tsx
 
 import React, { useMemo, useState } from 'react';
-import type { AppProps } from '../app-props.ts';
+import type { AppProps, BulkOutcome } from '../app-props.ts';
 import type { DiagnosticFindingView, DiagnosticsView, IssueReviewDraft } from '../client.ts';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Badge } from '../components/ui/badge.tsx';
 import { Count } from '../components/ui/count.tsx';
 import { Reference } from '../components/ui/reference.tsx';
@@ -11,7 +12,7 @@ import { Tag } from '../components/ui/tag.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardAction, CardDescription, CardDisclosure, CardFooter, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
 import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
-import { DataTable, DataTableFilter, DataTableNote, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useClientPage, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
+import { DataTable, DataTableBulkAction, DataTableFilter, DataTableNote, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useClientPage, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { Tabs, TabsCount, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
@@ -531,12 +532,41 @@ function SuggestionViews({ label, value, onChange, pending, resolved }: { label:
 const findingMatches = (finding: DiagnosticFindingView, needle: string): boolean => `${finding.rule} ${finding.file} ${finding.evidence} ${finding.promotedIssueId ?? ''}`.toLocaleLowerCase().includes(needle);
 
 /** Findings as the product's table: severity, rule, where, how often. Evidence and promotion open under the row. */
-function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDismiss, onPromote, defaultView = 'pending', defaultOpenId }: {
+/**
+ * Dismissing the selected rows at once. The button asks first, naming the
+ * count, because a dismissal cannot be undone here. The rows the service
+ * accepted leave the list; the ones it refused stay, and the table's notice
+ * names each of them with the service's own reason until the next action.
+ */
+function useBulkDismiss(dismiss: ((ids: readonly string[]) => Promise<BulkOutcome>) | undefined, label: string, confirm: (count: number) => string, nameOf: (id: string) => string, catalog: WorkCatalog, locale: Locale): {
+	selection: { actions: (ids: readonly string[], clear: () => void) => React.ReactNode } | undefined;
+	notice: React.ReactNode;
+} {
+	const [refused, setRefused] = useState<{ settled: number; failed: BulkOutcome['failed'] } | null>(null);
+	if (dismiss === undefined) return { selection: undefined, notice: null };
+	const run = (ids: readonly string[], clear: () => void): void => {
+		setRefused(null);
+		void dismiss(ids).then((outcome) => { clear(); setRefused(outcome.failed.length === 0 ? null : { settled: outcome.settled.length, failed: outcome.failed }); });
+	};
+	return {
+		selection: { actions: (ids, clear) => <DataTableBulkAction confirm={confirm(ids.length)} label={label} locale={locale} onRun={() => run(ids, clear)} /> },
+		notice: refused === null ? null : (
+			<Alert variant="warning">
+				<AlertTitle>{catalog.bulk.partial(refused.settled, refused.failed.length)}</AlertTitle>
+				<AlertDescription><ul className="flex flex-col gap-1">{refused.failed.map((row) => <li key={row.id}><span className="font-medium text-foreground">{nameOf(row.id)}</span>: {row.reason}</li>)}</ul></AlertDescription>
+			</Alert>
+		),
+	};
+}
+
+function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDismiss, onDismissMany, onPromote, defaultView = 'pending', defaultOpenId }: {
 	catalog: WorkCatalog; diagnostics: DiagnosticsView; locale: Locale; pending: boolean; defaultView?: SuggestionView; defaultOpenId?: string;
-	onDismiss: AppProps['onDismissDiagnosticFinding']; onPromote: AppProps['onPromoteDiagnosticFinding'];
+	onDismiss: AppProps['onDismissDiagnosticFinding']; onDismissMany?: AppProps['onDismissDiagnosticFindings']; onPromote: AppProps['onPromoteDiagnosticFinding'];
 }): React.ReactElement {
 	const [view, setView] = useState<SuggestionView>(defaultView);
 	const rows = view === 'pending' ? diagnostics.findings : diagnostics.resolvedFindings;
+	/* Only a pending finding can be dismissed, so only the pending view selects. */
+	const bulk = useBulkDismiss(view === 'pending' ? onDismissMany : undefined, catalog.diagnostics.dismiss, catalog.bulk.dismissFindings, (id) => rows.find((finding) => finding.id === id)?.rule ?? id, catalog, locale);
 	const list = useClientPage(rows, findingMatches);
 	const columns = useMemo<GateshipColumnDef<DiagnosticFindingView>[]>(() => {
 		const defs: GateshipColumnDef<DiagnosticFindingView>[] = [
@@ -556,6 +586,8 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 				emptyDetail={list.search === '' ? '' : undefined}
 				defaultExpanded={defaultOpenId === undefined ? undefined : [defaultOpenId]}
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.diagnostics.noPending : catalog.diagnostics.noResolved}
+				notice={bulk.notice}
+				selection={bulk.selection}
 				storageKey="findings"
 				foot={<>
 					<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
@@ -620,6 +652,7 @@ export function DiagnosticsPanel({
 	onStartDiagnostic,
 	onCancelDiagnostic,
 	onDismissDiagnosticFinding,
+	onDismissDiagnosticFindings,
 	onPromoteDiagnosticFinding,
 	defaultView,
 	defaultOpenId,
@@ -630,6 +663,7 @@ export function DiagnosticsPanel({
 	| 'onStartDiagnostic'
 	| 'onCancelDiagnostic'
 	| 'onDismissDiagnosticFinding'
+	| 'onDismissDiagnosticFindings'
 	| 'onPromoteDiagnosticFinding'
 	| 'locale'
 > & { catalog: WorkCatalog; defaultView?: SuggestionView; defaultOpenId?: string }): React.ReactElement {
@@ -661,7 +695,7 @@ export function DiagnosticsPanel({
 					<DiagnosticsFooter active={active} analyzer={analyzer} catalog={catalog.diagnostics} onCancelDiagnostic={onCancelDiagnostic} onStartDiagnostic={onStartDiagnostic} pending={pending} scan={scan} />
 				</CardPanel>
 			</Card>
-			<DiagnosticFindingsTable catalog={catalog} defaultOpenId={defaultOpenId} defaultView={defaultView} diagnostics={diagnostics} locale={locale} onDismiss={onDismissDiagnosticFinding} onPromote={onPromoteDiagnosticFinding} pending={pending} />
+			<DiagnosticFindingsTable catalog={catalog} defaultOpenId={defaultOpenId} defaultView={defaultView} diagnostics={diagnostics} locale={locale} onDismiss={onDismissDiagnosticFinding} onDismissMany={onDismissDiagnosticFindings} onPromote={onPromoteDiagnosticFinding} pending={pending} />
 		</>
 	);
 }
@@ -686,12 +720,13 @@ export function ProposalsPanel({
 	resolvedRead,
 	pending,
 	onDismissProposal,
+	onDismissProposals,
 	onPromoteProposal,
 	defaultView = 'pending',
 	defaultOpenId,
 }: Pick<
 	AppProps,
-	'locale' | 'proposals' | 'resolvedProposals' | 'resolvedProposalsOmittedCount' | 'pending' | 'onDismissProposal' | 'onPromoteProposal'
+	'locale' | 'proposals' | 'resolvedProposals' | 'resolvedProposalsOmittedCount' | 'pending' | 'onDismissProposal' | 'onDismissProposals' | 'onPromoteProposal'
 > & { catalog: WorkCatalog; /** How the settled proposals were read: a failure is the table's notice, a first load is its skeleton rows. */ resolvedRead?: { failure: string | undefined; loading: boolean }; defaultView?: SuggestionView; defaultOpenId?: string }): React.ReactElement {
 	const [view, setView] = useState<SuggestionView>(defaultView);
 	const rows: readonly AnyProposal[] = view === 'pending' ? proposals : resolvedProposals;
@@ -709,6 +744,8 @@ export function ProposalsPanel({
 	}, [catalog, onDismissProposal, pending, view]);
 	const table = useGateshipTable({ columns, data: list.page, features: gateshipTableFeatures, getRowId: (proposal) => proposal.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: list.total, state: { globalFilter: list.search, pagination: { pageIndex: Math.floor(list.offset / list.limit), pageSize: list.limit } }, onGlobalFilterChange: (value) => list.setSearch(String(value ?? '')) });
 	const resolving = view === 'resolved';
+	/* A settled proposal cannot be dismissed again, so only the pending view selects. */
+	const bulk = useBulkDismiss(resolving ? undefined : onDismissProposals, catalog.proposals.dismiss, catalog.bulk.dismissProposals, (id) => rows.find((proposal) => proposal.id === id)?.title ?? id, catalog, locale);
 	return (
 			<DataTable
 				emptyDetail={list.search === '' ? '' : undefined}
@@ -727,7 +764,8 @@ export function ProposalsPanel({
 				notice={resolving ? <>
 					<DataTableNote><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</DataTableNote>
 					{resolvedRead?.failure === undefined ? null : <OperationalUnavailable detail={resolvedRead.failure} locale={locale} resource="Resolved proposals" />}
-				</> : undefined}
+				</> : bulk.notice}
+				selection={bulk.selection}
 				status={resolving && resolvedRead?.loading === true && rows.length === 0 ? 'loading' : 'ready'}
 				locale={locale}
 				renderExpanded={(proposal) => (
@@ -823,6 +861,7 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 						locale={props.locale}
 						onCancelDiagnostic={props.onCancelDiagnostic}
 						onDismissDiagnosticFinding={props.onDismissDiagnosticFinding}
+						onDismissDiagnosticFindings={props.onDismissDiagnosticFindings}
 						onPromoteDiagnosticFinding={props.onPromoteDiagnosticFinding}
 						onStartDiagnostic={props.onStartDiagnostic}
 						pending={props.pending}
@@ -833,6 +872,7 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 						catalog={catalog}
 						locale={props.locale}
 						onDismissProposal={props.onDismissProposal}
+						onDismissProposals={props.onDismissProposals}
 						onPromoteProposal={props.onPromoteProposal}
 						pending={props.pending}
 						proposals={props.proposals}

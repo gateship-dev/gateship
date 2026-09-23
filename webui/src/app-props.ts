@@ -32,6 +32,24 @@ import type { PlannableIssue, RunEventView, RunView } from './run-view.ts';
 import type { OperationalFailures, OperationalLoaded, OperationalPending } from './operational-snapshot.ts';
 
 /** Complete pure-render contract for the operator application. */
+/**
+ * What an action on several rows did to each. It is not a transaction and
+ * does not pretend to be one: some rows can settle while others are refused,
+ * and the operator is told which, with the service's own reason.
+ */
+export interface BulkOutcome { settled: string[]; failed: { id: string; reason: string }[] }
+
+/** Reads what each row's own request did, in the order the rows were asked. A refusal keeps the service's message as its reason. */
+export function bulkOutcome(ids: readonly string[], results: readonly PromiseSettledResult<unknown>[]): BulkOutcome {
+	const outcome: BulkOutcome = { settled: [], failed: [] };
+	results.forEach((result, index) => {
+		const id = ids[index] ?? '';
+		if (result.status === 'fulfilled') outcome.settled.push(id);
+		else outcome.failed.push({ id, reason: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+	});
+	return outcome;
+}
+
 export interface AppProps {
 	operationalBoundary?: { state: 'loading' } | { state: 'failure'; detail: string; onRetry: () => void };
 	operationalRefreshFailure?: { detail: string; onRetry: () => void };
@@ -96,10 +114,14 @@ export interface AppProps {
 	onApproveIssue: (issueId: string) => void;
 	onAbandonIssue: (issueId: string, reason: string) => void;
 	onDismissProposal: (proposalId: string) => void;
+	/** Dismisses several proposals, each on its own. Absent, the list offers no selection. */
+	onDismissProposals?: (proposalIds: readonly string[]) => Promise<BulkOutcome>;
 	onPromoteProposal: (proposalId: string, input: OperatorIssueDraft) => void;
 	onStartDiagnostic: (analyzer: string) => void;
 	onCancelDiagnostic: (scanId: string) => void;
 	onDismissDiagnosticFinding: (findingId: string) => void;
+	/** Dismisses several findings, each on its own. Absent, the list offers no selection. */
+	onDismissDiagnosticFindings?: (findingIds: readonly string[]) => Promise<BulkOutcome>;
 	onPromoteDiagnosticFinding: (findingId: string, input: OperatorIssueDraft) => void;
 	onSaveDiagnosticSchedule: (enabled: boolean, cadence: DiagnosticCadenceView) => void;
 	onStart: () => void;
