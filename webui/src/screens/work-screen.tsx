@@ -14,6 +14,7 @@ import { Card, CardAction, CardDescription, CardDisclosure, CardFooter, CardHead
 import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { DataTable, DataTableBulkAction, DataTableFilter, DataTableNote, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useClientPage, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { Input } from '../components/ui/input.tsx';
+import { DrawerLayout, ItemDrawer, successorOf, useOpenItem } from '../components/ui/item-drawer.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import { Tabs, TabsCount, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
@@ -581,10 +582,16 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
 	}, [catalog, locale, onDismiss, pending, view]);
 	const table = useGateshipTable({ columns, data: list.page, features: gateshipTableFeatures, getRowId: (finding) => finding.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: list.total, state: { globalFilter: list.search, pagination: { pageIndex: Math.floor(list.offset / list.limit), pageSize: list.limit } }, onGlobalFilterChange: (value) => list.setSearch(String(value ?? '')) });
+	const ids = list.page.map((finding) => finding.id);
+	const [openId, setOpenId] = useOpenItem('finding', ids, defaultOpenId);
+	const open = openId === null ? null : rows.find((finding) => finding.id === openId) ?? null;
+	/* Dismissed from its drawer, the finding leaves and the drawer moves on to the next row, or closes on the last. */
+	const dismissOpen = (finding: DiagnosticFindingView): void => { setOpenId(successorOf(ids, finding.id)); onDismiss(finding.id); };
 	return (
+		<DrawerLayout open={open !== null}>
 			<DataTable
+				activeRowId={openId}
 				emptyDetail={list.search === '' ? '' : undefined}
-				defaultExpanded={defaultOpenId === undefined ? undefined : [defaultOpenId]}
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.diagnostics.noPending : catalog.diagnostics.noResolved}
 				notice={bulk.notice}
 				selection={bulk.selection}
@@ -598,13 +605,23 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 					<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchFindings} table={table} />
 				</DataTableToolbar>}
 				locale={locale}
-				renderExpanded={(finding) => (
-					<SuggestionDetail evidence={finding.evidence} meta={<p className="type-data flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{diagnosticFindingLocation(finding)}</code><span>{catalog.diagnostics.toolVersion(finding.toolVersion)}</span><code>{finding.sourceSha.slice(0, 12)}</code></p>}>
-						{finding.status === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={catalog.diagnostics.defaultIssueTitle(finding.rule, finding.file).slice(0, 120)} pending={pending} prefix="diagnostic" onPromote={(input) => onPromote(finding.id, input)} /> : null}
-					</SuggestionDetail>
-				)}
+				onRowActivate={setOpenId}
 				table={table}
 			/>
+			<ItemDrawer
+				footer={open?.status === 'pending' ? <Button disabled={pending} type="button" variant="outline" onClick={() => dismissOpen(open)}>{catalog.diagnostics.dismiss}</Button> : undefined}
+				locale={locale}
+				open={open !== null}
+				title={open?.rule ?? ''}
+				onClose={() => setOpenId(null)}
+			>
+				{open === null ? null : (
+					<SuggestionDetail evidence={open.evidence} meta={<p className="type-data flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{diagnosticFindingLocation(open)}</code><span>{catalog.diagnostics.toolVersion(open.toolVersion)}</span><code>{open.sourceSha.slice(0, 12)}</code></p>}>
+						{open.status === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={catalog.diagnostics.defaultIssueTitle(open.rule, open.file).slice(0, 120)} pending={pending} prefix="diagnostic" onPromote={(input) => onPromote(open.id, input)} /> : null}
+					</SuggestionDetail>
+				)}
+			</ItemDrawer>
+		</DrawerLayout>
 	);
 }
 
@@ -746,10 +763,20 @@ export function ProposalsPanel({
 	const resolving = view === 'resolved';
 	/* A settled proposal cannot be dismissed again, so only the pending view selects. */
 	const bulk = useBulkDismiss(resolving ? undefined : onDismissProposals, catalog.proposals.dismiss, catalog.bulk.dismissProposals, (id) => rows.find((proposal) => proposal.id === id)?.title ?? id, catalog, locale);
+	const ids = list.page.map((proposal) => proposal.id);
+	const [openId, setOpenId] = useOpenItem('proposal', ids, defaultOpenId);
+	const open = openId === null ? null : rows.find((proposal) => proposal.id === openId) ?? null;
+	const dismissOpen = (proposal: AnyProposal): void => { setOpenId(successorOf(ids, proposal.id)); onDismissProposal(proposal.id); };
+	/* What the settled view is, and why it may be short: facts about these rows, so they sit in the rows' frame. */
+	const notice = resolving ? <>
+		<DataTableNote><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</DataTableNote>
+		{resolvedRead?.failure === undefined ? null : <OperationalUnavailable detail={resolvedRead.failure} locale={locale} resource="Resolved proposals" />}
+	</> : bulk.notice;
 	return (
+		<DrawerLayout open={open !== null}>
 			<DataTable
+				activeRowId={openId}
 				emptyDetail={list.search === '' ? '' : undefined}
-				defaultExpanded={defaultOpenId === undefined ? undefined : [defaultOpenId]}
 				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.proposals.emptyPending : catalog.proposals.emptyResolved}
 				storageKey="proposals"
 				foot={<>
@@ -760,21 +787,37 @@ export function ProposalsPanel({
 					<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingProposals, formatCount(proposals.length, locale)]} resolved={[catalog.list.resolvedProposals, formatCount(resolvedProposals.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
 					<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchProposals} table={table} />
 				</DataTableToolbar>}
-				/* What the settled view is, and why it may be short: facts about these rows, so they sit in the rows' frame. */
-				notice={resolving ? <>
-					<DataTableNote><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</DataTableNote>
-					{resolvedRead?.failure === undefined ? null : <OperationalUnavailable detail={resolvedRead.failure} locale={locale} resource="Resolved proposals" />}
-				</> : bulk.notice}
+				notice={notice}
 				selection={bulk.selection}
 				status={resolving && resolvedRead?.loading === true && rows.length === 0 ? 'loading' : 'ready'}
 				locale={locale}
-				renderExpanded={(proposal) => (
-					<SuggestionDetail evidence={proposal.evidence} meta={<p className="flex flex-wrap items-center gap-2 text-muted-foreground"><Reference>{proposal.sourceIssueId}</Reference><Reference>{proposal.sourceRunId}</Reference></p>}>
-						{view === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={proposal.title} pending={pending} prefix="proposal" onPromote={(input) => onPromoteProposal(proposal.id, input)} /> : null}
-					</SuggestionDetail>
-				)}
+				onRowActivate={setOpenId}
 				table={table}
 			/>
+			<ProposalDrawer catalog={catalog} locale={locale} open={open} pending={pending} resolving={resolving} onClose={() => setOpenId(null)} onDismiss={dismissOpen} onPromote={onPromoteProposal} />
+		</DrawerLayout>
+	);
+}
+
+/* A proposal beside its list: the evidence and where it came from, the contract to promote it while it is pending, and the way to dismiss it at the foot. */
+function ProposalDrawer({ open, resolving, pending, catalog, locale, onClose, onDismiss, onPromote }: {
+	open: AnyProposal | null; resolving: boolean; pending: boolean; catalog: WorkCatalog; locale: Locale;
+	onClose: () => void; onDismiss: (proposal: AnyProposal) => void; onPromote: AppProps['onPromoteProposal'];
+}): React.ReactElement {
+	return (
+		<ItemDrawer
+			footer={open !== null && !resolving ? <Button disabled={pending} type="button" variant="outline" onClick={() => onDismiss(open)}>{catalog.proposals.dismiss}</Button> : undefined}
+			locale={locale}
+			open={open !== null}
+			title={open?.title ?? ''}
+			onClose={onClose}
+		>
+			{open === null ? null : (
+				<SuggestionDetail evidence={open.evidence} meta={<p className="flex flex-wrap items-center gap-2 text-muted-foreground"><Reference>{open.sourceIssueId}</Reference><Reference>{open.sourceRunId}</Reference></p>}>
+					{resolving ? null : <PromoteForm catalog={catalog} defaultTitle={open.title} pending={pending} prefix="proposal" onPromote={(input) => onPromote(open.id, input)} />}
+				</SuggestionDetail>
+			)}
+		</ItemDrawer>
 	);
 }
 

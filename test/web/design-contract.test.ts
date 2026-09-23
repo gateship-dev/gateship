@@ -79,10 +79,17 @@ describe('design contract', () => {
 		expect(handWritten({ 'screens/planted.tsx': '<kbd className="rounded border bg-muted px-1 text-muted-foreground">⌥K</kbd>', 'components/ui/key-chip.tsx': '<kbd data-slot="key-chip" />' })).toEqual(['screens/planted.tsx']);
 	});
 
-	test('a screen writes no disclosure of its own: what opens is a CardDisclosure at page level and a Collapsible inside a card', () => {
-		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).filter(([name, source]) => name.startsWith('screens/') && /<(details|summary)\b/.test(source)).map(([name]) => name);
+	test('a screen writes no disclosure of its own: what opens is a CardDisclosure at page level, a Collapsible inside a card, and an ItemDrawer beside a table', () => {
+		/* A row's item never opens inside the row, and no screen builds its own dialog: the kit's drawer is the one place an item opens. */
+		const handWritten = (files: Record<string, string>): string[] => Object.entries(files).filter(([name, source]) => name.startsWith('screens/') && /<(details|summary|dialog)\b|renderExpanded|role="dialog"/.test(source)).map(([name]) => name).sort();
 		expect(handWritten(sources)).toEqual([]);
-		expect(handWritten({ 'screens/planted.tsx': '<details className="group/entry"><summary>more</summary></details>', 'components/ui/collapsible.tsx': '<details data-slot="collapsible" />' })).toEqual(['screens/planted.tsx']);
+		expect(handWritten({
+			'screens/planted.tsx': '<details className="group/entry"><summary>more</summary></details>',
+			'screens/planted-row.tsx': '<DataTable renderExpanded={(row) => <Detail row={row} />} />',
+			'screens/planted-dialog.tsx': '<aside role="dialog">{detail}</aside>',
+			'components/ui/collapsible.tsx': '<details data-slot="collapsible" />',
+			'components/ui/item-drawer.tsx': '<aside role="dialog" data-slot="item-drawer" />',
+		})).toEqual(['screens/planted-dialog.tsx', 'screens/planted-row.tsx', 'screens/planted.tsx']);
 	});
 
 	test('type stays on the scale and the ladder', () => {

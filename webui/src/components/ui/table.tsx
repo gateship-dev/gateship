@@ -48,17 +48,20 @@ export function TableBody({
 
 export function TableRow({
 	className,
+	active = false,
 	...props
-}: React.ComponentProps<'tr'>): React.ReactElement {
+}: React.ComponentProps<'tr'> & { /** The row whose item is open beside the table: it wears the selected tint and says it is current. */ active?: boolean }): React.ReactElement {
 	return (
 		<tr
+			aria-current={active ? 'true' : undefined}
 			className={cn(
 				'relative border-b hover:bg-[color-mix(in_srgb,var(--background),var(--color-black)_2%)] ' +
-					'data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] ' +
-					'dark:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] ' +
+					'data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] data-[active]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] ' +
+					'dark:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] dark:data-[active]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] ' +
 					'dark:hover:bg-[color-mix(in_srgb,var(--background),var(--color-white)_2%)]',
 				className,
 			)}
+			data-active={active ? '' : undefined}
 			data-slot="table-row"
 			{...props}
 		/>

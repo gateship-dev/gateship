@@ -37,7 +37,6 @@ import { cn } from '../../lib/cn.ts';
 import { Button } from './button.tsx';
 import { KEY_STEP, KEY_STEP_LARGE, MIN_COLUMN_WIDTH, renderedWidths, useColumnSizing, type ColumnSizingControls } from './column-sizing.ts';
 import { Count } from './count.tsx';
-import { DisclosureChevron } from './disclosure-chevron.tsx';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from './dropdown-menu.tsx';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from './empty.tsx';
 import { Input } from './input.tsx';
@@ -137,8 +136,6 @@ const copy = {
 		page: (current: number, count: number) => `Page ${current} of ${count}`,
 		range: (from: number, to: number, total: number) => `${from}–${to} of ${total}`,
 		sortState: { ascending: 'sorted ascending', descending: 'sorted descending', none: 'not sorted' },
-		expandRow: 'Show details',
-		collapseRow: 'Hide details',
 		clearFacet: 'Clear',
 		clearSearch: 'Clear search',
 		resizeColumn: (column: string) => `Resize ${column}`,
@@ -172,8 +169,6 @@ const copy = {
 		page: (current: number, count: number) => `Página ${current} de ${count}`,
 		range: (from: number, to: number, total: number) => `${from}–${to} de ${total}`,
 		sortState: { ascending: 'ordem crescente', descending: 'ordem decrescente', none: 'sem ordenação' },
-		expandRow: 'Mostrar detalhes',
-		collapseRow: 'Ocultar detalhes',
 		clearFacet: 'Limpar',
 		clearSearch: 'Limpar busca',
 		resizeColumn: (column: string) => `Redimensionar ${column}`,
@@ -475,27 +470,22 @@ export function DataTablePagination<TData extends RowData>({
 }
 
 /* One data row and, while it is open, the detail under it. */
-function DataTableBodyRow<TData extends RowData>({ row, open, span, text, renderExpanded, onToggle, layout, select }: {
-	row: ReturnType<GateshipTable<TData>['getRowModel']>['rows'][number]; open: boolean; span: number;
-	text: { expandRow: string; collapseRow: string }; renderExpanded?: (row: TData) => React.ReactNode; onToggle: () => void; layout: TableLayout;
+/* A row: what it holds and, when the table opens items, the way to open this one. A click on a control inside the row is that control's, never the row's. */
+function DataTableBodyRow<TData extends RowData>({ row, layout, select, activate }: {
+	row: ReturnType<GateshipTable<TData>['getRowModel']>['rows'][number]; layout: TableLayout;
 	select?: { checked: boolean; label: string; onToggle: (shift: boolean) => void } | undefined;
+	activate?: { active: boolean; onActivate: () => void } | undefined;
 }): React.ReactElement {
+	const onClick = activate === undefined ? undefined : (event: { target: unknown }): void => {
+		const target = event.target as { closest?: (selector: string) => unknown } | null;
+		if (target?.closest?.('a, button, input, select, textarea, [role=menu], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox]')) return;
+		activate.onActivate();
+	};
 	return (
-		<>
-			<TableRow data-expanded={open ? '' : undefined} data-selected={select?.checked === true ? '' : undefined}>
-				{select === undefined ? null : <TableCell className={cn('w-10 pr-0', layout.select.className)} style={layout.select.style}><RowCheckbox checked={select.checked} label={select.label} onToggle={select.onToggle} /></TableCell>}
-				{renderExpanded === undefined ? null : (
-					<TableCell className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style}>
-						<Button aria-expanded={open} aria-label={open ? text.collapseRow : text.expandRow} className="size-6 sm:size-6" size="icon" type="button" variant="ghost" onClick={onToggle}>
-							<DisclosureChevron dense open={open} />
-						</Button>
-					</TableCell>
-				)}
-				{row.getVisibleCells().map((cell) => { const place = layout.cell(cell.column.id); return <TableCell className={cn(cellClass(cell.column), place.className)} key={cell.id} style={place.style}><FlexRender cell={cell} /></TableCell>; })}
-			</TableRow>
-			{/* `data-state` keeps the detail out of any count of data rows. */}
-			{open && renderExpanded !== undefined ? <TableRow className="hover:bg-transparent dark:hover:bg-transparent" data-state="expanded"><TableCell className="whitespace-normal p-4" colSpan={span}>{renderExpanded(row.original)}</TableCell></TableRow> : null}
-		</>
+		<TableRow active={activate?.active === true} className={cn(activate !== undefined && 'cursor-pointer')} data-selected={select?.checked === true ? '' : undefined} onClick={onClick}>
+			{select === undefined ? null : <TableCell className={cn('w-10 pr-0', layout.select.className)} style={layout.select.style}><RowCheckbox checked={select.checked} label={select.label} onToggle={select.onToggle} /></TableCell>}
+			{row.getVisibleCells().map((cell) => { const place = layout.cell(cell.column.id); return <TableCell className={cn(cellClass(cell.column), place.className)} key={cell.id} style={place.style}><FlexRender cell={cell} /></TableCell>; })}
+		</TableRow>
 	);
 }
 
@@ -519,16 +509,15 @@ export type DataTableStatus = 'ready' | 'loading' | 'updating' | 'error';
 
 /** Where a cell sits once the operator has set widths: its width, and whether it stays put while the rows scroll sideways. */
 interface CellPlace { className?: string; style?: React.CSSProperties }
-interface TableLayout { table: CellPlace; head: (id: string) => CellPlace; cell: (id: string) => CellPlace; select: CellPlace; expand: CellPlace }
-/** The kit's own leading columns: a row's checkbox, then its chevron. */
-interface LeadColumns { select: boolean; expand: boolean }
+interface TableLayout { table: CellPlace; head: (id: string) => CellPlace; cell: (id: string) => CellPlace; select: CellPlace }
+/** The kit's own leading column: a row's checkbox. */
+interface LeadColumns { select: boolean }
 
 const NO_PLACE: CellPlace = {};
-const AUTO_LAYOUT: TableLayout = { table: NO_PLACE, head: () => NO_PLACE, cell: () => NO_PLACE, select: NO_PLACE, expand: NO_PLACE };
-/* The two widths the kit fixes itself: a row's checkbox, 16px with 12px either side, and its chevron, a 24px control and its 8px. */
+const AUTO_LAYOUT: TableLayout = { table: NO_PLACE, head: () => NO_PLACE, cell: () => NO_PLACE, select: NO_PLACE };
+/* The one width the kit fixes itself: a row's checkbox, 16px with 12px either side. */
 const SELECT_WIDTH = 40;
-const EXPAND_WIDTH = 32;
-const leadWidth = (lead: LeadColumns): number => (lead.select ? SELECT_WIDTH : 0) + (lead.expand ? EXPAND_WIDTH : 0);
+const leadWidth = (lead: LeadColumns): number => (lead.select ? SELECT_WIDTH : 0);
 
 /* The few DOM members the geometry reads, typed here because the kit also compiles without the DOM library. */
 type HeadElement = { dataset: Record<string, string | undefined>; getBoundingClientRect: () => { width: number } };
@@ -616,7 +605,6 @@ function fixedLayout(sizing: NonNullable<ColumnSizingControls['sizing']>, shown:
 		head: sized,
 		cell: pinned,
 		select: overflowing ? { className: 'sticky left-0 z-10 bg-card' } : NO_PLACE,
-		expand: overflowing ? { className: 'sticky left-(--pin-left) z-10 bg-card', style: { '--pin-left': `${lead.select ? SELECT_WIDTH : 0}px` } as React.CSSProperties } : NO_PLACE,
 	};
 }
 
@@ -626,7 +614,7 @@ function useTableWidths<TData extends RowData>(storageKey: string | undefined, s
 	const reading = useFrameReading(surface, columns.map((column) => column.id).join(' '));
 	const kinds = Object.fromEntries(columns.map((column) => [column.id, metaOf(column).kind]));
 	const layout = sizing.sizing === null ? AUTO_LAYOUT : fixedLayout(sizing.sizing, reading.shown, primaryId, reading.frame, lead, reading.scrolled, kinds);
-	/* Fit spreads what the frame has left over the columns that can take a width: the menu and the expand column keep theirs. */
+	/* Fit spreads what the frame has left over the columns that can take a width: the menu and the checkbox column keep theirs. */
 	const fit = (): void => {
 		const current = sizing.sizing;
 		if (current === null) return;
@@ -792,7 +780,6 @@ function DataTableSkeletonRows<TData extends RowData>({ columns, layout, lead, r
 			{Array.from({ length: rows }, (_, index) => (
 				<TableRow data-state="loading" key={`skeleton-${index}`}>
 					{lead.select ? <TableCell className={cn('w-10 pr-0', layout.select.className)} style={layout.select.style} /> : null}
-					{lead.expand ? <TableCell className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style} /> : null}
 					{columns.map((column) => { const place = layout.cell(column.id); return <TableCell className={cn(cellClass(column), place.className)} key={column.id} style={place.style}><Skeleton className="h-4 w-full max-w-32" /></TableCell>; })}
 				</TableRow>
 			))}
@@ -833,8 +820,8 @@ export function DataTable<TData extends RowData>({
 	emptyDetail,
 	emptyAction,
 	skeletonRows = 5,
-	renderExpanded,
-	defaultExpanded,
+	activeRowId = null,
+	onRowActivate,
 	head,
 	notice,
 	foot,
@@ -857,17 +844,15 @@ export function DataTable<TData extends RowData>({
 	emptyDetail?: React.ReactNode;
 	emptyAction?: React.ReactNode;
 	skeletonRows?: number;
-	/** What a row opens into. Given, every row leads with a chevron, and the content is built only while its row is open. */
-	renderExpanded?: (row: TData) => React.ReactNode;
-	/** Row ids open on first render, as `defaultValue` is to an input. */
-	defaultExpanded?: readonly string[];
+	/** The row whose item is open beside the table, marked as the current one. */
+	activeRowId?: string | null;
+	/** Given, a click anywhere on a row that is not one of its controls opens that row's item. */
+	onRowActivate?: (id: string) => void;
 }): React.ReactElement {
 	const text = copy[locale];
-	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set(defaultExpanded));
-	const toggle = (id: string): void => setExpanded((current) => { const next = new Set(current); if (!next.delete(id)) next.add(id); return next; });
 	const rows = table.getRowModel().rows;
-	const lead: LeadColumns = { select: selection !== undefined, expand: renderExpanded !== undefined };
-	const span = table.getVisibleLeafColumns().length + Number(lead.select) + Number(lead.expand);
+	const lead: LeadColumns = { select: selection !== undefined };
+	const span = table.getVisibleLeafColumns().length + Number(lead.select);
 	const { rowSelect, pageSelect, headZone } = useSelectionWiring(rows.map((row) => row.id), selection, head, locale);
 	const columns = table.getVisibleLeafColumns();
 	/* A wide table gives its slack to one column; spread over all of them it reads as holes between the facts. */
@@ -886,12 +871,12 @@ export function DataTable<TData extends RowData>({
 			<DataTableZone slot="data-table-notice">{notice}</DataTableZone>
 			<GateshipTable className={layout.table.className} style={layout.table.style}>
 				<TableHeader>
-					<DataTableHeadRow expand={lead.expand} layout={layout} locale={locale} primaryId={primaryId} select={pageSelect} sizing={storageKey === undefined ? undefined : sizing} surface={surface} table={table} />
+					<DataTableHeadRow layout={layout} locale={locale} primaryId={primaryId} select={pageSelect} sizing={storageKey === undefined ? undefined : sizing} surface={surface} table={table} />
 				</TableHeader>
 				<TableBody className={cn('transition-opacity', status === 'updating' && 'opacity-60')}>
 					{status === 'loading' && rows.length === 0
 						? <DataTableSkeletonRows columns={columns} layout={layout} lead={lead} rows={skeletonRows} />
-						: rows.map((row, index) => <DataTableBodyRow key={row.id} layout={layout} open={renderExpanded !== undefined && expanded.has(row.id)} renderExpanded={renderExpanded} row={row} select={rowSelect(row.id, index)} span={span} text={text} onToggle={() => toggle(row.id)} />)}
+						: rows.map((row, index) => <DataTableBodyRow activate={onRowActivate === undefined ? undefined : { active: row.id === activeRowId, onActivate: () => onRowActivate(row.id) }} key={row.id} layout={layout} row={row} select={rowSelect(row.id, index)} />)}
 					{/* `data-state` tells a data row from a stand-in: anything counting rows reads `tr:not([data-state])`. */}
 					{rows.length === 0 && status !== 'loading' ? <DataTableEmptyRow action={emptyAction} detail={emptyDetail ?? text.noResultsDetail} span={span} title={emptyState ?? text.noResults} /> : null}
 				</TableBody>
@@ -923,8 +908,8 @@ function DataTableHeadCell<TData extends RowData>({ header, locale, primary, lay
 }
 
 /* The head row: each column's name, its sort menu, and the grip that sets its width. */
-function DataTableHeadRow<TData extends RowData>({ table, locale, primaryId, expand, layout, sizing, surface, select }: {
-	table: GateshipTable<TData>; locale: TableLocale; primaryId: string | undefined; expand: boolean; layout: TableLayout;
+function DataTableHeadRow<TData extends RowData>({ table, locale, primaryId, layout, sizing, surface, select }: {
+	table: GateshipTable<TData>; locale: TableLocale; primaryId: string | undefined; layout: TableLayout;
 	sizing: ColumnSizingControls | undefined; surface: React.RefObject<HTMLDivElement | null>;
 	select?: { checked: boolean; indeterminate: boolean; onToggle: () => void } | undefined;
 }): React.ReactElement {
@@ -935,7 +920,6 @@ function DataTableHeadRow<TData extends RowData>({ table, locale, primaryId, exp
 			{table.getHeaderGroups().map((headerGroup) => (
 				<TableRow key={headerGroup.id}>
 					{select === undefined ? null : <TableHead className={cn('w-10 pr-0', layout.select.className)} style={layout.select.style}><RowCheckbox checked={select.checked} indeterminate={select.indeterminate} label={text.selectPage} onToggle={select.onToggle} /></TableHead>}
-					{expand ? <TableHead className={cn('w-8 pr-0', layout.expand.className)} style={layout.expand.style}><span className="sr-only">{text.expandRow}</span></TableHead> : null}
 					{headerGroup.headers.map((header) => <DataTableHeadCell header={header} key={header.id} layout={layout} locale={locale} measure={measure} primary={header.column.id === primaryId} sizing={sizing} />)}
 				</TableRow>
 			))}

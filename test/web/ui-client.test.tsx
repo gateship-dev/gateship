@@ -3503,7 +3503,11 @@ function assertCohortRowFolds(locale: 'en-US' | 'pt-BR', smallHtml: string, smal
 	const catalog = LOCALE_CATALOG[locale].overviewInsights;
 	expect(smallHtml).toContain(`>${catalog.cohortSmallSample}</span>`);
 	expect(smallHtml).toContain(`title="${catalog.cohortEvidenceInsufficient}"`);
-	expect(smallHtml).toContain(`aria-label="${locale === 'en-US' ? 'Show details' : 'Mostrar detalhes'}"`);
+	// A cohort opens beside the table, never under its row: the row is the trigger, and nothing of the detail is inline until one is open.
+	expect(smallHtml).toContain('data-slot="drawer-layout"');
+	expect(smallHtml).not.toContain('data-slot="item-drawer"');
+	expect(smallHtml).toContain('cursor-pointer');
+	expect(smallHtml).not.toContain(locale === 'en-US' ? 'Show details' : 'Mostrar detalhes');
 	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
 	const detail = renderToStaticMarkup(<CohortRowDetail catalog={catalog} cohort={smallCohort as never} />);
 	for (const label of [catalog.corrections, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.cycleQuestions, catalog.executor, catalog.reconciliations, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(detail).toContain(label);

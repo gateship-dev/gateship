@@ -10,6 +10,7 @@ import { PageLoading } from '../components/ui/page-loading.tsx';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Card, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
 import { CardGrid, PageToolbar } from '../components/ui/card-layout.tsx';
+import { DrawerLayout, ItemDrawer, useOpenItem } from '../components/ui/item-drawer.tsx';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
 import { ChartContainer, ChartLegendContent, ChartTooltipContent, type ChartConfig } from '../components/ui/chart.tsx';
 import { DataTable, DataTableFilter, DataTableNote, DataTablePagination, DataTableToolbar, DataTableViewOptions, type GateshipColumnDef, gateshipTableFeatures, useGateshipTable } from '../components/ui/data-table.tsx';
@@ -97,6 +98,11 @@ export function updatedInsightsQuery(query: InsightsQuery, changes: Partial<Insi
 	const cohortFilterChanged = Object.prototype.hasOwnProperty.call(changes, 'cohortFilter');
 	return { ...query, ...changes, cohortOffset: projectChanged || changes.window !== undefined || cohortLimitChanged || cohortSortChanged || cohortFilterChanged ? 0 : (changes.cohortOffset ?? query.cohortOffset) };
 }
+/** A cohort's own id, or the revision and spec version that name it when the service gave none. */
+function cohortRowId(row: CohortRow): string {
+	return row.cohortId ?? `${row.workflowRevision ?? 'unknown'}:${row.specVersion}`;
+}
+
 export function normalizedCohortOffset(page: NonNullable<HistoricalOverviewView['cohortsPage']>): number | null {
 	if (page.total === 0 || page.offset < page.total) return null;
 	return Math.floor((page.total - 1) / Math.max(1, page.limit)) * Math.max(1, page.limit);
@@ -221,20 +227,29 @@ function CohortTable({ history, catalog, locale, filter, sortBy, sortDirection }
 		{ id: 'providerHolds', header: catalog.cohortProviderHolds, accessorFn: (row) => metric(row.providerHolds), enableSorting: false, meta: { kind: 'measure', hideBelow: 'md' }, cell: ({ row }) => metric(row.original.providerHolds) },
 	], [catalog, locale]);
 	const changeSorting = (value: SortingState): void => { const next = value[0]; const cohortSortBy = next?.id === 'identity' ? 'workflowRevision' : next?.id === 'latestTerminalRunAt' || next?.id === 'sampleSize' || next?.id === 'specVersion' ? next.id : undefined; window.dispatchEvent(new CustomEvent('gateship-cohort-sort', { detail: cohortSortBy === undefined ? { cohortSortBy: undefined, cohortSortDirection: undefined } : { cohortSortBy, cohortSortDirection: next?.desc ? 'desc' : 'asc' } })); };
-	const table = useGateshipTable({ columns, data: rows, features: gateshipTableFeatures, getRowId: (row) => row.cohortId ?? `${row.workflowRevision ?? 'unknown'}:${row.specVersion}`, state: { globalFilter, sorting, columnVisibility, /* The server pages the cohorts; the pager counts in its page size, not the table's default of 10. */ pagination: { pageIndex: Math.floor((history.cohortsPage?.offset ?? 0) / Math.max(1, history.cohortsPage?.limit ?? 10)), pageSize: history.cohortsPage?.limit ?? 10 } }, onGlobalFilterChange: (value) => window.dispatchEvent(new CustomEvent('gateship-cohort-filter', { detail: { cohortFilter: String(value ?? '') || undefined } })), onSortingChange: (value) => changeSorting(typeof value === 'function' ? value(sorting) : value), onColumnVisibilityChange: (value) => setColumnVisibility(typeof value === 'function' ? value(columnVisibility) : value), manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: history.cohortsPage?.total ?? rows.length });
+	const table = useGateshipTable({ columns, data: rows, features: gateshipTableFeatures, getRowId: cohortRowId, state: { globalFilter, sorting, columnVisibility, /* The server pages the cohorts; the pager counts in its page size, not the table's default of 10. */ pagination: { pageIndex: Math.floor((history.cohortsPage?.offset ?? 0) / Math.max(1, history.cohortsPage?.limit ?? 10)), pageSize: history.cohortsPage?.limit ?? 10 } }, onGlobalFilterChange: (value) => window.dispatchEvent(new CustomEvent('gateship-cohort-filter', { detail: { cohortFilter: String(value ?? '') || undefined } })), onSortingChange: (value) => changeSorting(typeof value === 'function' ? value(sorting) : value), onColumnVisibilityChange: (value) => setColumnVisibility(typeof value === 'function' ? value(columnVisibility) : value), manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: history.cohortsPage?.total ?? rows.length });
+	const ids = rows.map(cohortRowId);
+	const [openId, setOpenId] = useOpenItem('cohort', ids);
+	const open = openId === null ? null : rows.find((row) => cohortRowId(row) === openId) ?? null;
 	/* The legend reads the table's figures, so it is the table's appendix: after the pager, in the same frame. */
-	return <DataTable
-		emptyState={catalog.noData}
-		foot={<>
-			<DataTablePagination locale={locale} offset={history.cohortsPage?.offset ?? 0} total={history.cohortsPage?.total ?? rows.length} onOffsetChange={(offset) => window.dispatchEvent(new CustomEvent('gateship-cohort-page', { detail: offset }))} onPageSizeChange={(limit) => window.dispatchEvent(new CustomEvent('gateship-cohort-page-size', { detail: { cohortLimit: limit } }))} table={table} />
-			<DataTableNote>{catalog.cohortLegend}</DataTableNote>
-		</>}
-		head={<DataTableToolbar><DataTableFilter label={catalog.cohorts} placeholder={catalog.cohorts} locale={locale} table={table} /><DataTableViewOptions locale={locale} table={table} /></DataTableToolbar>}
-		locale={locale}
-		renderExpanded={(row) => <CohortRowDetail catalog={catalog} cohort={row} />}
-		storageKey="cohorts"
-		table={table}
-	/>;
+	return <DrawerLayout open={open !== null}>
+		<DataTable
+			activeRowId={openId}
+			emptyState={catalog.noData}
+			foot={<>
+				<DataTablePagination locale={locale} offset={history.cohortsPage?.offset ?? 0} total={history.cohortsPage?.total ?? rows.length} onOffsetChange={(offset) => window.dispatchEvent(new CustomEvent('gateship-cohort-page', { detail: offset }))} onPageSizeChange={(limit) => window.dispatchEvent(new CustomEvent('gateship-cohort-page-size', { detail: { cohortLimit: limit } }))} table={table} />
+				<DataTableNote>{catalog.cohortLegend}</DataTableNote>
+			</>}
+			head={<DataTableToolbar><DataTableFilter label={catalog.cohorts} placeholder={catalog.cohorts} locale={locale} table={table} /><DataTableViewOptions locale={locale} table={table} /></DataTableToolbar>}
+			locale={locale}
+			onRowActivate={setOpenId}
+			storageKey="cohorts"
+			table={table}
+		/>
+		<ItemDrawer locale={locale} open={open !== null} title={open === null ? '' : `${catalog.workflowRevision} ${formatRevision(open.workflowRevision)}`} onClose={() => setOpenId(null)}>
+			{open === null ? null : <CohortRowDetail catalog={catalog} cohort={open} />}
+		</ItemDrawer>
+	</DrawerLayout>;
 }
 
 function OutcomeTrend({ history, catalog }: { history: HistoricalOverviewView; catalog: OverviewInsightsCatalog }): React.ReactElement {
