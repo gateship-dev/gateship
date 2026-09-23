@@ -25,6 +25,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn.ts';
 import { useQueryParam } from '../../lib/use-query-param.ts';
 import { Button } from './button.tsx';
+import { CardFooter } from './card.tsx';
 
 const copy = {
 	'en-US': { close: 'Close' },
@@ -104,15 +105,19 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 			role="dialog"
 			tabIndex={-1}
 		>
-			<div className="flex items-start gap-2 border-b px-4 py-3" data-slot="item-drawer-head">
+			{/* Above xl the page scrolls the drawer, so the name holds the top of the window as the actions hold its bottom: whatever is in view, the item is named and can be acted on.
+			 * It rests on the column's fade the way the card's footer does at the other end: the column pads 24px and fades 16px, so the head steps 8px up into the padding and nothing readable shows above it. */}
+			<div className="flex items-start gap-2 border-b bg-card px-4 py-3 xl:sticky xl:-top-2 xl:z-10 xl:rounded-t-[calc(var(--radius-2xl)-1px)]" data-slot="item-drawer-head">
 				<h2 className="type-editorial-title min-w-0 flex-1 break-words text-sm">{title}</h2>
 				<Button aria-label={copy[locale].close} className="-my-1 -mr-2" size="icon" type="button" variant="ghost" onClick={onClose}>
 					<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={16} strokeWidth={2.25} />
 				</Button>
 			</div>
-			<div className="scroll-container min-h-0 flex-1 overflow-y-auto px-4 py-4 xl:overflow-visible" data-slot="item-drawer-body">{children}</div>
-			{/* The action edge every card has, at the table's own foot height: the muted band, the primary action last. Above xl the page scrolls the drawer, so the band holds the bottom of the window while the rest passes under it, opaque so nothing reads through. */}
-			{footer === undefined || footer === null ? null : <div className="flex min-h-12 flex-wrap items-center justify-end gap-2 border-t bg-muted px-4 py-2 xl:sticky xl:bottom-0 xl:rounded-b-[calc(var(--radius-2xl)-1px)] xl:bg-muted-solid" data-slot="item-drawer-foot">{footer}</div>}
+			{/* The body is a card's panel, and the actions close it with the card's own footer: the same band, the same stickiness at the bottom of whatever scrolls it. Below xl that is the body itself, which pads 16px, so the footer keeps to its edge instead of stepping under it. */}
+			<div className="scroll-container min-h-0 flex-1 overflow-y-auto px-4 py-4 xl:overflow-visible" data-slot="item-drawer-body">
+				{children}
+				{footer === undefined || footer === null ? null : <CardFooter className="lg:bottom-0" data-slot="item-drawer-foot" sticky>{footer}</CardFooter>}
+			</div>
 		</aside>
 	);
 	const body = (globalThis as unknown as MediaRuntime).document?.body;

@@ -517,26 +517,34 @@ function inlineCode(text: string): React.ReactNode[] {
 		: <React.Fragment key={index}>{part}</React.Fragment>);
 }
 
+const evidenceLines = (text: string): string[] => text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+
+/** What a finding is about, in the analyzer's words: the first line of its evidence. The rule is its id, not its name. */
+export function findingTitle(finding: Pick<DiagnosticFindingView, 'evidence' | 'rule'>): string {
+	return evidenceLines(finding.evidence)[0] ?? finding.rule;
+}
+
 /**
  * An analyzer's evidence is three lines: what it saw, why it matters, what to
  * do. The first is the finding's own name and leads in the row's weight; the
  * rest are paragraphs in the body's ink, because they are the reading, not a
  * note beside it.
  */
-export function EvidenceProse({ text }: { text: string }): React.ReactElement {
-	const [lead, ...rest] = text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+export function EvidenceProse({ text, withoutLead = false }: { text: string; /** When the lead already names the item elsewhere, the head of a drawer, it is not said twice. */ withoutLead?: boolean }): React.ReactElement {
+	const [lead, ...rest] = evidenceLines(text);
 	return (
 		<div className="flex flex-col gap-2" data-slot="evidence">
-			{lead === undefined ? null : <p className="font-medium">{inlineCode(lead)}</p>}
+			{lead === undefined || withoutLead ? null : <p className="font-medium">{inlineCode(lead)}</p>}
 			{rest.map((line, index) => <p className="break-words text-muted-foreground" key={index}>{inlineCode(line)}</p>)}
 		</div>
 	);
 }
 
-function SuggestionDetail({ evidence, meta, children }: { evidence: string; meta?: React.ReactNode; children?: React.ReactNode }): React.ReactElement {
+function SuggestionDetail({ evidence, marker, meta, withoutLead = false, children }: { evidence: string; /** The id the item carries, set above its text: a finding's rule, which is a code and never a label. */ marker?: React.ReactNode; meta?: React.ReactNode; withoutLead?: boolean; children?: React.ReactNode }): React.ReactElement {
 	return (
 		<div className="flex max-w-3xl flex-col gap-4 text-sm" data-slot="suggestion-detail">
-			<EvidenceProse text={evidence} />
+			{marker === undefined ? null : <div className="flex flex-wrap items-center gap-2">{marker}</div>}
+			<EvidenceProse text={evidence} withoutLead={withoutLead} />
 			{meta}
 			{children}
 		</div>
@@ -591,12 +599,13 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 	const [view, setView] = useState<SuggestionView>(defaultView);
 	const rows = view === 'pending' ? diagnostics.findings : diagnostics.resolvedFindings;
 	/* Only a pending finding can be dismissed, so only the pending view selects. */
-	const bulk = useBulkDismiss(view === 'pending' ? onDismissMany : undefined, catalog.diagnostics.dismiss, catalog.bulk.dismissFindings, (id) => rows.find((finding) => finding.id === id)?.rule ?? id, catalog, locale);
+	const bulk = useBulkDismiss(view === 'pending' ? onDismissMany : undefined, catalog.diagnostics.dismiss, catalog.bulk.dismissFindings, (id) => { const found = rows.find((finding) => finding.id === id); return found === undefined ? id : findingTitle(found); }, catalog, locale);
 	const list = useClientPage(rows, findingMatches);
 	const columns = useMemo<GateshipColumnDef<DiagnosticFindingView>[]>(() => {
 		const defs: GateshipColumnDef<DiagnosticFindingView>[] = [
 			{ id: 'severity', header: catalog.list.columns.severity, meta: { kind: 'label' }, cell: ({ row }) => <Badge variant={diagnosticSeverityVariant(row.original.severity)}>{catalog.diagnostics.severityLabels[row.original.severity]}</Badge> },
-			{ id: 'rule', header: catalog.list.columns.rule, meta: { kind: 'name', className: 'font-medium', primary: true }, cell: ({ row }) => row.original.rule },
+			/* What the finding is about, then the rule that raised it: the name a human reads, and beside it the id that repeats across rows. */
+			{ id: 'rule', header: catalog.list.columns.rule, meta: { kind: 'name', primary: true }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><span className="font-medium">{findingTitle(row.original)}</span><Reference>{row.original.rule}</Reference></span> },
 			{ id: 'location', header: catalog.list.columns.location, meta: { kind: 'code', className: 'max-w-80 truncate text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => diagnosticFindingLocation(row.original) },
 			{ id: 'occurrences', header: catalog.list.columns.occurrences, meta: { kind: 'measure', hideBelow: 'sm' }, cell: ({ row }) => formatCount(row.original.occurrenceCount, locale) },
 			...(view === 'pending'
@@ -639,11 +648,11 @@ function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDism
 				</> : undefined}
 				locale={locale}
 				open={open !== null}
-				title={open?.rule ?? ''}
+				title={open === null ? '' : findingTitle(open)}
 				onClose={() => setOpenId(null)}
 			>
 				{open === null ? null : (
-					<SuggestionDetail evidence={open.evidence} meta={<p className="type-data flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{diagnosticFindingLocation(open)}</code><span>{catalog.diagnostics.toolVersion(open.toolVersion)}</span><code>{open.sourceSha.slice(0, 12)}</code></p>}>
+					<SuggestionDetail evidence={open.evidence} marker={<Reference>{open.rule}</Reference>} meta={<p className="type-data flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{diagnosticFindingLocation(open)}</code><span>{catalog.diagnostics.toolVersion(open.toolVersion)}</span><code>{open.sourceSha.slice(0, 12)}</code></p>} withoutLead>
 						{open.status === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={catalog.diagnostics.defaultIssueTitle(open.rule, open.file).slice(0, 120)} prefix="diagnostic" onPromote={(input) => onPromote(open.id, input)} /> : null}
 					</SuggestionDetail>
 				)}

@@ -2312,7 +2312,7 @@ describe('work surface', () => {
 			rule: 'no-transition-all',
 			severity: 'warning' as const,
 			file: 'webui/src/App.tsx',
-			evidence: 'Avoid animating every CSS property.',
+			evidence: 'Avoid animating every CSS property.\nAnimate transform and opacity only.',
 			line: 42,
 			toolVersion: '0.9.12',
 			sourceSha: 'a'.repeat(40),
@@ -2381,8 +2381,9 @@ describe('work surface', () => {
 		expect(html).toContain('Local history: 1 promoted, 1 dismissed');
 		expect(html).toContain('Dismissal does not mean false positive');
 		expect(html).not.toContain('Pontuação');
-		// A closed row mounts neither its evidence nor its promotion form.
-		expect(html).not.toContain('Avoid animating every CSS property.');
+		// A row names its finding in the analyzer's words and carries its rule as an id; the rest of the evidence and the promotion form only exist once the item is open.
+		expect(html).toContain('Avoid animating every CSS property.');
+		expect(html).not.toContain('Animate transform and opacity only.');
 		expect(html).not.toContain('name="diagnosticObjective"');
 
 		const panelProps = { catalog: LOCALE_CATALOG['en-US'].work, diagnostics, locale: 'en-US' as const, pending: false, onStartDiagnostic: () => {}, onCancelDiagnostic: () => {}, onDismissDiagnosticFinding: () => {}, onPromoteDiagnosticFinding: () => {} };
@@ -2390,6 +2391,7 @@ describe('work surface', () => {
 		expect(renderToStaticMarkup(<DiagnosticsPanel {...panelProps} diagnostics={emptyDiagnostics()} />)).not.toContain('data-slot="card-footer"');
 		const open = renderToStaticMarkup(<DiagnosticsPanel {...panelProps} defaultOpenId="diagnostic-1" />);
 		expect(open).toContain('Avoid animating every CSS property.');
+		expect(open).toContain('Animate transform and opacity only.');
 		expect(buttonIsEnabled(open, 'Promote')).toBe(true);
 		for (const name of ['diagnosticTitle', 'diagnosticObjective', 'diagnosticAcceptance', 'diagnosticBoundaries', 'diagnosticVerificationCommand']) expect((open.match(new RegExp(`name="${name}"`, 'g')) ?? []).length).toBe(1);
 		// What a finding became is a read-only view of the same list.

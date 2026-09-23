@@ -52,6 +52,10 @@ describe('item drawer', () => {
 		expect((html.match(/<code /g) ?? []).length).toBe(3);
 		expect(html).toContain('>setTimeout</code>');
 		expect(html).not.toContain('`');
+		// When the head of the drawer already says the lead, the body starts at the second line.
+		const body = renderToStaticMarkup(<EvidenceProse text={'Lead\nBody one.\nBody two.'} withoutLead />);
+		expect(body).not.toContain('Lead');
+		expect((body.match(/<p /g) ?? []).length).toBe(2);
 		// A blank line is nothing, not an empty paragraph.
 		expect((renderToStaticMarkup(<EvidenceProse text={'Lead\n\nBody'} />).match(/<p /g) ?? []).length).toBe(2);
 	});
