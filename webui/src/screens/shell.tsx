@@ -18,7 +18,7 @@ import { Menu } from '@base-ui/react/menu';
 import { KeyChip } from '../components/ui/key-chip.tsx';
 import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Activity01Icon, Alert02Icon, Queue01Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, ListViewIcon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, Radar01Icon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, ListViewIcon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, Radar01Icon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useCallback, useId, useState, useSyncExternalStore } from 'react';
 import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
@@ -739,21 +739,10 @@ export function ShellControls({
 	showInspectorToggle: boolean;
 	notifications: readonly NotificationItem[];
 }): React.ReactElement {
-	const [wide, setWide] = useState(
-		() => panelRuntime().localStorage?.getItem('gship-width') === 'wide',
-	);
-	const toggleWidth = (): void => {
-		const next = !wide;
-		const runtime = panelRuntime();
-		runtime.localStorage?.setItem('gship-width', next ? 'wide' : 'centered');
-		runtime.document?.documentElement.classList.toggle('gship-wide', next);
-		setWide(next);
-	};
 	/* Each of these is a glyph with no label beside it, so its name lives in a
 	 * hint, and the one that has a key shows the key there. A chip has nowhere
 	 * to sit on a 32px square. */
 	const sidebarLabel = sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand;
-	const widthLabel = wide ? catalog.widthToggle.compact : catalog.widthToggle.wide;
 	const inspectorLabel = inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand;
 	const inspectorToggle = (): React.ReactElement | null => showInspectorToggle ? (
 		<HintTooltip label={inspectorLabel} side="bottom">
@@ -799,18 +788,6 @@ export function ShellControls({
 				</div>
 				<div className="flex min-w-0 items-center justify-end gap-2">
 					<NotificationsPopover catalog={catalog.notifications} items={notifications} />
-						<HintTooltip label={widthLabel} side="bottom">
-							<Button
-								aria-label={widthLabel}
-								className="hidden 2xl:inline-flex"
-								onClick={toggleWidth}
-								size="icon"
-								type="button"
-								variant="outline"
-							>
-								<ShellIcon icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon} />
-							</Button>
-						</HintTooltip>
 					{inspectorToggle()}
 				</div>
 			</div>

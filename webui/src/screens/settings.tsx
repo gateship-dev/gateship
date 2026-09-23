@@ -1053,6 +1053,7 @@ export function InterfacePanel({
 		document?: { documentElement: { classList: { toggle: (token: string, force: boolean) => void } } };
 	};
 	const [theme, setTheme] = useState<ThemeChoice>(() => readThemeChoice(() => browser.localStorage?.getItem('gship-theme') ?? null));
+	const [width, setWidth] = useState<'centered' | 'wide'>(() => browser.localStorage?.getItem('gship-width') === 'wide' ? 'wide' : 'centered');
 	const chooseTheme = (choice: ThemeChoice): void => {
 		const dark = applyThemeChoice(choice, browser.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false, (key, value) => {
 			if (value === null) browser.localStorage?.removeItem(key);
@@ -1060,6 +1061,11 @@ export function InterfacePanel({
 		});
 		browser.document?.documentElement.classList.toggle('dark', dark);
 		setTheme(choice);
+	};
+	const chooseWidth = (choice: 'centered' | 'wide'): void => {
+		browser.localStorage?.setItem('gship-width', choice);
+		browser.document?.documentElement.classList.toggle('gship-wide', choice === 'wide');
+		setWidth(choice);
 	};
 	return (
 		<SectionCard description={catalog.interface.description} title={catalog.interface.title}>
@@ -1075,6 +1081,20 @@ export function InterfacePanel({
 					]}
 					onValueChange={(value) => chooseTheme(value as ThemeChoice)}
 					value={theme}
+				/>
+			</FormField>
+			{/* The measure the screen is read at: a preference like the other two, and the last control that was still a button in the row at the top. */}
+			<FormField htmlFor="interface-width">
+				<span className="font-medium">{catalog.interface.width}</span>
+				<SelectField
+					className="w-full sm:w-64"
+					id="interface-width"
+					items={[
+						{ value: 'centered', label: catalog.interface.widthChoices.centered },
+						{ value: 'wide', label: catalog.interface.widthChoices.wide },
+					]}
+					onValueChange={(value) => chooseWidth(value as 'centered' | 'wide')}
+					value={width}
 				/>
 			</FormField>
 			<FormField htmlFor="interface-language">

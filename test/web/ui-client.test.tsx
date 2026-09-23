@@ -4657,6 +4657,8 @@ describe('operator shell', () => {
 			// mechanism always had: no stored choice follows the operating system.
 			expect(html).toContain(catalog.themeChoices.system);
 			expect(new Set(Object.values(catalog.themeChoices)).size).toBe(3);
+			expect(html).toContain(catalog.width);
+			expect(html).toContain(catalog.widthChoices.centered);
 			expect(html).toContain(locale === 'en-US' ? 'English (US)' : 'Português (Brasil)');
 			// Nothing to save: both apply at once and are this browser's, not the service's.
 			expect(html.slice(html.indexOf(catalog.title), html.indexOf(catalog.language))).not.toContain('type="submit"');
@@ -4694,6 +4696,8 @@ describe('operator shell', () => {
 				expect(controls).not.toContain('aria-label="Português (Brasil)"');
 				expect(controls).not.toContain('aria-label="English (US)"');
 				expect(controls).not.toContain(locale === 'en-US' ? '>PT<' : '>EN<');
+				// The measure is the third preference that used to be a button here.
+				expect(controls).not.toContain(LOCALE_CATALOG[locale].settings.interface.widthChoices.wide);
 			}
 		}
 		// The screen still speaks the locale it was given; only the control moved.

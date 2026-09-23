@@ -33,8 +33,11 @@ export function KeyChip({
 	...props
 }: React.ComponentProps<'kbd'> & { surface?: keyof typeof SURFACE; reveal?: keyof typeof REVEAL }): React.ReactElement {
 	return (
+		/* The weight is declared, never inherited: a current row and a highlighted
+		 * menu row set their own text in medium, and a key that thickens with the
+		 * row reads as a different key. It is the same chip in every context. */
 		<kbd
-			className={cn('shrink-0 whitespace-nowrap rounded border px-1 font-mono text-xs leading-4', SURFACE[surface], REVEAL[reveal], className)}
+			className={cn('shrink-0 whitespace-nowrap rounded border px-1 font-mono font-normal text-xs leading-4', SURFACE[surface], REVEAL[reveal], className)}
 			data-slot="key-chip"
 			{...props}
 		/>

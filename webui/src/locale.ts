@@ -33,7 +33,6 @@ export function applyLocalePreference(
 }
 
 export interface ShellCatalog {
-	widthToggle: { wide: string; compact: string };
 	sidebarToggle: { collapse: string; expand: string };
 	inspectorToggle: { collapse: string; expand: string };
 		notifications: {
@@ -487,6 +486,8 @@ export interface SettingsCatalog {
 		theme: string;
 		themeChoices: Readonly<Record<'system' | 'light' | 'dark', string>>;
 		language: string;
+		width: string;
+		widthChoices: Readonly<Record<'centered' | 'wide', string>>;
 	};
 	title: string;
 	project: {
@@ -670,7 +671,6 @@ export const LOCALE_CATALOG = {
 			allProjectsLabel: 'All projects',
 			projectSettingsLabel: 'Project settings',
 			skipLinkLabel: 'Skip to content',
-			widthToggle: { wide: 'Wide layout', compact: 'Centered layout' },
 			sidebarToggle: { collapse: 'Collapse the sidebar', expand: 'Expand the sidebar' },
 			notifications: { label: 'Notifications', empty: 'No action is needed right now.', count: (count) => `${count} action${count === 1 ? '' : 's'} needed`, severity: { action: 'Needs action', advisory: 'Advisory' }, run: { 'waiting-user': 'Run waiting for your input', 'ready-to-ship': 'Run ready to ship', failed: 'Run failed', interrupted: 'Run interrupted' }, shipBlocked: 'Ship blocked', shipBlockedDetail: 'The ship attempt failed and needs your attention.', queueStartFailed: 'Queue failed to start the next run', queueStopped: 'Queue stopped', staleService: 'Restart the service', gitIdentity: 'Git identity is missing', workspace: 'Workspace preserved', providerWait: 'Provider waiting to retry', queueComplete: 'Queue complete', queueStartFailedDetail: 'The attempt to start the next run failed.', queueCompleteDetail: 'There is no eligible work left in the backlog.', queuePreviousDetail: 'The previous run did not finish in done.', queueActiveDetail: 'A run is still active.' },
 			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
@@ -1066,7 +1066,7 @@ export const LOCALE_CATALOG = {
 				project: 'Project',
 			},
 			globalTabs: { agents: 'Agents', operator: 'Operator', notifications: 'Notifications', updates: 'Updates' },
-			interface: { title: 'Interface', description: 'How this screen looks and which language it speaks. Both apply at once and are kept in this browser, not on the service.', theme: 'Theme', themeChoices: { system: 'Follow the system', light: 'Light', dark: 'Dark' }, language: 'Language' },
+			interface: { title: 'Interface', description: 'How this screen is set: how it looks, how wide it reads and which language it speaks. Each applies at once and is kept in this browser, not on the service.', theme: 'Theme', themeChoices: { system: 'Follow the system', light: 'Light', dark: 'Dark' }, language: 'Language', width: 'Content width', widthChoices: { centered: 'Centered', wide: 'Fill the window' } },
 			project: { title: 'Project', description: 'The process operates one local project at a time; this binding is derived from Git, not hidden configuration.', stateLabels: { ready: 'ready', checking: 'checking', attention: 'attention' }, localProject: 'Local project', repository: 'Repository', runSource: 'Run source' },
 			operator: { title: 'Operator', description: 'Human identity and timezone used as non-authoritative conversation context.', name: 'Name', namePlaceholder: 'What the orchestrator should call you', timezone: 'Timezone', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'IANA identifier. The browser suggestion is saved only when you confirm.', save: 'Save profile' },
 			providers: {
@@ -1151,7 +1151,6 @@ export const LOCALE_CATALOG = {
 			allProjectsLabel: 'Todos os projetos',
 			projectSettingsLabel: 'Ajustes',
 			skipLinkLabel: 'Pular para o conteúdo',
-			widthToggle: { wide: 'Layout largo', compact: 'Layout centralizado' },
 			sidebarToggle: { collapse: 'Recolher a barra lateral', expand: 'Expandir a barra lateral' },
 			notifications: { label: 'Notificações', empty: 'Nenhuma ação é necessária agora.', count: (count) => `${count} ${count === 1 ? 'ação necessária' : 'ações necessárias'}`, severity: { action: 'Exige ação', advisory: 'Informativo' }, run: { 'waiting-user': 'Execução aguardando sua decisão', 'ready-to-ship': 'Execução pronta para envio', failed: 'Execução com falha', interrupted: 'Execução interrompida' }, shipBlocked: 'Envio bloqueado', shipBlockedDetail: 'A tentativa de envio falhou e requer sua atenção.', queueStartFailed: 'A fila falhou ao iniciar a próxima execução', queueStopped: 'Fila interrompida', staleService: 'Reinicie o serviço', gitIdentity: 'Identidade Git ausente', workspace: 'Workspace preservado', providerWait: 'Provedor aguardando nova tentativa', queueComplete: 'Fila concluída', queueStartFailedDetail: 'A tentativa de iniciar a próxima execução falhou.', queueCompleteDetail: 'Não há trabalho elegível restante no backlog.', queuePreviousDetail: 'A execução anterior não terminou como concluída.', queueActiveDetail: 'Ainda há uma execução ativa.' },
 			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
@@ -1546,7 +1545,7 @@ export const LOCALE_CATALOG = {
 				project: 'Projeto',
 			},
 			globalTabs: { agents: 'Agentes', operator: 'Operador', notifications: 'Notificações', updates: 'Atualizações' },
-			interface: { title: 'Interface', description: 'Como esta tela se parece e em que idioma ela fala. As duas escolhas valem na hora e ficam neste navegador, não no serviço.', theme: 'Tema', themeChoices: { system: 'Acompanhar o sistema', light: 'Claro', dark: 'Escuro' }, language: 'Idioma' },
+			interface: { title: 'Interface', description: 'Como esta tela está ajustada: a aparência, a largura de leitura e o idioma. Cada escolha vale na hora e fica neste navegador, não no serviço.', theme: 'Tema', themeChoices: { system: 'Acompanhar o sistema', light: 'Claro', dark: 'Escuro' }, language: 'Idioma', width: 'Largura do conteúdo', widthChoices: { centered: 'Centralizado', wide: 'Preencher a janela' } },
 			project: { title: 'Projeto', description: 'O processo opera um projeto local por vez; este vínculo é derivado do Git, não de uma configuração oculta.', stateLabels: { ready: 'pronto', checking: 'verificando', attention: 'atenção' }, localProject: 'Projeto local', repository: 'Repositório', runSource: 'Origem das execuções' },
 			operator: { title: 'Operador', description: 'Identidade humana e fuso horário usados como contexto não autoritativo da conversa.', name: 'Nome', namePlaceholder: 'Como o orquestrador deve chamar você', timezone: 'Fuso horário', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'Identificador IANA. A sugestão do navegador só é salva quando você confirma.', save: 'Salvar perfil' },
 			providers: {
