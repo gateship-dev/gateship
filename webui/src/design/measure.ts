@@ -36,7 +36,7 @@ export interface DesignReport {
 	misalignedTables: TableEdgeFinding[];
 }
 
-type Browser = { getComputedStyle: (element: Element) => CSSStyleDeclaration };
+type Browser = { getComputedStyle: (element: Element, pseudo?: string) => CSSStyleDeclaration };
 
 function browserOf(document: Document): Browser {
 	return document.defaultView as unknown as Browser;
@@ -152,6 +152,22 @@ export function measureContrast(root: ParentNode, document: Document, minimum = 
 }
 
 /**
+ * Under a coarse pointer a small control grows an invisible 44px touch target
+ * as its absolute `::after`. The scroll width counts it, but it is a hit area,
+ * not content: the control spills only if its own content, text and children,
+ * leaves the box.
+ */
+function touchTargetOnly(element: Element, document: Document, browser: Browser, tolerance: number): boolean {
+	const after = browser.getComputedStyle(element, '::after');
+	if (after.position !== 'absolute') return false;
+	const range = document.createRange();
+	range.selectNodeContents(element);
+	const content = range.getBoundingClientRect();
+	const box = element.getBoundingClientRect();
+	return content.left >= box.left - tolerance && content.right <= box.right + tolerance;
+}
+
+/**
  * Content that spills out of its box where it can be seen. A few pixels are
  * optics, not overflow (a card's ring, a badge on a button's corner, a glyph
  * centred over a narrower slot), so only a spill past `tolerance` counts.
@@ -167,6 +183,7 @@ export function measureOverflow(root: ParentNode, document: Document, tolerance 
 		/* Only content that spills where it can be seen: a scroll container scrolls
 		 * on purpose, and `hidden`/`clip` is a decision to cut (truncation, sr-only). */
 		if (browser.getComputedStyle(element).overflowX !== 'visible') continue;
+		if (touchTargetOnly(element, document, browser, tolerance)) continue;
 		findings.push({ slot: element.getAttribute('data-slot') ?? element.tagName.toLowerCase(), clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, text: (element.textContent ?? '').trim().slice(0, 40), classes: element.getAttribute('class')?.slice(0, 80) ?? '' });
 	}
 	return findings;

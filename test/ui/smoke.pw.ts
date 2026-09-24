@@ -66,6 +66,26 @@ test.describe('@smoke Central invariants', () => {
 		expect(planted.misalignedTables.length).toBe(1);
 	});
 
+	test('on a touch screen the overflow check skips a control\'s hit area and still finds its spilling text', async ({ browser }) => {
+		const context = await browser.newContext({ viewport: { width: 390, height: 900 }, hasTouch: true, isMobile: true });
+		const page = await context.newPage();
+		await page.goto('/harness.html?frame=390&route=/overview/runs&scenario=dense&locale=en-US&theme=light');
+		await expect(page.locator('[data-slot=data-table]')).toBeVisible();
+		expect(await page.evaluate(() => (globalThis as unknown as { matchMedia: (query: string) => { matches: boolean } }).matchMedia('(pointer: coarse)').matches)).toBe(true);
+		const overflow = (): Promise<string[]> => page.evaluate(() => (globalThis as unknown as { gateshipMeasureDesign: () => { overflow: { slot: string }[] } }).gateshipMeasureDesign().overflow.map((finding) => finding.slot));
+		// Each row's 24px menu button grows a 44px touch target under a coarse pointer: a hit area, not content.
+		expect(await overflow()).toEqual([]);
+		// Planted: a label that does not fit the same button.
+		await page.evaluate(() => {
+			const browser = globalThis as unknown as { document: { querySelector: (selector: string) => { append: (node: unknown) => void } | null; createElement: (tag: string) => { textContent: string } } };
+			const label = browser.document.createElement('span');
+			label.textContent = 'a label too long';
+			browser.document.querySelector('td [data-slot=dropdown-menu-trigger]')!.append(label);
+		});
+		expect(await overflow()).toContain('dropdown-menu-trigger');
+		await context.close();
+	});
+
 	test('a column takes the width it is dragged to, stores it, pins the name while the rows scroll, and gives it back', async ({ page }) => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		// The harness keeps storage in memory for each load, so every run starts from the browser's own layout.
