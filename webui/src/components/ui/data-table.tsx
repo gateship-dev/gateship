@@ -443,7 +443,7 @@ export function DataTablePagination<TData extends RowData>({
 		</Button>
 	);
 	return (
-		<div className={cn('flex min-h-12 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2 text-sm', className)} data-slot="data-table-pagination">
+		<div className={cn('flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3 text-sm', className)} data-slot="data-table-pagination">
 			<span aria-live="polite" className="font-mono text-muted-foreground text-xs tabular-nums">{text.range(from, to, total)}</span>
 			<div className="flex flex-wrap items-center gap-x-6 gap-y-3">
 				{/* Below sm the foot keeps the range and the pager and lets the page size go: at a phone's text size its select no longer fits its box, and a phone pages rather than resizes. */}
@@ -756,11 +756,12 @@ function ColumnGrip({ label, width, onStart, onNudge, onRestore }: { label: stri
 
 
 /* The zones a frame stacks around its rows. The head and the notice close with a rule under them, the foot opens with one over it.
+ * The foot is a card's footer: the same muted band at the same 56px, so a table and the card open beside it close on one band.
  * The notice is a band of the frame itself: an alert's own border and corners inside the table's would be a card inside a card, so they go and the band keeps the alert's tint. */
 const ZONE_CLASS = {
 	'data-table-head': 'border-b',
 	'data-table-notice': 'divide-y border-b [&>[role=alert]]:rounded-none [&>[role=alert]]:border-0 [&>[role=alert]]:px-4 [&>[role=alert]]:py-3',
-	'data-table-foot': 'border-t',
+	'data-table-foot': 'border-t bg-muted',
 } as const;
 
 function DataTableZone({ slot, children }: { slot: keyof typeof ZONE_CLASS; children: React.ReactNode }): React.ReactElement | null {

@@ -107,9 +107,11 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 			/* As tall as the table beside it and never taller, so the two blocks end on one line: it adds nothing to the row's height (h-0) and fills the row the table sets (min-h-full).
 			 * Its panel scrolls what does not fit, and the actions stay the band that closes the card. */
 			<Card aria-label={name} className={cn('h-0 min-h-full outline-none *:data-[slot=card]:min-h-0', className)} data-slot="item-drawer" ref={panel} role="dialog" tabIndex={-1}>
-				<CardHeader data-slot="item-drawer-head">
-					<CardTitle className="min-w-0 break-words">{title}</CardTitle>
-					<CardAction>{close}</CardAction>
+				{/* One line, the height of the table's control row beside it, so the rule under the two heads is one line too. The full name is on hover, and on the row that is open.
+				 * No description, so one grid row; and 1px more at the foot, because the panel under it steps 1px up into the head where the table's rule sits under its row. */}
+				<CardHeader className="grid-rows-1 pb-3.25" data-slot="item-drawer-head">
+					<CardTitle className="min-w-0 truncate" title={name}>{title}</CardTitle>
+					<CardAction className="row-span-1">{close}</CardAction>
 				</CardHeader>
 				<CardPanel className="min-h-0 gap-0 p-0">
 					<div className="scroll-container min-h-0 flex-1 overflow-y-auto p-4" data-slot="item-drawer-body">{children}</div>

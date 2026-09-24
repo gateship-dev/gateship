@@ -33,4 +33,9 @@ export const OFF_GRID_SPACING: readonly DesignException[] = [
 		className: '[&_svg]:-mx-0.5',
 		reason: 'Optical: a Hugeicons glyph carries about 2px of its own air, so the ink, not the box, lines up with the button padding. No grid value does this.',
 	},
+	{
+		file: 'components/ui/item-drawer.tsx',
+		className: 'pb-3.25',
+		reason: "Border compensation: the card's panel steps 1px up into the head to share its border, so the drawer's head needs 1px more for the rule under it to sit on the pixel of the table's rule beside it.",
+	},
 ];

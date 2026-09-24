@@ -195,6 +195,8 @@ html.gship-harness-reduced-motion *::after {
 	--muted: --alpha(var(--color-black) / 4%);
 	--muted-solid: color-mix(in srgb, var(--card) 96%, var(--color-black));
 	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-black));
+	/* Secondary ink on the muted band: a step toward the main ink, so it keeps AA on the band's wash. */
+	--muted-foreground-on-muted: color-mix(in srgb, var(--muted-foreground) 88%, var(--foreground));
 	--accent: --alpha(var(--color-black) / 4%);
 	--accent-foreground: var(--color-neutral-800);
 	--destructive: oklch(0.64 0.17 27);
@@ -306,6 +308,7 @@ html.gship-harness-reduced-motion *::after {
 	/* 85%, not the light theme's 90%: on the dark theme's tinted surfaces (table
 	 * heads, select values over --input) 90% measured 4.32:1, under AA. */
 	--muted-foreground: color-mix(in srgb, var(--color-neutral-500) 85%, var(--color-white));
+	--muted-foreground-on-muted: color-mix(in srgb, var(--muted-foreground) 88%, var(--foreground));
 	--accent: --alpha(var(--color-white) / 4%);
 	--accent-foreground: var(--color-neutral-100);
 	--destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
@@ -444,6 +447,11 @@ html.gship-harness-reduced-motion *::after {
 	& :is([data-slot='card-frame'], [data-slot='stat'], [data-slot='data-table'], [data-slot='item-drawer']) {
 		margin: 0;
 	}
+}
+
+/* The table's foot is the muted band: its secondary ink (the range, the page, a note) takes the band's own step, or it falls under AA on the dark wash. */
+[data-slot='data-table-foot'] {
+	--muted-foreground: var(--muted-foreground-on-muted);
 }
 
 /* A table inside a card already sits inside a ring: it keeps its border and gives its own ring, and the ring's margin, up. */
