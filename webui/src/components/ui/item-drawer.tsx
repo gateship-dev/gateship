@@ -114,10 +114,10 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 				</Button>
 			</div>
 			{/* The body is a card's panel, and the actions close it with the card's own footer: the same band, the same stickiness at the bottom of whatever scrolls it. Below xl that is the body itself, which pads 16px, so the footer keeps to its edge instead of stepping under it. */}
-			<div className="scroll-container min-h-0 flex-1 overflow-y-auto px-4 py-4 xl:overflow-visible" data-slot="item-drawer-body">
-				{children}
-				{footer === undefined || footer === null ? null : <CardFooter className="lg:bottom-0" data-slot="item-drawer-foot" sticky>{footer}</CardFooter>}
-			</div>
+			{/* The body takes whatever the item does not use, so the actions close the drawer at its bottom edge, never in the middle with blank card under them. */}
+			<div className="scroll-container min-h-0 flex-1 overflow-y-auto px-4 py-4 xl:overflow-visible" data-slot="item-drawer-body">{children}</div>
+			{/* The card's own footer, as the drawer's last row and not inside its body: below xl only the body scrolls and the footer simply is the bottom of the drawer, flat like the drawer; above xl the page scrolls, and the footer holds the bottom of the window as a card's does, rounded like the card. */}
+			{footer === undefined || footer === null ? null : <CardFooter className="m-0 max-xl:rounded-none" data-slot="item-drawer-foot" sticky>{footer}</CardFooter>}
 		</aside>
 	);
 	const body = (globalThis as unknown as MediaRuntime).document?.body;

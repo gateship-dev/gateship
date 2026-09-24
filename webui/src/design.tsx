@@ -60,9 +60,9 @@ const TYPE_ROLES = [
 const BADGE_VARIANTS: readonly BadgeVariant[] = ['neutral', 'info', 'success', 'warning', 'error', 'merged'];
 const BUTTON_VARIANTS = ['default', 'outline', 'ghost', 'destructive'] as const;
 const CALLOUT_TONES: readonly CalloutTone[] = ['neutral', 'success', 'warning', 'destructive'];
-const ROUTES = ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const;
+const ROUTES = ['/overview', '/overview/runs', '/overview/queues', '/overview/insights', '/projects/harness-project/work?tab=diagnostics', '/projects/harness-project/work?tab=diagnostics&finding=finding-1', '/projects/harness-project/work?tab=proposals&proposal=proposal-1'] as const;
 const SCENARIOS = ['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'insights-zero', 'insights-null', 'insights-long', 'insights-cohorts', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const;
-const WIDTHS = ['390', '768', '1440'] as const;
+const WIDTHS = ['390', '768', '1000', '1440'] as const;
 const TEXT_STEPS = ['xs', 'sm', 'base', 'lg', 'xl', '2xl'] as const;
 const WEIGHTS = [['normal', 'font-normal'], ['medium', 'font-medium'], ['semibold', 'font-semibold']] as const;
 const FAMILIES = [['--font-sans', 'font-sans', 'Names, titles, labels and prose'], ['--font-heading', 'font-heading', 'Page and card titles: an alias of sans until a face is bundled'], ['--font-mono', 'font-mono', 'Identifiers, commands, timestamps, durations, costs and counters']] as const;
@@ -429,7 +429,9 @@ function Screens(): React.ReactElement {
 	const frame = useRef<HTMLIFrameElement>(null);
 	const [loaded, setLoaded] = useState(0);
 	const inspector = useContext(InspectorContext);
-	const src = `/harness.html?frame=${width}&route=${route}&scenario=${scenario}&locale=${locale}&theme=${theme}&motion=reduced`;
+	/* A route may carry the screen's own query, the open tab or item: it rides beside the harness's parameters, not inside the route's value. */
+	const [routePath, routeQuery] = route.split('?') as [string, string | undefined];
+	const src = `/harness.html?frame=${width}&route=${routePath}&scenario=${scenario}&locale=${locale}&theme=${theme}&motion=reduced${routeQuery === undefined ? '' : `&${routeQuery}`}`;
 	/* Same origin, so the inspector reads the real screen inside the frame. */
 	useEffect(() => {
 		const inner = frame.current?.contentDocument;
