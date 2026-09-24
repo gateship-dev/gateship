@@ -446,8 +446,9 @@ export function DataTablePagination<TData extends RowData>({
 		<div className={cn('flex min-h-12 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2 text-sm', className)} data-slot="data-table-pagination">
 			<span aria-live="polite" className="font-mono text-muted-foreground text-xs tabular-nums">{text.range(from, to, total)}</span>
 			<div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-				<label className="flex items-center gap-2 text-muted-foreground">
-					<span className="hidden sm:inline">{text.rowsPerPage}</span>
+				{/* Below sm the foot keeps the range and the pager and lets the page size go: at a phone's text size its select no longer fits its box, and a phone pages rather than resizes. */}
+				<label className="hidden items-center gap-2 text-muted-foreground sm:flex">
+					<span>{text.rowsPerPage}</span>
 					<Select
 						items={PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
 						value={String(pageSize)}

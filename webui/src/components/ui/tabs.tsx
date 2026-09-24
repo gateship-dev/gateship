@@ -57,7 +57,8 @@ export function TabsList({
 			<div className="scroll-container scroll-fade-x max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll" ref={scroller}>
 				<TabsPrimitive.List
 					className={cn(
-						'relative z-0 flex w-max items-center justify-start gap-x-1 rounded-lg bg-muted p-1 text-muted-foreground/72',
+						/* An inactive tab is quieter than the open one by its colour alone, never by fading the muted ink further: at 72% it measured 4.27:1 on the list's fill, under the AA floor. */
+						'relative z-0 flex w-max items-center justify-start gap-x-1 rounded-lg bg-muted p-1 text-muted-foreground',
 						className,
 					)}
 					data-slot="tabs-list"
@@ -99,8 +100,9 @@ export function TabsTab({
 }
 
 /** The count a tab carries; `attention` says it counts something waiting on the operator. */
+/* A tab's figure wears the tab's own ink, as every inline count does: a chip's muted fill on the list's muted fill measured 2.88:1. Attention keeps its family's colour. */
 export function TabsCount({ attention = false, children }: { attention?: boolean; children: React.ReactNode }): React.ReactElement {
-	return <Count tone={attention ? 'warning' : 'neutral'}>{children}</Count>;
+	return <Count form="plain" tone={attention ? 'warning' : 'neutral'}>{children}</Count>;
 }
 
 export function TabsPanel({

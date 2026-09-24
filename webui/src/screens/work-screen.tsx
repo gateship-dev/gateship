@@ -513,7 +513,7 @@ function PromoteForm({ catalog, prefix, defaultTitle, onPromote }: { catalog: Wo
 /** A run of evidence text with its code spans set apart: what is between backticks is read character by character. */
 function inlineCode(text: string): React.ReactNode[] {
 	return text.split(/(`[^`]+`)/).filter((part) => part !== '').map((part, index) => part.startsWith('`') && part.endsWith('`')
-		? <code className="rounded bg-muted px-1 font-mono text-xs" key={index}>{part.slice(1, -1)}</code>
+		? <code className="rounded bg-muted px-1 font-mono text-foreground text-xs" key={index}>{part.slice(1, -1)}</code>
 		: <React.Fragment key={index}>{part}</React.Fragment>);
 }
 

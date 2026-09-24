@@ -1,18 +1,24 @@
 import { expect, test } from '@playwright/test';
 
-const cases = [
-	['overview', '/overview', 'usual'],
-	['runs', '/overview/runs', 'dense'],
-	['queues', '/overview/queues', 'dense'],
-	['insights', '/overview/insights', 'insights-long'],
-] as const;
+type VisualCase = { name: string; route: string; scenario: string; widths: readonly number[]; query?: string; focus?: string };
 
-for (const [name, route, scenario] of cases) {
-	for (const width of [390, 1440] as const) for (const locale of ['pt-BR', 'en-US'] as const) for (const theme of ['light', 'dark'] as const) {
+const cases: readonly VisualCase[] = [
+	{ name: 'overview', route: '/overview', scenario: 'usual', widths: [390, 1440] },
+	{ name: 'runs', route: '/overview/runs', scenario: 'dense', widths: [390, 1440] },
+	{ name: 'queues', route: '/overview/queues', scenario: 'dense', widths: [390, 1440] },
+	{ name: 'insights', route: '/overview/insights', scenario: 'insights-long', widths: [390, 1440] },
+	/* A finding open in its drawer at the three shapes the drawer takes: the whole screen, a layer over the table's edge, and a column beside it in the table's ring.
+	 * The drawer sits below the fold above xl, so the picture is taken with the block in view. */
+	{ name: 'work-drawer', route: '/projects/harness-project/work', scenario: 'usual', widths: [390, 1000, 1440], query: 'tab=diagnostics&finding=finding-1', focus: '[data-slot=drawer-layout][data-open]' },
+];
+
+for (const { name, route, scenario, widths, query, focus } of cases) {
+	for (const width of widths) for (const locale of ['pt-BR', 'en-US'] as const) for (const theme of ['light', 'dark'] as const) {
 		test(`@visual ${name} ${width} ${locale} ${theme}`, async ({ page }) => {
 			await page.setViewportSize({ width, height: 900 });
-			await page.goto(`/harness.html?frame=${width}&route=${route}&scenario=${scenario}&locale=${locale}&theme=${theme}&motion=reduced`);
+			await page.goto(`/harness.html?frame=${width}&route=${route}&scenario=${scenario}&locale=${locale}&theme=${theme}&motion=reduced${query === undefined ? '' : `&${query}`}`);
 			await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
+			if (focus !== undefined) await page.locator(focus).evaluate((element) => (element as unknown as { scrollIntoView: (options: { block: string }) => void }).scrollIntoView({ block: 'start' }));
 			await page.waitForTimeout(250);
 			// A baseline of bare HTML compares equal to itself forever. The page
 			// must carry the product's stylesheet before its picture means anything.
