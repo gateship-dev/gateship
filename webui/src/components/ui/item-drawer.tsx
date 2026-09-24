@@ -7,8 +7,9 @@
 //
 // Above `xl` the drawer is a card, the one every screen already uses: the
 // second column of the layout, at the inspector width the shell reserves,
-// inside the table's own ring. It is as tall as what it holds, its actions are
-// its last row, and it scrolls with the page like any other card. Between `md`
+// inside the table's own ring. It is exactly as tall as the table, so the two
+// end on one line: its panel scrolls what does not fit and its actions are the
+// band that closes it. Between `md`
 // and `xl` it is a drawer proper, over the right edge, and below `md` it is the
 // whole screen: there its body scrolls and its actions are its bottom edge. It
 // is never modal: the list stays live, so the operator can walk it with the
@@ -38,7 +39,7 @@ type DrawerLocale = keyof typeof copy;
 
 /** The table and its drawer side by side above `xl`; the drawer alone decides where it sits below. */
 export function DrawerLayout({ open, className, children, ...props }: React.ComponentProps<'div'> & { open: boolean }): React.ReactElement {
-	/* Open beside the table, the two share one ring: the double edge is the block's, and the drawer is part of the block, not a second one. Each is as tall as its own content. */
+	/* Open beside the table, the two share one ring: the double edge is the block's, and the drawer is part of the block, not a second one. The table sets the height; the drawer fills it. */
 	// oxlint-disable-next-line shadcn/no-arbitrary-values -- the second column is the inspector width the shell declares, and only exists while the drawer is open
 	return <div className={cn('relative', open && 'xl:card-ring-group xl:grid xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)] xl:items-start xl:gap-6', className)} data-open={open ? '' : undefined} data-slot="drawer-layout" {...props}>{children}</div>;
 }
@@ -103,14 +104,16 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 	const body = (globalThis as unknown as MediaRuntime).document?.body;
 	if (beside || body === undefined) {
 		return (
-			<Card aria-label={name} className={cn('outline-none', className)} data-slot="item-drawer" ref={panel} role="dialog" tabIndex={-1}>
+			/* As tall as the table beside it and never taller, so the two blocks end on one line: it adds nothing to the row's height (h-0) and fills the row the table sets (min-h-full).
+			 * Its panel scrolls what does not fit, and the actions stay the band that closes the card. */
+			<Card aria-label={name} className={cn('h-0 min-h-full outline-none *:data-[slot=card]:min-h-0', className)} data-slot="item-drawer" ref={panel} role="dialog" tabIndex={-1}>
 				<CardHeader data-slot="item-drawer-head">
 					<CardTitle className="min-w-0 break-words">{title}</CardTitle>
 					<CardAction>{close}</CardAction>
 				</CardHeader>
-				<CardPanel data-slot="item-drawer-body">
-					{children}
-					{foot === null ? null : <CardFooter data-slot="item-drawer-foot">{foot}</CardFooter>}
+				<CardPanel className="min-h-0 gap-0 p-0">
+					<div className="scroll-container min-h-0 flex-1 overflow-y-auto p-4" data-slot="item-drawer-body">{children}</div>
+					{foot === null ? null : <CardFooter className="m-0" data-slot="item-drawer-foot">{foot}</CardFooter>}
 				</CardPanel>
 			</Card>
 		);

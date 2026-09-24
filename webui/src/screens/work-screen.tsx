@@ -501,9 +501,9 @@ function PromoteForm({ catalog, prefix, defaultTitle, onPromote }: { catalog: Wo
 			}}
 		>
 			<FormField measure="prose"><span className="font-medium">{catalog.form.title}</span><Input defaultValue={defaultTitle} name={`${prefix}Title`} required /></FormField>
-			<FormField measure="prose"><span className="font-medium">{catalog.form.objective}</span><Textarea className="min-h-24" name={`${prefix}Objective`} required /></FormField>
-			<FormField measure="prose"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name={`${prefix}Acceptance`} required /></FormField>
-			<FormField measure="prose"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name={`${prefix}Boundaries`} /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.objective}</span><Textarea name={`${prefix}Objective`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.acceptance}</span><Textarea name={`${prefix}Acceptance`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.boundaries}</span><Textarea name={`${prefix}Boundaries`} /></FormField>
 			<FormField measure="prose"><span className="font-medium">{catalog.form.verify}</span><Input mono name={`${prefix}VerificationCommand`} placeholder={catalog.form.verificationPlaceholder} required /></FormField>
 		</FormStack>
 	);
