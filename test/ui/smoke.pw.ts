@@ -22,6 +22,9 @@ async function assertResponsiveOverflow(page: Page, width: number, geometry: Vie
 }
 
 test.describe('@smoke Central invariants', () => {
+	// The harness is served by Vite's dev server, which compiles modules on each worker's first load. Run in parallel on a local container,
+	// the nine-load route walk reaches 26 to 30s against the default 30s: a limit on time, not on anything the smoke asserts.
+	test.describe.configure({ timeout: 60_000 });
 	test('navigates the real routes and keeps the viewport free of external overflow', async ({ page }) => {
 		for (const width of widths) {
 			await page.setViewportSize({ width, height: 900 });

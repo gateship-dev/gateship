@@ -31,9 +31,10 @@ describe('item drawer', () => {
 		expect(closed).not.toContain('xl:grid');
 		const open = renderToStaticMarkup(<DrawerLayout open><div>table</div><ItemDrawer footer={<button type="button">Dismiss</button>} locale="pt-BR" open title="effect-needs-cleanup" onClose={() => {}}>detail</ItemDrawer></DrawerLayout>);
 		expect(open).toContain('xl:grid');
-		const aside = open.slice(open.indexOf('<aside'), open.indexOf('>', open.indexOf('<aside')));
-		expect(aside).toContain('role="dialog"');
-		expect(aside).toContain('data-slot="item-drawer"');
+		// Beside the table it is the card every screen uses, its actions the last row of its panel.
+		const drawer = open.slice(open.lastIndexOf('<div', open.indexOf('data-slot="item-drawer"')), open.indexOf('>', open.indexOf('data-slot="item-drawer"')));
+		expect(drawer).toContain('role="dialog"');
+		expect(drawer).toContain('card-ring');
 		expect(open).toContain('aria-label="effect-needs-cleanup"');
 		expect(open).toContain('aria-label="Fechar"');
 		// Head, body, foot, in that order: the name, the item, what can be done to it.

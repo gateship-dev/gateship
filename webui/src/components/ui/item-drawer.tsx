@@ -5,17 +5,19 @@
 // that stay put while the rest scroll, does not lay out at all. The list stays
 // whole, the row stays marked, and the item opens beside it.
 //
-// Above `xl` the drawer pushes: it is the second column of the layout, the
-// inspector column the shell already reserves, and the table narrows to make
-// room. Between `md` and `xl` it overlays the right edge, and below `md` it is
-// the whole screen. It is never modal: the list stays live, so the operator
-// can walk it with the arrow keys while the drawer follows.
+// Above `xl` the drawer is a card, the one every screen already uses: the
+// second column of the layout, at the inspector width the shell reserves,
+// inside the table's own ring. It is as tall as what it holds, its actions are
+// its last row, and it scrolls with the page like any other card. Between `md`
+// and `xl` it is a drawer proper, over the right edge, and below `md` it is the
+// whole screen: there its body scrolls and its actions are its bottom edge. It
+// is never modal: the list stays live, so the operator can walk it with the
+// arrow keys while the drawer follows.
 //
-// Below `xl` it is rendered at the end of the body, not where it is written:
-// the content column masks its own edges for the scroll fade, and a fixed
-// element painted inside a masked ancestor is cut at that ancestor's edge,
-// which put the drawer's head under the app bar. Without a document (a static
-// render) it stays where it is written.
+// Over the page it is rendered at the end of the body, not where it is
+// written: the content column masks its own edges for the scroll fade, and a
+// fixed element painted inside a masked ancestor is cut at that ancestor's
+// edge, which put the drawer's head under the app bar.
 
 import { Cancel01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -25,7 +27,7 @@ import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn.ts';
 import { useQueryParam } from '../../lib/use-query-param.ts';
 import { Button } from './button.tsx';
-import { CardFooter } from './card.tsx';
+import { Card, CardAction, CardFooter, CardHeader, CardPanel, CardTitle } from './card.tsx';
 
 const copy = {
 	'en-US': { close: 'Close' },
@@ -36,9 +38,9 @@ type DrawerLocale = keyof typeof copy;
 
 /** The table and its drawer side by side above `xl`; the drawer alone decides where it sits below. */
 export function DrawerLayout({ open, className, children, ...props }: React.ComponentProps<'div'> & { open: boolean }): React.ReactElement {
-	/* Open beside the table, the two share one ring: the double edge is the block's, and the drawer is part of the block, not a second one. */
+	/* Open beside the table, the two share one ring: the double edge is the block's, and the drawer is part of the block, not a second one. Each is as tall as its own content. */
 	// oxlint-disable-next-line shadcn/no-arbitrary-values -- the second column is the inspector width the shell declares, and only exists while the drawer is open
-	return <div className={cn('relative', open && 'xl:card-ring-group xl:grid xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)] xl:items-stretch xl:gap-6', className)} data-open={open ? '' : undefined} data-slot="drawer-layout" {...props}>{children}</div>;
+	return <div className={cn('relative', open && 'xl:card-ring-group xl:grid xl:grid-cols-[minmax(0,1fr)_var(--inspector-column-width)] xl:items-start xl:gap-6', className)} data-open={open ? '' : undefined} data-slot="drawer-layout" {...props}>{children}</div>;
 }
 
 /* Tailwind's `xl`, the width at which the drawer is a column beside the table instead of a layer over it. */
@@ -74,7 +76,7 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 	children: React.ReactNode;
 	className?: string;
 }): React.ReactElement | null {
-	const panel = useRef<HTMLElement>(null);
+	const panel = useRef<HTMLDivElement>(null);
 	const opener = useRef<FocusTarget | null>(null);
 	useEffect(() => {
 		if (!open) return;
@@ -91,37 +93,40 @@ export function ItemDrawer({ open, onClose, title, label, locale = 'en-US', foot
 	}, [open, onClose]);
 	const beside = useAtLeastXl();
 	if (!open) return null;
-	const panelElement = (
-		<aside
-			aria-label={label ?? (typeof title === 'string' ? title : undefined)}
-			className={cn(
-				'fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-card outline-none md:w-96 md:border-l md:shadow-lg/10',
-				/* In the layout's column it is as tall as the table beside it, so the two blocks end on one line; the page scrolls it, and its foot holds the bottom of the window. */
-				'xl:static xl:z-auto xl:w-auto xl:rounded-2xl xl:border xl:shadow-none',
-				className,
-			)}
-			data-slot="item-drawer"
-			ref={panel}
-			role="dialog"
-			tabIndex={-1}
-		>
-			{/* Above xl the page scrolls the drawer, so the name holds the top of the window as the actions hold its bottom: whatever is in view, the item is named and can be acted on.
-			 * It rests on the column's fade the way the card's footer does at the other end: the column pads 24px and fades 16px, so the head steps 8px up into the padding and nothing readable shows above it. */}
-			<div className="flex items-start gap-2 border-b bg-card px-4 py-3 xl:sticky xl:-top-2 xl:z-10 xl:rounded-t-[calc(var(--radius-2xl)-1px)]" data-slot="item-drawer-head">
-				<h2 className="type-editorial-title min-w-0 flex-1 break-words text-sm">{title}</h2>
-				<Button aria-label={copy[locale].close} className="-my-1 -mr-2" size="icon" type="button" variant="ghost" onClick={onClose}>
-					<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={16} strokeWidth={2.25} />
-				</Button>
-			</div>
-			{/* The body is a card's panel, and the actions close it with the card's own footer: the same band, the same stickiness at the bottom of whatever scrolls it. Below xl that is the body itself, which pads 16px, so the footer keeps to its edge instead of stepping under it. */}
-			{/* The body takes whatever the item does not use, so the actions close the drawer at its bottom edge, never in the middle with blank card under them. */}
-			<div className="scroll-container min-h-0 flex-1 overflow-y-auto px-4 py-4 xl:overflow-visible" data-slot="item-drawer-body">{children}</div>
-			{/* The card's own footer, as the drawer's last row and not inside its body: below xl only the body scrolls and the footer simply is the bottom of the drawer, flat like the drawer; above xl the page scrolls, and the footer holds the bottom of the window as a card's does, rounded like the card. */}
-			{footer === undefined || footer === null ? null : <CardFooter className="m-0 max-xl:rounded-none" data-slot="item-drawer-foot" sticky>{footer}</CardFooter>}
-		</aside>
+	const name = label ?? (typeof title === 'string' ? title : undefined);
+	const close = (
+		<Button aria-label={copy[locale].close} className="-my-1 -mr-2" size="icon" type="button" variant="ghost" onClick={onClose}>
+			<HugeiconsIcon aria-hidden="true" icon={Cancel01Icon} size={16} strokeWidth={2.25} />
+		</Button>
 	);
+	const foot = footer === undefined || footer === null ? null : footer;
 	const body = (globalThis as unknown as MediaRuntime).document?.body;
-	return beside || body === undefined ? panelElement : createPortal(panelElement, body as unknown as Element);
+	if (beside || body === undefined) {
+		return (
+			<Card aria-label={name} className={cn('outline-none', className)} data-slot="item-drawer" ref={panel} role="dialog" tabIndex={-1}>
+				<CardHeader data-slot="item-drawer-head">
+					<CardTitle className="min-w-0 break-words">{title}</CardTitle>
+					<CardAction>{close}</CardAction>
+				</CardHeader>
+				<CardPanel data-slot="item-drawer-body">
+					{children}
+					{foot === null ? null : <CardFooter data-slot="item-drawer-foot">{foot}</CardFooter>}
+				</CardPanel>
+			</Card>
+		);
+	}
+	return createPortal(
+		<aside aria-label={name} className={cn('fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-card outline-none md:w-96 md:border-l md:shadow-lg/10', className)} data-slot="item-drawer" ref={panel} role="dialog" tabIndex={-1}>
+			<div className="flex items-start gap-2 border-b px-4 py-3" data-slot="item-drawer-head">
+				<h2 className="type-editorial-title min-w-0 flex-1 break-words text-base">{title}</h2>
+				{close}
+			</div>
+			{/* The body takes whatever the item does not use and scrolls alone, so the actions are the drawer's bottom edge, never in the middle with blank panel under them. */}
+			<div className="scroll-container min-h-0 flex-1 overflow-y-auto p-4" data-slot="item-drawer-body">{children}</div>
+			{foot === null ? null : <CardFooter className="m-0" data-slot="item-drawer-foot">{foot}</CardFooter>}
+		</aside>,
+		body as unknown as Element,
+	);
 }
 
 type KeyRuntime = { addEventListener?: (type: 'keydown', listener: (event: SteppingEvent) => void) => void; removeEventListener?: (type: 'keydown', listener: (event: SteppingEvent) => void) => void };
