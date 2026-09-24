@@ -7,6 +7,7 @@
 // never the component source text.
 
 import { describe, expect, test } from 'bun:test';
+import { DashboardSquare01Icon, OneSquareIcon, SquareIcon } from '@hugeicons/core-free-icons';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -14,6 +15,7 @@ import {
 	type AppProps,
 	handleOverviewShortcut,
 	handleProjectShortcut,
+	handleShellShortcut,
 	type OperatorRoute,
 	routeOf,
 } from '../../webui/src/App.tsx';
@@ -107,6 +109,7 @@ import {
 } from '../../webui/src/client.ts';
 import { InitialOperationalFailure, InitialOperationalLoading } from '../../webui/src/initial-loading.tsx';
 import { presentationPlatform, shortcutLabel } from '../../webui/src/keyboard-shortcuts.ts';
+import { applyThemeChoice, readThemeChoice, themeIsDark } from '../../webui/src/theme.ts';
 import {
 	canReturnToLiveEdge,
 	createLiveEdgeController,
@@ -155,10 +158,12 @@ import {
 	summarizeWorkflow,
 	summarizeWorkflowCohorts,
 } from '../../webui/src/run-view.ts';
-import { queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
-import { QueueEmptyState, QueueRow, queueErrorsForFilter } from '../../webui/src/screens/overview-queues-screen.tsx';
-import { queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
-import { type NotificationItem, NotificationsPopover, nextControlCenterDisclosureState, notificationItems, type PanelKeyEvent, PanelToggleGlyph, projectSwitcherTooltipText, ShellSidebar } from '../../webui/src/screens/shell.tsx';
+import { CohortRowDetail, queryFromUrl as insightsQueryFromUrl, insightUrl, normalizedCohortOffset, updatedInsightsQuery } from '../../webui/src/screens/overview-insights-screen.tsx';
+import { QueueEmptyState, QueueRow, queueErrorsForFilter, queueStatus, sortQueuesByUrgency } from '../../webui/src/screens/overview-queues-screen.tsx';
+import { formatWhen, queryFromUrl as overviewRunsQueryFromUrl } from '../../webui/src/screens/overview-runs-screen.tsx';
+import { readTab } from '../../webui/src/lib/use-tab-param.ts';
+import { DiagnosticsPanel, ProposalsPanel } from '../../webui/src/screens/work-screen.tsx';
+import { type NotificationItem, NotificationsPopover, notificationItems, type PanelKeyEvent, PanelToggleGlyph, ShellSidebar } from '../../webui/src/screens/shell.tsx';
 
 const BACKLOG = [
 	{ id: 'CAM-900', title: 'primeira issue plannable' },
@@ -452,7 +457,7 @@ describe('operational snapshot reads', () => {
 		expect(html).toContain('Operational data could not be refreshed.');
 		expect(html).toContain('Project responded with 500');
 		expect(html).toContain('Try again');
-		expect(html).toContain('Phase working');
+		expect(html).toContain('Phase Working');
 	});
 
 	test('keeps all Snapshot-dependent Work panels visible after a failed refresh', () => {
@@ -474,7 +479,7 @@ describe('operational snapshot reads', () => {
 			operationalFailures: { 'Run activity': 'Run activity responded with 500' },
 		});
 		expect(runs).toContain('Run activity is unavailable.');
-		expect(runs).toContain('Phase working');
+		expect(runs).toContain('Phase Working');
 		expect(runs).not.toContain('Runs is unavailable.');
 	});
 
@@ -485,16 +490,16 @@ describe('operational snapshot reads', () => {
 			operationalLoaded: { Runs: true },
 		});
 		expect(runs).toContain('Runs is unavailable.');
-		expect(runs).toContain('Phase working');
+		expect(runs).toContain('Phase Working');
 		expect(runs).toContain('CAM-REVEALED');
 	});
 
 	test('names a failed Snapshot at workspace notices without hiding revealed notices', () => {
-		const initial = runsPage({ operationalFailures: { Snapshot: 'Snapshot responded with 500' } });
+		const initial = runsListPage({ operationalFailures: { Snapshot: 'Snapshot responded with 500' } });
 		expect(initial).toContain('Snapshot is unavailable.');
 		expect(initial).not.toContain(NOTICES[0]?.detail ?? '');
 
-		const refresh = runsPage({
+		const refresh = runsListPage({
 			workspaceNotices: NOTICES,
 			operationalFailures: { Snapshot: 'Snapshot responded with 500' },
 			operationalLoaded: { Snapshot: true },
@@ -696,7 +701,9 @@ function renderInsightsWithLoadedOverview(locale: Locale, overview: unknown): st
 }
 
 const home = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current', overrides);
-const runsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/runs', overrides);
+/* The project's Runs route is its list; one run is inspected at its own path. No run at all falls back to the unscoped latest-run surface. */
+const runsPage = (overrides: Partial<AppProps> = {}): string => { const first = overrides.runs?.[0]; return renderAt(first === undefined ? '/runs' : `/projects/project-current/runs/${encodeURIComponent(first.id)}`, overrides); };
+const runsListPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/runs', overrides);
 const workPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/work', overrides);
 const settingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/projects/project-current/settings', overrides);
 const globalSettingsPage = (overrides: Partial<AppProps> = {}): string => renderAt('/settings', overrides);
@@ -706,7 +713,7 @@ test('a project root is Runs, keeps the explicit Runs address, and omits Convers
 		const root = renderAt('/projects/project-current', { locale });
 		const explicitRuns = renderAt('/projects/project-current/runs', { locale });
 		const settings = renderAt('/projects/project-current/settings', { locale });
-		const runsLabel = locale === 'en-US' ? 'Runs' : 'Runs';
+		const runsLabel = locale === 'en-US' ? 'Runs' : 'Execuções';
 		const conversationLabel = locale === 'en-US' ? 'Conversation' : 'Conversa';
 
 		for (const html of [root, explicitRuns]) {
@@ -715,7 +722,6 @@ test('a project root is Runs, keeps the explicit Runs address, and omits Convers
 			expect(html).toContain('href="/projects/project-current"');
 			expect(html).toContain('href="/projects/project-current/runs"');
 			expect(html).toContain('href="/projects/project-current/work"');
-			expect(html).toContain('href="/projects/project-current/settings"');
 			expect(html).not.toContain(`>${conversationLabel}</span>`);
 		}
 		expect(settings).toContain(locale === 'en-US' ? 'Cycle resolver' : 'Resolvedor do ciclo');
@@ -782,6 +788,11 @@ function openingTags(html: string): readonly string[] {
 	return [...html.matchAll(/<[a-z][a-z0-9]*(?:\s[^>]*)?>/g)].map((match) => match[0]);
 }
 
+/** An icon's own outline, as the markup draws it: what tells one glyph of the set from another. */
+function iconPath(icon: typeof SquareIcon): string {
+	return String(icon[icon.length - 1]![1]['d']);
+}
+
 /** The opening tag of the first element carrying `attribute`, with its value. */
 function elementWith(html: string, attribute: string): string {
 	const tag = openingTags(html).find((opening) => opening.includes(attribute));
@@ -794,11 +805,36 @@ function shellHeader(html: string): string {
 	return html.slice(html.indexOf('<header'), html.indexOf('</header>'));
 }
 
+/** One sidebar list alone, found by its slot and cut at its closing tag. */
+function navigationList(html: string, slot: 'global-navigation' | 'settings-navigation'): string {
+	const start = html.indexOf(`data-slot="${slot}"`);
+	if (start < 0) throw new Error(`no ${slot} list in the sidebar`);
+	return html.slice(start, html.indexOf('</ul>', start));
+}
+
+/** The project switcher trigger alone, opening tag to closing tag. */
+function switcherTrigger(html: string): string {
+	const slot = html.indexOf('data-slot="project-switcher"');
+	if (slot < 0) throw new Error('no project switcher in the sidebar');
+	return html.slice(html.lastIndexOf('<button', slot), html.indexOf('</button>', slot));
+}
+
 /** One disclosed panel alone, cut at the disclosure that carries it. */
+/** The run card's own collapsible: inside a card a disclosure is a Collapsible, never a second card. */
+function specFacts(html: string): string {
+	const start = html.indexOf('data-slot="spec-facts"');
+	if (start < 0) throw new Error('specification facts are not on the screen');
+	return html.slice(start, html.indexOf('</details>', start));
+}
+
 function panel(html: string, title: string): string {
 	const start = html.indexOf(`>${title}</h2>`);
 	if (start < 0) throw new Error(`panel ${title} is not on the screen`);
-	const end = html.indexOf('</details>', start);
+	/* A disclosure ends where it closes. A plain card has no closing tag of its own to look for, and may fold
+	 * a part of its content in a `<details>` of its own, so it runs to the next card on the page. */
+	const frame = html.lastIndexOf('data-slot="card-frame"', start);
+	const disclosure = html.lastIndexOf('<details', start) > html.lastIndexOf('<div', frame);
+	const end = disclosure ? html.indexOf('</details>', start) : html.indexOf('data-slot="card-frame"', start);
 	return html.slice(start, end < 0 ? undefined : end);
 }
 
@@ -811,6 +847,14 @@ function channelRow(html: string, label: string): string {
 	const start = html.indexOf(label);
 	if (start < 0) throw new Error(`channel row ${label} is not on the screen`);
 	return html.slice(start);
+}
+
+/** One notification channel's own block: its state is a badge beside its name, so it is read inside the block. */
+function channelBlock(html: string, channelId: 'browser' | 'ntfy' | 'resend'): string {
+	const start = html.indexOf(`data-channel="${channelId}"`);
+	if (start < 0) throw new Error(`channel ${channelId} is not on the screen`);
+	const end = html.indexOf('data-channel="', start + 1);
+	return html.slice(start, end < 0 ? undefined : end);
 }
 
 function expectContainsAll(html: string, values: readonly string[]): void {
@@ -832,7 +876,7 @@ describe('project onboarding', () => {
 			existingGuidance: 'Stop this process and start Gateship inside the clone.',
 			newTitle: 'New project',
 			newGuidance: 'Create the repository with a main branch, enter the clone and start Gateship.',
-			incompleteBadge: 'incomplete configuration',
+			incompleteBadge: 'Incomplete configuration',
 			recoveryGuidance: 'After correcting it, restart Gateship. In a container, update GATESHIP_PROJECT_DIR and recreate the service.',
 			settingsGuidance: 'Agent and subscription settings remain available under ',
 			settingsLabel: 'Settings',
@@ -847,7 +891,7 @@ describe('project onboarding', () => {
 			existingGuidance: 'Pare este processo e inicie o Gateship dentro do clone.',
 			newTitle: 'Novo projeto',
 			newGuidance: 'Crie o repositório com uma branch main, entre no clone e inicie o Gateship.',
-			incompleteBadge: 'configuração incompleta',
+			incompleteBadge: 'Configuração incompleta',
 			recoveryGuidance: 'Depois de corrigir, reinicie o Gateship. Em um contêiner, atualize GATESHIP_PROJECT_DIR e recrie o serviço.',
 			settingsGuidance: 'Os ajustes de agentes e assinaturas continuam disponíveis em ',
 			settingsLabel: 'Ajustes',
@@ -959,6 +1003,26 @@ describe('runs surface', () => {
 		expect(working).toContain('aria-current="step"');
 		expect(buttonIsEnabled(working, 'Cancel')).toBe(true);
 		expect(hasButton(working, 'Ship')).toBe(false);
+		// The stages are joined by a real line, darker where the run has been, and a narrow map names only where the run is.
+		const map = working.slice(working.indexOf('data-slot="run-stage-map"'), working.indexOf('</nav>', working.indexOf('data-slot="run-stage-map"')));
+		expect((map.match(/data-slot="stage-connector"/g) ?? []).length).toBe(7);
+		expect((map.match(/data-walked=""/g) ?? []).length).toBe(1);
+		expect(elementWith(map, 'data-slot="stage-connector"')).toContain('h-px');
+		expect(map).toContain('Stage 2 of 8 · Working');
+		expect(elementWith(map, 'data-slot="stage-caption"')).toContain('sm:hidden');
+		// A run with no stage history draws no empty map: the sentence says it, and the state stays.
+		const bare = runsPage({ runs: [runIn('failed')] });
+		const bareMap = bare.slice(bare.indexOf('data-slot="run-stage-map"'), bare.indexOf('</nav>', bare.indexOf('data-slot="run-stage-map"')));
+		expect(bareMap).toContain('Stage history is unavailable');
+		expect(bareMap).not.toContain('<ol');
+		expect(bareMap).not.toContain('data-slot="stage-connector"');
+		// What ends a run says so in the danger family; what the state asks for is the primary action and closes the row.
+		const variantOf = (html: string, label: string): string | undefined => openingTags(html).find((tag) => tag.startsWith('<button') && html.includes(`${tag}${label}<`))?.match(/data-variant="([a-z]+)"/)?.[1];
+		expect(variantOf(working, 'Cancel')).toBe('destructive');
+		const ready = runsPage({ runs: [runIn('ready-to-ship')] });
+		expect(variantOf(ready, 'Ship')).toBe('default');
+		expect(ready).toContain('>Cancel<');
+		expect(ready.indexOf('>Ship<')).toBeGreaterThan(ready.indexOf('>Cancel<'));
 
 		// The run is already shipping itself: the command is only the retry.
 		const shipping = runsPage({ runs: [runIn('shipping')] });
@@ -992,7 +1056,7 @@ describe('runs surface', () => {
 				}],
 			},
 		});
-		for (const html of [home({ runs: [run] }), runsPage({ runs: [run] })]) {
+		for (const html of [runsPage({ runs: [run] })]) {
 			expect(html).toContain('href="https://github.com/gateship-dev/gateship/pull/685"');
 			expect(html).toContain('PR #685');
 			expect(html).toContain('CI failed');
@@ -1004,19 +1068,20 @@ describe('runs surface', () => {
 		}
 	});
 
-	test('a confirmed pull request is marked merged only for a done run, in detail and history', () => {
+	test('a confirmed pull request is marked merged only for a done run, and a merged run no longer reports its CI', () => {
 		const pullRequest: NonNullable<RunView['pullRequest']> = {
 			prNumber: 692,
 			url: 'https://github.com/gateship-dev/gateship/pull/692',
 			ciStatus: 'passed',
 			failedChecks: [],
 		};
-		const current = runIn('done', { pullRequest });
-		const previous = runIn('done', { id: 'run-previous', issueId: 'CAM-899', pullRequest });
-
-		expect(runsPage({ runs: [current] })).toContain('>Merged<');
-		expect(runsPage({ runs: [current, previous] }).match(/>Merged</g)).toHaveLength(2);
-		expect(runsPage({ runs: [runIn('shipping', { pullRequest })] })).not.toContain('>Merged<');
+		const merged = runsPage({ runs: [runIn('done', { pullRequest })] });
+		expect(merged).toContain('>Merged<');
+		// Merged says the checks passed: repeating it beside the badge is noise.
+		expect(merged).not.toContain('CI passed');
+		const open = runsPage({ runs: [runIn('shipping', { pullRequest })] });
+		expect(open).not.toContain('>Merged<');
+		expect(open).toContain('CI passed');
 	});
 
 	test('a provider hold shows its cause, reset time and retry without losing the run', () => {
@@ -1112,9 +1177,9 @@ describe('runs surface', () => {
 		});
 		const html = runsPage({ locale: 'pt-BR', runs: [waitingRun] });
 
-		expect(html).toContain('Execução mais recente');
+		expect(html).toContain('>Execução<');
 		expect(html).toContain('CAM-900');
-		expect(html).toContain('>aguardando provedor<');
+		expect(html).toContain('>Aguardando provedor<');
 		expect(html).toContain('O histórico de etapas está indisponível; nenhum progresso foi inferido.');
 		expect(html).not.toContain('Fase em andamento');
 		expect(shellHeader(html)).not.toContain('Precisa de você');
@@ -1123,9 +1188,8 @@ describe('runs surface', () => {
 		expect(html).toContain('Claude five hour usage limit reached.');
 		expect(html).toContain(`dateTime="${retryAt}"`);
 		expect(html).toContain(formattedRetryAt);
-		// The cost lives in the stat row on /runs: value and label are paired
-		// by the stat, no longer one sentence.
-		expect(html).toContain(`>${formattedCost}</p>`);
+		// The cost is one of the run's facts under the stage map: a label and its value.
+		expect(html).toContain(`>${formattedCost}</span>`);
 		expect(html).toContain('Custo esperado');
 		expect(html).toContain('Rodadas de correção: 1 do executor, 2 de decisões do operador');
 		expect(html).toContain('1 indeterminada');
@@ -1144,9 +1208,10 @@ describe('runs surface', () => {
 		expect(buttonIsEnabled(ready, 'Enviar')).toBe(true);
 		expect(buttonIsEnabled(ready, 'Cancelar')).toBe(true);
 
-		const current = home({ locale: 'pt-BR', runs: [waitingRun] });
+		// The unscoped route still opens the latest run, and says so.
+		const current = renderAt('/runs', { locale: 'pt-BR', runs: [waitingRun] });
 		expect(openingTags(current).find((tag) => tag.startsWith('<main')))
-			.toContain('aria-label="Runs"');
+			.toContain('aria-label="Execuções"');
 		expect(current).toContain('Execução mais recente');
 		expect(home({ locale: 'pt-BR', runs: [runIn('working')] })).toContain('data-slot="notifications-trigger"');
 		expect(home({ locale: 'pt-BR' })).toContain('data-slot="notifications-trigger"');
@@ -1162,22 +1227,13 @@ describe('runs surface', () => {
 			hourCycle: 'h23',
 			timeZone: 'UTC',
 		});
-		const formattedPreviousAt = new Date(previousAt).toLocaleString('pt-BR', {
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit',
-			hour: '2-digit',
-			minute: '2-digit',
-			hourCycle: 'h23',
-			timeZone: 'UTC',
-		});
 		const formattedCost = new Intl.NumberFormat('pt-BR', {
 			style: 'currency',
 			currency: 'USD',
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 4,
 		}).format(0.1534);
-		const html = runsPage({
+		const authored: Partial<AppProps> = {
 			locale: 'pt-BR',
 			runs: [
 				runIn('working', {
@@ -1236,7 +1292,8 @@ describe('runs surface', () => {
 				branch: 'raw/branch/authored',
 				detail: 'second detail authored exactly',
 			}],
-		});
+		};
+		const html = runsPage(authored);
 
 		const cost = panel(html, 'Custo por função e modelo');
 		expect(html).toContain('GSHIP-AUTHORED-CURRENT');
@@ -1257,24 +1314,18 @@ describe('runs surface', () => {
 		expect(activity).toContain('error authored exactly');
 		expect(activity).toContain(formattedActivityAt);
 
-		const workspaces = panel(html, 'Workspaces preservados');
+		// What the runs left behind is a fact about the project's list, not about one run.
+		const workspaces = panel(runsListPage(authored), 'Workspaces preservados');
 		expect(workspaces).toContain('2 recursos locais precisam de inspeção.');
 		for (const raw of [
-			'dirty',
+			'Dirty',
 			'run-notice-authored',
 			'/raw/workspace/authored',
 			'detail authored exactly',
-			'orphan',
+			'Orphan',
 			'raw/branch/authored',
 			'second detail authored exactly',
 		]) expect(workspaces).toContain(raw);
-
-		const previous = panel(html, 'Execuções anteriores');
-		expect(previous).toContain('1 execução antes da mais recente, da mais nova para a mais antiga.');
-		expect(previous).toContain('GSHIP-AUTHORED-PREVIOUS');
-		expect(previous).toContain('>falhou<');
-		expect(previous).toContain(`Custo esperado: ${formattedCost}`);
-		expect(previous).toContain(formattedPreviousAt);
 	});
 
 	test('the full report and the run id are one disclosure, closed by default', () => {
@@ -1408,7 +1459,7 @@ describe('runs surface', () => {
 				}),
 			})],
 		});
-		const facts = panel(html, 'Fatos da especificação');
+		const facts = specFacts(html);
 		expect(facts).toContain('v2');
 		expect(facts).toContain('f'.repeat(64));
 		expect(facts).toContain('acceptance 2');
@@ -1446,20 +1497,20 @@ describe('runs surface', () => {
 				}),
 			})],
 		});
-		const facts = panel(html, 'Fatos da especificação');
+		const facts = specFacts(html);
 		expect(facts).toContain('teto 3, reservados 3, concluídos 2');
 		expect(facts).toContain('Parou no limite de recuperação');
 		expect(facts).toContain('a última repetiu o achado anterior');
 
 		// No recovery policy on record: the sentence names that plainly, never a
 		// fabricated ceiling.
-		const noPolicyFacts = panel(runsPage({ locale: 'pt-BR',
+		const noPolicyFacts = specFacts(runsPage({ locale: 'pt-BR',
 			runs: [runIn('done', {
 				evaluation: evaluation('revision-recovery-none', 'shipped', {
 					recovery: { policy: null, reserved: 0, finished: 0, limitReached: false, convergence: null },
 				}),
 			})],
-		}), 'Fatos da especificação');
+		}));
 		expect(noPolicyFacts).toContain('sem política de recuperação');
 		expect(noPolicyFacts).not.toContain('Parou no limite de recuperação');
 	});
@@ -1526,7 +1577,7 @@ describe('runs surface', () => {
 			cost: { reportedRunCount: 2, runCount: 3 },
 		});
 
-		const summary = panel(runsPage({ runs }), 'Workflow signals');
+		const summary = panel(runsListPage({ runs }), 'Workflow signals');
 		expect(summary).toContain('Local window of the latest 3 runs');
 		expect(summary).toContain('1 completed');
 		expect(summary).toContain('4 rounds across 2 runs');
@@ -1539,7 +1590,7 @@ describe('runs surface', () => {
 		expect(summary).toContain('$');
 		expect(summary).not.toContain('Score');
 
-		const summaryPtBr = panel(runsPage({ runs, locale: 'pt-BR' }), 'Sinais do fluxo de trabalho');
+		const summaryPtBr = panel(runsListPage({ runs, locale: 'pt-BR' }), 'Sinais do fluxo de trabalho');
 		expect(summaryPtBr).toContain('1 após continue do orquestrador');
 		expect(summaryPtBr).not.toContain('pelo orquestrador');
 	});
@@ -1562,7 +1613,8 @@ describe('runs surface', () => {
 		expect(html).toContain('Correction round:');
 		expect(html).toContain('1 from CI correction');
 
-		const summary = panel(html, 'Workflow signals');
+		const list = runsListPage({ runs });
+		const summary = panel(list, 'Workflow signals');
 		expect(summary).toContain('1 round across 1 run');
 		expect(summary).toContain('1 from CI correction');
 
@@ -1571,13 +1623,13 @@ describe('runs surface', () => {
 		expect(summarizeWorkflowCohorts(runs)[0]).toMatchObject({
 			corrections: { executor: 0, ci: 1, decision: 0, indeterminate: 0, runCount: 1 },
 		});
-		expect(panel(html, 'Replayable benchmarks')).toContain('1 round across 1 run');
+		expect(panel(list, 'Replayable benchmarks')).toContain('1 round across 1 run');
 	});
 
 	test('keeps absent provider cost explicit instead of fabricating zero', () => {
 		const runs = [runIn('done', { id: 'run-2' }), runIn('failed', { id: 'run-1' })];
 		expect(aggregateRunCosts(runs)).toEqual({ totalCostUsd: null, runCount: 2, costCoverage: 'unknown' });
-		expect(panel(runsPage({ runs }), 'Workflow signals'))
+		expect(panel(runsListPage({ runs }), 'Workflow signals'))
 			.toContain('No provider reported cost in this window.');
 	});
 
@@ -1640,8 +1692,8 @@ describe('runs surface', () => {
 			configurations: [{ provider: 'claude', runCount: 2 }],
 		});
 
-		const benchmark = panel(runsPage({ runs }), 'Replayable benchmarks');
-		expect(panelIsOpen(runsPage({ runs }), 'Replayable benchmarks')).toBe(false);
+		const benchmark = panel(runsListPage({ runs }), 'Replayable benchmarks');
+		expect(panelIsOpen(runsListPage({ runs }), 'Replayable benchmarks')).toBe(false);
 		expect(benchmark).toContain('Latest cohort');
 		expect(benchmark).toContain('Previous baseline');
 		expect(benchmark).toContain('revision-b');
@@ -1651,7 +1703,7 @@ describe('runs surface', () => {
 		expect(benchmark).toContain('claude-sonnet-5 (xhigh)');
 		expect(benchmark).toContain('There is no composite score');
 
-		expect(panel(runsPage({ runs: [runIn('done')] }), 'Replayable benchmarks'))
+		expect(panel(runsListPage({ runs: [runIn('done')] }), 'Replayable benchmarks'))
 			.toContain('predate revision tracking');
 	});
 
@@ -1698,7 +1750,7 @@ describe('runs surface', () => {
 			minimumFractionDigits: 2,
 			maximumFractionDigits: 4,
 		}).format(0.1534);
-		const html = runsPage({ locale: 'pt-BR', runs });
+		const html = runsListPage({ locale: 'pt-BR', runs });
 		const signals = panel(html, 'Sinais do fluxo de trabalho');
 		const benchmarks = panel(html, 'Benchmarks reproduzíveis');
 
@@ -1755,12 +1807,13 @@ describe('runs surface', () => {
 			payload: { output: 'linha 1\n\nlinha 3', reasoning: 'privado raiz', nested: { values: ['a', 'b'], private: 'privado aninhado' }, items: [{ raw: 'privado array', public: 'mantido' }], extreme: 'x'.repeat(240) },
 			createdAt: '2026-08-16T03:04:05.000Z',
 		};
-		for (const [locale, labels] of [['en-US', ['Show details', 'Hide details', 'Unknown event']] as const, ['pt-BR', ['Mostrar detalhes', 'Ocultar detalhes', 'Evento desconhecido']] as const]) {
+		for (const [locale, unknown] of [['en-US', 'Unknown event'], ['pt-BR', 'Evento desconhecido']] as const) {
 			const html = runsPage({ locale, runs: [runIn('working')], events: [event] });
-			expect(html).toContain(`<summary class="cursor-pointer`);
-			expect(html).toContain(labels[0]);
-			expect(html).toContain(labels[1]);
-			expect(html).toContain(labels[2]);
+			// The event line is its own disclosure: the payload opens under it, and only an event that has one can open.
+			expect((html.match(/<details [^>]*data-bare=""/g) ?? []).length).toBe(1);
+			// It is the kit's disclosure, in its row form, with the chevron every disclosure wears.
+			expect(elementWith(html, 'data-bare=""')).toContain('data-slot="collapsible"');
+			expect(html).toContain(unknown);
 			expect(html).toContain('linha 1');
 			expect(html).toContain('linha 3');
 			expect(html).toContain('&quot;values&quot;');
@@ -1797,10 +1850,10 @@ describe('runs surface', () => {
 		// from the role label, read from the event's own `responder`.
 		expect(english).toContain('Answer to the review cycle');
 		expect(english).not.toContain('Orchestrator answer to the review cycle');
-		expect(english).toContain('<span class="font-medium">Orchestrator</span>');
+		expect(english).toContain('font-medium">Orchestrator</span>');
 		expect(portuguese).toContain('Resposta ao ciclo de revisão');
 		expect(portuguese).not.toContain('Resposta do orquestrador ao ciclo de revisão');
-		expect(portuguese).toContain('<span class="font-medium">Orquestrador</span>');
+		expect(portuguese).toContain('font-medium">Orquestrador</span>');
 		for (const html of [english, portuguese]) {
 			expect(html).toContain('Keep Authored_GUIDANCE verbatim.');
 			expect(html).toContain('raw-model-v9');
@@ -1822,31 +1875,31 @@ describe('runs surface', () => {
 			payload: { questionId: 'question-1', outcome: 'continue', guidance: 'Ratify.', ...(responder === undefined ? {} : { responder }) },
 			createdAt: '2026-08-16T03:04:05.000Z',
 		});
-		const operatorSpan = '<span class="font-medium">Operator</span>';
-		const orchestratorSpan = '<span class="font-medium">Orchestrator</span>';
+		const operatorSpan = 'font-medium">Operator</span>';
+		const orchestratorSpan = 'font-medium">Orchestrator</span>';
 
 		const operator = runsPage({ runs: [runIn('review')], events: [cycleResponse('operator')] });
 		expect(operator).toContain(operatorSpan);
 		expect(operator).not.toContain(orchestratorSpan);
 
 		const agentCli = runsPage({ runs: [runIn('review')], events: [cycleResponse('agent-cli')] });
-		expect(agentCli).toContain('<span class="font-medium">Agent CLI</span>');
+		expect(agentCli).toContain('font-medium">Agent CLI</span>');
 		expect(agentCli).not.toContain(orchestratorSpan);
 		expect(agentCli).not.toContain(operatorSpan);
 
 		const legacy = runsPage({ runs: [runIn('review')], events: [cycleResponse()] });
-		expect(legacy).toContain('<span class="font-medium">Unknown origin</span>');
+		expect(legacy).toContain('font-medium">Unknown origin</span>');
 		expect(legacy).not.toContain(orchestratorSpan);
 
 		const legacyPtBr = runsPage({ locale: 'pt-BR', runs: [runIn('review')], events: [cycleResponse()] });
-		expect(legacyPtBr).toContain('<span class="font-medium">Origem desconhecida</span>');
+		expect(legacyPtBr).toContain('font-medium">Origem desconhecida</span>');
 
 		const guidanceFromAgentCli: AppProps['events'][number] = {
 			seq: 1, runId: 'run-1', kind: 'run.operator-guidance', fromState: 'waiting-user', toState: 'waiting-user',
 			payload: { text: 'Apply the approved correction.', source: 'agent-cli' }, createdAt: '2026-08-16T03:04:05.000Z',
 		};
 		const agentCliGuidance = runsPage({ runs: [runIn('waiting-user')], events: [guidanceFromAgentCli] });
-		expect(agentCliGuidance).toContain('<span class="font-medium">Agent CLI</span>');
+		expect(agentCliGuidance).toContain('font-medium">Agent CLI</span>');
 
 		const guidanceFromWeb: AppProps['events'][number] = {
 			...guidanceFromAgentCli, payload: { text: 'Ratify.', source: 'web' },
@@ -1927,7 +1980,7 @@ describe('runs surface', () => {
 	});
 
 	test('surfaces preserved workspaces without offering destructive cleanup', () => {
-		const html = runsPage({ workspaceNotices: NOTICES });
+		const html = runsListPage({ workspaceNotices: NOTICES });
 
 		expect(html).toContain('Preserved workspaces');
 		expect(html).toContain('/project/.gship/worktrees/orphan');
@@ -1935,86 +1988,54 @@ describe('runs surface', () => {
 		expect(html).not.toContain('Apagar workspace');
 	});
 
-	test('a single run has no history card to show', () => {
-		expect(runsPage({ runs: [runIn('working')] })).not.toContain('Previous runs');
+	test('an address that names a run the recent list does not carry reads it by id, and never claims the project has no runs', () => {
+		const runs = [runIn('done', { id: 'run-recent', issueId: 'CAM-950' })];
+		const loaded = { Runs: true } as AppProps['operationalLoaded'];
+		// While the run is read by its id: the page says so, and keeps the way back.
+		const reading = renderAt('/projects/project-current/runs/run-from-last-year', { runs, operationalLoaded: loaded });
+		expect(elementWith(reading, 'data-slot="run-lookup"')).toContain('data-state="loading"');
+		expect(reading).toContain('Loading the run…');
+		expect(reading).toContain('href="/projects/project-current/runs"');
+		// The service does not know it: not found, with the id it was asked for.
+		const missing = renderAt('/projects/project-current/runs/run-from-last-year', { runs, operationalLoaded: loaded, requestedRunMissing: true });
+		expect(elementWith(missing, 'data-slot="run-lookup"')).toContain('data-state="missing"');
+		expect(missing).toContain('Run not found');
+		expect(missing).toContain('run-from-last-year');
+		for (const html of [reading, missing]) { expect(html).not.toContain('No runs recorded yet'); expect(html).not.toContain('data-slot="run-stage-map"'); }
+		// Once the run arrives it is a run like any other.
+		const found = renderAt('/projects/project-current/runs/run-from-last-year', { runs: [...runs, runIn('done', { id: 'run-from-last-year', issueId: 'CAM-101' })], operationalLoaded: loaded });
+		expect(found).toContain('>CAM-101<');
+		expect(found).not.toContain('data-slot="run-lookup"');
 	});
 
-	test('previous runs are listed read-only, newest first and without the last run', () => {
-		const html = runsPage({
-			runs: [
-				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
-				runIn('done', { id: 'run-2', issueId: 'CAM-802', updatedAt: '2026-08-15T18:30:00.000Z' }),
-				runIn('failed', { id: 'run-1', issueId: 'CAM-801', updatedAt: '2026-08-14T09:05:00.000Z' }),
-			],
-		});
-		const card = panel(html, 'Previous runs');
-		const firstTimestamp = new Date('2026-08-15T18:30:00.000Z').toLocaleString('en-US', {
-			year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-			hourCycle: 'h23', timeZone: 'UTC',
-		});
-		const secondTimestamp = new Date('2026-08-14T09:05:00.000Z').toLocaleString('en-US', {
-			year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-			hourCycle: 'h23', timeZone: 'UTC',
-		});
-
-		expect(panelIsOpen(html, 'Previous runs')).toBe(false);
-		expect(card).toContain('2 runs before the latest');
-		expect(card).toContain('CAM-802');
-		expect(card).toContain(firstTimestamp);
-		expect(card).toContain('CAM-801');
-		expect(card).toContain(secondTimestamp);
-		expect(card).toContain('failed');
-		// The run the card above commands is not repeated in the history.
-		expect(card).not.toContain('CAM-803');
-		expect(card.indexOf('CAM-802')).toBeLessThan(card.indexOf('CAM-801'));
-		// Read-only: history rows carry no command and no selection.
-		expect(card).not.toContain('<button');
-		expect(card).not.toContain('aria-pressed');
-	});
-
-	// GSHIP-639: each history row carries its own expected cost so Sonnet and
-	// another choice can be compared without opening either run, labeled with
-	// the same honesty rule GSHIP-623 established -- expected cost equivalent
-	// to API usage, never an amount billed -- and a run whose CLI never
-	// reported one shows no number at all, never a fabricated zero.
-	test('each history row shows its own run cost, labeled as expected cost, or none at all', () => {
-		const html = runsPage({
-			runs: [
-				runIn('working', { id: 'run-3', issueId: 'CAM-803' }),
-				runIn('done', {
-					id: 'run-2',
-					issueId: 'CAM-802',
-					cost: { totalCostUsd: 0.1534, costCoverage: 'complete', breakdown: [], roles: [] },
-				}),
-				runIn('failed', { id: 'run-1', issueId: 'CAM-801', cost: EMPTY_RUN_COST }),
-			],
-		});
-		const card = panel(html, 'Previous runs');
-
-		const row802 = card.slice(card.indexOf('CAM-802'), card.indexOf('CAM-801'));
-		expect(row802).toContain('Expected cost');
-		expect(row802).toContain('$');
-
-		const row801 = card.slice(card.indexOf('CAM-801'));
-		expect(row801).not.toContain('Expected cost');
-	});
-
-	test('history stops at four entries however long the list is', () => {
-		const card = panel(
-			runsPage({
-				runs: Array.from({ length: 9 }, (_, index) =>
-					runIn('done', { id: `run-${index}`, issueId: `CAM-8${index}0` })),
-			}),
-			'Previous runs',
-		);
-
-		expect(card).toContain('4 runs before the latest');
-		for (const issueId of ['CAM-810', 'CAM-820', 'CAM-830', 'CAM-840']) {
-			expect(card).toContain(issueId);
-		}
-		for (const issueId of ['CAM-800', 'CAM-850', 'CAM-880']) {
-			expect(card).not.toContain(issueId);
-		}
+	test("a project's Runs is its list of runs, one run is inspected at its own path, and the unscoped route keeps the latest run", () => {
+		const runs = [runIn('interrupted', { id: 'run-a', issueId: 'CAM-900' }), runIn('done', { id: 'run-b', issueId: 'CAM-899' })];
+		// The list is the control center's table scoped by the path: no run card, no second history below it.
+		const list = runsListPage({ runs });
+		expect(list).toContain('data-slot="data-table"');
+		expect(list).toContain('data-slot="overview-runs-views"');
+		// Views, search and filters are the table's own controls: two rows of its head zone, inside its frame, before its rows. A narrow table keeps issue and state, and when is one column.
+		expect((list.match(/data-slot="data-table-toolbar"/g) ?? []).length).toBe(2);
+		const frame = list.indexOf('data-slot="data-table-surface"');
+		expect(frame).toBeGreaterThan(-1);
+		expect(frame).toBeLessThan(list.indexOf('data-slot="data-table-head"'));
+		expect(list.indexOf('data-slot="data-table-head"')).toBeLessThan(list.indexOf('data-slot="data-table-toolbar"'));
+		expect(list.lastIndexOf('data-slot="data-table-toolbar"')).toBeLessThan(list.indexOf('<thead'));
+		const heads = list.slice(list.indexOf('<thead'), list.indexOf('</thead>')).split('<th ').slice(1);
+		const hidden = (label: string): string | undefined => /hidden @(xl|3xl):table-cell/.exec(heads.find((head) => head.includes(`>${label}<`)) ?? '')?.[1];
+		expect([hidden('Issue'), hidden('State'), hidden('Delivery'), hidden('Duration'), hidden('Updated'), hidden('Run')]).toEqual([undefined, undefined, 'xl', 'xl', 'xl', '3xl']);
+		expect(heads.some((head) => head.includes('>Time<') || head.includes('>Date<'))).toBe(false);
+		expect(list).not.toContain('data-slot="run-stage-map"');
+		expect(list).not.toContain('Previous runs');
+		const detail = renderAt('/projects/project-current/runs/run-b', { runs });
+		expect(detail).toContain('data-slot="run-stage-map"');
+		expect(detail).toContain('>CAM-899<');
+		expect(detail).toContain('All runs of this project');
+		expect(detail).not.toContain('data-slot="data-table"');
+		// Where a "Gateship needs you" notification lands: the run it means, not a list to search.
+		const notified = renderAt('/runs', { runs });
+		expect(notified).toContain('>CAM-900<');
+		expect(buttonIsEnabled(notified, 'Resume')).toBe(true);
 	});
 });
 
@@ -2060,43 +2081,38 @@ describe('work surface', () => {
 			'Título autoral sem tradução',
 			'Escopo autoral sem tradução',
 			'bun test --filter autoral',
-			'Evidência proposta sem tradução.',
-			'Evidência do operador sem tradução.',
 			'regra-autoral',
 			'src/arquivo-autoral.tsx',
 			'Analyzer Factual',
 			'Descrição factual do analyzer.',
-			'GSHIP-999',
 		];
 		const cases = [
 			{
 				locale: 'en-US',
-				empty: ['Executable backlog', '2 admissible issues right now.', 'No pending findings.', '0 open and specified issues.', 'No pending proposals.', 'No resolved proposals yet.', 'New issue'],
+				empty: ['Executable backlog', '2 admissible issues right now.', 'No pending findings.', '0 open and specified issues.', 'No pending proposals.', 'New issue'],
 				actionable: [
 					'Start run', 'Gateship Diagnostics', '1 pending finding.', 'Advisory: never fixes, approves or blocks shipping.',
-					'warning', 'tool 0.9.12', 'Dismiss', 'Promote', 'regra-autoral in src/arquivo-autoral.tsx',
-					'Resolved (1)', 'Promoted', '+1,234 not shown.', 'Local history: 1 promoted, 0 dismissed, 0 that did not recur and 1 pending.',
+					'Warning', 'Dismiss', 'Severity', 'Rule', 'Location', 'Occurrences', 'Search findings',
+					'Pending 1', 'Resolved 1', 'Local history: 1 promoted, 0 dismissed, 0 that did not recur and 1 pending.',
 					'1 finding recurred in another scan.', 'Dismissal does not mean false positive', 'Review and approve',
-					'1 open and specified issue.', 'stale', 'Scope and expected outcome', 'Verification command',
+					'1 open and specified issue.', 'Stale', 'Scope and expected outcome', 'Verification command',
 					'Save revision', 'I confirm the persisted scope and verificationCommand.', 'Approve', 'Reason for abandonment',
-					'Abandon', 'Derived proposals', '1 pending proposal.', 'Title', 'Resolved proposals', 'read-only',
-					'Dismissal and promotion cannot be undone here.', 'became', 'Specify existing idea', 'Idea', 'Specify idea',
+					'Abandon', 'Proposals', 'Search proposals', 'Proposal', 'Source issue', 'Source run', 'Specify existing idea', 'Idea', 'Specify idea',
 					'New issue', 'Create issue',
 				],
 				analyzerDescription: 'Errors, security, performance and accessibility in React projects.',
 			},
 			{
 				locale: 'pt-BR',
-				empty: ['Backlog executável', '2 issues admissíveis agora.', 'Nenhum achado pendente.', '0 issues abertas e especificadas.', 'Nenhuma proposta pendente.', 'Nenhuma proposta resolvida ainda.', 'Nova issue'],
+				empty: ['Backlog executável', '2 issues admissíveis agora.', 'Nenhum achado pendente.', '0 issues abertas e especificadas.', 'Nenhuma proposta pendente.', 'Nova issue'],
 				actionable: [
 					'Iniciar execução', 'Diagnósticos do Gateship', '1 achado pendente.', 'Consultivo: nunca corrige, aprova nem bloqueia o envio.',
-					'aviso', 'ferramenta 0.9.12', 'Descartar', 'Promover', 'regra-autoral em src/arquivo-autoral.tsx',
-					'Resolvidos (1)', 'Promovido', '+1.234 não exibidos.', 'Histórico local: 1 promovidos, 0 descartados, 0 que não voltaram a ocorrer e 1 pendentes.',
+					'Aviso', 'Descartar', 'Severidade', 'Regra', 'Local', 'Ocorrências', 'Buscar achados',
+					'Pendentes 1', 'Resolvidos 1', 'Histórico local: 1 promovidos, 0 descartados, 0 que não voltaram a ocorrer e 1 pendentes.',
 					'1 achado voltou a ocorrer em outra análise.', 'Descartar não significa falso positivo', 'Revisar e aprovar',
-					'1 issue aberta e especificada.', 'desatualizada', 'Escopo e resultado esperado', 'Comando de verificação',
+					'1 issue aberta e especificada.', 'Desatualizada', 'Escopo e resultado esperado', 'Comando de verificação',
 					'Salvar revisão', 'Confirmo o escopo e o verificationCommand persistidos.', 'Aprovar', 'Motivo do abandono',
-					'Abandonar', 'Propostas derivadas', '1 proposta pendente.', 'Título', 'Propostas resolvidas', 'somente leitura',
-					'O descarte e a promoção não podem ser desfeitos aqui.', 'virou', 'Especificar ideia existente', 'Ideia', 'Especificar ideia',
+					'Abandonar', 'Propostas', 'Buscar propostas', 'Proposta', 'Issue de origem', 'Run de origem', 'Especificar ideia existente', 'Ideia', 'Especificar ideia',
 					'Nova issue', 'Criar issue',
 				],
 				analyzerDescription: 'Erros, segurança, desempenho e acessibilidade em projetos React.',
@@ -2155,16 +2171,14 @@ describe('work surface', () => {
 	test('empty Work content stays compact and offers no inert run action', () => {
 		const html = workPage({ backlog: [] });
 		const emptyBacklog = elementWith(html, 'data-state="empty"');
-		const compactStates = openingTags(html).filter((tag) => tag.includes('data-density="compact"'));
+		const emptyRows = openingTags(html).filter((tag) => tag.startsWith('<tr') && tag.includes('data-state="empty"'));
 
 		expect(emptyBacklog).toContain('data-slot="card-frame"');
 		expect(html).toContain('0 admissible issues right now.');
 		expect(hasButton(html, 'Start run')).toBe(false);
-		expect(compactStates).toHaveLength(3);
-		for (const state of compactStates) {
-			expect(state).not.toContain('min-h-24');
-			expect(state).not.toContain('p-6');
-		}
+		// The two suggestion lists say "nothing here" inside their own table, one row each, not in a padded box apiece.
+		expect(emptyRows).toHaveLength(2);
+		expect(html).not.toContain('data-density="compact"');
 	});
 
 	test('reviews specified drafts in a closed disclosure and requires persisted confirmation', () => {
@@ -2189,7 +2203,11 @@ describe('work surface', () => {
 		expect(card).toContain('Reason for abandonment');
 		expect(buttonIsEnabled(card, 'Abandon')).toBe(false);
 		expect([...card.matchAll(/data-slot="card-footer"/g)]).toHaveLength(1);
-		expect(card.lastIndexOf('data-slot="card-footer"')).toBe(card.lastIndexOf('data-slot="'));
+		// The footer closes the card: after it come only its own buttons.
+		expect(card.slice(card.lastIndexOf('data-slot="card-footer"') + 1)).not.toMatch(/data-slot="(?!button")/);
+		// What ends the draft comes first and in the danger family; approving, the primary action, closes the row.
+		const footerButtons = [...card.slice(card.lastIndexOf('data-slot="card-footer"')).matchAll(/data-variant="([a-z]+)"[^>]*>([^<]+)</g)].map((match) => `${match[2]}:${match[1]}`);
+		expect(footerButtons).toEqual(['Abandon:destructive', 'Save revision:outline', 'Approve:default']);
 		expect(card).not.toContain('fingerprint');
 		// GSHIP-629: absent from every already-filed issue, so nothing renders.
 		expect(card).not.toContain('Evidence captured when specified');
@@ -2294,7 +2312,7 @@ describe('work surface', () => {
 			rule: 'no-transition-all',
 			severity: 'warning' as const,
 			file: 'webui/src/App.tsx',
-			evidence: 'Avoid animating every CSS property.',
+			evidence: 'Avoid animating every CSS property.\nAnimate transform and opacity only.',
 			line: 42,
 			toolVersion: '0.9.12',
 			sourceSha: 'a'.repeat(40),
@@ -2353,30 +2371,37 @@ describe('work surface', () => {
 		};
 		const html = workPage({ diagnostics });
 
-		expect(panelIsOpen(html, 'Gateship Diagnostics')).toBe(false);
+		// A tab of its own: what the analyzer is and how its last scan went, then the findings as a list.
+		expect(html).toMatch(/Diagnostics<span[^>]*>1<\/span>/);
 		expect(html).toContain('Advisory: never fixes, approves or blocks shipping.');
 		expect(html).toContain('no-transition-all');
 		expect(html).toContain('webui/src/App.tsx:42');
-		expect(html).toContain('Avoid animating every CSS property.');
 		expect(buttonIsEnabled(html, 'Run now')).toBe(true);
 		expect(buttonIsEnabled(html, 'Dismiss')).toBe(true);
-		expect(buttonIsEnabled(html, 'Promote')).toBe(true);
-		expect(html).toContain('Resolved (1)');
-		expect(html).toContain('GSHIP-900');
-		expect(panel(workPage(), 'Gateship Diagnostics')).not.toContain('data-slot="card-footer"');
-		const nextPanel = html.indexOf('>Derived proposals</h2>');
-		const diagnosticsCard = html.slice(
-			html.indexOf('>Gateship Diagnostics</h2>'),
-			html.lastIndexOf('<details', nextPanel),
-		);
-		expect([...diagnosticsCard.matchAll(/data-slot="card-footer"/g)]).toHaveLength(1);
-		expect(diagnosticsCard.indexOf('data-slot="card-footer"')).toBeGreaterThan(
-			diagnosticsCard.lastIndexOf('GSHIP-900'),
-		);
-		expect(html).toContain('+3 not shown.');
 		expect(html).toContain('Local history: 1 promoted, 1 dismissed');
 		expect(html).toContain('Dismissal does not mean false positive');
 		expect(html).not.toContain('Pontuação');
+		// A row names its finding in the analyzer's words and carries its rule as an id; the rest of the evidence and the promotion form only exist once the item is open.
+		expect(html).toContain('Avoid animating every CSS property.');
+		expect(html).not.toContain('Animate transform and opacity only.');
+		expect(html).not.toContain('name="diagnosticObjective"');
+
+		const panelProps = { catalog: LOCALE_CATALOG['en-US'].work, diagnostics, locale: 'en-US' as const, pending: false, onStartDiagnostic: () => {}, onCancelDiagnostic: () => {}, onDismissDiagnosticFinding: () => {}, onPromoteDiagnosticFinding: () => {} };
+		// No analyzer, no action edge: the card never reserves an empty footer.
+		expect(renderToStaticMarkup(<DiagnosticsPanel {...panelProps} diagnostics={emptyDiagnostics()} />)).not.toContain('data-slot="card-footer"');
+		const open = renderToStaticMarkup(<DiagnosticsPanel {...panelProps} defaultOpenId="diagnostic-1" />);
+		expect(open).toContain('Avoid animating every CSS property.');
+		expect(open).toContain('Animate transform and opacity only.');
+		expect(buttonIsEnabled(open, 'Promote')).toBe(true);
+		for (const name of ['diagnosticTitle', 'diagnosticObjective', 'diagnosticAcceptance', 'diagnosticBoundaries', 'diagnosticVerificationCommand']) expect((open.match(new RegExp(`name="${name}"`, 'g')) ?? []).length).toBe(1);
+		// What a finding became is a read-only view of the same list.
+		const resolved = renderToStaticMarkup(<DiagnosticsPanel {...panelProps} defaultOpenId="diagnostic-2" defaultView="resolved" />);
+		expect(resolved).toContain('Resolved 1');
+		expect(resolved).toContain('old-rule');
+		expect(resolved).toContain('GSHIP-900');
+		expect(resolved).toContain('+3 not shown.');
+		expect(hasButton(resolved, 'Dismiss')).toBe(false);
+		expect(hasButton(resolved, 'Promote')).toBe(false);
 
 		const active = workPage({
 			diagnostics: {
@@ -2389,152 +2414,87 @@ describe('work surface', () => {
 	});
 
 	// GSHIP-613: the third card of /work, disclosed like the drafts one.
-	test('pending proposals are read as evidence and decided, never edited', () => {
-		const html = workPage({ proposals: [{
-			id: 'run-1-proposal-1',
-			title: 'Cobrir o retry do shipper',
-			evidence: 'Sem teste no caminho de erro.',
-			sourceRunId: 'run-1',
-			sourceIssueId: 'CAM-50',
-		}] });
-		const card = panel(html, 'Derived proposals');
+	const PENDING_PROPOSAL = { id: 'run-1-proposal-1', title: 'Cobrir o retry do shipper', evidence: 'Sem teste no caminho de erro.', sourceRunId: 'run-1', sourceIssueId: 'CAM-50' };
+	const PROMOTED_PROPOSAL = { id: 'run-1-proposal-2', title: 'Extrair o parser de eventos', evidence: 'Duplicado em dois adaptadores.', sourceRunId: 'run-1', sourceIssueId: 'CAM-50', status: 'promoted' as const, promotedIssueId: 'CAM-951' };
+	const DISMISSED_PROPOSAL = { id: 'run-1-proposal-3', title: 'Ideia descartada', evidence: 'Já coberto em outro lugar.', sourceRunId: 'run-1', sourceIssueId: 'CAM-50', status: 'dismissed' as const, promotedIssueId: null };
+	/* The list is interactive (a view, an open row), so its states are rendered through the panel's own defaults. */
+	const proposalsList = (overrides: Partial<React.ComponentProps<typeof ProposalsPanel>> = {}): string => renderToStaticMarkup(
+		<ProposalsPanel catalog={LOCALE_CATALOG['en-US'].work} locale="en-US" onDismissProposal={() => {}} onPromoteProposal={() => {}} pending={false} proposals={[]} resolvedProposals={[]} resolvedProposalsOmittedCount={0} {...overrides} />,
+	);
 
-		expect(card).not.toContain('open=""');
-		expect(card).toContain('1 pending proposal.');
-		expect(card).toContain('Cobrir o retry do shipper');
+	test('pending proposals are a searchable list: the evidence and the contract open under the row, never edited', () => {
+		const closed = proposalsList({ proposals: [PENDING_PROPOSAL] });
+		expect(closed).toContain('Cobrir o retry do shipper');
+		expect(closed).toContain('CAM-50');
+		expect(closed).toContain('placeholder="Search proposals"');
+		// Eighty closed rows used to mount eighty forms: a closed row carries no field at all.
+		expect(closed).not.toContain('<textarea');
+		expect(closed).not.toContain('Sem teste no caminho de erro.');
+		expect(buttonIsEnabled(closed, 'Dismiss')).toBe(true);
+
+		const open = proposalsList({ proposals: [PENDING_PROPOSAL], defaultOpenId: PENDING_PROPOSAL.id });
 		// The evidence and its provenance are printed, and no field can change them.
-		expect(card).toContain('Sem teste no caminho de erro.');
-		expect(card).toContain('CAM-50');
-		expect(card).toContain('run-1');
-		expect(card).not.toContain('name="evidence"');
+		expect(open).toContain('Sem teste no caminho de erro.');
+		expect(open).toContain('run-1');
+		expect(open).not.toContain('name="evidence"');
 		// Promotion is the operator's own contract, pre-filled with the title only.
-		expect(card).toContain('value="Cobrir o retry do shipper"');
-		expect(card).toContain('name="proposalScope"');
-		expect(card).toContain('name="proposalVerificationCommand"');
-		expect(buttonIsEnabled(card, 'Dismiss')).toBe(true);
-		expect(buttonIsEnabled(card, 'Promote')).toBe(true);
-		// Promoting files a draft: this card never approves and never starts a run.
-		expect(hasButton(card, 'Approve')).toBe(false);
-		expect(hasButton(card, 'Start run')).toBe(false);
+		expect(open).toContain('value="Cobrir o retry do shipper"');
+		// One field per name: a second one turns `namedItem` into a list whose value is empty.
+		for (const name of ['proposalTitle', 'proposalObjective', 'proposalAcceptance', 'proposalBoundaries', 'proposalVerificationCommand']) expect((open.match(new RegExp(`name="${name}"`, 'g')) ?? []).length).toBe(1);
+		expect(buttonIsEnabled(open, 'Promote')).toBe(true);
+		// Promoting files a draft: this list never approves and never starts a run.
+		expect(hasButton(open, 'Approve')).toBe(false);
+		expect(hasButton(open, 'Start run')).toBe(false);
 	});
 
-	test('an empty inbox still renders the card, and a command in flight holds both decisions', () => {
-		const empty = panel(workPage(), 'Derived proposals');
-		expect(empty).toContain('0 pending proposals.');
+	test('an empty inbox says so, and a command in flight holds both decisions', () => {
+		const empty = proposalsList();
 		expect(empty).toContain('No pending proposals.');
+		expect(empty).toContain('Pending 0');
 
-		const held = panel(
-			workPage({
-				pending: true,
-				proposals: [{
-					id: 'run-1-proposal-1',
-					title: 'Proposta pendente',
-					evidence: 'Evidência capturada.',
-					sourceRunId: 'run-1',
-					sourceIssueId: 'CAM-50',
-				}],
-			}),
-			'Derived proposals',
-		);
+		const held = proposalsList({ pending: true, proposals: [PENDING_PROPOSAL], defaultOpenId: PENDING_PROPOSAL.id });
 		expect(buttonIsEnabled(held, 'Dismiss')).toBe(false);
 		expect(buttonIsEnabled(held, 'Promote')).toBe(false);
 	});
 
 	// GSHIP-643: a settled proposal is visible, read-only, and distinguishes a
 	// promoted one -- which shows the issue it became -- from a dismissed one.
-	test('a promoted proposal is shown resolved, carrying the issue it became', () => {
-		const html = workPage({
-			resolvedProposals: [{
-				id: 'run-1-proposal-2',
-				title: 'Extrair o parser de eventos',
-				evidence: 'Duplicado em dois adaptadores.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-				status: 'promoted',
-				promotedIssueId: 'CAM-951',
-			}],
-		});
-		const card = panel(html, 'Resolved proposals');
-
-		expect(card).toContain('1 resolved proposal.');
-		expect(card).toContain('Extrair o parser de eventos');
-		expect(card).toContain('Promoted');
-		expect(card).toContain('CAM-951');
-		expect(card).not.toContain('Dismissed');
-		// It is read-only: no decision is offered here, ever.
-		expect(hasButton(card, 'Dismiss')).toBe(false);
-		expect(hasButton(card, 'Promote')).toBe(false);
-	});
-
-	test('a dismissed proposal is shown resolved, carrying no issue', () => {
-		const card = panel(workPage({
-			resolvedProposals: [{
-				id: 'run-1-proposal-3',
-				title: 'Ideia descartada',
-				evidence: 'Já coberto em outro lugar.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-				status: 'dismissed',
-				promotedIssueId: null,
-			}],
-		}), 'Resolved proposals');
-
-		expect(card).toContain('Ideia descartada');
-		expect(card).toContain('Dismissed');
-		expect(card).not.toContain('Promoted');
+	test('resolved proposals are a read-only view: a promoted one carries the issue it became, a dismissed one none', () => {
+		const resolved = proposalsList({ resolvedProposals: [PROMOTED_PROPOSAL, DISMISSED_PROPOSAL], defaultView: 'resolved', defaultOpenId: PROMOTED_PROPOSAL.id });
+		expect(resolved).toContain('Resolved 2');
+		expect(resolved).toContain('Extrair o parser de eventos');
+		expect(resolved).toContain('Promoted');
+		expect(resolved).toContain('CAM-951');
+		expect(resolved).toContain('Ideia descartada');
+		expect(resolved).toContain('Dismissed');
+		expect(resolved).toContain('Duplicado em dois adaptadores.');
+		// It is read-only: no decision is offered here, ever, not even under an open row.
+		expect(hasButton(resolved, 'Dismiss')).toBe(false);
+		expect(hasButton(resolved, 'Promote')).toBe(false);
+		expect(resolved).not.toContain('<textarea');
 	});
 
 	test('an empty or truncated resolved history renders as such, never in silence', () => {
-		const empty = panel(workPage(), 'Resolved proposals');
-		expect(empty).toContain('0 resolved proposals.');
+		const empty = proposalsList({ defaultView: 'resolved' });
 		expect(empty).toContain('No resolved proposals yet.');
 		expect(empty).not.toContain('not shown');
 
-		const truncated = panel(
-			workPage({
-				resolvedProposals: [{
-					id: 'run-1-proposal-4',
-					title: 'Mais uma ideia',
-					evidence: 'Evidência.',
-					sourceRunId: 'run-1',
-					sourceIssueId: 'CAM-50',
-					status: 'dismissed',
-					promotedIssueId: null,
-				}],
-				resolvedProposalsOmittedCount: 5,
-			}),
-			'Resolved proposals',
-		);
+		const truncated = proposalsList({ defaultView: 'resolved', resolvedProposals: [DISMISSED_PROPOSAL], resolvedProposalsOmittedCount: 5 });
 		expect(truncated).toContain('+5 resolved proposals not shown.');
 	});
 
 	test('a resolved proposal never appears in, or shrinks, the pending inbox', () => {
-		const html = workPage({
-			proposals: [{
-				id: 'run-1-proposal-1',
-				title: 'Proposta pendente',
-				evidence: 'Evidência capturada.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-			}],
-			resolvedProposals: [{
-				id: 'run-1-proposal-2',
-				title: 'Proposta promovida',
-				evidence: 'Evidência resolvida.',
-				sourceRunId: 'run-1',
-				sourceIssueId: 'CAM-50',
-				status: 'promoted',
-				promotedIssueId: 'CAM-951',
-			}],
-		});
-		const pendingCard = panel(html, 'Derived proposals');
-		expect(pendingCard).toContain('1 pending proposal.');
-		expect(pendingCard).toContain('Proposta pendente');
-		expect(pendingCard).not.toContain('Proposta promovida');
+		const both = { proposals: [PENDING_PROPOSAL], resolvedProposals: [PROMOTED_PROPOSAL] };
+		const pendingView = proposalsList(both);
+		expect(pendingView).toContain('Pending 1');
+		expect(pendingView).toContain('Cobrir o retry do shipper');
+		expect(pendingView).not.toContain('Extrair o parser de eventos');
 
-		const resolvedCard = panel(html, 'Resolved proposals');
-		expect(resolvedCard).toContain('Proposta promovida');
-		expect(resolvedCard).not.toContain('Proposta pendente');
+		const resolvedView = proposalsList({ ...both, defaultView: 'resolved' });
+		expect(resolvedView).toContain('Extrair o parser de eventos');
+		expect(resolvedView).not.toContain('Cobrir o retry do shipper');
+		// The tab counts what still waits for a decision, not what was settled.
+		expect(workPage(both)).toMatch(/Proposals<span[^>]*>1<\/span>/);
 	});
 
 	test('ideas are specified directly, without a planner, and only when there are any', () => {
@@ -2585,15 +2545,15 @@ describe('settings surface', () => {
 		const globalPortuguese = globalSettingsPage({ ...overrides, locale: 'pt-BR' });
 
 		for (const [html, labels] of [
-			[english, ['Settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief', 'open', 'close']],
-			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto', 'abrir', 'fechar']],
+			[english, ['Project settings', 'Project', 'Local agents', 'Model and effort by role', 'Automatic run chaining', 'Executor handoff between providers', 'Diagnostic schedule', 'Project brief']],
+			[portuguese, ['Ajustes', 'Projeto', 'Agentes locais', 'Modelo e esforço por função', 'Encadeamento automático de execuções', 'Transferência de executor entre provedores', 'Agenda de diagnósticos', 'Brief do projeto']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['acme/gateship', 'origin/main', 'Codex factual', 'team-plan', 'gpt-factual', 'xhigh', 'Objetivo escrito pelo operador.', 'Keep authored text.']);
 		}
 		for (const [html, labels] of [
 			[globalEnglish, ['Settings', 'Agent defaults', 'Operator', 'Gateship updates', 'Notifications', 'Save profile']],
-			[globalPortuguese, ['Ajustes', 'Padrões dos agentes', 'Operador', 'Atualizações do Gateship', 'Notificações', 'Salvar perfil']],
+			[globalPortuguese, ['Configurações', 'Padrões dos agentes', 'Operador', 'Atualizações do Gateship', 'Notificações', 'Salvar perfil']],
 		] as const) {
 			expectContainsAll(html, labels);
 			expectContainsAll(html, ['Eduardo', 'America/Sao_Paulo']);
@@ -2607,8 +2567,8 @@ describe('settings surface', () => {
 		const observed = new Date('2026-08-20T09:05:00.000Z');
 		expect(english).toContain(observed.toLocaleString('en-US', { dateStyle: 'short', timeStyle: 'short' }));
 		expect(portuguese).toContain(observed.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }));
-		expect(globalEnglish).toContain('ntfy: configured');
-		expect(globalPortuguese).toContain('ntfy: configurado');
+		expect(channelBlock(globalEnglish, 'ntfy')).toContain('>Configured<');
+		expect(channelBlock(globalPortuguese, 'ntfy')).toContain('>Configurado<');
 		expect(buttonIsEnabled(globalEnglish, 'Send test')).toBe(true);
 		expect(buttonIsEnabled(globalPortuguese, 'Enviar teste')).toBe(true);
 		expect(portuguese).not.toContain('Settings');
@@ -2631,6 +2591,45 @@ describe('settings surface', () => {
 		expect(buttonIsEnabled(globalSettingsPage({ pending: true }), 'Save profile')).toBe(false);
 	});
 
+	test('models are a grid, role by model and effort: the column names a field once, and each field keeps its own label', () => {
+		// The column names what a field is, once; each field is still named by its row and its column.
+		const models = panel(settingsPage(), 'Model and effort by role');
+		expect((models.match(/data-slot="model-provider"/g) ?? []).length).toBe(2);
+		expect((models.match(/data-slot="model-columns"/g) ?? []).length).toBe(2);
+		expect((models.match(/data-slot="model-slot"/g) ?? []).length).toBe(6);
+		// Every field keeps a real label naming its row and its column; the visible part of it is the column alone.
+		for (const provider of ['claude', 'codex']) for (const role of ['orchestrator', 'executor', 'reviewer']) for (const field of ['model', 'effort']) {
+			expect(models).toContain(`for="${provider}-${role}-${field}"`);
+			expect((models.match(new RegExp(`name="${provider}-${role}-${field}"`, 'g')) ?? []).length).toBe(1);
+		}
+		expect(models).toContain('<span class="sr-only">Executor — model</span>');
+	});
+
+	test('project settings are plain sections: a block per provider, and a save bar that stays in reach', () => {
+		const html = settingsPage({
+			providers: [
+				{ id: 'claude', installed: true, subscription: true, label: 'Claude Code', plan: 'max', login: 'dedicated' },
+				{ id: 'codex', installed: true, subscription: false, label: 'Codex', login: 'web' },
+			],
+		});
+		// A section that is always there is a card: nothing to fold, so no disclosure and no chevron.
+		for (const title of ['Local agents', 'Model and effort by role', 'Project brief']) {
+			const frame = html.lastIndexOf('data-slot="card-frame"', html.indexOf(`>${title}</h2>`));
+			expect(html.slice(html.lastIndexOf('<', frame)).startsWith('<div')).toBe(true);
+		}
+		const models = panel(html, 'Model and effort by role');
+		// One block per provider. How to sign in is folded once the provider is connected, open while it still needs it.
+		const providers = panel(html, 'Local agents');
+		expect((providers.match(/data-slot="provider-block"/g) ?? []).length).toBe(2);
+		const codex = providers.slice(providers.indexOf('data-provider="codex"'));
+		expect(codex).toContain('How to sign in');
+		expect(codex.slice(codex.indexOf('data-slot="collapsible"') - 200, codex.indexOf('data-slot="collapsible"') + 200)).toContain('open=""');
+		expect(providers.slice(0, providers.indexOf('data-provider="codex"'))).not.toContain('data-slot="collapsible"');
+		// The brief runs to screens of text, so its action edge is sticky; the short forms keep theirs at rest.
+		expect(panel(html, 'Project brief')).toContain('data-sticky=""');
+		expect(models).not.toContain('data-sticky');
+	});
+
 	test('shows subscription state without any credential field', () => {
 		const html = settingsPage({
 			providers: [
@@ -2642,7 +2641,7 @@ describe('settings surface', () => {
 
 		expect(providers).toContain('Claude Code');
 		expect(providers).toContain('Subscription connected · max');
-		expect(providers).toContain('in use');
+		expect(providers).toContain('In use');
 		expect(buttonIsEnabled(providers, 'Connect ChatGPT')).toBe(true);
 		expect(providers).toContain('Platform billing');
 		expect(providers).not.toContain('name="api-key"');
@@ -2660,7 +2659,7 @@ describe('settings surface', () => {
 		});
 		const providers = panel(html, 'Local agents');
 
-		expect(providers).toContain('external login');
+		expect(providers).toContain('External login');
 		expect(providers).toContain('claude setup-token');
 		expect(providers).toContain('name="claude-credential-token"');
 		expect(providers).toContain('type="password"');
@@ -3015,11 +3014,8 @@ describe('settings surface', () => {
 		const granted = globalSettingsPage({ notificationPermission: 'granted' });
 		expect(granted).toContain('Active in this browser.');
 		expect(buttonIsEnabled(granted, 'Notifications active')).toBe(false);
-		const localNotificationRow = granted.slice(
-			granted.indexOf('Active in this browser.'),
-			granted.indexOf('ntfy:'),
-		);
-		expect(localNotificationRow).not.toContain('type="password"');
+		expect(channelBlock(granted, 'browser')).toContain('Active in this browser.');
+		expect(channelBlock(granted, 'browser')).not.toContain('type="password"');
 		expect(globalSettingsPage({ notificationPermission: 'denied' })).toContain('Notifications blocked');
 	});
 
@@ -3028,7 +3024,9 @@ describe('settings surface', () => {
 	// which the read-only `configured` boolean makes structurally impossible.
 	test('the ntfy channel shows its configured state, a test action, and setup instructions, never a secret', () => {
 		const unconfigured = panel(globalSettingsPage(), 'Notifications');
-		expect(unconfigured).toContain('ntfy: not configured');
+		expect(channelBlock(unconfigured, 'ntfy')).toContain('>Not configured<');
+		// Setup is reference: open while the channel still needs it, folded once it works.
+		expect(channelBlock(unconfigured, 'ntfy')).toMatch(/<details[^>]*open=""/);
 		expect(buttonIsEnabled(unconfigured, 'Send test')).toBe(false);
 		expect(unconfigured).toContain('GATESHIP_HOME/.gship/ntfy-url');
 		expect(unconfigured).not.toContain('at the project root');
@@ -3049,7 +3047,8 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(configured).toContain('ntfy: configured');
+		expect(channelBlock(configured, 'ntfy')).toContain('>Configured<');
+		expect(channelBlock(configured, 'ntfy')).not.toMatch(/<details[^>]*open=""/);
 		expect(buttonIsEnabled(configured, 'Send test')).toBe(true);
 	});
 
@@ -3068,7 +3067,9 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(partial).toContain('email (Resend): not configured (missing: API key, recipient)');
+		expect(channelBlock(partial, 'resend')).toContain('email (Resend)');
+		expect(channelBlock(partial, 'resend')).toContain('>Not configured<');
+		expect(channelBlock(partial, 'resend')).toContain(' (missing: API key, recipient)');
 		expect(buttonIsEnabled(channelRow(partial, 'email (Resend)'), 'Send test')).toBe(false);
 		expect(partial).toContain('GATESHIP_HOME/.gship/resend-api-key');
 		expect(partial).not.toContain('to .gship/resend-api-key');
@@ -3107,7 +3108,7 @@ describe('settings surface', () => {
 			}),
 			'Notifications',
 		);
-		expect(configured).toContain('email (Resend): configured');
+		expect(channelBlock(configured, 'resend')).toContain('>Configured<');
 		expect(configured).not.toContain('falta:');
 		expect(buttonIsEnabled(channelRow(configured, 'email (Resend)'), 'Send test')).toBe(true);
 		expect(configured).not.toContain('resend-secret');
@@ -3297,15 +3298,15 @@ describe('settings surface', () => {
 		const providerSettings = panel(override, 'Local agents');
 		expect(providerSettings).toContain('Customized for this project.');
 		expect(buttonIsEnabled(override, 'Reset provider to global default')).toBe(true);
-		expect(providerSettings.lastIndexOf('data-slot="card-footer"')).toBe(
-			providerSettings.lastIndexOf('data-slot="'),
-		);
+		expect(providerSettings.slice(providerSettings.lastIndexOf('data-slot="card-footer"') + 1)).not.toMatch(/data-slot="(?!button")/);
 		const modelSettings = panel(override, 'Model and effort by role');
 		expect(modelSettings).toContain('Customized for this project.');
 		expect(buttonIsEnabled(override, 'Reset models to global defaults')).toBe(true);
 		const footer = modelSettings.slice(modelSettings.indexOf('data-slot="card-footer"'));
 		expect(footer).toContain('>Save models</button>');
 		expect(footer).toContain('>Reset models to global defaults</button>');
+		// The primary action closes the footer.
+		expect(footer.indexOf('>Save models<')).toBeGreaterThan(footer.indexOf('>Reset models to global defaults<'));
 	});
 
 	test('an empty brief remains editable', () => {
@@ -3320,22 +3321,24 @@ describe('settings surface', () => {
 	test('the chain switch is off by default and shows no pause reason', () => {
 		const chainRuns = panel(settingsPage(), 'Automatic run chaining');
 
-		expect(chainRuns).not.toContain('checked=""');
+		// It acts the moment it is flipped, so it is a switch and not a form's checkbox.
+		expect(chainRuns).toContain('role="switch"');
+		expect(chainRuns).toContain('aria-checked="false"');
 		expect(chainRuns).not.toContain('Queue stopped');
 	});
 
 	test('the chain switch reflects the stored setting and is held while a command is in flight', () => {
 		const on = panel(settingsPage({ chainRuns: { enabled: true, pause: null } }), 'Automatic run chaining');
-		expect(on).toContain('checked=""');
+		expect(on).toContain('aria-checked="true"');
 
-		const checkbox = elementWith(settingsPage({ pending: true }), 'type="checkbox"');
-		expect(checkbox).toContain('disabled=""');
+		const held = elementWith(panel(settingsPage({ pending: true }), 'Automatic run chaining'), 'role="switch"');
+		expect(held).toContain('aria-disabled="true"');
 	});
 
 	// GSHIP-722: off by default, same as chain runs.
 	test('the executor handoff switch is off by default', () => {
 		const executorHandoff = panel(settingsPage(), 'Executor handoff between providers');
-		expect(executorHandoff).not.toContain('checked=""');
+		expect(executorHandoff).toContain('aria-checked="false"');
 	});
 
 	test('the executor handoff switch reflects the stored setting', () => {
@@ -3343,7 +3346,7 @@ describe('settings surface', () => {
 			settingsPage({ executorHandoff: { enabled: true } }),
 			'Executor handoff between providers',
 		);
-		expect(on).toContain('checked=""');
+		expect(on).toContain('aria-checked="true"');
 	});
 
 	test('native self update is off by default with one fixed daily policy', () => {
@@ -3354,7 +3357,7 @@ describe('settings surface', () => {
 				currentVersion: '1.0.0',
 			},
 		}), 'Gateship updates');
-		expect(updates).not.toContain('checked=""');
+		expect(updates).toContain('aria-checked="false"');
 		expect(updates).toContain('Fixed cadence: daily');
 		expect(updates).not.toMatch(/weekly|cron/i);
 	});
@@ -3376,7 +3379,7 @@ describe('settings surface', () => {
 		}), 'Gateship updates');
 		expect(elementWith(updates, 'type="checkbox"')).toContain('disabled=""');
 		expect(updates).toContain('A host must replace this container.');
-		expect(updates).toContain('rollback');
+		expect(updates).toContain('Rollback');
 		expect(updates).toContain('1.0.0 → 2.0.0');
 	});
 
@@ -3497,6 +3500,21 @@ function factualSmallCohort() {
 	};
 }
 
+/* A closed cohort row is one line: a short label in the cell, the whole sentence for whoever asks, the grouped figures under the row. */
+function assertCohortRowFolds(locale: 'en-US' | 'pt-BR', smallHtml: string, smallCohort: ReturnType<typeof factualSmallCohort>): void {
+	const catalog = LOCALE_CATALOG[locale].overviewInsights;
+	expect(smallHtml).toContain(`>${catalog.cohortSmallSample}</span>`);
+	expect(smallHtml).toContain(`title="${catalog.cohortEvidenceInsufficient}"`);
+	// A cohort opens beside the table, never under its row: the row is the trigger, and nothing of the detail is inline until one is open.
+	expect(smallHtml).toContain('data-slot="drawer-layout"');
+	expect(smallHtml).not.toContain('data-slot="item-drawer"');
+	expect(smallHtml).toContain('cursor-pointer');
+	expect(smallHtml).not.toContain(locale === 'en-US' ? 'Show details' : 'Mostrar detalhes');
+	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
+	const detail = renderToStaticMarkup(<CohortRowDetail catalog={catalog} cohort={smallCohort as never} />);
+	for (const label of [catalog.corrections, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.cycleQuestions, catalog.executor, catalog.reconciliations, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(detail).toContain(label);
+}
+
 function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: ReturnType<typeof factualSmallCohort>): void {
 	const catalog = LOCALE_CATALOG[locale].overviewInsights;
 	const smallHtml = renderInsightsWithLoadedOverview(locale, factualCohortOverview([smallCohort]));
@@ -3509,18 +3527,39 @@ function assertFactualCohortContent(locale: 'en-US' | 'pt-BR', smallCohort: Retu
 	expect(smallHtml).toContain(LOCALE_CATALOG[locale].shell.routeLabels.overviewInsights);
 	expect(smallHtml).toContain('revision…');
 	expect(smallHtml).not.toContain('revision-1234567890abcdef');
-	expect(smallHtml).toContain('v2');
-	expect(smallHtml).toContain(`3 (${catalog.cohortEvidenceInsufficient})`);
-	expect(smallHtml).toContain(catalog.cohortEvidenceInsufficient);
-	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled, catalog.verification, catalog.review, catalog.fullVerify, catalog.ci, catalog.executor, catalog.unchanged, catalog.adapted, catalog.contractChangeRequired]) expect(smallHtml).toContain(label);
-	for (const pair of ['2/3', '1/3', '0/3']) expect(smallHtml).toContain(pair);
+	// The cohort is read by four columns. Single figures are one menu away; the
+	// figures that come in groups open under the row, so a closed row is one line.
+	for (const label of [catalog.shipped, catalog.failed, catalog.cancelled]) expect(smallHtml).toContain(label);
+	for (const hidden of [catalog.specVersion, catalog.cycleQuestions, catalog.reconciliations, catalog.attentionRequests, catalog.unchanged, catalog.contractChangeRequired, catalog.verification]) expect(smallHtml).not.toContain(hidden);
+	assertCohortRowFolds(locale, smallHtml, smallCohort);
+	// A remembered choice of columns brings every fact back.
+	const storage = globalThis as unknown as { localStorage?: { getItem: (key: string) => string | null; setItem: () => void } };
+	const previous = storage.localStorage;
+	storage.localStorage = { getItem: () => JSON.stringify({ columnVisibility: {} }), setItem: () => {} };
+	try {
+		const everyColumn = renderInsightsWithLoadedOverview(locale, factualCohortOverview([smallCohort]));
+		expect(everyColumn).toContain('v2');
+		for (const label of [catalog.specVersion, catalog.attentionRequests, catalog.cohortOperatorInterventions, catalog.cohortProviderHolds]) expect(everyColumn).toContain(label);
+	} finally { storage.localStorage = previous; }
 	expect(sufficientHtml).toContain('>5</td>');
 	expect(sufficientHtml).not.toContain(catalog.cohortEvidenceInsufficient);
 	expect(comparable).toContain(locale === 'en-US' ? 'Cohort A' : 'Coorte A');
 	expect(comparable).toContain(locale === 'en-US' ? 'commands' : 'comandos');
 	expect(comparable).toContain(locale === 'en-US' ? 'corrections' : 'correções');
 	expect(comparable).toContain('—');
+	// One chosen pair, never every combination: a third comparable cohort adds an option, not a block.
+	expect(comparable).toContain(locale === 'en-US' ? 'Cohort B' : 'Coorte B');
+	expect(comparable).toContain('5/5 → 7/5');
+	expect((comparable.match(/data-slot="cohort-detail"/g) ?? []).length).toBe(1);
 	expect(incompatible).not.toContain(locale === 'en-US' ? 'Cohort A' : 'Coorte A');
+	// A cohort's timing is read where the cohort is chosen, not printed under every row.
+	const distributionOf = (median: number) => ({ median, p90: median * 2, known: 3, denominator: 3 });
+	const timed = { ...smallCohort, timing: { wallTimeMs: distributionOf(600_000), waits: { provider: distributionOf(60_000), user: distributionOf(120_000) }, phases: { working: distributionOf(300_000) }, corrections: {} } };
+	const timedHtml = renderInsightsWithLoadedOverview(locale, factualCohortOverview([timed, { ...timed, workflowRevision: 'revision-second' }]));
+	expect((timedHtml.match(/data-slot="cohort-facts"/g) ?? []).length).toBe(1);
+	expect(timedHtml).toContain(locale === 'en-US' ? 'Wall time' : 'Tempo total');
+	expect(timedHtml).toContain(`${locale === 'en-US' ? 'median' : 'mediana'} 10m · p90 20m · 3/3`);
+	expect(timedHtml).toContain(catalog.cohortEvidenceInsufficient);
 }
 
 function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: ReturnType<typeof factualSmallCohort>): void {
@@ -3531,12 +3570,19 @@ function assertFactualCohortPagination(locale: 'en-US' | 'pt-BR', smallCohort: R
 	const onePage = renderInsightsWithLoadedOverview(locale, factualCohortOverview(pagedCohorts.slice(0, 1), { limit: 10, offset: 0, returned: 1, total: 1 }));
 	expect(firstPage).toContain(catalog.cohortPage(1, 2, 3));
 	expect(lastPage).toContain(catalog.cohortPage(3, 3, 3));
-	expect(onePage).toContain(catalog.cohortPage(1, 1, 1));
-	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(2);
+	// One cohort on one page is not a pager's job: the table that fits the smallest page shows no footer.
+	expect(onePage).not.toContain(catalog.cohortPage(1, 1, 1));
+	expect(onePage).not.toContain('data-slot="data-table-pagination"');
+	// One table of cohorts: its Workflow head names itself in its text, in its sort menu's label, and in its width grip's label.
+	expect((firstPage.match(new RegExp(catalog.workflowRevision, 'g')) ?? []).length).toBe(3);
+	expect(firstPage).toContain(`aria-label="${locale === 'en-US' ? 'Resize' : 'Redimensionar'} ${catalog.workflowRevision}"`);
 	expect(firstPage).toContain(`aria-label="${catalog.cohorts}"`);
 	expect(firstPage).toContain(`aria-label="${locale === 'en-US' ? 'Previous page' : 'Página anterior'}"`);
 	expect(lastPage).toContain(`aria-label="${locale === 'en-US' ? 'Next page' : 'Próxima página'}"`);
-	expect(onePage.match(/disabled=""/g)?.length).toBe(4);
+	// At the ends, the way further is disabled rather than gone.
+	const disabledOn = (html: string, label: string): boolean => openingTags(html).some((tag) => tag.startsWith('<button') && tag.includes(`aria-label="${label}"`) && tag.includes('disabled=""'));
+	expect(disabledOn(firstPage, locale === 'en-US' ? 'Previous page' : 'Página anterior')).toBe(true);
+	expect(disabledOn(lastPage, locale === 'en-US' ? 'Next page' : 'Próxima página')).toBe(true);
 }
 
 test('distingue os quatro resultados do gráfico por padrões não cromáticos em ambos os locales', () => {
@@ -3672,7 +3718,9 @@ describe('operator shell', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderInsightsWithLoadedOverview(locale, factualCohortOverview([cohort, missing]));
 			expect(html).toContain(locale === 'en-US' ? 'Latest terminal run' : 'Última run terminal');
-		expect(html).toContain(locale === 'en-US' ? 'Sep 1, 2026' : 'set. de 2026');
+			// The same compact moment every table uses; the machine-readable value keeps the whole instant.
+			expect(html).toContain('dateTime="2026-09-01T15:30:00.000Z"');
+			expect(html).toMatch(locale === 'en-US' ? /09\/01(\/2026)? 15:30/ : /01\/09(\/2026)? 15:30/);
 			expect(html).toContain('—');
 		}
 	});
@@ -3693,6 +3741,30 @@ describe('operator shell', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			assertFactualCohortContent(locale, smallCohort);
 			assertFactualCohortPagination(locale, smallCohort);
+		}
+	});
+	test('Insights scopes by window alone, leads with three groups and keeps providers out until one was observed', () => {
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			const catalog = LOCALE_CATALOG[locale].overviewInsights;
+			const result = factualCohortOverview([]) as { overview: Record<string, unknown> };
+			Object.assign(result.overview, { shippedWithoutIntervention: 1, firstReviewPasses: 2, firstReviewPassKnownRuns: 3 });
+			const html = renderInsightsWithLoadedOverview(locale, result);
+			// The sidebar switcher is the project filter: the window is the only control here.
+			expect(html).not.toContain('<select');
+			for (const label of [catalog.last7d, catalog.last30d, catalog.all]) expect(html).toContain(`aria-label="${label}"`);
+			expect((html.match(/data-slot="insights-group"/g) ?? []).length).toBe(3);
+			// Shipped of all runs, and shipped without intervention of the shipped.
+			expect(html).toContain('>2/3</p>');
+			expect(html).toContain('>1/2</p>');
+			// `firstReviewPasses` is a share of the runs whose first review is known, under its own name.
+			expect(html).toMatch(new RegExp(`${catalog.firstReviewPasses}</dt><dd[^>]*>2/3<`));
+			expect(html).not.toContain(catalog.configurations);
+			expect(html).not.toContain(`>${catalog.providers}<`);
+			const observed = factualCohortOverview([]) as { overview: Record<string, unknown> };
+			observed.overview.configurations = [{ provider: 'claude', role: 'executor', model: 'claude-sonnet-5' }];
+			const withProviders = renderInsightsWithLoadedOverview(locale, observed);
+			expect(withProviders).toContain(`>${catalog.providers}<`);
+			expect(withProviders).toContain('claude / executor / claude-sonnet-5');
 		}
 	});
 	test('formata tokens de Análises conforme o locale e preserva dado ausente', () => {
@@ -3731,10 +3803,9 @@ describe('operator shell', () => {
 	test('queue empty states distinguish no projects, an unknown filter and an unavailable filtered project in both locales', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const catalog = LOCALE_CATALOG[locale].overview.queues;
+			// The sidebar switcher is the project filter: this surface carries no second one.
 			const surface = renderAt('/overview/queues', { locale, projects: [CURRENT_PROJECT] });
-			expect(surface).toContain('data-slot="select-trigger"');
-			expect(surface).toContain(catalog.allProjects);
-			expect(surface).toContain(CURRENT_PROJECT.name);
+			expect(surface).not.toContain('data-slot="select-trigger"');
 			expect(surface).not.toContain('<select');
 			const empty = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter={undefined} locale={locale} projectCount={0} queues={[]} />);
 			const unknownFilter = renderToStaticMarkup(<QueueEmptyState catalog={catalog} errors={[]} filter="missing" locale={locale} projectCount={1} queues={[]} />);
@@ -3745,24 +3816,47 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('queue filtering keeps only the selected alert and queue details retain dl semantics', () => {
+	test('queue filtering keeps only the selected alert, and a queue says what it is doing with its ordered work in view', () => {
 		const errors = [
 			{ projectId: 'project-1', projectName: 'One', code: 'project-unavailable', message: 'Project queue is unavailable.' },
 			{ projectId: 'project-2', projectName: 'Two', code: 'project-unavailable', message: 'Project queue is unavailable.' },
 		] as const;
 		expect(queueErrorsForFilter([...errors], 'project-2').map((error) => error.projectId)).toEqual(['project-2']);
 		expect(queueErrorsForFilter([...errors], undefined)).toHaveLength(2);
-		const queue = { project: { id: 'project-1', name: 'One' }, readiness: 'ready', chainEnabled: true, pause: null, currentRun: null, currentIssue: null, plannedIssues: [], nextIssue: null, lastDelivery: { state: 'unavailable' } } as never;
-		const html = renderToStaticMarkup(<QueueRow catalog={LOCALE_CATALOG['en-US'].overview.queues} locale="en-US" queue={queue} />);
-		expect((html.match(/>One</g) ?? []).length).toBe(1);
-		expect(html).toContain('<dl');
-		expect(html).toContain('<dt');
-		expect(html).toContain('<dd');
-		expect(html).toContain('Delivery history unavailable.');
-		expect(html).not.toContain('No delivery yet');
-		expect(html).not.toContain('open=""');
-		const planned = { ...(queue as Record<string, unknown>), plannedIssues: [{ id: 'GSHIP-856', title: 'Preserve queue expansion' }] } as never;
-		expect(renderToStaticMarkup(<QueueRow catalog={LOCALE_CATALOG['en-US'].overview.queues} locale="en-US" queue={planned} />)).toContain('open=""');
+		const catalog = LOCALE_CATALOG['en-US'].overview.queues;
+		const queue = { project: { id: 'project-1', name: 'One' }, readiness: 'ready', chainEnabled: true, pause: null, currentRun: null, currentIssue: null, plannedIssues: [], nextIssue: null, lastDelivery: { state: 'unavailable' } };
+		const empty = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={queue as never} />);
+		expect((empty.match(/>One</g) ?? []).length).toBe(1);
+		expect(empty).toContain('data-status="empty"');
+		expect(empty).toContain('href="/projects/project-1/work"');
+		expect(empty).toContain('<dl');
+		expect(empty).toContain('Delivery history unavailable.');
+		expect(empty).not.toContain('No delivery yet');
+		expect(empty).not.toContain('<ol');
+		// The title is the row, not an aside for screen readers, and nothing hides the sequence.
+		const planned = { ...queue, plannedIssues: [{ id: 'GSHIP-856', title: 'Preserve queue order' }, { id: 'GSHIP-857', title: 'Second' }], nextIssue: { id: 'GSHIP-856', title: 'Preserve queue order' } };
+		const ready = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={planned as never} />);
+		expect(ready).toContain('data-status="ready"');
+		expect(ready).toContain('>Preserve queue order</span>');
+		expect(ready).toContain(`>${catalog.next}<`);
+		expect(ready).toContain('2 queued');
+		expect(ready).not.toContain('<details');
+		// What stops a queue is said where the queue is named; only what needs the operator is marked for them.
+		const paused = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...planned, pause: { reason: 'previous-run-not-done', createdAt: '2026-09-10T12:00:00.000Z' } } as never} />);
+		expect(paused).toContain('data-status="paused"');
+		expect(paused).toContain('the previous run is not done · will resume automatically');
+		const off = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...planned, chainEnabled: false, pause: { reason: 'chain-disabled', createdAt: '2026-09-10T12:00:00.000Z' } } as never} />);
+		expect(off).toContain('data-status="needs-you"');
+		expect(off).toContain('href="/projects/project-1/settings"');
+		expect(off).not.toContain('will resume automatically');
+		// An issue can be running and no longer planned (blocked or respecified after it started): it still leads the list.
+		const unplanned = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...planned, currentIssue: { id: 'GSHIP-850', title: 'Running outside the plan' }, currentRun: { id: 'run-1', issueId: 'GSHIP-850', state: 'review', createdAt: '', updatedAt: '', providerId: 'claude' }, nextIssue: null } as never} />);
+		expect(unplanned).toContain('data-status="running"');
+		expect(unplanned.indexOf('Running outside the plan')).toBeLessThan(unplanned.indexOf('Preserve queue order'));
+		expect((unplanned.match(/<li /g) ?? []).length).toBe(3);
+		const done = renderToStaticMarkup(<QueueRow catalog={catalog} locale="en-US" queue={{ ...queue, pause: { reason: 'no-admissible-issue', createdAt: '2026-09-10T12:00:00.000Z' } } as never} />);
+		expect(done).toContain('data-status="empty"');
+		expect(sortQueuesByUrgency([queue, planned, { ...planned, chainEnabled: false, pause: { reason: 'chain-disabled', createdAt: '' } }] as never).map((entry) => queueStatus(entry))).toEqual(['needs-you', 'ready', 'empty']);
 	});
 	test('known internal destinations use history across surfaces and projects', () => {
 		const base = {
@@ -3870,7 +3964,8 @@ describe('operator shell', () => {
 		});
 
 		expect(html).toContain('>other-product</span>');
-		expect(html).toContain('CAM-NEW');
+		// The project's Runs is its list, which reads its own rows: the surface is there, the boundary is gone.
+		expect(html).toContain('data-slot="data-table"');
 		expect(html).not.toContain('Loading operational data…');
 	});
 
@@ -3902,8 +3997,8 @@ describe('operator shell', () => {
 
 	test('overview renders four metrics and compact project collections without management forms', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, label: 'Overview', current: 'served by this instance', readiness: 'Readiness' },
-			{ locale: 'pt-BR' as const, label: 'Visão geral', current: 'servido por esta instância', readiness: 'Prontidão' },
+			{ locale: 'en-US' as const, label: 'Now', current: 'Served by this instance', readiness: 'Readiness' },
+			{ locale: 'pt-BR' as const, label: 'Agora', current: 'Servido por esta instância', readiness: 'Prontidão' },
 		]) {
 			const html = renderAt('/overview', { locale: expected.locale, projects: [CURRENT_PROJECT, OTHER_PROJECT] });
 			expect(html).toContain(`aria-label="${expected.label}"`);
@@ -3920,42 +4015,33 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('control center keeps four localized destinations in the sidebar group', () => {
-		for (const [locale, labels] of [['en-US', ['Control center', 'Overview', 'Runs', 'Queues', 'Insights']], ['pt-BR', ['Central de controle', 'Visão geral', 'Execuções', 'Filas', 'Análises']]] as const) {
+	test('navigation keeps four localized destinations in one flat list on every control center route', () => {
+		for (const [locale, labels] of [['en-US', ['Now', 'Runs', 'Queue', 'Insights']], ['pt-BR', ['Agora', 'Execuções', 'Fila', 'Análises']]] as const) {
 			for (const route of ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const) {
-				const html = renderAt(route, { locale });
-				for (const label of labels) expect(html).toContain(`>${label}</span>`);
-				expect(html).not.toContain('border-b-2');
+				const list = navigationList(renderAt(route, { locale }), 'global-navigation');
+				const links = openingTags(list).filter((tag) => tag.startsWith('<a'));
+				expect([...list.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1])).toEqual([...labels]);
+				expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/overview', '/overview/runs', '/overview/queues', '/overview/insights']);
+				expect(links.filter((tag) => tag.includes('aria-current="page"'))).toEqual([links.find((tag) => tag.includes(`href="${route}"`))!]);
+				expect(list).not.toContain('data-slot="navigation-count"');
 			}
 		}
 	});
 
-	test('control center disclosure stays open for desktop click and keyboard activation, and toggles on mobile', () => {
-		for (const interaction of ['click', 'keyboard'] as const) {
-			expect(nextControlCenterDisclosureState(false, true), interaction).toBe(true);
-			expect(nextControlCenterDisclosureState(true, true), interaction).toBe(true);
-		}
-		expect(nextControlCenterDisclosureState(true, false)).toBe(false);
-		expect(nextControlCenterDisclosureState(false, false)).toBe(true);
+	test('navigation identifies Runs as current on the control center Runs route in both sidebar modes', () => {
 		for (const open of [true, false]) {
-			const html = renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />);
-			expect(html).toContain('aria-expanded="true"');
-			expect(html).toContain('data-slot="control-center-subnavigation"');
+			const everyProject = renderToStaticMarkup(
+				<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={null} staleService={null} version="" workspaceNotices={[]} />,
+			);
+			const filtered = renderToStaticMarkup(
+				<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />,
+			);
+			for (const [html, href] of [[everyProject, '/overview/runs'], [filtered, '/projects/project-current/runs']] as const) {
+				const current = openingTags(navigationList(html, 'global-navigation')).filter((tag) => tag.includes('aria-current="page"'));
+				expect(current).toHaveLength(1);
+				expect(current[0]).toContain(`href="${href}"`);
+			}
 		}
-	});
-
-	test('global navigation identifies Control center as current throughout its Runs route', () => {
-		const html = renderAt('/overview/runs');
-		const sidebarStart = html.indexOf('<nav aria-label="Navigation"');
-		const sidebar = html.slice(sidebarStart, html.indexOf('</nav>', sidebarStart));
-		const sidebarRuns = openingTags(sidebar).find((tag) => tag.includes('href="/overview/runs"'));
-		expect(sidebarRuns).toContain('aria-current="page"');
-
-		const rail = renderToStaticMarkup(
-			<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={false} projects={[CURRENT_PROJECT]} route="/overview/runs" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={[]} />,
-		);
-		const railRuns = openingTags(rail).find((tag) => tag.includes('href="/overview/runs"'));
-		expect(railRuns).toContain('aria-current="page"');
 	});
 
 	test('overview localizes delivered runs and keeps non-delivery explicit', () => {
@@ -3983,8 +4069,8 @@ describe('operator shell', () => {
 					}],
 				},
 			});
-			expect(html).toContain('servido por esta instância');
-			expect(html).toContain('enviada');
+			expect(html).toContain('Servido por esta instância');
+			expect(html).toContain('Enviada');
 			expect(html).not.toContain('falhou');
 			expect(html).not.toContain('cancelada');
 			expect(html).not.toContain('incompleta');
@@ -4012,12 +4098,42 @@ describe('operator shell', () => {
 		});
 		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
 		const noActive = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, history)]) });
-		expect(noActive).toContain('No active or blocked work.');
+		// One list: an idle project says so in its own row, with no second block above the table.
+		expect(noActive).toContain('No active run');
+		expect(noActive).not.toContain('data-tone="attention"');
+		expect((noActive.match(/data-slot="data-table"/g) ?? []).length).toBe(1);
 			const active = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry({ id: 'run-active', issueId: 'CAM-900', state: 'working', providerId: 'claude', createdAt: '', updatedAt: '' }, history)]) });
 		expect(active).toContain('>1</p>');
 		const unavailable = renderAt('/overview', { projects: [CURRENT_PROJECT], overview: aggregate([entry(null, null)]) });
 		expect(unavailable).toContain('>0</p>');
 		expect(unavailable).not.toContain('Some project data is unavailable.');
+	});
+
+	test('overview lists projects by urgency, says which wait on the operator without a rule on the row, and links each figure to its list', () => {
+		const history = { window: '7d' as const, totalRuns: 0, runsWithKnownCost: 0, knownCostUsd: null, runsByOutcome: { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 }, activeRuns: 0, daily: [], configurations: [] };
+		const entry = (project: typeof CURRENT_PROJECT, activeRun: NonNullable<AppProps['overview']>['projects'][number]['activeRun']) => ({
+			project, root: { state: 'available' as const }, backlog: { state: 'available' as const, counts: { idea: 0, specified: 0, planned: 1 } },
+			database: { state: 'available' as const, path: '/state/runtime.sqlite' }, overview: { overview: history }, activeRun, latestRun: null, latestRunOutcome: null, recentRuns: [],
+		});
+		const run = (id: string, state: string) => ({ id, issueId: id.toUpperCase(), state, providerId: 'claude', createdAt: '', updatedAt: '' }) as NonNullable<NonNullable<AppProps['overview']>['projects'][number]['activeRun']>;
+		const idle = { ...OTHER_PROJECT, id: 'project-idle', name: 'idle-product' };
+		const working = { ...OTHER_PROJECT, id: 'project-working', name: 'working-product' };
+		const waiting = { ...OTHER_PROJECT, id: 'project-waiting', name: 'waiting-product' };
+		const projects = [entry(idle, null), entry(working, run('run-working', 'working')), entry(waiting, run('run-waiting', 'waiting-user'))];
+		const html = renderAt('/overview', { projects: [idle, working, waiting], overview: {
+			window: '7d', overview: history, projects,
+			summary: { totalProjects: 3, readyProjects: 3, unavailableProjects: 0, nonTerminalRuns: 2, backlog: { idea: 0, specified: 0, planned: 3 } },
+		} });
+		const rows = html.slice(html.indexOf('data-slot="data-table"')).split('<tr').slice(2);
+		expect(rows.map((row) => row.match(/(waiting|working|idle)-product/)?.[0])).toEqual(['waiting-product', 'working-product', 'idle-product']);
+		// The acid rule sits on the row that waits on the operator and on no other.
+		// What waits on the operator is said by order and by its state badge. No rule on the row's edge, no acid.
+		expect(rows[0]).toContain('>Waiting for you<');
+		expect(html).not.toContain('shadow-attention-rule');
+		expect(html).not.toMatch(/(bg|text|border)-attention/);
+		expect(rows[0]).toContain('href="/projects/project-waiting/runs/run-waiting"');
+		expect(html).toContain('data-tone="attention"');
+		for (const href of ['/overview/runs', '/overview/queues', '/overview/runs?group=shipped&amp;period=7d']) expect(html).toMatch(new RegExp(`<a [^>]*data-slot="stat"[^>]*href="${href.replace('?', '\\?')}"`));
 	});
 
 	test('overview uses the active run provider instead of historical configuration', () => {
@@ -4056,9 +4172,9 @@ describe('operator shell', () => {
 
 	test('overview localizes active run states in pt-BR', () => {
 		const states = [
-			['working', 'em andamento'],
-			['waiting-user', 'aguardando você'],
-			['interrupted', 'interrompida'],
+			['working', 'Em andamento'],
+			['waiting-user', 'Aguardando você'],
+			['interrupted', 'Interrompida'],
 		] as const;
 		for (const [state, label] of states) {
 			const history = {
@@ -4125,7 +4241,7 @@ describe('operator shell', () => {
 		});
 		// The stat renders label first, value under it; the pairing is the
 		// claim, not the type classes.
-		expect(html).toMatch(/>Deliveries, last 7 days<\/p><p[^>]*>0<\/p>/s);
+		expect(html).toMatch(/>Deliveries, 7 days<\/p><p[^>]*>0<\/p>/s);
 	});
 
 	test('overview keeps the activity count without rendering a decorative line chart', () => {
@@ -4167,10 +4283,38 @@ describe('operator shell', () => {
 
 		expect(html).toMatch(/>Active runs<\/p><p[^>]*>1<\/p>/s);
 		expect(html).toMatch(/>Approved issues<\/p><p[^>]*>2<\/p>/s);
-		expect(html).toMatch(/>Deliveries, last 7 days<\/p><p[^>]*>2<\/p>/s);
-		expect(html).toContain('overview-active-work');
+		expect(html).toMatch(/>Deliveries, 7 days<\/p><p[^>]*>2<\/p>/s);
+		expect(html).toContain('overview-project-status');
 		expect(html).not.toContain('<polyline');
 		expect(html).not.toContain('preserveAspectRatio="none"');
+	});
+
+	test('the projects page lists the registered projects, and the guided path opens on demand or on an empty registry', () => {
+		const html = renderAt('/projects', { projects: [CURRENT_PROJECT, OTHER_PROJECT] });
+		const table = html.slice(html.indexOf('id="registered-projects"'));
+		// What the page is named for: each project, where it lives, whether it can run, and the way to its settings.
+		expect(table).toContain('href="/projects/project-current"');
+		expect(table).toContain('href="/projects/project-other/settings"');
+		expect(table).toContain('Served by this instance');
+		expect((table.match(/<tr /g) ?? []).length).toBe(3);
+		expect(buttonIsEnabled(html, 'Add project')).toBe(true);
+		// With projects registered the guided path waits for the button.
+		expect(html).not.toContain('What are you setting up?');
+		// A registry with nothing in it has nothing to list, so the way to add the first one is already open.
+		const empty = renderAt('/projects', { projects: [] });
+		expect(empty).toContain('No project registered yet.');
+		expect(empty).toContain('What are you setting up?');
+	});
+
+	test('global settings are four tabs, one question each', () => {
+		for (const [locale, labels] of [['en-US', ['Agents', 'Operator', 'Notifications', 'Updates']], ['pt-BR', ['Agentes', 'Operador', 'Notificações', 'Atualizações']]] as const) {
+			const html = globalSettingsPage({ locale });
+			const tabs = openingTags(html).filter((tag) => tag.includes('role="tab"'));
+			expect(tabs).toHaveLength(4);
+			for (const label of labels) expect(html).toContain(`>${label}</`);
+			// Panels stay mounted behind their tabs, so static rendering and find-in-page keep seeing every section.
+			expect((html.match(/data-slot="notification-channel"/g) ?? []).length).toBe(3);
+		}
 	});
 
 	test('project management offers registering an existing checkout by absolute path in both locales', () => {
@@ -4305,12 +4449,18 @@ describe('operator shell', () => {
 	});
 
 	test('a ready non-current project has Runs and project-scoped settings', () => {
-		const runs = renderAt('/projects/project-other', {
+		// The project opens on its list of runs; a run is commanded at its own path.
+		const list = renderAt('/projects/project-other', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			runs: [runIn('interrupted')],
 		});
-		expect(openingTags(runs).find((tag) => tag.startsWith('<main')))
+		expect(openingTags(list).find((tag) => tag.startsWith('<main')))
 			.toContain('aria-label="Runs"');
+		expect(list).toContain('data-slot="data-table"');
+		const runs = renderAt('/projects/project-other/runs/run-1', {
+			projects: [CURRENT_PROJECT, OTHER_PROJECT],
+			runs: [runIn('interrupted')],
+		});
 		expect(runs).toContain('CAM-900');
 		expect(buttonIsEnabled(runs, 'Resume')).toBe(true);
 		expect(runs).toContain('/projects/project-other/runs');
@@ -4408,7 +4558,7 @@ describe('operator shell', () => {
 	});
 
 	test('runs is operational for a ready non-current project and commands it', () => {
-		const html = renderAt('/projects/project-other/runs', {
+		const html = renderAt('/projects/project-other/runs/run-1', {
 			projects: [CURRENT_PROJECT, OTHER_PROJECT],
 			runs: [runIn('interrupted')],
 			workspaceNotices: NOTICES,
@@ -4450,10 +4600,9 @@ describe('operator shell', () => {
 		// Diagnostics and proposal data are both scoped to this selected project.
 		expect(html).toContain('Gateship Diagnostics');
 		expect(html).toContain('regra-autoral');
-		expect(html).toContain('Derived proposals');
-		expect(html).toContain('Resolved proposals');
+		expect(html).toContain('Search proposals');
+		expect(html).toContain('Resolved 1');
 		expect(html).toContain('proposta do boot');
-		expect(html).toContain('+3 resolved proposals not shown.');
 	});
 
 	test('the current project keeps the same work panels and their behaviour', () => {
@@ -4471,10 +4620,9 @@ describe('operator shell', () => {
 		expect(html).toContain('New issue');
 		expect(html).toContain('Gateship Diagnostics');
 		expect(html).toContain('regra-autoral');
-		expect(html).toContain('Derived proposals');
+		expect(html).toContain('Search proposals');
 		expect(html).toContain('proposta do boot');
-		expect(html).toContain('Resolved proposals');
-		expect(html).toContain('+3 resolved proposals not shown.');
+		expect(html).toContain('Resolved 1');
 	});
 
 	test('a not-ready non-current project keeps the unavailable surface on runs and work', () => {
@@ -4509,29 +4657,64 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('the persistent language control offers the other locale on every surface', () => {
-		// The control is a single button in the shell's top-right row: its
-		// face and label name the locale it switches TO.
+	test('the interface card holds the theme and the language, and the theme offers the system it always followed', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
-			for (const route of SURFACE_PATHS) {
-				const html = renderAt(route, { locale });
+			const html = globalSettingsPage({ locale });
+			const catalog = LOCALE_CATALOG[locale].settings.interface;
 
-				expect(html).toContain('id="gateship-locale"');
-				expect(html).toContain(
-					`aria-label="${locale === 'en-US' ? 'Português (Brasil)' : 'English (US)'}"`,
-				);
-				expect(html).toContain(locale === 'en-US' ? '>PT<' : '>EN<');
-			}
+			expect(html).toContain(catalog.title);
+			expect(html).toContain(catalog.theme);
+			expect(html).toContain(catalog.language);
+			// The trigger shows what is chosen; the list of choices is a portal that
+			// only exists once it opens. Three states, because three is what the
+			// mechanism always had: no stored choice follows the operating system.
+			expect(html).toContain(catalog.themeChoices.system);
+			expect(new Set(Object.values(catalog.themeChoices)).size).toBe(3);
+			expect(html).toContain(catalog.width);
+			expect(html).toContain(catalog.widthChoices.centered);
+			expect(html).toContain(locale === 'en-US' ? 'English (US)' : 'Português (Brasil)');
+			// Nothing to save: both apply at once and are this browser's, not the service's.
+			expect(html.slice(html.indexOf(catalog.title), html.indexOf(catalog.language))).not.toContain('type="submit"');
 		}
 	});
 
-	test('the language control remains available while onboarding blocks the route surface', () => {
-		const project: ProjectStatusView = { state: 'empty', name: 'workspace', detail: 'not ready' };
-		for (const route of ['/', '/runs', '/work'] as const) {
-			const html = renderAt(route, { project });
-			expect(html).toContain('Connect a GitHub project');
-			expect(html).toContain('id="gateship-locale"');
+	test('the theme choice is read, resolved and stored as three states', () => {
+		expect(readThemeChoice(() => 'dark')).toBe('dark');
+		expect(readThemeChoice(() => 'light')).toBe('light');
+		for (const stored of [null, '', 'system', 'Dark']) expect(readThemeChoice(() => stored)).toBe('system');
+		expect(readThemeChoice(() => { throw new Error('blocked'); })).toBe('system');
+		expect(themeIsDark('system', true)).toBe(true);
+		expect(themeIsDark('system', false)).toBe(false);
+		expect(themeIsDark('light', true)).toBe(false);
+		expect(themeIsDark('dark', false)).toBe(true);
+		// Choosing the system clears the key: a stored 'system' would read as a
+		// choice at boot and pin the screen to whatever the system was that day.
+		const written: (string | null)[] = [];
+		expect(applyThemeChoice('system', true, (_key, value) => { written.push(value); })).toBe(true);
+		expect(applyThemeChoice('light', true, (_key, value) => { written.push(value); })).toBe(false);
+		expect(written).toEqual([null, 'light']);
+		// Storage that refuses still leaves the screen in the chosen theme.
+		expect(applyThemeChoice('dark', false, () => { throw new Error('blocked'); })).toBe(true);
+	});
+
+	test('the language and the theme are settings, not chrome: no surface carries them in its top row', () => {
+		// Both were single buttons in the shell's top-right row. They are chosen
+		// once, so they belong with the settings and not beside the work.
+		for (const locale of ['en-US', 'pt-BR'] as const) {
+			for (const route of SURFACE_PATHS) {
+				const html = renderAt(route, { locale });
+				const controls = html.slice(html.indexOf('data-slot="shell-controls-layout"'));
+
+				expect(controls).not.toContain('id="gateship-locale"');
+				expect(controls).not.toContain('aria-label="Português (Brasil)"');
+				expect(controls).not.toContain('aria-label="English (US)"');
+				expect(controls).not.toContain(locale === 'en-US' ? '>PT<' : '>EN<');
+				// The measure is the third preference that used to be a button here.
+				expect(controls).not.toContain(LOCALE_CATALOG[locale].settings.interface.widthChoices.wide);
+			}
 		}
+		// The screen still speaks the locale it was given; only the control moved.
+		expect(renderAt('/overview', { locale: 'pt-BR' })).toContain('Agora');
 	});
 
 	test('only exact supported stored values become locales', () => {
@@ -4556,93 +4739,79 @@ describe('operator shell', () => {
 		expect(effects).toEqual(['lang:pt-BR', 'store:gateship.locale:pt-BR']);
 	});
 
-	test('navigation keeps Control Center global and separates the project switcher only by space', () => {
+	test('navigation keeps the project switcher above one stable list on every project surface', () => {
 		for (const route of SURFACE_PATHS) {
 			const html = renderAt(route);
 			const start = html.indexOf('<nav aria-label="Navigation"');
 			const nav = html.slice(start, html.indexOf('</nav>', start));
-			const activeRoute = route === '/projects/project-current'
-				? '/projects/project-current/runs'
-				: route;
-			const active = openingTags(nav).find((tag) =>
-				tag.includes(`href="${activeRoute}"`) && tag.includes('aria-current="page"'));
-			const switcher = elementWith(html, 'data-slot="project-switcher"');
-			const switcherItem = elementWith(html, 'data-slot="project-switcher-item"');
-			const projectSurfaceNavigation = elementWith(html, 'data-slot="project-surface-navigation"');
-			const globalStart = nav.indexOf('data-slot="global-navigation"');
-			const projectStart = nav.indexOf('data-slot="project-navigation"');
-			const globalGroup = nav.slice(globalStart, projectStart);
-			const switcherStart = html.indexOf('data-slot="project-switcher"');
-			const switcherEnd = html.indexOf('</button>', switcherStart);
-			const switcherMarkup = html.slice(switcherStart, switcherEnd);
+			const list = navigationList(nav, 'global-navigation');
+			const links = openingTags(list).filter((tag) => tag.startsWith('<a'));
+			const currentHref = [route === '/projects/project-current' ? '/projects/project-current/runs' : route];
+			const trigger = switcherTrigger(nav);
 
-			expect(nav).toContain('aria-label="Navigation"');
-			for (const label of ['Control center', 'Runs', 'Work', 'Settings']) {
-				expect(nav).toContain(`>${label}</span>`);
-			}
-			expect(nav).toContain('flex-wrap');
-			expect(nav).not.toContain('overflow-x-auto');
-			expect(nav).toContain('href="/overview"');
-			for (const path of SURFACE_PATHS) expect(nav).toContain(`href="${path}"`);
-			expect(globalGroup).toContain('href="/overview"');
-			expect(globalGroup).not.toContain('data-slot="project-switcher"');
-			expect(globalGroup).toContain('</ul><div');
-			expect(nav).not.toContain('data-slot="navigation-divider"');
-			expect(nav).not.toContain('data-slot="project-context-label"');
-			expect(projectStart).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-			expect(elementWith(html, 'data-slot="project-navigation"')).toContain('mt-3');
-			expect(elementWith(html, 'data-slot="project-navigation"')).toContain('lg:mt-5');
-			expect(projectSurfaceNavigation).toContain('lg:pl-2');
-			expect(projectSurfaceNavigation).toContain('lg:mt-1');
-			expect(projectSurfaceNavigation).not.toContain('border-l');
-			expect(projectSurfaceNavigation).not.toContain('border-sidebar-border');
-			expect(projectSurfaceNavigation).not.toContain(' pl-2');
-			expect(projectSurfaceNavigation).not.toContain('pt-1');
-			expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf(`href="${activeRoute}"`));
-			expect(nav.match(/href="\/overview"/g)).toHaveLength(1);
-			expect(switcher).toContain('rounded-md');
-			expect(switcher).toContain('px-3');
-			expect(switcher).toContain('focus-visible:ring-2');
-			expect(switcherItem).toContain('w-full');
-			expect(switcherItem).toContain('min-w-0');
-			expect(switcherItem).not.toContain('shrink-0');
-			expect(switcherMarkup).not.toContain('w-10');
-			expect(switcherMarkup).toContain('data-base-ui-tooltip-trigger');
-			expect(switcherMarkup).not.toContain('size-8');
-			expect(active).toContain('aria-current="page"');
-			expect(nav.split('aria-current="page"')).toHaveLength(3);
+			expect(start).toBeGreaterThanOrEqual(0);
+			// The project's own settings close its group; the group below never changes with the switcher.
+			expect([...list.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1])).toEqual(['Now', 'Runs', 'Queue', 'Insights', 'Project settings']);
+			expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual([
+				'/overview',
+				'/projects/project-current/runs',
+				'/projects/project-current/work',
+				'/overview/insights',
+				'/projects/project-current/settings',
+			]);
+			expect(links.filter((tag) => tag.includes('aria-current="page"')).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(currentHref);
+			expect(nav.indexOf('data-slot="project-switcher-item"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
+			expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('data-slot="global-navigation"'));
+			expect(nav.indexOf('data-slot="global-navigation"')).toBeLessThan(nav.indexOf('data-slot="settings-navigation"'));
+			// One visible Now row; the sr-only registry adds the every-project link the menu carries.
+			expect(navigationList(nav, 'global-navigation').match(/href="\/overview"/g)).toHaveLength(1);
+			expect(trigger).toContain(`>${CURRENT_PROJECT.name}<`);
+			expect(trigger).toContain('aria-keyshortcuts="Alt+1"');
 			// Navigation itself stays on served paths. The shell-level skip link is
 			// the one deliberate in-page anchor.
 			expect(nav).not.toContain('href="#');
 		}
 	});
 
-	test('navigation keeps the localized global settings footer on desktop', () => {
+	test('navigation keeps localized global settings in its own list after the destinations', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, globalSettings: 'Global settings' },
-			{ locale: 'pt-BR' as const, globalSettings: 'Ajustes globais' },
+			{ locale: 'en-US' as const, globalSettings: 'Global settings', projectSettings: 'Project settings' },
+			{ locale: 'pt-BR' as const, globalSettings: 'Configurações', projectSettings: 'Ajustes' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
-			const footerStart = html.indexOf('href="/settings"');
-			const footer = html.slice(html.lastIndexOf('<li', footerStart), html.indexOf('</li>', footerStart));
+			const settings = navigationList(html, 'settings-navigation');
+			const links = (list: string): string[] => openingTags(list).filter((tag) => tag.startsWith('<a'));
 
-			expect(footer).toContain('lg:mt-auto');
-			expect(footer).toContain('href="/settings"');
-			expect(footer).toContain(`>${expected.globalSettings}</span>`);
+			expect(html.indexOf('data-slot="global-navigation"')).toBeLessThan(html.indexOf('data-slot="settings-navigation"'));
+			// The lower group is fixed: the registry and the global settings, which keep the last row. The project's settings sit with the project's rows.
+			expect(links(settings).map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual(['/projects', '/settings']);
+			expect(settings).not.toContain(`>${expected.projectSettings}</span>`);
+			expect(navigationList(html, 'global-navigation')).toContain(`>${expected.projectSettings}</span>`);
+			expect(settings).toContain(`>${expected.globalSettings}</span>`);
+			expect(settings).not.toContain('aria-current="page"');
+			// Each settings page marks its own row, so the operator always has a current one.
+			const onProject = links(navigationList(settingsPage({ locale: expected.locale }), 'global-navigation'));
+			expect(onProject.map((tag) => tag.includes('aria-current="page"'))).toEqual([false, false, false, false, true]);
+			// The registry page has a row of its own to be current on.
+			const onRegistry = links(navigationList(renderAt('/projects', { locale: expected.locale }), 'settings-navigation'));
+			expect(onRegistry.map((tag) => tag.includes('aria-current="page"'))).toEqual([true, false]);
+			const onGlobal = links(navigationList(globalSettingsPage({ locale: expected.locale }), 'settings-navigation'));
+			expect(onGlobal.at(-1)).toContain('aria-current="page"');
+			// With every project in view there is no project to configure, and the row is gone.
+			expect(links(navigationList(renderAt('/overview', { locale: expected.locale }), 'global-navigation'))).toHaveLength(4);
 		}
 	});
 
-	test('navigation localizes the global destination and project-management menu action', () => {
+	test('navigation localizes the Now destination and the project-management registry link', () => {
 		for (const expected of [
-			{ locale: 'en-US' as const, overview: 'Control center', manage: 'Manage projects' },
-			{ locale: 'pt-BR' as const, overview: 'Central de controle', manage: 'Gerenciar projetos' },
+			{ locale: 'en-US' as const, now: 'Now', manage: 'Manage projects' },
+			{ locale: 'pt-BR' as const, now: 'Agora', manage: 'Gerenciar projetos' },
 		]) {
 			const html = renderAt('/projects/project-current', { locale: expected.locale });
-			const start = html.indexOf('<nav aria-label=');
-			const nav = html.slice(start, html.indexOf('</nav>', start));
+			const list = navigationList(html, 'global-navigation');
+			const nowStart = list.indexOf('href="/overview"');
 
-			expect(nav).toContain(`>${expected.overview}</span>`);
+			expect(list.slice(nowStart, list.indexOf('</a>', nowStart))).toContain(`>${expected.now}</span>`);
 			expect(html).toContain(`href="/projects">${expected.manage}</a>`);
 		}
 	});
@@ -4656,33 +4825,39 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('navigation keeps only the project switcher in its contextual group without a selected project', () => {
-		const html = renderAt('/overview', { projects: [] });
-		const start = html.indexOf('<nav aria-label="Navigation"');
-		const nav = html.slice(start, html.indexOf('</nav>', start));
+	test('navigation shows every project and links Runs and Queue to the aggregates without a selected project', () => {
+		for (const [locale, allProjects] of [['en-US', 'All projects'], ['pt-BR', 'Todos os projetos']] as const) {
+			const html = renderAt('/overview', { locale, projects: [] });
+			const list = navigationList(html, 'global-navigation');
+			const trigger = switcherTrigger(html);
 
-		expect(nav).toContain('data-slot="project-switcher"');
-		expect(nav).not.toContain('data-slot="project-surface-navigation"');
+			expect(trigger).toContain(`>${allProjects}<`);
+			expect(trigger).not.toContain('data-slot="project-state-dot"');
+			expect(openingTags(list).filter((tag) => tag.startsWith('<a')).map((tag) => tag.match(/href="([^"]+)"/)?.[1]))
+				.toEqual(['/overview', '/overview/runs', '/overview/queues', '/overview/insights']);
+		}
 	});
 
-	test('overview retains a registered project only for contextual navigation in both locales', () => {
+	test('overview retains a registered project as the navigation filter in both locales', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview', {
 				locale,
 				projects: [CURRENT_PROJECT, OTHER_PROJECT],
 				selectedProjectId: OTHER_PROJECT.id,
 			});
-			const navStart = html.indexOf('<nav aria-label=');
-			const nav = html.slice(navStart, html.indexOf('</nav>', navStart));
-			const triggerStart = html.indexOf('data-slot="project-switcher"');
-			const trigger = html.slice(triggerStart, html.indexOf('</button>', triggerStart));
+			const list = navigationList(html, 'global-navigation');
+			const links = openingTags(list).filter((tag) => tag.startsWith('<a'));
 
-			expect(trigger).toContain(`>${OTHER_PROJECT.name}<`);
-			for (const suffix of ['', '/runs', '/work', '/settings']) {
-				expect(nav).toContain(`href="/projects/${OTHER_PROJECT.id}${suffix}"`);
-			}
-			const overviewLink = openingTags(nav).find((tag) => tag.includes('href="/overview"'));
-			expect(overviewLink).toContain('aria-current="page"');
+			expect(switcherTrigger(html)).toContain(`>${OTHER_PROJECT.name}<`);
+			expect(html).toContain(`href="/projects/${OTHER_PROJECT.id}"`);
+			expect(links.map((tag) => tag.match(/href="([^"]+)"/)?.[1])).toEqual([
+				'/overview',
+				`/projects/${OTHER_PROJECT.id}/runs`,
+				`/projects/${OTHER_PROJECT.id}/work`,
+				'/overview/insights',
+				`/projects/${OTHER_PROJECT.id}/settings`,
+			]);
+			expect(links.filter((tag) => tag.includes('aria-current="page"'))).toEqual([links[0]!]);
 		}
 	});
 
@@ -4729,45 +4904,56 @@ describe('operator shell', () => {
 		});
 	});
 
-	test('project switcher renders Alt shortcuts in the leading column and marks the selection', () => {
+	test('project switcher gives the first nine projects Alt shortcuts and shows the selected key on its trigger', () => {
 		const projects = Array.from({ length: 10 }, (_, index) => ({
 			...CURRENT_PROJECT,
 			id: `project-${index + 1}`,
 			name: `Project ${index + 1}`,
 			current: index === 0,
 		}));
+		const platform = presentationPlatform();
 		const html = renderAt('/overview', { projects });
 		const selectedHtml = renderAt('/projects/project-1', { projects });
-		const triggerStart = selectedHtml.indexOf('data-slot="project-switcher"');
-		const trigger = selectedHtml.slice(triggerStart, selectedHtml.indexOf('</button>', triggerStart));
+		const pastDigitsHtml = renderAt('/projects/project-10', { projects });
 		const shortcuts = [...html.matchAll(/<kbd[^>]*data-slot="shortcut-project"[^>]*>([^<]+)<\/kbd>/g)].map((match) => match[1]);
+		const registryLink = (markup: string, id: string): string => openingTags(markup).find((tag) => tag.startsWith('<a') && tag.includes(`href="/projects/${id}"`))!;
 
-		expect(shortcuts).toEqual(Array.from({ length: 9 }, (_, index) => shortcutLabel('project', index, presentationPlatform())));
-		expect(trigger).not.toContain(shortcutLabel('project', 0, presentationPlatform()));
-		expect(trigger).toContain('data-base-ui-tooltip-trigger');
-		expect(selectedHtml).toContain('aria-current="page"');
-		expect(html).toContain('href="/projects/project-9"');
-		expect(html).toContain('href="/projects/project-10"');
+		expect(shortcuts).toEqual(Array.from({ length: 9 }, (_, index) => shortcutLabel('project', index, platform)));
+		expect(registryLink(html, 'project-1')).toContain('aria-keyshortcuts="Alt+1"');
+		expect(registryLink(html, 'project-9')).toContain('aria-keyshortcuts="Alt+9"');
+		expect(registryLink(html, 'project-10')).not.toContain('aria-keyshortcuts');
 		expect(html).not.toContain('Alt+10');
-		expect(projectSwitcherTooltipText(LOCALE_CATALOG['en-US'].shell, 'Project 1', 'Alt+1', { attention: 'Idle', label: 'Idle', acid: false })).toBe('Project 1 · Alt+1: open project · Idle');
-		expect(projectSwitcherTooltipText(LOCALE_CATALOG['pt-BR'].shell, 'Projeto 1', '⌥1', { attention: 'Idle', label: 'Ocioso', acid: false })).toBe('Projeto 1 · ⌥1: acessar projeto · Ocioso');
-		expect(projectSwitcherTooltipText(LOCALE_CATALOG['en-US'].shell, 'Project 10', null, null)).toBe('Project 10');
+		// Open, the trigger gives the chip's room to the name: the menu's rows teach the shortcut, the trigger still declares it.
+		expect(switcherTrigger(html)).not.toContain('<kbd');
+		expect(switcherTrigger(html)).toContain('aria-keyshortcuts="Alt+A"');
+		expect(switcherTrigger(selectedHtml)).not.toContain('<kbd');
+		expect(switcherTrigger(selectedHtml)).toContain('aria-keyshortcuts="Alt+1"');
+		expect(registryLink(selectedHtml, 'project-1')).toContain('aria-current="page"');
+		expect(registryLink(selectedHtml, 'project-2')).not.toContain('aria-current');
+		expect(switcherTrigger(pastDigitsHtml)).toContain('>Project 10<');
+		// Past the ninth there is no digit left: the square is the empty one, never another project's number.
+		expect(switcherTrigger(pastDigitsHtml)).toContain(iconPath(SquareIcon));
+		expect(switcherTrigger(pastDigitsHtml)).not.toContain(iconPath(OneSquareIcon));
+		expect(switcherTrigger(pastDigitsHtml)).not.toContain('<kbd');
+		expect(switcherTrigger(pastDigitsHtml)).not.toContain('aria-keyshortcuts');
 	});
 
-	test('project switcher uses a glyph-sized spacer when its selection does not resolve', () => {
-		const emptySelectionHtml = renderAt('/projects/project-missing');
-		const emptyTriggerStart = emptySelectionHtml.indexOf('data-slot="project-switcher"');
-		const emptyTrigger = emptySelectionHtml.slice(emptyTriggerStart, emptySelectionHtml.indexOf('</button>', emptyTriggerStart));
-		const selectedHtml = renderAt('/projects/project-current');
-		const selectedTriggerStart = selectedHtml.indexOf('data-slot="project-switcher"');
-		const selectedTrigger = selectedHtml.slice(selectedTriggerStart, selectedHtml.indexOf('</button>', selectedTriggerStart));
+	test('project switcher names the project with its state, and every project when the selection does not resolve', () => {
+		const unresolved = switcherTrigger(renderAt('/projects/project-missing'));
+		const selected = switcherTrigger(renderAt('/projects/project-current'));
+		const idle = LOCALE_CATALOG['en-US'].runInspector.attentionLabels.Idle;
 
-		expect(emptyTrigger).toContain('>Select a project<');
-		expect(emptyTrigger).toContain('data-slot="project-switcher-placeholder"');
-		expect(emptyTrigger).not.toContain('w-10');
-		expect(emptyTrigger).not.toContain('<kbd');
-		expect(selectedTrigger).not.toContain('w-10');
-		expect(selectedTrigger).not.toContain(shortcutLabel('project', 0, presentationPlatform()));
+		expect(unresolved).toContain('>All projects<');
+		expect(unresolved).toContain('aria-keyshortcuts="Alt+A"');
+		expect(unresolved).not.toContain('data-slot="project-state-dot"');
+		expect(selected).toContain(`>${CURRENT_PROJECT.name}<`);
+		expect(elementWith(selected, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
+		// Idle is the resting state: the hollow dot shows it and the word stays for a screen reader, so the name keeps the room.
+		expect(selected).toContain(`<span class="sr-only">${idle}</span>`);
+		// The project wears its digit in the same square open or collapsed, drawn by the icon set like every other glyph in the rail.
+		expect(selected).toContain(iconPath(OneSquareIcon));
+		expect(unresolved).toContain(iconPath(DashboardSquare01Icon));
+		expect(selected.indexOf(`>${CURRENT_PROJECT.name}<`)).toBeLessThan(selected.indexOf('data-slot="project-state-dot"'));
 	});
 
 	test('project shortcuts navigate with Alt+Digit1 through Alt+Digit9 and reject other combinations', () => {
@@ -4787,24 +4973,88 @@ describe('operator shell', () => {
 			return { handled, prevented };
 		};
 
-		expect(invoke('&', 'Digit1', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('¡', 'Digit1', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(invoke('(', 'Digit9', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(locations).toEqual(['/projects/project-1', '/projects/project-9']);
-		expect(invoke('1', undefined, { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
-		expect(invoke('2', '', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('2', undefined, { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
+		expect(invoke('3', '', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: true, prevented: true });
 		expect(invoke('3', 'Numpad3', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
-		expect(invoke('1', 'Digit1', { altKey: false, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
-		expect(invoke('1', 'Digit1', { altKey: true, metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('2', 'Digit2', { altKey: false, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		expect(invoke('2', 'Digit2', { altKey: true, metaKey: true, ctrlKey: false })).toEqual({ handled: false, prevented: false });
 		expect(invoke('9', 'Digit9', { altKey: true, metaKey: false, ctrlKey: true })).toEqual({ handled: false, prevented: false });
 		expect(invoke('0', 'Digit0', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
+		// Alt+A belongs to every project, never to a registered one.
+		expect(invoke('å', 'KeyA', { altKey: true, metaKey: false, ctrlKey: false })).toEqual({ handled: false, prevented: false });
 		let missingPrevented = false;
 		expect(handleProjectShortcut(
-			{ key: '3', code: 'Digit3', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
+			{ key: '4', code: 'Digit4', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { missingPrevented = true; } },
 			projects.slice(0, 2),
 			{ location: { assign: (url) => { locations.push(url); } } },
 		)).toBe(false);
 		expect(missingPrevented).toBe(false);
-		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-1', '/projects/project-2']);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-2', '/projects/project-3']);
+		// Inside a field the key writes a character: on a Mac Alt+2 is a glyph and Alt+A is an accent, so neither may navigate.
+		let fieldPrevented = false;
+		for (const target of [{ tagName: 'INPUT' }, { tagName: 'TEXTAREA' }, { isContentEditable: true }]) {
+			expect(handleProjectShortcut(
+				{ key: '2', code: 'Digit2', altKey: true, metaKey: false, ctrlKey: false, target, preventDefault: () => { fieldPrevented = true; } },
+				projects,
+				{ location: { assign: (url) => { locations.push(url); } } },
+			)).toBe(false);
+		}
+		expect(fieldPrevented).toBe(false);
+		expect(locations).toEqual(['/projects/project-1', '/projects/project-9', '/projects/project-2', '/projects/project-3']);
+	});
+
+	test('the standing keys open the registry and the settings, and fold the sidebar', () => {
+		const locations: string[] = [];
+		const runtime = { location: { assign: (url: string) => { locations.push(url); } } };
+		let folded = 0;
+		const fold = (): void => { folded += 1; };
+		const invoke = (code: string, key: string, target?: { tagName?: string }): { handled: boolean; prevented: boolean } => {
+			let prevented = false;
+			const handled = handleShellShortcut({ key, code, altKey: true, metaKey: false, ctrlKey: false, target, preventDefault: () => { prevented = true; } }, runtime, undefined, fold);
+			return { handled, prevented };
+		};
+
+		expect(invoke('KeyP', 'π')).toEqual({ handled: true, prevented: true });
+		expect(invoke('Comma', '≤')).toEqual({ handled: true, prevented: true });
+		expect(locations).toEqual(['/projects', '/settings']);
+		expect(invoke('KeyB', '∫')).toEqual({ handled: true, prevented: true });
+		expect(folded).toBe(1);
+		expect(locations).toEqual(['/projects', '/settings']);
+		// Inside a field every one of them writes a character on a Mac, so the field keeps the key.
+		expect(invoke('KeyP', 'π', { tagName: 'INPUT' })).toEqual({ handled: false, prevented: false });
+		expect(invoke('KeyB', '∫', { tagName: 'TEXTAREA' })).toEqual({ handled: false, prevented: false });
+		expect({ locations, folded }).toEqual({ locations: ['/projects', '/settings'], folded: 1 });
+		// Without a modifier, and without something to fold, nothing is taken from the browser.
+		let untouched = false;
+		expect(handleShellShortcut({ key: 'p', code: 'KeyP', altKey: false, metaKey: false, ctrlKey: false, preventDefault: () => { untouched = true; } }, runtime)).toBe(false);
+		expect(handleShellShortcut({ key: '∫', code: 'KeyB', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { untouched = true; } }, runtime)).toBe(false);
+		expect(untouched).toBe(false);
+	});
+
+	test('a row shows its key where the key is true: on hover when it owns one, on the current row when the list owns it', () => {
+		const html = renderAt('/overview');
+		const rowOf = (href: string): string => { const start = html.indexOf(`data-sidebar-id="${href}"`); return html.slice(html.lastIndexOf('<a', start), html.indexOf('</a>', start)); };
+		const platform = presentationPlatform();
+
+		// The registry and the global settings each answer to one key, so the chip names that key and waits for the pointer or the focus ring.
+		for (const [href, kind] of [['/projects', 'manageProjects'], ['/settings', 'globalSettings']] as const) {
+			const row = rowOf(href);
+			expect(row).toContain(`aria-keyshortcuts="${kind === 'manageProjects' ? 'Alt+P' : 'Alt+,'}"`);
+			expect(row).toContain(shortcutLabel(kind, undefined, platform));
+			expect(row).toContain('opacity-0');
+			expect(row).toContain('group-hover/nav:opacity-100');
+			expect(row).toContain('group-focus-visible/nav:opacity-100');
+		}
+		// The arrows are relative, so they are printed once, on the row they start from, and never declared as that row's own key.
+		const current = rowOf('/overview');
+		expect(current).toContain(shortcutLabel('destinations', undefined, platform));
+		expect(current).not.toContain('opacity-0');
+		expect(current).not.toContain('aria-keyshortcuts');
+		expect(rowOf('/overview/runs')).not.toContain('<kbd');
+		expect(rowOf('/overview/queues')).not.toContain('<kbd');
 	});
 
 		test('shortcut presentation follows platform signals while commands stay canonical', () => {
@@ -4814,25 +5064,38 @@ describe('operator shell', () => {
 		expect(presentationPlatform({ platform: 'Android' })).toBe('unknown');
 		for (const locale of ['en-US', 'pt-BR'] as const) {
 			const html = renderAt('/overview', { locale });
-			const overviewLink = elementWith(html, 'aria-keyshortcuts="Alt+0"');
-			const sidebarToggle = elementWith(html, 'data-slot="sidebar-toggle"');
-			expect(overviewLink).toContain('href="/overview"');
+			const everyProject = elementWith(html, 'aria-keyshortcuts="Alt+A"');
+			const toggleStart = html.indexOf('data-slot="sidebar-toggle"');
+			const sidebarToggle = html.slice(html.lastIndexOf('<button', toggleStart), html.indexOf('</button>', toggleStart));
+			expect(everyProject).toContain('data-slot="project-switcher"');
+			expect(html).not.toContain('Alt+0');
 			expect(sidebarToggle).toContain(`aria-label="${LOCALE_CATALOG[locale].shell.sidebarToggle.collapse}"`);
-			expect(overviewLink).toContain('data-base-ui-tooltip-trigger');
-			expect(html).not.toContain('data-slot="shortcut-overview"');
-			expect(sidebarToggle).not.toContain('aria-keyshortcuts');
+			expect(sidebarToggle).toContain('max-lg:hidden');
+			expect(sidebarToggle).toContain('aria-keyshortcuts="Alt+B"');
 			expect(sidebarToggle).not.toContain('<kbd');
-			expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥0');
-			expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥1');
-			expect(shortcutLabel('overview', undefined, 'Windows')).toBe('Alt+0');
-			expect(shortcutLabel('project', 8, 'Linux')).toBe('Alt+9');
-			expect(shortcutLabel('overview', undefined, 'unknown')).toBe('Alt+0');
 		}
-		let toggles = 0;
-		let prevented = false;
-		expect(handleOverviewShortcut({ key: '0', code: 'Digit0', altKey: true, metaKey: false, ctrlKey: false, preventDefault: () => { prevented = true; } }, { location: { assign: () => { toggles += 1; } } })).toBe(true);
-		expect({ toggles, prevented }).toEqual({ toggles: 1, prevented: true });
-		expect(handleOverviewShortcut({ key: '0', code: 'Digit0', altKey: false, metaKey: false, ctrlKey: false, preventDefault: () => { prevented = true; } }, { location: { assign: () => { toggles += 1; } } })).toBe(false);
+		expect(shortcutLabel('overview', undefined, 'macOS')).toBe('⌥A');
+		expect(shortcutLabel('project', 0, 'macOS')).toBe('⌥1');
+		expect(shortcutLabel('overview', undefined, 'Windows')).toBe('Alt+A');
+		expect(shortcutLabel('project', 8, 'Linux')).toBe('Alt+9');
+		expect(shortcutLabel('overview', undefined, 'unknown')).toBe('Alt+A');
+		const event = (code: string, altKey: boolean, onPrevent: () => void): PanelKeyEvent => ({ key: code.slice(-1), code, altKey, metaKey: false, ctrlKey: false, preventDefault: onPrevent });
+		const assigned: string[] = [];
+		const runtime = { location: { assign: (url: string) => { assigned.push(url); } } };
+		let prevented = 0;
+		expect(handleOverviewShortcut(event('KeyA', true, () => { prevented += 1; }), runtime)).toBe(true);
+		expect({ assigned, prevented }).toEqual({ assigned: ['/overview'], prevented: 1 });
+		// With the app's handler the shortcut is the switcher's first choice: it
+		// clears the project filter instead of only routing.
+		let cleared = 0;
+		const navigated: string[] = [];
+		expect(handleOverviewShortcut(event('KeyA', true, () => { prevented += 1; }), runtime, (destination) => { navigated.push(destination); }, () => { cleared += 1; })).toBe(true);
+		expect({ assigned, navigated, cleared, prevented }).toEqual({ assigned: ['/overview'], navigated: [], cleared: 1, prevented: 2 });
+		expect(handleOverviewShortcut(event('KeyA', false, () => { prevented += 1; }), runtime)).toBe(false);
+		expect(handleOverviewShortcut(event('Digit1', true, () => { prevented += 1; }), runtime)).toBe(false);
+		// The letter belongs to the field it is typed in: on a Mac Alt+A writes an accent.
+		expect(handleOverviewShortcut({ key: 'å', code: 'KeyA', altKey: true, metaKey: false, ctrlKey: false, target: { tagName: 'INPUT' }, preventDefault: () => { prevented += 1; } }, runtime)).toBe(false);
+		expect({ assigned, prevented }).toEqual({ assigned: ['/overview'], prevented: 2 });
 	});
 
 	test('keeps the composite sidebar control intrinsically sized and shell icons optically uniform', () => {
@@ -4850,8 +5113,8 @@ describe('operator shell', () => {
 		expect(sidebarToggle).not.toContain('h-9');
 		expect(notifications).toContain('size-9');
 		expect(notifications).toContain('sm:size-8');
-		expect(html).toContain('aria-keyshortcuts="Alt+0"');
-		expect(sidebarToggle).not.toContain('aria-keyshortcuts');
+		// The toggle carries its key for assistive technology; the chip itself lives in the hint, which is a portal and only exists once it opens.
+		expect(sidebarToggle).toContain('aria-keyshortcuts="Alt+B"');
 		expect(sidebarToggle).not.toContain('<kbd');
 		expect(interactiveIcons.length).toBeGreaterThan(0);
 		for (const icon of interactiveIcons) {
@@ -4875,7 +5138,7 @@ describe('operator shell', () => {
 		}
 	});
 
-	test('overview shortcut occupies the leading slot in both sidebar modes', () => {
+	test('the every-project shortcut rides the switcher key chip in both sidebar modes, never the Now link', () => {
 		const props = {
 			chainRuns: EMPTY_CHAIN_RUNS,
 			gitIdentity: null,
@@ -4893,15 +5156,33 @@ describe('operator shell', () => {
 		const collapsed = renderToStaticMarkup(<ShellSidebar {...props} open={false} />);
 
 		for (const html of [expanded, collapsed]) {
-			const overviewTag = openingTags(html).find((tag) => tag.includes('href="/overview"'))!;
-			const overviewStart = html.indexOf('href="/overview"');
-			const overview = html.slice(overviewStart, html.indexOf('</a>', overviewStart));
-			expect(overviewTag).toContain('aria-current="page"');
-			expect(overview).toContain('data-base-ui-tooltip-trigger');
-			expect(overview).toContain('<svg');
-			expect(overview).not.toContain('<kbd');
+			// The visible Now row, not the sr-only registry's every-project link.
+			const list = navigationList(html, 'global-navigation');
+			const nowTag = openingTags(list).find((tag) => tag.includes('href="/overview"'))!;
+			const nowStart = list.indexOf('href="/overview"');
+			const now = list.slice(nowStart, list.indexOf('</a>', nowStart));
+			const trigger = switcherTrigger(html);
+			expect(nowTag).toContain('aria-current="page"');
+			expect(nowTag).not.toContain('aria-keyshortcuts');
+			expect(now).toContain('<svg');
+			// Whatever the row shows, it is never the switcher's key: that one selects every project, not this destination.
+			expect(now).not.toContain(shortcutLabel('overview', undefined, presentationPlatform()));
+			expect(trigger).toContain('aria-keyshortcuts="Alt+A"');
 		}
-		expect(openingTags(collapsed).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Overview"');
+		// The pair that walks the list rides the row the operator is standing on, and only there; collapsed, the rail's hint carries it instead.
+		expect(navigationList(expanded, 'global-navigation')).toContain('data-slot="nav-shortcut"');
+		expect(navigationList(collapsed, 'global-navigation')).not.toContain('<kbd');
+		// The square is the trigger in both modes, the same 16px whether the name is beside it or not; the key itself is taught by the menu's rows and by the rail's hint.
+		for (const html of [collapsed, expanded]) {
+			expect(switcherTrigger(html)).toContain('data-slot="switcher-key"');
+			expect(switcherTrigger(html)).toContain(iconPath(DashboardSquare01Icon));
+			expect(switcherTrigger(html)).not.toContain('<kbd');
+		}
+		// The hint itself only exists once it opens (a portal), so the static document carries the declaration instead.
+		expect(switcherTrigger(collapsed)).toContain('aria-keyshortcuts="Alt+A"');
+		expect(openingTags(navigationList(collapsed, 'global-navigation')).find((tag) => tag.includes('href="/overview"'))).toContain('aria-label="Now"');
+		expect(switcherTrigger(collapsed)).toContain('aria-label="All projects"');
+		expect(switcherTrigger(expanded)).toContain('>All projects<');
 	});
 
 	test('an explicit pt-BR locale translates the shell, shared inspector and operational runs panels', () => {
@@ -4910,9 +5191,10 @@ describe('operator shell', () => {
 		const nav = html.slice(start, html.indexOf('</nav>', start));
 
 		expect(nav).toContain('aria-label="Navegação"');
-		for (const label of ['Central de controle', 'Runs', 'Trabalho', 'Ajustes']) {
+		for (const label of ['Agora', 'Execuções', 'Fila', 'Análises', 'Configurações']) {
 			expect(nav).toContain(`>${label}</span>`);
 		}
+		expect(switcherTrigger(nav)).toContain(`>${CURRENT_PROJECT.name}<`);
 		expect(html).toContain('>Pular para o conteúdo</a>');
 		expect(html).toContain('Execução mais recente');
 		expect(html).toContain('Nenhuma execução registrada ainda.');
@@ -4961,9 +5243,6 @@ describe('operator shell', () => {
 		const header = shellHeader(html);
 		expect(html).toContain('data-slot="notifications-trigger"');
 		expect(html).toContain('aria-label="Notifications"');
-		expect(html).toContain('aria-label="Português (Brasil)"');
-		expect(header).not.toContain('role="group" aria-label="Language"');
-		expect(header).not.toContain('role="group" aria-label="Idioma"');
 		expect(header).not.toContain('Needs you');
 		// No version reported: the header shows the title alone.
 		expect(home()).not.toMatch(/v\d+\.\d+\.\d+/);
@@ -5049,88 +5328,123 @@ describe('operator shell', () => {
 		expect(noStatusTrigger).not.toContain('aria-describedby=');
 	});
 
-	test('the sidebar reserves the brand for its quiet desktop footer signature', () => {
-		const html = shellHeader(runsPage({ runs: [runIn('failed')], version: '0.292.0' }));
+	test('the sidebar reserves the brand for its quiet desktop footer signature, and a small screen gets an app bar and a tab bar', () => {
+		const page = runsPage({ runs: [runIn('failed')], version: '0.292.0' });
+		const html = shellHeader(page);
 		const signatureStart = html.indexOf('data-slot="sidebar-signature"');
-		const signature = html.slice(signatureStart, html.indexOf('</div>', signatureStart));
-		const settingsStart = html.indexOf('<nav aria-label="Global settings"');
-		const settingsEnd = html.indexOf('</nav>', settingsStart);
-		const compactHeader = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
-
-		expect(compactHeader).toContain('lg:hidden');
-		expect(compactHeader).toContain('viewBox="3250 0 10187 2750"');
-		expect(html.indexOf('>Control center</span>')).toBeLessThan(html.indexOf('data-slot="project-navigation"'));
-		expect(settingsEnd).toBeLessThan(signatureStart);
+		const signature = html.slice(signatureStart);
+		// Below lg the controls row is the app bar: the mark leads it and names the product for a screen reader.
+		const appBar = page.slice(page.indexOf('<h1'), page.indexOf('</h1>'));
+		expect(html).not.toContain('<h1');
+		expect(appBar).toContain('lg:hidden');
+		expect(appBar).toContain('viewBox="0 0 2750 2750"');
+		expect(appBar).toContain('<span class="sr-only">Gateship</span>');
+		// The lists leave the header for the tab bar: four destinations and More, counts on the icons, zeros unsaid.
+		for (const list of ['global-navigation', 'settings-navigation']) expect(openingTags(html).find((tag) => tag.includes(`data-slot="${list}"`))).toContain('hidden flex-col gap-1 lg:flex');
+		const tabStart = page.indexOf('data-slot="tab-bar"');
+		const tabBar = page.slice(tabStart, page.indexOf('</nav>', tabStart));
+		expect(openingTags(page).find((tag) => tag.includes('data-slot="tab-bar"'))).toContain('lg:hidden');
+		expect(tabBar.indexOf('data-slot="tab-bar"')).toBe(0);
+		expect([...tabBar.matchAll(/<a [^>]*href="([^"]+)"/g)].map((match) => match[1])).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights']);
+		expect(tabBar).toContain('data-slot="tab-more"');
+		expect(tabBar).toContain('>More<');
+		expect(page.indexOf('data-slot="tab-bar"')).toBeGreaterThan(page.indexOf('</main>'));
+		expect(html.indexOf('data-slot="settings-navigation"')).toBeLessThan(signatureStart);
+		expect(html.indexOf('</nav>')).toBeLessThan(signatureStart);
 		expect(signature).toContain('viewBox="3250 0 10187 2750"');
-		expect(signature).toContain('h-4');
-		expect(signature).toContain('text-foreground');
 		expect(signature).toContain('viewBox="0 0 2750 2750"');
 		expect(signature).not.toContain('>Gateship</span>');
-		expect(signature).not.toContain('text-sidebar-foreground/60');
 		expect(signature).toContain('>v0.292.0</span>');
-		expect(signature).toContain('text-sidebar-foreground/50');
 	});
 
-	test('the collapsed rail is compact operational navigation with a centered footer mark', () => {
-		const sidebar = (open: boolean) => renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/projects/project-current/work" run={runIn('waiting-user')} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="" workspaceNotices={NOTICES} />);
+	test('the collapsed rail keeps the same destinations as labelled icon tiles with the mark alone in its footer', () => {
+		const sidebar = (open: boolean) => renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={open} projects={[CURRENT_PROJECT]} route="/projects/project-current/work" run={runIn('waiting-user')} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={CURRENT_PROJECT.id} staleService={null} version="0.292.0" workspaceNotices={NOTICES} />);
 		const rail = sidebar(false);
 		const expanded = sidebar(true);
-		const signatureStart = rail.indexOf('data-slot="sidebar-signature"');
-		const signature = rail.slice(rail.lastIndexOf('<div', signatureStart), rail.indexOf('</div>', signatureStart));
+		const signature = (html: string): string => html.slice(html.indexOf('data-slot="sidebar-signature"'));
 		const navStart = rail.indexOf('<nav aria-label="Navigation"');
 		const nav = rail.slice(navStart, rail.indexOf('</nav>', navStart));
+		const hrefs = (html: string): (string | undefined)[] => openingTags(html).filter((tag) => tag.startsWith('<a') && tag.includes('data-sidebar-id')).map((tag) => tag.match(/href="([^"]+)"/)?.[1]);
 
-		expect(rail).toContain('lg:w-18');
-		expect(nav).toContain('lg:flex-1');
-		expect(nav.indexOf('href="/overview"')).toBeLessThan(nav.indexOf('data-slot="project-switcher"'));
-		expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('href="/projects/project-current/runs"'));
-		expect(nav.indexOf('href="/projects/project-current/runs"')).toBeLessThan(nav.indexOf('href="/projects/project-current/work"'));
-		expect(nav.indexOf('href="/projects/project-current/work"')).toBeLessThan(nav.indexOf('href="/projects/project-current/settings"'));
-		expect(nav.indexOf('href="/projects/project-current/settings"')).toBeLessThan(nav.indexOf('href="/settings"'));
+		expect(elementWith(rail, 'data-slot="sidebar"')).toContain('data-state="collapsed"');
+		expect(elementWith(expanded, 'data-slot="sidebar"')).toContain('data-state="expanded"');
+		expect(hrefs(rail)).toEqual(['/overview', '/projects/project-current/runs', '/projects/project-current/work', '/overview/insights', '/projects/project-current/settings', '/projects', '/settings']);
+		expect(hrefs(rail)).toEqual(hrefs(expanded));
+		expect(nav.indexOf('data-slot="project-switcher"')).toBeLessThan(nav.indexOf('data-slot="global-navigation"'));
 		for (const [href, label] of [
-			['/overview', 'Overview'],
+			['/overview', 'Now'],
 			['/projects/project-current/runs', 'Runs'],
-			['/projects/project-current/work', 'Work'],
-			['/projects/project-current/settings', 'Settings'],
+			['/projects/project-current/work', 'Queue'],
+			['/overview/insights', 'Insights'],
+			['/projects/project-current/settings', 'Project settings'],
+			['/projects', 'Projects'],
 			['/settings', 'Global settings'],
 		]) {
-			const link = openingTags(nav).find((tag) => tag.includes(`href="${href}"`));
+			const link = openingTags(nav).find((tag) => tag.includes(`data-sidebar-id="${href}"`));
 			expect(link).toContain(`aria-label="${label}"`);
 			expect(link).not.toContain(`title="${label}"`);
+			expect(nav).not.toContain(`>${label}</span>`);
+			expect(openingTags(expanded).find((tag) => tag.includes(`data-sidebar-id="${href}"`))).not.toContain('aria-label=');
+			expect(expanded).toContain(`>${label}</span>`);
 		}
-		const switcherStart = nav.indexOf('data-slot="project-switcher"');
-		const switcher = nav.slice(nav.lastIndexOf('<button', switcherStart), nav.indexOf('</button>', switcherStart));
+		const switcher = switcherTrigger(nav);
 		expect(switcher).toContain('aria-label="gateship"');
 		expect(switcher).not.toContain('title="gateship"');
+		expect(switcher).not.toContain('>gateship<');
 		expect(switcher).toContain('aria-keyshortcuts="Alt+1"');
-		expect(switcher).toContain('data-base-ui-tooltip-trigger');
+		expect(switcher).toContain('data-slot="switcher-key"');
+		expect(elementWith(switcher, 'data-slot="project-state-dot"')).toContain('data-state="Idle"');
 		expect(nav).not.toContain('data-slot="sidebar-attention"');
 		expect(openingTags(nav).find((tag) => tag.includes('href="/projects/project-current/work"'))).toContain('aria-current="page"');
-		expect(signature).toContain('size-5');
-		expect(signature).toContain('viewBox="0 0 2750 2750"');
-		expect(signature).toContain('lg:mt-auto');
-		expect(signature).toContain('items-center');
-		expect(signature).toContain('px-3');
-		expect(signatureStart).toBeGreaterThan(navStart);
-		expect((rail.match(/data-base-ui-tooltip-trigger/g) ?? [])).toHaveLength((expanded.match(/data-base-ui-tooltip-trigger/g) ?? []).length);
-		expect((rail.match(/href="\/settings"/g) ?? [])).toHaveLength(1);
-		expect((expanded.match(/href="\/settings"/g) ?? [])).toHaveLength(1);
+		expect(signature(rail)).toContain('viewBox="0 0 2750 2750"');
+		expect(signature(rail)).not.toContain('viewBox="3250 0 10187 2750"');
+		expect(signature(rail)).not.toContain('>v0.292.0<');
+		expect(signature(expanded)).toContain('viewBox="3250 0 10187 2750"');
+		expect(signature(expanded)).toContain('>v0.292.0<');
+		expect(rail.indexOf('data-slot="sidebar-signature"')).toBeGreaterThan(rail.indexOf('</nav>', navStart));
 	});
 
-	test('the collapsed rail keeps the project selector but hides project surfaces without selection', () => {
+	test('the collapsed rail shows every project on the switcher and links Runs and Queue to the aggregates without selection', () => {
 		const rail = renderToStaticMarkup(
 			<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open={false} projects={[CURRENT_PROJECT]} route="/overview" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={null} staleService={null} version="" workspaceNotices={[]} />,
 		);
 		const navStart = rail.indexOf('<nav aria-label="Navigation"');
 		const nav = rail.slice(navStart, rail.indexOf('</nav>', navStart));
+		const list = navigationList(nav, 'global-navigation');
 
-		expect(elementWith(nav, 'data-slot="project-switcher"')).toContain('aria-label="Select a project"');
-		expect(nav).toContain('data-slot="project-switcher"');
-		expect(nav).toContain('data-slot="project-switcher-placeholder"');
-		expect(nav).not.toContain('href="/projects/project-current/runs"');
-		expect(nav).not.toContain('href="/projects/project-current/work"');
-		expect(nav).not.toContain('href="/projects/project-current/settings"');
+		expect(elementWith(nav, 'data-slot="project-switcher"')).toContain('aria-label="All projects"');
+		expect(switcherTrigger(nav)).not.toContain('data-slot="project-state-dot"');
+		expect(list).toContain('href="/overview/runs"');
+		expect(list).toContain('href="/overview/queues"');
+		expect(list).not.toContain('href="/projects/project-current/runs"');
+		expect(list).not.toContain('href="/projects/project-current/work"');
 		expect(nav).toContain('href="/settings"');
+	});
+
+	test('navigation rows carry counts scoped to the switcher filter only when an overview is loaded', () => {
+		const overview = {
+			summary: { totalProjects: 2, readyProjects: 2, unavailableProjects: 0, nonTerminalRuns: 3, backlog: { idea: 0, specified: 0, planned: 7 } },
+			projects: [
+				{ project: CURRENT_PROJECT, activeRun: { state: 'waiting-user' }, backlog: { state: 'available', counts: { idea: 0, specified: 0, planned: 2 } } },
+				{ project: OTHER_PROJECT, activeRun: null, backlog: { state: 'unavailable' } },
+			],
+		} as unknown as NonNullable<AppProps['overview']>;
+		const counts = (selectedProjectId: string | null, loaded: AppProps['overview'] | undefined): (string | undefined)[] => {
+			const html = renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open overview={loaded} projects={[CURRENT_PROJECT, OTHER_PROJECT]} route="/overview" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={selectedProjectId} staleService={null} version="" workspaceNotices={[]} />);
+			return [...html.matchAll(/data-slot="navigation-count">([^<]*)</g)].map((match) => match[1]);
+		};
+
+		expect(counts(null, undefined)).toEqual([]);
+		expect(counts(null, overview)).toEqual(['1', '3', '7']);
+		// A row that carries both keeps them in reading order: how many first, then the key that gets you there.
+		const withCount = renderToStaticMarkup(<ShellSidebar chainRuns={EMPTY_CHAIN_RUNS} gitIdentity={null} locale="en-US" open overview={overview} projects={[CURRENT_PROJECT, OTHER_PROJECT]} route="/overview" run={null} runInspectorCatalog={LOCALE_CATALOG['en-US'].runInspector} selectedProjectId={null} staleService={null} version="" workspaceNotices={[]} />);
+		const nowRow = withCount.slice(withCount.lastIndexOf('<a', withCount.indexOf('data-sidebar-id="/overview"')), withCount.indexOf('</a>', withCount.indexOf('data-sidebar-id="/overview"')));
+		expect(nowRow.indexOf('data-slot="navigation-count"')).toBeLessThan(nowRow.indexOf('data-slot="nav-shortcut"'));
+		// The count already takes the free space, so the chip does not ask for it a second time: two auto margins would split the gap and strand the count mid-row.
+		expect(elementWith(nowRow, 'data-slot="nav-shortcut"')).not.toContain('ml-auto');
+		expect(counts(CURRENT_PROJECT.id, overview)).toEqual(['1', '1', '2']);
+		// An unknown backlog renders nothing, and neither does a zero: no active run is said by the absence of a figure.
+		expect(counts(OTHER_PROJECT.id, overview)).toEqual(['1']);
 	});
 
 	test('the technical run state stays on the run card and never reaches the header', () => {
@@ -5138,7 +5452,7 @@ describe('operator shell', () => {
 
 		expect(shellHeader(html)).not.toContain('Needs you');
 		expect(shellHeader(html)).not.toContain('failed');
-		expect(html).toContain('>failed<');
+		expect(html).toContain('>Failed<');
 	});
 
 	test('a service older than origin/main is reported wherever the operator is', () => {
@@ -5401,6 +5715,9 @@ describe('shared live edge and responsive surface content', () => {
 		}
 		const controls = elementWith(runsPage(), 'data-slot="shell-controls-layout"');
 		expect(controls).toContain('grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]');
+		// The controls row is the panel's, not the content's: its toggles keep the panel's edges whatever measure the content keeps.
+		expect(controls).not.toContain('max-w-(--content-measure)');
+		expect(controls).toContain('w-full');
 		expect(runsPage()).toContain('data-slot="shell-surface-title"');
 	});
 
@@ -5535,19 +5852,19 @@ describe('shared live edge and responsive surface content', () => {
 
 		expect(unbreakable.length).toBeGreaterThan(3);
 		for (const tag of unbreakable) expect(tag).toMatch(/break-(all|words)/);
-		expect(renderLongContent('/projects/project-current/runs')).toContain(`provider.activity.${HASH}`);
+		expect(renderLongContent(`/projects/project-current/runs/run-${HASH}`)).toContain(`provider.activity.${HASH}`);
 		expect(renderLongContent('/projects/project-current/runs')).toContain(`/project/.gship/worktrees/${HASH}`);
 		expect(renderLongContent('/projects/project-current/work')).toContain(`issue ${HASH}`);
 	});
 
-	test('horizontal scrolling is confined to named tab lists and table containers', () => {
+	test('horizontal scrolling is confined to named tab lists, the quick views and table containers', () => {
 		for (const route of CONTENT_SURFACE_PATHS) {
 			const html = renderLongContent(route);
 			const horizontal = openingTags(html).filter((tag) => tag.includes('overflow-x-auto'));
 			const tables = horizontal.filter((tag) => tag.includes('data-slot="table-container"'));
 			const local = horizontal.filter((tag) => !tag.includes('data-slot="table-container"'));
 
-			for (const scroller of local) expect(scroller).toContain('data-slot="tabs-scroll"');
+			for (const scroller of local) expect(scroller).toMatch(/data-slot="(tabs-scroll|overview-runs-views-scroll)"/);
 			if (route.endsWith('/work')) expect(local).not.toHaveLength(0);
 			const operatorNav = html.indexOf('<nav aria-label="Navigation"');
 			const navigation = html.slice(operatorNav, html.indexOf('</nav>', operatorNav));
@@ -5558,6 +5875,32 @@ describe('shared live edge and responsive surface content', () => {
 });
 
 describe('screen derivations', () => {
+	test('the open tab is read from the address, and an unknown one falls back to the default', () => {
+		const tabs = ['queue', 'approval', 'proposals'] as const;
+		const at = (search: string) => ({ location: { pathname: '/projects/p/work', search, hash: '' } });
+		expect(readTab(tabs, 'queue', at('?tab=proposals'))).toBe('proposals');
+		expect(readTab(tabs, 'queue', at('?tab=nowhere'))).toBe('queue');
+		expect(readTab(tabs, 'approval', at(''))).toBe('approval');
+		// The screen opens on it: the selected tab and the visible panel follow the address.
+		const runtime = globalThis as unknown as { location?: unknown };
+		const previous = runtime.location;
+		runtime.location = { pathname: '/projects/project-current/work', search: '?tab=proposals', hash: '' };
+		try {
+			const html = renderAt('/projects/project-current/work');
+			const selected = openingTags(html).filter((tag) => tag.includes('data-slot="tabs-tab"') && tag.includes('aria-selected="true"'));
+			expect(selected).toHaveLength(1);
+			expect(html.slice(html.indexOf(selected[0]!))).toMatch(/^[^>]*>Proposals/);
+		} finally { runtime.location = previous; }
+	});
+
+	test('a moment is one cell: day and time, and the year only when it is not the current one', () => {
+		const now = new Date('2026-09-20T00:00:00.000Z');
+		expect(formatWhen('2026-09-16T08:47:00.000Z', 'pt-BR', now)).toBe('16/09 08:47');
+		expect(formatWhen('2026-09-16T08:47:00.000Z', 'en-US', now)).toBe('09/16 08:47');
+		expect(formatWhen('2025-12-31T23:05:00.000Z', 'pt-BR', now)).toBe('31/12/2025 23:05');
+		expect(formatWhen('not a date', 'pt-BR', now)).toBe('not a date');
+	});
+
 	test('a deep run keeps only its own events while activity is reloaded', () => {
 		const event = (seq: number, runId: string): RunEventView => ({
 			seq, runId, kind: 'run.state', fromState: 'queued', toState: 'working', payload: {}, createdAt: '2026-09-07T00:00:00.000Z',

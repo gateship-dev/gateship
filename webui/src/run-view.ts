@@ -530,17 +530,24 @@ export function runStageStatuses(
 	])) as Readonly<Record<RunState, RunStageStatus>>;
 }
 
-export type StateTone = 'default' | 'secondary' | 'info' | 'success' | 'warning' | 'error';
+export type StateTone = 'neutral' | 'info' | 'merged' | 'success' | 'warning' | 'error';
 
-/** Badge variant for a state. The five families the theme declares. */
+/**
+ * The hue of a run state, in the families the theme declares. Amber is every
+ * state that stopped and waits (on the operator, on a provider, on a resume),
+ * blue is work in motion, grey is a run that has not started or was set aside.
+ */
 export function toneOf(state: RunState): StateTone {
 	if (state === 'failed') return 'error';
 	if (state === 'done') return 'success';
-	if (state === 'waiting-user' || state === 'waiting-provider' || state === 'interrupted') {
-		return 'warning';
-	}
-	if (state === 'ready-to-ship') return 'info';
-	return 'default';
+	if (state === 'ready-to-ship' || state === 'waiting-user' || state === 'waiting-provider' || state === 'interrupted') return 'warning';
+	if (state === 'queued' || state === 'cancelled') return 'neutral';
+	return 'info';
+}
+
+/** The run is moving by itself right now, so its status dot moves too. */
+export function isRunActive(state: RunState): boolean {
+	return state === 'queued' || state === 'working' || state === 'verify' || state === 'review' || state === 'full-verify' || state === 'shipping';
 }
 
 /** What the screen answers at a glance: does Gateship need the operator now? */
@@ -587,7 +594,7 @@ const ATTENTION_TONE: Readonly<Record<OperatorAttention, StateTone>> = {
 	Working: 'info',
 	// Idle is the quiet state by definition; the solid primary chip read as a
 	// glowing button, worst on dark.
-	Idle: 'secondary',
+	Idle: 'neutral',
 };
 
 /** Badge variant for a human state, which no longer follows a single run. */

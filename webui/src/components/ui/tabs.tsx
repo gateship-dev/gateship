@@ -11,12 +11,13 @@
 // stack layout, which every surface on this screen relies on.
 
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs';
-import type React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
 	segmentedControlItemLayoutClassName,
 	segmentedControlItemSizeClassNames,
 } from '../../lib/segmented-control.ts';
 import { cn } from '../../lib/cn.ts';
+import { Count } from './count.tsx';
 
 export function Tabs({
 	className,
@@ -24,11 +25,20 @@ export function Tabs({
 }: Omit<TabsPrimitive.Root.Props, 'className'> & { className?: string }): React.ReactElement {
 	return (
 		<TabsPrimitive.Root
-			className={cn('flex flex-col gap-2', className)}
+			className={cn('flex flex-col gap-6', className)}
 			data-slot="tabs"
 			{...props}
 		/>
 	);
+}
+
+/* A tab opened by its address, or by the back button, can sit past the edge of a narrow list: bring it in, without moving the page. */
+function revealActiveTab(node: unknown): void {
+	const scroller = node as { scrollLeft: number; clientWidth: number; querySelector: (selector: string) => { offsetLeft: number; offsetWidth: number } | null } | null;
+	const active = scroller?.querySelector('[data-slot="tabs-tab"][aria-selected="true"]');
+	if (scroller === null || scroller === undefined || active === null || active === undefined) return;
+	const hidden = active.offsetLeft < scroller.scrollLeft || active.offsetLeft + active.offsetWidth > scroller.scrollLeft + scroller.clientWidth;
+	if (hidden) scroller.scrollLeft = active.offsetLeft - (scroller.clientWidth - active.offsetWidth) / 2;
 }
 
 export function TabsList({
@@ -36,15 +46,19 @@ export function TabsList({
 	children,
 	...props
 }: Omit<TabsPrimitive.List.Props, 'className'> & { className?: string }): React.ReactElement {
+	const scroller = useRef<HTMLDivElement>(null);
+	/* After every render, not once: the selected tab changes without this list remounting. */
+	useEffect(() => revealActiveTab(scroller.current));
 	return (
 		<div
-			className="relative max-w-full"
+			className="relative w-fit max-w-full"
 			data-slot="tabs-scroll-frame"
 		>
-			<div className="scroll-container scroll-container-stable max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll">
+			<div className="scroll-container scroll-fade-x max-w-full overflow-x-auto rounded-lg" data-slot="tabs-scroll" ref={scroller}>
 				<TabsPrimitive.List
 					className={cn(
-						'relative z-0 flex w-max min-w-full items-center justify-start gap-x-0.5 rounded-lg bg-muted py-0.5 pr-8 pl-0.5 text-muted-foreground/72 sm:pr-0.5',
+						/* An inactive tab is quieter than the open one by its colour alone, never by fading the muted ink further: at 72% it measured 4.27:1 on the list's fill, under the AA floor. */
+						'relative z-0 flex w-max items-center justify-start gap-x-1 rounded-lg bg-muted p-1 text-muted-foreground',
 						className,
 					)}
 					data-slot="tabs-list"
@@ -71,9 +85,10 @@ export function TabsTab({
 	return (
 		<TabsPrimitive.Tab
 			className={cn(
-				'relative flex shrink-0 grow cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-transparent font-medium text-base outline-none pointer-coarse:min-h-11 ' +
+				/* One size at every width: a tab is not a field, so nothing asks for 16px on a phone, and five of them at 16px need 603px. */
+				'relative flex shrink-0 grow cursor-pointer items-center justify-center whitespace-nowrap rounded-md border border-transparent font-medium text-sm outline-none pointer-coarse:min-h-11 ' +
 					'transition-[color,background-color,box-shadow] hover:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none ' +
-					'data-active:text-foreground data-disabled:pointer-events-none data-disabled:opacity-64 sm:text-sm',
+					'data-active:text-foreground data-disabled:pointer-events-none data-disabled:opacity-64',
 				segmentedControlItemLayoutClassName,
 				segmentedControlItemSizeClassNames.default,
 				className,
@@ -84,24 +99,10 @@ export function TabsTab({
 	);
 }
 
-/** The count chip a tab carries; `attention` marks a queue waiting on the operator. */
-export function TabsCount({
-	attention = false,
-	children,
-}: {
-	attention?: boolean;
-	children: React.ReactNode;
-}): React.ReactElement {
-	return (
-		<span
-			className={cn(
-				'inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1 font-mono text-[10px] tabular-nums',
-				attention ? 'bg-attention text-attention-foreground' : 'bg-muted text-muted-foreground',
-			)}
-		>
-			{children}
-		</span>
-	);
+/** The count a tab carries; `attention` says it counts something waiting on the operator. */
+/* A tab's figure wears the tab's own ink, as every inline count does: a chip's muted fill on the list's muted fill measured 2.88:1. Attention keeps its family's colour. */
+export function TabsCount({ attention = false, children }: { attention?: boolean; children: React.ReactNode }): React.ReactElement {
+	return <Count form="plain" tone={attention ? 'warning' : 'neutral'}>{children}</Count>;
 }
 
 export function TabsPanel({

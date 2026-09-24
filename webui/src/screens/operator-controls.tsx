@@ -1,30 +1,35 @@
 // webui/src/screens/operator-controls.tsx
 
 import React from 'react';
-import { Button, buttonVariants } from '../components/ui/button.tsx';
-import { CardAction, CardDisclosure, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
+import { Button } from '../components/ui/button.tsx';
+import { Card, CardDescription, CardDisclosure, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
 
-export const BUTTON_CLASS = buttonVariants({ variant: 'outline' });
-export const PRIMARY_BUTTON_CLASS = buttonVariants({ variant: 'default' });
-
-export function ActionButton({ label, enabled, onClick }: { label: string; enabled: boolean; onClick: () => void }): React.ReactElement {
-	return <Button variant="outline" disabled={!enabled} onClick={onClick} type="button">{label}</Button>;
+export function ActionButton({ label, enabled, onClick, variant = 'outline' }: { label: string; enabled: boolean; onClick: () => void; variant?: 'default' | 'outline' | 'destructive' }): React.ReactElement {
+	return <Button variant={variant} disabled={!enabled} onClick={onClick} type="button">{label}</Button>;
 }
 
-export function ContextPanel({ title, description, open = false, children, actionLabels = { open: 'open', close: 'close' } }: { title: string; description: string; open?: boolean; children: React.ReactNode; actionLabels?: { open: string; close: string } }): React.ReactElement {
+export function ContextPanel({ title, description, open = false, children }: { title: string; description: string; open?: boolean; children: React.ReactNode }): React.ReactElement {
 	return (
-		<CardDisclosure className="group" open={open}>
+		<CardDisclosure open={open}>
 			<CardSummary>
 				<CardTitle>{title}</CardTitle>
-				<CardAction aria-hidden="true">
-					<span className="text-muted-foreground text-xs group-open:hidden">{actionLabels.open}</span>
-					<span className="hidden text-muted-foreground text-xs group-open:inline">{actionLabels.close}</span>
-				</CardAction>
 			</CardSummary>
 			<CardPanel>
+				{/* A disclosure keeps its description inside: closed, it is one line and its summary is only a name. */}
 				<p className="text-muted-foreground text-sm">{description}</p>
 				{children}
 			</CardPanel>
 		</CardDisclosure>
+	);
+}
+
+/** A section the page is about: always there, so it is a card and carries no chevron to fold what nobody folds. */
+export function SectionCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }): React.ReactElement {
+	return (
+		<Card>
+			{/* What the section is sits with its name; the panel starts with the content. */}
+			<CardHeader><CardTitle>{title}</CardTitle><CardDescription>{description}</CardDescription></CardHeader>
+			<CardPanel>{children}</CardPanel>
+		</Card>
 	);
 }

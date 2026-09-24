@@ -1,28 +1,36 @@
 // webui/src/screens/work-screen.tsx
 
-import React, { useState } from 'react';
-import type { AppProps } from '../app-props.ts';
+import React, { useMemo, useState } from 'react';
+import type { AppProps, BulkOutcome } from '../app-props.ts';
 import type { DiagnosticFindingView, DiagnosticsView, IssueReviewDraft } from '../client.ts';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
 import { Badge } from '../components/ui/badge.tsx';
+import { Count } from '../components/ui/count.tsx';
+import { Reference } from '../components/ui/reference.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { Button } from '../components/ui/button.tsx';
 import { Card, CardAction, CardDescription, CardDisclosure, CardFooter, CardHeader, CardPanel, CardSummary, CardTitle } from '../components/ui/card.tsx';
-import { FormField, FormStack } from '../components/ui/card-layout.tsx';
-import { EmptyState } from '../components/ui/empty-state.tsx';
+import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
+import { DataTable, DataTableBulkAction, DataTableFilter, DataTableNote, DataTablePagination, DataTableToolbar, gateshipTableFeatures, useClientPage, useGateshipTable, type GateshipColumnDef } from '../components/ui/data-table.tsx';
 import { Input } from '../components/ui/input.tsx';
+import { DrawerLayout, ItemDrawer, successorOf, useOpenItem } from '../components/ui/item-drawer.tsx';
 import { SelectField } from '../components/ui/select.tsx';
-import { Separator } from '../components/ui/separator.tsx';
 import { Tabs, TabsCount, TabsList, TabsPanel, TabsTab } from '../components/ui/tabs.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, WorkCatalog } from '../locale.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
-import { OperationalReadPanel } from '../operational-unavailable.tsx';
+import { OperationalReadPanel, OperationalUnavailable } from '../operational-unavailable.tsx';
 import { actionsFor, activeRunIssueId } from '../run-view.ts';
-import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
+import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { fieldReader, formatCount } from './runs.tsx';
 import { draftChanged } from './runs-screen.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
+import { useTabParam } from '../lib/use-tab-param.ts';
+
+const WORK_TABS = ['queue', 'approval', 'ideas', 'diagnostics', 'proposals'] as const;
 
 function parseLines(value: string, optional = false): string[] {
 	if (optional && value.trim() === '') return [];
@@ -45,7 +53,7 @@ export function BacklogPanel({
 	if (backlog.length === 0) {
 		return (
 			<Card data-state="empty">
-				<CardHeader className="py-3">
+				<CardHeader>
 					<CardTitle>{catalog.title}</CardTitle>
 					<CardDescription>{catalog.description(0, formatCount(0, locale))}</CardDescription>
 				</CardHeader>
@@ -113,32 +121,32 @@ export function IssueIntakePanel({
 					});
 				}}
 			>
-				<FormField className="text-sm" htmlFor="issue-title">
+				<FormField htmlFor="issue-title" measure="prose">
 					<span className="font-medium">{catalog.form.title}</span>
 					<Input id="issue-title" name="title" required />
 				</FormField>
-				<FormField className="text-sm" htmlFor="issue-objective">
+				<FormField htmlFor="issue-objective" measure="prose">
 					<span className="font-medium">{catalog.form.objective}</span>
 					<Textarea className="min-h-24" id="issue-objective" name="objective" required />
 				</FormField>
 				<input aria-hidden="true" name="scope" type="hidden" />
 				<input aria-hidden="true" name="verificationCommand" type="hidden" />
-				<FormField className="text-sm" htmlFor="issue-acceptance">
+				<FormField htmlFor="issue-acceptance" measure="prose">
 					<span className="font-medium">{catalog.form.acceptance}</span>
 					<Textarea className="min-h-24" id="issue-acceptance" name="acceptance" required />
 				</FormField>
-				<FormField className="text-sm" htmlFor="issue-boundaries">
+				<FormField htmlFor="issue-boundaries" measure="prose">
 					<span className="font-medium">{catalog.form.boundaries}</span>
 					<Textarea className="min-h-20" id="issue-boundaries" name="boundaries" />
 				</FormField>
-				<FormField className="text-sm" htmlFor="issue-verify">
+				<FormField htmlFor="issue-verify" measure="prose">
 					<span className="font-medium">{catalog.form.verify}</span>
-					<Textarea className="min-h-20 font-mono" id="issue-verify" name="verify" placeholder={catalog.form.verificationPlaceholder} required />
+					<Textarea className="min-h-20" mono id="issue-verify" name="verify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
 				<CardFooter>
-					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+					<Button disabled={pending} type="submit">
 					{catalog.intake.create}
-				</button>
+				</Button>
 				</CardFooter>
 			</FormStack>
 		</ContextPanel>
@@ -169,7 +177,7 @@ export function IssueSpecifyPanel({
 					});
 				}}
 			>
-				<FormField className="text-sm" htmlFor="idea-id">
+				<FormField htmlFor="idea-id">
 					<span className="font-medium">{catalog.specification.idea}</span>
 					<SelectField
 						defaultValue={ideas[0]?.id}
@@ -179,28 +187,28 @@ export function IssueSpecifyPanel({
 						required
 					/>
 				</FormField>
-				<FormField className="text-sm" htmlFor="idea-objective">
+				<FormField htmlFor="idea-objective" measure="prose">
 					<span className="font-medium">{catalog.form.objective}</span>
 					<Textarea className="min-h-24" id="idea-objective" name="ideaObjective" required />
 				</FormField>
 				<input aria-hidden="true" name="ideaScope" type="hidden" />
 				<input aria-hidden="true" name="ideaVerificationCommand" type="hidden" />
-				<FormField className="text-sm" htmlFor="idea-acceptance">
+				<FormField htmlFor="idea-acceptance" measure="prose">
 					<span className="font-medium">{catalog.form.acceptance}</span>
 					<Textarea className="min-h-24" id="idea-acceptance" name="ideaAcceptance" required />
 				</FormField>
-				<FormField className="text-sm" htmlFor="idea-boundaries">
+				<FormField htmlFor="idea-boundaries" measure="prose">
 					<span className="font-medium">{catalog.form.boundaries}</span>
 					<Textarea className="min-h-20" id="idea-boundaries" name="ideaBoundaries" />
 				</FormField>
-				<FormField className="text-sm" htmlFor="idea-verify">
+				<FormField htmlFor="idea-verify" measure="prose">
 					<span className="font-medium">{catalog.form.verify}</span>
-					<Textarea className="min-h-20 font-mono" id="idea-verify" name="ideaVerify" placeholder={catalog.form.verificationPlaceholder} required />
+					<Textarea className="min-h-20" mono id="idea-verify" name="ideaVerify" placeholder={catalog.form.verificationPlaceholder} required />
 				</FormField>
 				<CardFooter>
-					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+					<Button disabled={pending} type="submit">
 					{catalog.specification.submit}
-				</button>
+				</Button>
 				</CardFooter>
 			</FormStack>
 		</ContextPanel>
@@ -236,21 +244,21 @@ function reviewPayload(values: ReviewValues & { evidence?: IssueReviewDraft['evi
 
 function SpecFields({ catalog, values, setters }: { catalog: WorkCatalog; values: ReviewValues; setters: { setObjective: React.Dispatch<React.SetStateAction<string>>; setAcceptance: React.Dispatch<React.SetStateAction<string[]>>; setBoundaries: React.Dispatch<React.SetStateAction<string[]>>; setVerify: React.Dispatch<React.SetStateAction<string[]>> } }): React.ReactElement {
 	return <>
-		<FormField className="text-sm" htmlFor="review-objective">
+		<FormField htmlFor="review-objective" measure="prose">
 			<span className="font-medium">{catalog.form.objective}</span><span className="sr-only">Scope and expected outcome Escopo e resultado esperado</span>
 			<Textarea className="min-h-24" id="review-objective" onChange={(event) => setters.setObjective((event.currentTarget as unknown as { value: string }).value)} required value={values.objective} />
 		</FormField>
-		<FormField className="text-sm" htmlFor="review-acceptance">
+		<FormField htmlFor="review-acceptance" measure="prose">
 			<span className="font-medium">{catalog.form.acceptance}</span>
 			<Textarea className="min-h-24" id="review-acceptance" onChange={(event) => setters.setAcceptance((event.currentTarget as unknown as { value: string }).value.split('\n'))} required value={values.acceptance.join('\n')} />
 		</FormField>
-		<FormField className="text-sm" htmlFor="review-boundaries">
+		<FormField htmlFor="review-boundaries" measure="prose">
 			<span className="font-medium">{catalog.form.boundaries}</span>
 			<Textarea className="min-h-20" id="review-boundaries" onChange={(event) => setters.setBoundaries((event.currentTarget as unknown as { value: string }).value.split('\n'))} value={values.boundaries.join('\n')} />
 		</FormField>
-		<FormField className="text-sm" htmlFor="review-verify">
+		<FormField htmlFor="review-verify" measure="prose">
 			<span className="font-medium">{catalog.form.verify}</span><span className="sr-only">Verification command Comando de verificação</span>
-			<Textarea className="min-h-20 font-mono" id="review-verify" onChange={(event) => setters.setVerify((event.currentTarget as unknown as { value: string }).value.split('\n'))} required value={values.verify.join('\n')} />
+			<Textarea className="min-h-20" mono id="review-verify" onChange={(event) => setters.setVerify((event.currentTarget as unknown as { value: string }).value.split('\n'))} required value={values.verify.join('\n')} />
 		</FormField>
 	</>;
 }
@@ -305,38 +313,36 @@ export function IssueReviewForm({
 				onReviewIssue(draft.id, reviewPayload({ objective, acceptance, boundaries, verify, evidence: draft.evidence }));
 			}}
 		>
-			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'outline'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
+			<div><Badge variant={draft.state === 'approved' ? 'success' : draft.state === 'stale' ? 'warning' : 'neutral'}>{catalog.review.stateLabels[draft.state]}</Badge></div>
 			<SpecFields catalog={catalog} setters={setters} values={values} />
 			<EvidencePanel catalog={catalog} evidence={draft.evidence} />
-			<label className="flex items-start gap-2 text-sm">
+			<CheckField>
 				<input checked={confirmed} disabled={pending || dirty} onChange={(event) => setConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmPersisted}</span>
-			</label>
-			<FormField className="text-sm" htmlFor="abandon-reason">
+			</CheckField>
+			<FormField htmlFor="abandon-reason" measure="prose">
 				<span className="font-medium">{catalog.review.abandonReason}</span>
 				<Textarea className="min-h-20" id="abandon-reason" onChange={(event) => setAbandonReason((event.currentTarget as unknown as { value: string }).value)} value={abandonReason} />
 			</FormField>
-			<label className="flex items-start gap-2 text-sm">
+			<CheckField>
 				<input checked={abandonConfirmed} disabled={pending || abandonReason.trim().length === 0} onChange={(event) => setAbandonConfirmed((event.currentTarget as unknown as { checked: boolean }).checked)} type="checkbox" />
 				<span>{catalog.review.confirmAbandon(draft.id)}</span>
-			</label>
+			</CheckField>
 			<CardFooter>
-				<button className={BUTTON_CLASS} disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</button>
-				<button
-					className={PRIMARY_BUTTON_CLASS}
-					disabled={pending || dirty || !confirmed}
-					onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
-					type="button"
-				>{catalog.review.approve}</button>
-				<button
-					className={BUTTON_CLASS}
+				<Button variant="destructive"
 					disabled={pending || abandonReason.trim().length === 0 || !abandonConfirmed}
 					onClick={() => {
 						setAbandonConfirmed(false);
 						onAbandonIssue(draft.id, abandonReason.trim());
 					}}
 					type="button"
-				>{catalog.review.abandon}</button>
+				>{catalog.review.abandon}</Button>
+				<Button variant="outline" disabled={pending || !dirty} type="submit">{catalog.review.saveRevision}</Button>
+				<Button
+					disabled={pending || dirty || !confirmed}
+					onClick={() => { setConfirmed(false); onApproveIssue(draft.id); }}
+					type="button"
+				>{catalog.review.approve}</Button>
 			</CardFooter>
 		</FormStack>
 	);
@@ -362,14 +368,14 @@ export function IssueReviewPanel({
 	const ownedByRun = selected !== null && activeRunIssueId(runs) === selected.id;
 
 	return (
-		<CardDisclosure className="group">
+		<CardDisclosure>
 			<CardSummary>
 				<CardTitle>{catalog.review.title}</CardTitle>
 				<CardDescription>{catalog.review.description(drafts.length, formatCount(drafts.length, locale))}</CardDescription>
-				<CardAction><Badge variant="secondary">{formatCount(drafts.length, locale)}</Badge></CardAction>
+				<CardAction><Count>{formatCount(drafts.length, locale)}</Count></CardAction>
 			</CardSummary>
 			<CardPanel>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="review-issue">
+				<FormField htmlFor="review-issue">
 					<span className="font-medium">{catalog.review.draft}</span>
 					<SelectField
 						id="review-issue"
@@ -380,7 +386,7 @@ export function IssueReviewPanel({
 						onValueChange={(value) => setSelectedId(value === '' ? null : value)}
 						value={selectedId ?? ''}
 					/>
-				</label>
+				</FormField>
 				{selected === null || !ownedByRun ? null : (
 					<p className="text-muted-foreground text-sm">
 						{catalog.review.ownedByRun(selected.id)}
@@ -419,7 +425,7 @@ export function diagnosticScanVariant(
 	if (state === 'completed') return 'success';
 	if (state === 'failed') return 'error';
 	if (state === 'queued' || state === 'running') return 'info';
-	return 'secondary';
+	return 'neutral';
 }
 
 export function DiagnosticScanSummary({
@@ -469,130 +475,189 @@ function DiagnosticsFooter({
 	);
 }
 
-export function DiagnosticFindingCard({
-	catalog,
-	finding,
-	locale,
-	pending,
-	onDismiss,
-	onPromote,
-}: {
-	finding: DiagnosticFindingView;
-	catalog: WorkCatalog;
-	locale: Locale;
-	pending: boolean;
-	onDismiss: AppProps['onDismissDiagnosticFinding'];
-	onPromote: AppProps['onPromoteDiagnosticFinding'];
-}): React.ReactElement {
+type PromoteInput = Parameters<AppProps['onPromoteProposal']>[1];
+
+/*
+ * The contract a suggestion turns into. A proposal and a diagnostic finding are
+ * promoted the same way, so they share the form; `prefix` keeps each one's
+ * field names. It exists only while its row is open: eighty of these mounted
+ * behind a closed tab was hundreds of fields nobody was filling.
+ */
+/* The form's own submit lives in the drawer's foot, beside dismiss, and reaches the form by its id: one row of actions, never two. */
+function PromoteForm({ catalog, prefix, defaultTitle, onPromote }: { catalog: WorkCatalog; prefix: 'proposal' | 'diagnostic'; defaultTitle: string; onPromote: (input: PromoteInput) => void }): React.ReactElement {
 	return (
-		<details className="rounded-lg border border-border p-4 text-sm">
-			<summary className="flex cursor-pointer list-none flex-wrap items-center gap-2">
-				<Badge variant={diagnosticSeverityVariant(finding.severity)}>{catalog.diagnostics.severityLabels[finding.severity]}</Badge>
-				<span className="font-semibold">{finding.rule}</span>
-				{finding.occurrenceCount > 1 ? <Badge variant="outline">{catalog.diagnostics.occurrences(formatCount(finding.occurrenceCount, locale))}</Badge> : null}
-				<code className="w-full break-all font-mono text-muted-foreground text-xs">{diagnosticFindingLocation(finding)}</code>
-			</summary>
-			<div className="mt-4 flex flex-col gap-4">
-				<p className="whitespace-pre-wrap break-words text-muted-foreground">{finding.evidence}</p>
-				<div className="flex flex-wrap items-center justify-between gap-2 font-mono text-muted-foreground text-xs">
-					<span>{catalog.diagnostics.toolVersion(finding.toolVersion)}</span>
-					<code>{finding.sourceSha.slice(0, 12)}</code>
-				</div>
-				<div className="flex justify-end">
-					<Button disabled={pending} onClick={() => onDismiss(finding.id)} size="sm" type="button" variant="ghost">
-						{catalog.diagnostics.dismiss}
-					</Button>
-				</div>
-				<form
-					className="flex flex-col gap-3"
-					onSubmit={(event) => {
-						event.preventDefault();
-						const value = fieldReader(event.currentTarget);
-						onPromote(finding.id, {
-							title: value('diagnosticTitle'),
-							objective: value('diagnosticObjective'),
-							acceptance: parseLines(value('diagnosticAcceptance')),
-							boundaries: parseLines(value('diagnosticBoundaries'), true),
-							verify: [value('diagnosticVerificationCommand')],
-						});
-					}}
-				>
-					<label className="flex flex-col gap-1">
-						<span className="font-medium">{catalog.form.title}</span>
-						<Input defaultValue={catalog.diagnostics.defaultIssueTitle(finding.rule, finding.file).slice(0, 120)} name="diagnosticTitle" required />
-					</label>
-					<label className="flex flex-col gap-1">
-						<span className="font-medium">{catalog.form.objective}</span>
-						<Textarea className="min-h-24" name="diagnosticObjective" required />
-					</label>
-					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name="diagnosticAcceptance" required /></label>
-					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name="diagnosticBoundaries" /></label>
-					<label className="flex flex-col gap-1">
-						<span className="font-medium">{catalog.form.verify}</span>
-						<Input className="font-mono" name="diagnosticVerificationCommand" placeholder={catalog.form.verificationPlaceholder} required />
-					</label>
-					<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">{catalog.form.promote}</button>
-				</form>
-			</div>
-		</details>
+		<FormStack
+			id={`${prefix}-promote`}
+			onSubmit={(event) => {
+				event.preventDefault();
+				const value = fieldReader(event.currentTarget);
+				onPromote({
+					title: value(`${prefix}Title`),
+					objective: value(`${prefix}Objective`),
+					acceptance: parseLines(value(`${prefix}Acceptance`)),
+					boundaries: parseLines(value(`${prefix}Boundaries`), true),
+					verify: [value(`${prefix}VerificationCommand`)],
+				});
+			}}
+		>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.title}</span><Input defaultValue={defaultTitle} name={`${prefix}Title`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.objective}</span><Textarea name={`${prefix}Objective`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.acceptance}</span><Textarea name={`${prefix}Acceptance`} required /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.boundaries}</span><Textarea name={`${prefix}Boundaries`} /></FormField>
+			<FormField measure="prose"><span className="font-medium">{catalog.form.verify}</span><Input mono name={`${prefix}VerificationCommand`} placeholder={catalog.form.verificationPlaceholder} required /></FormField>
+		</FormStack>
 	);
 }
 
-export function PendingDiagnosticFindings({
-	catalog,
-	findings,
-	locale,
-	pending,
-	onDismiss,
-	onPromote,
-}: {
-	findings: readonly DiagnosticFindingView[];
-	catalog: WorkCatalog;
-	locale: Locale;
-	pending: boolean;
-	onDismiss: AppProps['onDismissDiagnosticFinding'];
-	onPromote: AppProps['onPromoteDiagnosticFinding'];
-}): React.ReactElement {
-	if (findings.length === 0) {
-		return <EmptyState compact>{catalog.diagnostics.noPending}</EmptyState>;
-	}
+/** What a row opens into: the evidence as captured, then whatever the row still admits. */
+/** A run of evidence text with its code spans set apart: what is between backticks is read character by character. */
+function inlineCode(text: string): React.ReactNode[] {
+	return text.split(/(`[^`]+`)/).filter((part) => part !== '').map((part, index) => part.startsWith('`') && part.endsWith('`')
+		? <code className="rounded bg-muted px-1 font-mono text-foreground text-xs" key={index}>{part.slice(1, -1)}</code>
+		: <React.Fragment key={index}>{part}</React.Fragment>);
+}
+
+const evidenceLines = (text: string): string[] => text.split('\n').map((line) => line.trim()).filter((line) => line !== '');
+
+/** What a finding is about, in the analyzer's words: the first line of its evidence. The rule is its id, not its name. */
+export function findingTitle(finding: Pick<DiagnosticFindingView, 'evidence' | 'rule'>): string {
+	return evidenceLines(finding.evidence)[0] ?? finding.rule;
+}
+
+/**
+ * An analyzer's evidence is three lines: what it saw, why it matters, what to
+ * do. The first is the finding's own name and leads in the row's weight; the
+ * rest are paragraphs in the body's ink, because they are the reading, not a
+ * note beside it.
+ */
+export function EvidenceProse({ text, withoutLead = false }: { text: string; /** When the lead already names the item elsewhere, the head of a drawer, it is not said twice. */ withoutLead?: boolean }): React.ReactElement {
+	const [lead, ...rest] = evidenceLines(text);
 	return (
-		<ul className="flex flex-col gap-3">
-			{findings.map((finding) => (
-				<li key={finding.id}>
-					<DiagnosticFindingCard catalog={catalog} finding={finding} locale={locale} onDismiss={onDismiss} onPromote={onPromote} pending={pending} />
-				</li>
-			))}
-		</ul>
+		<div className="flex flex-col gap-2" data-slot="evidence">
+			{lead === undefined || withoutLead ? null : <p className="font-medium">{inlineCode(lead)}</p>}
+			{rest.map((line, index) => <p className="break-words text-muted-foreground" key={index}>{inlineCode(line)}</p>)}
+		</div>
 	);
 }
 
-export function ResolvedDiagnosticFindings({
-	catalog,
-	findings,
-	locale,
-	omittedCount,
-}: {
-	findings: readonly DiagnosticFindingView[];
-	catalog: WorkCatalog['diagnostics'];
-	locale: Locale;
-	omittedCount: number;
-}): React.ReactElement {
+function SuggestionDetail({ evidence, marker, meta, withoutLead = false, children }: { evidence: string; /** The id the item carries, set above its text: a finding's rule, which is a code and never a label. */ marker?: React.ReactNode; meta?: React.ReactNode; withoutLead?: boolean; children?: React.ReactNode }): React.ReactElement {
 	return (
-		<details className="text-sm">
-			<summary className="cursor-pointer text-muted-foreground">{catalog.resolved(formatCount(findings.length, locale))}</summary>
-			<ul className="mt-3 flex flex-col gap-2">
-				{findings.map((finding) => (
-					<li className="flex flex-wrap items-center gap-2" key={finding.id}>
-						<Badge variant="secondary">{catalog.statusLabels[finding.status]}</Badge>
-						<span>{finding.rule}</span>
-						<code className="break-all text-xs text-muted-foreground">{diagnosticFindingLocation(finding)}</code>
-						{finding.promotedIssueId === null ? null : <Badge variant="info">{finding.promotedIssueId}</Badge>}
-					</li>
-				))}
-			</ul>
-			{omittedCount > 0 ? <p className="mt-2 text-muted-foreground">{catalog.omitted(formatCount(omittedCount, locale))}</p> : null}
-		</details>
+		<div className="flex max-w-3xl flex-col gap-4 text-sm" data-slot="suggestion-detail">
+			{marker === undefined ? null : <div className="flex flex-wrap items-center gap-2">{marker}</div>}
+			<EvidenceProse text={evidence} withoutLead={withoutLead} />
+			{meta}
+			{children}
+		</div>
+	);
+}
+
+type SuggestionView = 'pending' | 'resolved';
+/* A view's count is a Count, the figure every label in the product carries: mono, quiet, absent at zero. The accessible name keeps the number. */
+function SuggestionViews({ label, value, onChange, pending, resolved }: { label: string; value: SuggestionView; onChange: (value: SuggestionView) => void; pending: [string, string]; resolved: [string, string] }): React.ReactElement {
+	return (
+		<ToggleGroup aria-label={label} spacing={1} value={[value]} variant="outline" onValueChange={(next) => { if (next[0] !== undefined) onChange(next[0] as SuggestionView); }}>
+			<ToggleGroupItem aria-label={`${pending[0]} ${pending[1]}`} value="pending">{pending[0]}<Count form="plain">{pending[1]}</Count></ToggleGroupItem>
+			<ToggleGroupItem aria-label={`${resolved[0]} ${resolved[1]}`} value="resolved">{resolved[0]}<Count form="plain">{resolved[1]}</Count></ToggleGroupItem>
+		</ToggleGroup>
+	);
+}
+
+const findingMatches = (finding: DiagnosticFindingView, needle: string): boolean => `${finding.rule} ${finding.file} ${finding.evidence} ${finding.promotedIssueId ?? ''}`.toLocaleLowerCase().includes(needle);
+
+/** Findings as the product's table: severity, rule, where, how often. Evidence and promotion open under the row. */
+/**
+ * Dismissing the selected rows at once. The button asks first, naming the
+ * count, because a dismissal cannot be undone here. The rows the service
+ * accepted leave the list; the ones it refused stay, and the table's notice
+ * names each of them with the service's own reason until the next action.
+ */
+function useBulkDismiss(dismiss: ((ids: readonly string[]) => Promise<BulkOutcome>) | undefined, label: string, confirm: (count: number) => string, nameOf: (id: string) => string, catalog: WorkCatalog, locale: Locale): {
+	selection: { actions: (ids: readonly string[], clear: () => void) => React.ReactNode } | undefined;
+	notice: React.ReactNode;
+} {
+	const [refused, setRefused] = useState<{ settled: number; failed: BulkOutcome['failed'] } | null>(null);
+	if (dismiss === undefined) return { selection: undefined, notice: null };
+	const run = (ids: readonly string[], clear: () => void): void => {
+		setRefused(null);
+		void dismiss(ids).then((outcome) => { clear(); setRefused(outcome.failed.length === 0 ? null : { settled: outcome.settled.length, failed: outcome.failed }); });
+	};
+	return {
+		selection: { actions: (ids, clear) => <DataTableBulkAction confirm={confirm(ids.length)} label={label} locale={locale} onRun={() => run(ids, clear)} /> },
+		notice: refused === null ? null : (
+			<Alert variant="warning">
+				<AlertTitle>{catalog.bulk.partial(refused.settled, refused.failed.length)}</AlertTitle>
+				<AlertDescription><ul className="flex flex-col gap-1">{refused.failed.map((row) => <li key={row.id}><span className="font-medium text-foreground">{nameOf(row.id)}</span>: {row.reason}</li>)}</ul></AlertDescription>
+			</Alert>
+		),
+	};
+}
+
+function DiagnosticFindingsTable({ catalog, diagnostics, locale, pending, onDismiss, onDismissMany, onPromote, defaultView = 'pending', defaultOpenId }: {
+	catalog: WorkCatalog; diagnostics: DiagnosticsView; locale: Locale; pending: boolean; defaultView?: SuggestionView; defaultOpenId?: string;
+	onDismiss: AppProps['onDismissDiagnosticFinding']; onDismissMany?: AppProps['onDismissDiagnosticFindings']; onPromote: AppProps['onPromoteDiagnosticFinding'];
+}): React.ReactElement {
+	const [view, setView] = useState<SuggestionView>(defaultView);
+	const rows = view === 'pending' ? diagnostics.findings : diagnostics.resolvedFindings;
+	/* Only a pending finding can be dismissed, so only the pending view selects. */
+	const bulk = useBulkDismiss(view === 'pending' ? onDismissMany : undefined, catalog.diagnostics.dismiss, catalog.bulk.dismissFindings, (id) => { const found = rows.find((finding) => finding.id === id); return found === undefined ? id : findingTitle(found); }, catalog, locale);
+	const list = useClientPage(rows, findingMatches);
+	const columns = useMemo<GateshipColumnDef<DiagnosticFindingView>[]>(() => {
+		const defs: GateshipColumnDef<DiagnosticFindingView>[] = [
+			{ id: 'severity', header: catalog.list.columns.severity, meta: { kind: 'label' }, cell: ({ row }) => <Badge variant={diagnosticSeverityVariant(row.original.severity)}>{catalog.diagnostics.severityLabels[row.original.severity]}</Badge> },
+			/* What the finding is about, then the rule that raised it: the name a human reads, and beside it the id that repeats across rows. */
+			{ id: 'rule', header: catalog.list.columns.rule, meta: { kind: 'name', primary: true }, cell: ({ row }) => <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><span className="font-medium">{findingTitle(row.original)}</span><Reference>{row.original.rule}</Reference></span> },
+			{ id: 'location', header: catalog.list.columns.location, meta: { kind: 'code', className: 'max-w-80 truncate text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => diagnosticFindingLocation(row.original) },
+			{ id: 'occurrences', header: catalog.list.columns.occurrences, meta: { kind: 'measure', hideBelow: 'sm' }, cell: ({ row }) => formatCount(row.original.occurrenceCount, locale) },
+			...(view === 'pending'
+				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { kind: 'action' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismiss(row.original.id)}>{catalog.diagnostics.dismiss}</Button> }]
+				: [{ id: 'status', header: catalog.list.columns.status, meta: { kind: 'label' }, cell: ({ row }: { row: { original: DiagnosticFindingView } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant="neutral">{catalog.diagnostics.statusLabels[row.original.status]}</Badge>{row.original.promotedIssueId === null ? null : <Reference>{row.original.promotedIssueId}</Reference>}</span> }]),
+		];
+		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
+	}, [catalog, locale, onDismiss, pending, view]);
+	const table = useGateshipTable({ columns, data: list.page, features: gateshipTableFeatures, getRowId: (finding) => finding.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: list.total, state: { globalFilter: list.search, pagination: { pageIndex: Math.floor(list.offset / list.limit), pageSize: list.limit } }, onGlobalFilterChange: (value) => list.setSearch(String(value ?? '')) });
+	const ids = list.page.map((finding) => finding.id);
+	const [openId, setOpenId] = useOpenItem('finding', ids, defaultOpenId);
+	const open = openId === null ? null : rows.find((finding) => finding.id === openId) ?? null;
+	/* Dismissed from its drawer, the finding leaves and the drawer moves on to the next row, or closes on the last. */
+	const dismissOpen = (finding: DiagnosticFindingView): void => { setOpenId(successorOf(ids, finding.id)); onDismiss(finding.id); };
+	return (
+		<DrawerLayout open={open !== null}>
+			<DataTable
+				activeRowId={openId}
+				emptyDetail={list.search === '' ? '' : undefined}
+				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.diagnostics.noPending : catalog.diagnostics.noResolved}
+				notice={bulk.notice}
+				selection={bulk.selection}
+				storageKey="findings"
+				foot={<>
+					<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
+					{view === 'resolved' && diagnostics.resolvedFindingsOmittedCount > 0 ? <DataTableNote>{catalog.diagnostics.omitted(formatCount(diagnostics.resolvedFindingsOmittedCount, locale))}</DataTableNote> : null}
+				</>}
+				head={<DataTableToolbar>
+					<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingFindings, formatCount(diagnostics.findings.length, locale)]} resolved={[catalog.list.resolvedFindings, formatCount(diagnostics.resolvedFindings.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
+					<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchFindings} table={table} />
+				</DataTableToolbar>}
+				locale={locale}
+				onRowActivate={setOpenId}
+				table={table}
+			/>
+			<ItemDrawer
+				footer={open?.status === 'pending' ? <>
+					<Button disabled={pending} type="button" variant="outline" onClick={() => dismissOpen(open)}>{catalog.diagnostics.dismiss}</Button>
+					<Button disabled={pending} form="diagnostic-promote" type="submit">{catalog.form.promote}</Button>
+				</> : undefined}
+				locale={locale}
+				open={open !== null}
+				title={open === null ? '' : findingTitle(open)}
+				onClose={() => setOpenId(null)}
+			>
+				{open === null ? null : (
+					<SuggestionDetail evidence={open.evidence} marker={<Reference>{open.rule}</Reference>} meta={<p className="type-data flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{diagnosticFindingLocation(open)}</code><span>{catalog.diagnostics.toolVersion(open.toolVersion)}</span><code>{open.sourceSha.slice(0, 12)}</code></p>} withoutLead>
+						{open.status === 'pending' ? <PromoteForm catalog={catalog} defaultTitle={catalog.diagnostics.defaultIssueTitle(open.rule, open.file).slice(0, 120)} prefix="diagnostic" onPromote={(input) => onPromote(open.id, input)} /> : null}
+					</SuggestionDetail>
+				)}
+			</ItemDrawer>
+		</DrawerLayout>
 	);
 }
 
@@ -629,8 +694,8 @@ export function DiagnosticOutcomeSummary({
 }
 
 /**
- * One optional, advisory analyzer at a time. The summary stays compact; raw
- * evidence and issue promotion live behind per-finding disclosure.
+ * One optional, advisory analyzer at a time, on a tab of its own: what it is,
+ * how its last scan went and what its findings became, then the findings.
  */
 export function DiagnosticsPanel({
 	catalog,
@@ -640,7 +705,10 @@ export function DiagnosticsPanel({
 	onStartDiagnostic,
 	onCancelDiagnostic,
 	onDismissDiagnosticFinding,
+	onDismissDiagnosticFindings,
 	onPromoteDiagnosticFinding,
+	defaultView,
+	defaultOpenId,
 }: Pick<
 	AppProps,
 	| 'diagnostics'
@@ -648,265 +716,147 @@ export function DiagnosticsPanel({
 	| 'onStartDiagnostic'
 	| 'onCancelDiagnostic'
 	| 'onDismissDiagnosticFinding'
+	| 'onDismissDiagnosticFindings'
 	| 'onPromoteDiagnosticFinding'
 	| 'locale'
-> & { catalog: WorkCatalog }): React.ReactElement {
+> & { catalog: WorkCatalog; defaultView?: SuggestionView; defaultOpenId?: string }): React.ReactElement {
 	const scan = diagnostics.scan;
 	const active = scan?.state === 'queued' || scan?.state === 'running';
 	const analyzer = diagnostics.analyzers[0];
 	return (
-		<CardDisclosure className="group">
-			<CardSummary>
-				<CardTitle>{catalog.diagnostics.title}</CardTitle>
-				<CardDescription>
-					{active ? catalog.diagnostics.analyzing : catalog.diagnostics.pendingCount(diagnostics.findings.length, formatCount(diagnostics.findings.length, locale))}
-				</CardDescription>
-				<CardAction><Badge variant={active ? 'info' : 'secondary'}>{active ? catalog.diagnostics.running : formatCount(diagnostics.findings.length, locale)}</Badge></CardAction>
-			</CardSummary>
-			<CardPanel>
-				<div className="flex flex-col gap-2 text-sm">
-					<p className="text-muted-foreground">
-						{catalog.diagnostics.advisory}
-					</p>
-					{analyzer === undefined ? null : (
-						<div className="flex flex-wrap items-center gap-2">
-							<Badge variant="outline">{analyzer.label}</Badge>
-							<code className="text-xs">v{analyzer.version}</code>
-							<span className="text-muted-foreground">
-								{analyzer.id === 'react'
-									? catalog.diagnostics.analyzerDescriptions.react
-									: analyzer.description}
-							</span>
-						</div>
-					)}
-				</div>
-				<DiagnosticScanSummary catalog={catalog.diagnostics} scan={scan} />
-				{diagnostics.workspaceNotices.map((notice) => (
-					<p className="text-warning-foreground text-sm" key={notice}>{notice}</p>
-				))}
-				<DiagnosticOutcomeSummary catalog={catalog.diagnostics} locale={locale} stats={diagnostics.stats} />
-				<Separator />
-				<PendingDiagnosticFindings
-					catalog={catalog}
-					findings={diagnostics.findings}
-					locale={locale}
-					onDismiss={onDismissDiagnosticFinding}
-					onPromote={onPromoteDiagnosticFinding}
-					pending={pending}
-				/>
-				<ResolvedDiagnosticFindings
-					catalog={catalog.diagnostics}
-					findings={diagnostics.resolvedFindings}
-					locale={locale}
-					omittedCount={diagnostics.resolvedFindingsOmittedCount}
-				/>
-				<DiagnosticsFooter
-					active={active}
-					analyzer={analyzer}
-					catalog={catalog.diagnostics}
-					onCancelDiagnostic={onCancelDiagnostic}
-					onStartDiagnostic={onStartDiagnostic}
-					pending={pending}
-					scan={scan}
-				/>
-			</CardPanel>
-		</CardDisclosure>
+		<>
+			<Card>
+				<CardHeader>
+					<CardTitle>{catalog.diagnostics.title}</CardTitle>
+					<CardDescription>{active ? catalog.diagnostics.analyzing : catalog.diagnostics.pendingCount(diagnostics.findings.length, formatCount(diagnostics.findings.length, locale))}</CardDescription>
+					{active ? <CardAction><Badge variant="info">{catalog.diagnostics.running}</Badge></CardAction> : null}
+				</CardHeader>
+				<CardPanel>
+					<div className="flex flex-col gap-2 text-sm">
+						<p className="text-muted-foreground">{catalog.diagnostics.advisory}</p>
+						{analyzer === undefined ? null : (
+							<div className="flex flex-wrap items-center gap-2">
+								<Tag>{analyzer.label}</Tag>
+								<code className="text-xs">v{analyzer.version}</code>
+								<span className="text-muted-foreground">{analyzer.id === 'react' ? catalog.diagnostics.analyzerDescriptions.react : analyzer.description}</span>
+							</div>
+						)}
+					</div>
+					<DiagnosticScanSummary catalog={catalog.diagnostics} scan={scan} />
+					{diagnostics.workspaceNotices.map((notice) => <p className="text-sm text-warning-foreground" key={notice}>{notice}</p>)}
+					<DiagnosticOutcomeSummary catalog={catalog.diagnostics} locale={locale} stats={diagnostics.stats} />
+					<DiagnosticsFooter active={active} analyzer={analyzer} catalog={catalog.diagnostics} onCancelDiagnostic={onCancelDiagnostic} onStartDiagnostic={onStartDiagnostic} pending={pending} scan={scan} />
+				</CardPanel>
+			</Card>
+			<DiagnosticFindingsTable catalog={catalog} defaultOpenId={defaultOpenId} defaultView={defaultView} diagnostics={diagnostics} locale={locale} onDismiss={onDismissDiagnosticFinding} onDismissMany={onDismissDiagnosticFindings} onPromote={onPromoteDiagnosticFinding} pending={pending} />
+		</>
 	);
 }
 
+type AnyProposal = AppProps['proposals'][number] & { status?: 'dismissed' | 'promoted'; promotedIssueId?: string | null };
+const proposalMatches = (proposal: AnyProposal, needle: string): boolean => `${proposal.title} ${proposal.evidence} ${proposal.sourceIssueId} ${proposal.sourceRunId} ${proposal.promotedIssueId ?? ''}`.toLocaleLowerCase().includes(needle);
+
 /**
- * The inbox of ideas the runs found outside their issue: the evidence exactly
- * as it was captured, and the two decisions it admits. Discarding writes
- * nothing else; promoting files a new task with the contract the operator
- * authors here, pre-filled with the proposal's own title and never approved or
- * started by this screen. A settled proposal leaves the list.
+ * The inbox of ideas the runs found outside their issue, as the product's
+ * table: search it, page it, open one. Pending proposals admit two decisions:
+ * discarding writes nothing else; promoting files a new task with the contract
+ * the operator authors here, pre-filled with the proposal's own title and
+ * never approved or started by this screen. Resolved ones are a read-only
+ * record of what each became (GSHIP-643): no undo, no re-promotion.
  */
 export function ProposalsPanel({
 	catalog,
 	locale,
 	proposals,
+	resolvedProposals,
+	resolvedProposalsOmittedCount,
+	resolvedRead,
 	pending,
 	onDismissProposal,
+	onDismissProposals,
 	onPromoteProposal,
+	defaultView = 'pending',
+	defaultOpenId,
 }: Pick<
 	AppProps,
-	'locale' | 'proposals' | 'pending' | 'onDismissProposal' | 'onPromoteProposal'
-> & { catalog: WorkCatalog }): React.ReactElement {
+	'locale' | 'proposals' | 'resolvedProposals' | 'resolvedProposalsOmittedCount' | 'pending' | 'onDismissProposal' | 'onDismissProposals' | 'onPromoteProposal'
+> & { catalog: WorkCatalog; /** How the settled proposals were read: a failure is the table's notice, a first load is its skeleton rows. */ resolvedRead?: { failure: string | undefined; loading: boolean }; defaultView?: SuggestionView; defaultOpenId?: string }): React.ReactElement {
+	const [view, setView] = useState<SuggestionView>(defaultView);
+	const rows: readonly AnyProposal[] = view === 'pending' ? proposals : resolvedProposals;
+	const list = useClientPage(rows, proposalMatches);
+	const columns = useMemo<GateshipColumnDef<AnyProposal>[]>(() => {
+		const defs: GateshipColumnDef<AnyProposal>[] = [
+			{ id: 'title', header: catalog.list.columns.title, meta: { kind: 'name', className: 'font-medium', primary: true }, cell: ({ row }) => row.original.title },
+			{ id: 'origin', header: catalog.list.columns.origin, meta: { kind: 'code', hideBelow: 'sm' }, cell: ({ row }) => <Reference>{row.original.sourceIssueId}</Reference> },
+			{ id: 'run', header: catalog.list.columns.run, meta: { kind: 'code', className: 'text-muted-foreground', hideBelow: 'md' }, cell: ({ row }) => <span title={row.original.sourceRunId}>{row.original.sourceRunId.slice(0, 8)}</span> },
+			...(view === 'pending'
+				? [{ id: 'actions', header: () => <span className="sr-only">{catalog.list.columns.actions}</span>, meta: { kind: 'action' as const, label: catalog.list.columns.actions }, cell: ({ row }: { row: { original: AnyProposal } }) => <Button disabled={pending} size="sm" type="button" variant="ghost" onClick={() => onDismissProposal(row.original.id)}>{catalog.proposals.dismiss}</Button> }]
+				: [{ id: 'status', header: catalog.list.columns.status, meta: { kind: 'label' }, cell: ({ row }: { row: { original: AnyProposal } }) => <span className="flex flex-wrap items-center gap-2"><Badge variant={row.original.status === 'promoted' ? 'success' : 'neutral'}>{catalog.proposals.statusLabels[row.original.status ?? 'dismissed']}</Badge>{row.original.status === 'promoted' && row.original.promotedIssueId != null ? <><span className="text-muted-foreground">{catalog.proposals.became}</span><Reference>{row.original.promotedIssueId}</Reference></> : null}</span> }]),
+		];
+		return defs.map((column) => ({ ...column, enableHiding: false, enableSorting: false }));
+	}, [catalog, onDismissProposal, pending, view]);
+	const table = useGateshipTable({ columns, data: list.page, features: gateshipTableFeatures, getRowId: (proposal) => proposal.id, manualFiltering: true, manualPagination: true, manualSorting: true, rowCount: list.total, state: { globalFilter: list.search, pagination: { pageIndex: Math.floor(list.offset / list.limit), pageSize: list.limit } }, onGlobalFilterChange: (value) => list.setSearch(String(value ?? '')) });
+	const resolving = view === 'resolved';
+	/* A settled proposal cannot be dismissed again, so only the pending view selects. */
+	const bulk = useBulkDismiss(resolving ? undefined : onDismissProposals, catalog.proposals.dismiss, catalog.bulk.dismissProposals, (id) => rows.find((proposal) => proposal.id === id)?.title ?? id, catalog, locale);
+	const ids = list.page.map((proposal) => proposal.id);
+	const [openId, setOpenId] = useOpenItem('proposal', ids, defaultOpenId);
+	const open = openId === null ? null : rows.find((proposal) => proposal.id === openId) ?? null;
+	const dismissOpen = (proposal: AnyProposal): void => { setOpenId(successorOf(ids, proposal.id)); onDismissProposal(proposal.id); };
+	/* What the settled view is, and why it may be short: facts about these rows, so they sit in the rows' frame. */
+	const notice = resolving ? <>
+		<DataTableNote><Tag>{catalog.proposals.readOnly}</Tag>{catalog.proposals.settledNote}</DataTableNote>
+		{resolvedRead?.failure === undefined ? null : <OperationalUnavailable detail={resolvedRead.failure} locale={locale} resource="Resolved proposals" />}
+	</> : bulk.notice;
 	return (
-		<CardDisclosure className="group">
-			<CardSummary>
-				<CardTitle>{catalog.proposals.pendingTitle}</CardTitle>
-				<CardDescription>{catalog.proposals.pendingCount(proposals.length, formatCount(proposals.length, locale))}</CardDescription>
-				<CardAction><Badge variant="secondary">{formatCount(proposals.length, locale)}</Badge></CardAction>
-			</CardSummary>
-			<CardPanel>
-				{proposals.length === 0 ? (
-					<EmptyState compact>{catalog.proposals.emptyPending}</EmptyState>
-				) : (
-					<ul className="flex flex-col divide-y divide-border">
-						{proposals.map((proposal) => (
-							<li className="flex min-w-0 flex-col gap-3 py-5 text-sm first:pt-0 last:pb-0" key={proposal.id}>
-								<div className="flex items-start justify-between gap-3">
-									<div className="flex min-w-0 flex-col gap-1.5">
-										<span className="break-words font-semibold">{proposal.title}</span>
-										<div className="flex flex-wrap items-center gap-2 text-muted-foreground">
-											<Badge variant="outline">{proposal.sourceIssueId}</Badge>
-											<code className="break-all text-xs">{proposal.sourceRunId}</code>
-										</div>
-									</div>
-									<Button
-										disabled={pending}
-										onClick={() => onDismissProposal(proposal.id)}
-										size="sm"
-										type="button"
-										variant="ghost"
-									>
-										{catalog.proposals.dismiss}
-									</Button>
-								</div>
-								<p className="whitespace-pre-wrap break-words text-muted-foreground">
-									{proposal.evidence}
-								</p>
-								{/* Forty of these live on one tab: the promote form discloses
-								 * per item instead of stacking three fields forty times. */}
-								<details>
-									<summary className="w-fit cursor-pointer text-muted-foreground text-sm hover:text-foreground">
-										{catalog.form.promote}
-									</summary>
-								<form
-									className="mt-3 flex flex-col gap-3"
-									onSubmit={(event) => {
-										event.preventDefault();
-										const value = fieldReader(event.currentTarget);
-						onPromoteProposal(proposal.id, {
-							title: value('proposalTitle'),
-							objective: value('proposalObjective'),
-							acceptance: parseLines(value('proposalAcceptance')),
-							boundaries: parseLines(value('proposalBoundaries'), true),
-							verify: [value('proposalVerificationCommand')],
-										});
-									}}
-								>
-									<label
-										className="flex flex-col gap-1"
-										htmlFor={`proposal-title-${proposal.id}`}
-									>
-										<span className="font-medium">{catalog.form.title}</span>
-										<Input
-															defaultValue={proposal.title}
-											id={`proposal-title-${proposal.id}`}
-											name="proposalTitle"
-											required
-										/>
-									</label>
-									<label
-										className="flex flex-col gap-1"
-										htmlFor={`proposal-scope-${proposal.id}`}
-									>
-						<span className="font-medium">{catalog.form.objective}</span>
-										<Textarea
-											className="min-h-24"
-											id={`proposal-scope-${proposal.id}`}
-																							name="proposalObjective"
-																							required
-																			/>
-																			</label>
-																			<input aria-hidden="true" name="proposalScope" type="hidden" />
-																			<input aria-hidden="true" name="proposalVerificationCommand" type="hidden" />
-					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.acceptance}</span><Textarea className="min-h-24" name="proposalAcceptance" required /></label>
-					<label className="flex flex-col gap-1"><span className="font-medium">{catalog.form.boundaries}</span><Textarea className="min-h-20" name="proposalBoundaries" /></label>
-									<label
-										className="flex flex-col gap-1"
-										htmlFor={`proposal-command-${proposal.id}`}
-									>
-						<span className="font-medium">{catalog.form.verify}</span>
-										<Input
-											className="font-mono"
-											id={`proposal-command-${proposal.id}`}
-											name="proposalVerificationCommand"
-											placeholder={catalog.form.verificationPlaceholder}
-											required
-										/>
-									</label>
-									<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
-										{catalog.form.promote}
-									</button>
-								</form>
-								</details>
-							</li>
-						))}
-					</ul>
-				)}
-			</CardPanel>
-		</CardDisclosure>
+		<DrawerLayout open={open !== null}>
+			<DataTable
+				activeRowId={openId}
+				emptyDetail={list.search === '' ? '' : undefined}
+				emptyState={list.search !== '' ? undefined : view === 'pending' ? catalog.proposals.emptyPending : catalog.proposals.emptyResolved}
+				storageKey="proposals"
+				foot={<>
+					<DataTablePagination locale={locale} offset={list.offset} total={list.total} onOffsetChange={list.setOffset} onPageSizeChange={list.setLimit} table={table} />
+					{resolving && resolvedProposalsOmittedCount > 0 ? <DataTableNote>{catalog.proposals.omitted(resolvedProposalsOmittedCount, formatCount(resolvedProposalsOmittedCount, locale))}</DataTableNote> : null}
+				</>}
+				head={<DataTableToolbar>
+					<SuggestionViews label={catalog.list.views} pending={[catalog.list.pendingProposals, formatCount(proposals.length, locale)]} resolved={[catalog.list.resolvedProposals, formatCount(resolvedProposals.length, locale)]} value={view} onChange={(next) => { setView(next); list.setOffset(0); }} />
+					<DataTableFilter className="sm:max-w-64" locale={locale} placeholder={catalog.list.searchProposals} table={table} />
+				</DataTableToolbar>}
+				notice={notice}
+				selection={bulk.selection}
+				status={resolving && resolvedRead?.loading === true && rows.length === 0 ? 'loading' : 'ready'}
+				locale={locale}
+				onRowActivate={setOpenId}
+				table={table}
+			/>
+			<ProposalDrawer catalog={catalog} locale={locale} open={open} pending={pending} resolving={resolving} onClose={() => setOpenId(null)} onDismiss={dismissOpen} onPromote={onPromoteProposal} />
+		</DrawerLayout>
 	);
 }
 
-/**
- * What a settled proposal became, read-only: a dismissed one stays a
- * discarded idea, a promoted one names the issue it turned into (GSHIP-643).
- * Separate from `ProposalsPanel` above so the pending inbox is never mixed
- * with this historical record, and offers no decision -- no undo, no
- * re-promotion -- only the outcome.
- */
-export function ResolvedProposalsPanel({
-	catalog,
-	locale,
-	resolvedProposals,
-	resolvedProposalsOmittedCount,
-}: Pick<AppProps, 'locale' | 'resolvedProposals' | 'resolvedProposalsOmittedCount'> & { catalog: WorkCatalog }): React.ReactElement {
+/* A proposal beside its list: the evidence and where it came from, the contract to promote it while it is pending, and the way to dismiss it at the foot. */
+function ProposalDrawer({ open, resolving, pending, catalog, locale, onClose, onDismiss, onPromote }: {
+	open: AnyProposal | null; resolving: boolean; pending: boolean; catalog: WorkCatalog; locale: Locale;
+	onClose: () => void; onDismiss: (proposal: AnyProposal) => void; onPromote: AppProps['onPromoteProposal'];
+}): React.ReactElement {
 	return (
-		<CardDisclosure className="group">
-			<CardSummary>
-				<CardTitle>{catalog.proposals.resolvedTitle}</CardTitle>
-				<CardDescription>{catalog.proposals.resolvedCount(resolvedProposals.length, formatCount(resolvedProposals.length, locale))}</CardDescription>
-				<CardAction><Badge variant="secondary">{formatCount(resolvedProposals.length, locale)}</Badge></CardAction>
-			</CardSummary>
-			<CardPanel>
-				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant="outline">{catalog.proposals.readOnly}</Badge>
-					<span className="text-muted-foreground text-sm">
-						{catalog.proposals.settledNote}
-					</span>
-				</div>
-				<Separator />
-				{resolvedProposals.length === 0 ? (
-					<EmptyState compact>{catalog.proposals.emptyResolved}</EmptyState>
-				) : (
-					<ul className="flex flex-col divide-y divide-border">
-						{resolvedProposals.map((proposal) => (
-							<li className="flex min-w-0 flex-col gap-2 py-4 text-sm first:pt-0 last:pb-0" key={proposal.id}>
-								<div className="flex flex-wrap items-center gap-2">
-									<span className="break-words font-semibold">{proposal.title}</span>
-									{proposal.status === 'promoted' ? (
-										<Badge variant="success">{catalog.proposals.statusLabels.promoted}</Badge>
-									) : (
-										<Badge variant="secondary">{catalog.proposals.statusLabels.dismissed}</Badge>
-									)}
-								</div>
-								<p className="whitespace-pre-wrap break-words text-muted-foreground">
-									{proposal.evidence}
-								</p>
-								<div className="flex flex-wrap items-center gap-2 text-muted-foreground">
-									<Badge variant="outline">{proposal.sourceIssueId}</Badge>
-									<code className="break-all text-xs">{proposal.sourceRunId}</code>
-									{proposal.status === 'promoted' && proposal.promotedIssueId !== null ? (
-										<span className="break-words">
-											{catalog.proposals.became} <Badge variant="info">{proposal.promotedIssueId}</Badge>
-										</span>
-									) : null}
-								</div>
-							</li>
-						))}
-					</ul>
-				)}
-				{resolvedProposalsOmittedCount > 0 ? (
-					<p className="text-muted-foreground text-sm">
-						{catalog.proposals.omitted(resolvedProposalsOmittedCount, formatCount(resolvedProposalsOmittedCount, locale))}
-					</p>
-				) : null}
-			</CardPanel>
-		</CardDisclosure>
+		<ItemDrawer
+			footer={open !== null && !resolving ? <>
+				<Button disabled={pending} type="button" variant="outline" onClick={() => onDismiss(open)}>{catalog.proposals.dismiss}</Button>
+				<Button disabled={pending} form="proposal-promote" type="submit">{catalog.form.promote}</Button>
+			</> : undefined}
+			locale={locale}
+			open={open !== null}
+			title={open?.title ?? ''}
+			onClose={onClose}
+		>
+			{open === null ? null : (
+				<SuggestionDetail evidence={open.evidence} meta={<p className="flex flex-wrap items-center gap-2 text-muted-foreground"><Reference>{open.sourceIssueId}</Reference><Reference>{open.sourceRunId}</Reference></p>}>
+					{resolving ? null : <PromoteForm catalog={catalog} defaultTitle={open.title} prefix="proposal" onPromote={(input) => onPromote(open.id, input)} />}
+				</SuggestionDetail>
+			)}
+		</ItemDrawer>
 	);
 }
 
@@ -934,9 +884,11 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 	const actions = actionsFor(knownRuns[0] ?? null, props.selectedIssueId !== null);
 	const runsUnavailable = failed('Runs');
 	const reviewActionsDisabled = props.pending || runsUnavailableInitially;
+	/* Drafts waiting for approval open the page on them, unless the address names a tab. */
+	const [tab, setTab] = useTabParam(WORK_TABS, props.drafts.length > 0 ? 'approval' : 'queue');
 	return (
 		<SurfaceColumn label={localeCatalog.shell.routeLabels.work} status={props.status}>
-			<Tabs defaultValue={props.drafts.length > 0 ? 'approval' : 'queue'}>
+			<Tabs value={tab} onValueChange={(next) => setTab(next as typeof tab)}>
 				<TabsList aria-label={localeCatalog.shell.routeLabels.work}>
 					<TabsTab value="queue">
 						{catalog.tabs.queue}
@@ -950,8 +902,12 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 						{catalog.tabs.ideas}
 						<TabsCount>{unavailableInitially('Snapshot') ? '—' : props.ideas.length}</TabsCount>
 					</TabsTab>
-					<TabsTab value="suggestions">
-						{catalog.tabs.suggestions}
+					<TabsTab value="diagnostics">
+						{catalog.tabs.diagnostics}
+						<TabsCount>{unavailableInitially('Diagnostics') ? '—' : props.diagnostics.findings.length}</TabsCount>
+					</TabsTab>
+					<TabsTab value="proposals">
+						{catalog.tabs.proposals}
 						<TabsCount>{unavailableInitially('Proposals') ? '—' : props.proposals.length}</TabsCount>
 					</TabsTab>
 				</TabsList>
@@ -980,30 +936,31 @@ export function WorkSurface(props: AppProps): React.ReactElement {
 					/></OperationalReadPanel>
 					<IssueIntakePanel catalog={catalog} onCreateIssue={props.onCreateIssue} pending={props.pending} />
 				</TabsPanel>
-				<TabsPanel value="suggestions">
+				<TabsPanel value="diagnostics">
 					<OperationalReadPanel detail={failed('Diagnostics')} loaded={loaded('Diagnostics')} locale={props.locale} pending={pending('Diagnostics')} resource="Diagnostics"><DiagnosticsPanel
 						catalog={catalog}
 						diagnostics={props.diagnostics}
 						locale={props.locale}
 						onCancelDiagnostic={props.onCancelDiagnostic}
 						onDismissDiagnosticFinding={props.onDismissDiagnosticFinding}
+						onDismissDiagnosticFindings={props.onDismissDiagnosticFindings}
 						onPromoteDiagnosticFinding={props.onPromoteDiagnosticFinding}
 						onStartDiagnostic={props.onStartDiagnostic}
 						pending={props.pending}
 					/></OperationalReadPanel>
+				</TabsPanel>
+				<TabsPanel value="proposals">
 					<OperationalReadPanel detail={failed('Proposals')} loaded={loaded('Proposals')} locale={props.locale} pending={pending('Proposals')} resource="Proposals"><ProposalsPanel
 						catalog={catalog}
 						locale={props.locale}
 						onDismissProposal={props.onDismissProposal}
+						onDismissProposals={props.onDismissProposals}
 						onPromoteProposal={props.onPromoteProposal}
 						pending={props.pending}
 						proposals={props.proposals}
-					/></OperationalReadPanel>
-					<OperationalReadPanel detail={failed('Resolved proposals')} loaded={loaded('Resolved proposals')} locale={props.locale} pending={pending('Resolved proposals')} resource="Resolved proposals"><ResolvedProposalsPanel
-						catalog={catalog}
-						locale={props.locale}
 						resolvedProposals={props.resolvedProposals}
 						resolvedProposalsOmittedCount={props.resolvedProposalsOmittedCount}
+						resolvedRead={{ failure: failed('Resolved proposals'), loading: pending('Resolved proposals') && !loaded('Resolved proposals') }}
 					/></OperationalReadPanel>
 				</TabsPanel>
 			</Tabs>

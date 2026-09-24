@@ -1,6 +1,6 @@
 // webui/src/components/ui/empty-state.tsx
 //
-// A first-class state, never a blank region (design-system.md section 3): the
+// A first-class state, never a blank region (design-system.md, Components): the
 // gate mark in a muted tone, one orienting sentence, and at most one action.
 // Callers keep owning layout and copy; this component only guarantees an
 // empty region still says where the operator is and what comes next.

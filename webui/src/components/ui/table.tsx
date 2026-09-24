@@ -13,7 +13,7 @@ export function Table({
 	...props
 }: React.ComponentProps<'table'>): React.ReactElement {
 	return (
-		<div className="scroll-container scroll-container-stable relative w-full overflow-x-auto" data-slot="table-container" data-variant="default">
+		<div className="scroll-container relative w-full overflow-x-auto" data-slot="table-container" data-variant="default">
 			<table
 				className={cn(
 					'w-full caption-bottom in-data-[variant=card]:border-separate in-data-[variant=card]:border-spacing-0 text-sm',
@@ -48,17 +48,20 @@ export function TableBody({
 
 export function TableRow({
 	className,
+	active = false,
 	...props
-}: React.ComponentProps<'tr'>): React.ReactElement {
+}: React.ComponentProps<'tr'> & { /** The row whose item is open beside the table: it wears the selected tint and says it is current. */ active?: boolean }): React.ReactElement {
 	return (
 		<tr
+			aria-current={active ? 'true' : undefined}
 			className={cn(
 				'relative border-b hover:bg-[color-mix(in_srgb,var(--background),var(--color-black)_2%)] ' +
-					'data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] ' +
-					'dark:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] ' +
+					'data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] data-[active]:bg-[color-mix(in_srgb,var(--background),var(--color-black)_4%)] ' +
+					'dark:data-[state=selected]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] dark:data-[active]:bg-[color-mix(in_srgb,var(--background),var(--color-white)_4%)] ' +
 					'dark:hover:bg-[color-mix(in_srgb,var(--background),var(--color-white)_2%)]',
 				className,
 			)}
+			data-active={active ? '' : undefined}
 			data-slot="table-row"
 			{...props}
 		/>
@@ -69,7 +72,9 @@ export function TableHead({ className, ...props }: React.ComponentProps<'th'>): 
 	return (
 		<th
 			className={cn(
-				'h-10 whitespace-nowrap px-2.5 text-left align-middle font-medium text-muted-foreground leading-none',
+				/* A head is the eyebrow of its column: the caps mono every section label wears, so a column's name is never read as one of its values. */
+				/* Between columns 12px; at the table's two edges 16px, the inset a Stat uses, so stacked blocks share a text edge. */
+				'type-eyebrow h-10 whitespace-nowrap px-3 text-left align-middle text-muted-foreground leading-none first:pl-4 last:pr-4',
 				className,
 			)}
 			data-slot="table-head"
@@ -82,7 +87,9 @@ export function TableCell({ className, ...props }: React.ComponentProps<'td'>): 
 	return (
 		<td
 			className={cn(
-				'whitespace-nowrap bg-clip-padding p-2.5 align-middle leading-none',
+				/* The row is 40px by declaration, not by padding arithmetic: a cell's height is its minimum, so a two-line cell still grows.
+				 * A cell that holds a 24px control gives up its own padding, or the control plus the row's border makes the row 41px. */
+				'h-10 whitespace-nowrap bg-clip-padding px-3 py-2 align-middle leading-none first:pl-4 last:pr-4 has-[>button]:py-0',
 				className,
 			)}
 			data-slot="table-cell"

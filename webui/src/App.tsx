@@ -22,12 +22,16 @@ import { ProjectsManagementSurface } from './screens/projects-management-screen.
 import { RunsSurface } from './screens/runs-screen.tsx';
 import { SettingsSurface } from './screens/settings-screen.tsx';
 import {
+	destinationHrefs,
+	destinationIndex,
 	panelRuntime,
 	type PanelKeyEvent,
 	ShellControls,
 	ShellSidebar,
+	ShellTabBar,
 	notificationItems,
 	shellSurfaceTitle,
+	useSidebarOpen,
 	useStoredOpen,
 } from './screens/shell.tsx';
 import { WorkSurface } from './screens/work-screen.tsx';
@@ -37,6 +41,14 @@ export { projectIdOf, routeOf, runIdOf } from './routes.ts';
 export type { AppProps } from './app-props.ts';
 export type { OperatorRoute } from './routes.ts';
 
+/* A key pressed inside a field belongs to the field: on a Mac Alt+arrow moves the caret by word and Alt with a letter or a digit writes a character. */
+function isTextEntry(target: PanelKeyEvent['target']): boolean {
+	if (target === undefined || target === null) return false;
+	if (target.isContentEditable === true) return true;
+	const tag = (target.tagName ?? '').toLowerCase();
+	return tag === 'input' || tag === 'textarea' || tag === 'select';
+}
+
 export function handleProjectShortcut(
 	event: PanelKeyEvent,
 	projects: AppProps['projects'],
@@ -44,7 +56,7 @@ export function handleProjectShortcut(
 	navigate?: (destination: string) => void,
 ): boolean {
 	const index = KEYBOARD_SHORTCUTS.projects.findIndex((shortcut) => matchesShortcut(event, shortcut));
-	if (index < 0) return false;
+	if (index < 0 || isTextEntry(event.target)) return false;
 	const project = projects[index];
 	if (project === undefined) return false;
 	event.preventDefault();
@@ -54,10 +66,57 @@ export function handleProjectShortcut(
 	return true;
 }
 
-export function handleOverviewShortcut(event: PanelKeyEvent, runtime = panelRuntime(), navigate?: (destination: string) => void): boolean {
-	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.overview)) return false;
+/** Alt with an arrow walks the destinations, wrapping at the ends; from a page that is not one, down opens the first and up the last. */
+export function handleDestinationShortcut(
+	event: PanelKeyEvent,
+	hrefs: readonly string[],
+	currentIndex: number,
+	runtime = panelRuntime(),
+	navigate?: (destination: string) => void,
+): boolean {
+	const forward = matchesShortcut(event, KEYBOARD_SHORTCUTS.nextDestination);
+	if (!forward && !matchesShortcut(event, KEYBOARD_SHORTCUTS.previousDestination)) return false;
+	if (isTextEntry(event.target) || hrefs.length === 0) return false;
 	event.preventDefault();
-	if (navigate === undefined) runtime.location?.assign('/overview');
+	const step = forward ? 1 : -1;
+	const index = currentIndex < 0 ? (forward ? 0 : hrefs.length - 1) : (currentIndex + step + hrefs.length) % hrefs.length;
+	const destination = hrefs[index]!;
+	if (navigate === undefined) runtime.location?.assign(destination);
+	else navigate(destination);
+	return true;
+}
+
+/** The three standing keys: the registry, the global settings and the sidebar itself. */
+export function handleShellShortcut(
+	event: PanelKeyEvent,
+	runtime = panelRuntime(),
+	navigate?: (destination: string) => void,
+	toggleSidebar?: () => void,
+): boolean {
+	if (isTextEntry(event.target)) return false;
+	if (matchesShortcut(event, KEYBOARD_SHORTCUTS.sidebar)) {
+		if (toggleSidebar === undefined) return false;
+		event.preventDefault();
+		toggleSidebar();
+		return true;
+	}
+	const pages = [['manageProjects', '/projects'], ['globalSettings', '/settings']] as const;
+	for (const [kind, destination] of pages) {
+		if (!matchesShortcut(event, KEYBOARD_SHORTCUTS[kind])) continue;
+		event.preventDefault();
+		if (navigate === undefined) runtime.location?.assign(destination);
+		else navigate(destination);
+		return true;
+	}
+	return false;
+}
+
+export function handleOverviewShortcut(event: PanelKeyEvent, runtime = panelRuntime(), navigate?: (destination: string) => void, selectAllProjects?: () => void): boolean {
+	if (!matchesShortcut(event, KEYBOARD_SHORTCUTS.overview) || isTextEntry(event.target)) return false;
+	event.preventDefault();
+	/* Same action as the switcher's first choice: every project in view. */
+	if (selectAllProjects !== undefined) selectAllProjects();
+	else if (navigate === undefined) runtime.location?.assign('/overview');
 	else navigate('/overview');
 	return true;
 }
@@ -84,24 +143,32 @@ export function App(props: AppProps): React.ReactElement {
 		props.events,
 		localeCatalog.shell.notifications,
 	);
-	const [sidebarOpen, toggleSidebar] = useStoredOpen('gship-sidebar');
+	const selectedProjectId = props.selectedProjectId ?? null;
+	const [sidebarOpen, toggleSidebar] = useSidebarOpen();
 	const [inspectorOpen, toggleInspector] = useStoredOpen('gship-inspector');
 	useEffect(() => {
 		const runtime = panelRuntime();
 		const onKeyDown = (event: PanelKeyEvent): void => {
-			if (handleOverviewShortcut(event, runtime, props.onNavigate)) {
+			if (handleOverviewShortcut(event, runtime, props.onNavigate, props.onSelectAllProjects)) {
+				return;
+			}
+			if (handleDestinationShortcut(event, destinationHrefs(selection, props.projects), destinationIndex(selection), runtime, props.onNavigate)) {
+				return;
+			}
+			if (handleShellShortcut(event, runtime, props.onNavigate, toggleSidebar)) {
 				return;
 			}
 			handleProjectShortcut(event, props.projects, runtime, props.onNavigate);
 		};
 		runtime.addEventListener?.('keydown', onKeyDown);
 		return () => runtime.removeEventListener?.('keydown', onKeyDown);
-	}, [props.projects, toggleSidebar]);
+	}, [props.projects, props.onSelectAllProjects, selection, toggleSidebar]);
 	return (
 		<AppShell
-			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} locale={props.locale} notifications={notifications} onSelectLocale={props.onSelectLocale} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}
-			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} open={sidebarOpen} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} selectedProjectId={props.selectedProjectId ?? null} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
+			controls={<ShellControls catalog={localeCatalog.shell} inspectorOpen={inspectorOpen} notifications={notifications} onToggleInspector={toggleInspector} onToggleSidebar={toggleSidebar} showInspectorToggle={false} sidebarOpen={sidebarOpen} title={shellSurfaceTitle(selection, localeCatalog.shell)} />}
+			sidebar={<ShellSidebar chainRuns={props.chainRuns} gitIdentity={props.gitIdentity} locale={props.locale} onSelectAllProjects={props.onSelectAllProjects} open={sidebarOpen} overview={props.overview} projects={props.projects} runInspectorCatalog={localeCatalog.runInspector} route={props.route} run={run} selectedProjectId={selectedProjectId} staleService={props.staleService} version={props.version} workspaceNotices={props.workspaceNotices} />}
 			skipLabel={localeCatalog.shell.skipLinkLabel}
+			tabBar={<ShellTabBar locale={props.locale} overview={props.overview} projects={props.projects} route={props.route} selectedProjectId={selectedProjectId} />}
 		>
 			{props.operationalBoundary?.state === 'loading' ? <InitialOperationalLoading locale={props.locale} /> : null}
 			{props.operationalBoundary?.state === 'failure' ? <InitialOperationalFailure detail={props.operationalBoundary.detail} locale={props.locale} onRetry={props.operationalBoundary.onRetry} /> : null}

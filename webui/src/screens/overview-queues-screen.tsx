@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import { fetchOverviewQueues, type ProjectQueueView, type QueueOverviewView } from '../client.ts';
-import { Badge } from '../components/ui/badge.tsx';
+import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Alert, AlertAction, AlertDescription, AlertTitle } from '../components/ui/alert.tsx';
+import { Badge, type BadgeVariant } from '../components/ui/badge.tsx';
+import { StatusDot } from '../components/ui/status-dot.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { Callout } from '../components/ui/callout.tsx';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
 import { EmptyState } from '../components/ui/empty-state.tsx';
-import { Item, ItemContent } from '../components/ui/item.tsx';
-import { SelectField } from '../components/ui/select.tsx';
-import { Skeleton } from '../components/ui/skeleton.tsx';
+import { PageLoading } from '../components/ui/page-loading.tsx';
 import { cn } from '../lib/cn.ts';
 import type { Locale, OverviewCatalog } from '../locale.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
-import type { RunState } from '../run-view.ts';
+import { isRunActive, toneOf, type RunState } from '../run-view.ts';
 import { TEXT_LINK_CLASS, TITLE_LINK_CLASS } from './operator-links.ts';
 import { formatRunTimestamp } from './runs.tsx';
 import { SurfaceColumn } from './surface-column.tsx';
@@ -20,35 +20,36 @@ import { SurfaceColumn } from './surface-column.tsx';
 interface QueueBrowserRuntime { location?: { search: string }; history?: { pushState: (data: null, unused: string, url: string) => void }; addEventListener?: (type: 'popstate', listener: () => void) => void; removeEventListener?: (type: 'popstate', listener: () => void) => void }
 function runtime(): QueueBrowserRuntime { return globalThis as unknown as QueueBrowserRuntime; }
 function projectFilter(): string | undefined { return new URLSearchParams(runtime().location?.search ?? '').get('projectId') ?? undefined; }
-function queueUrl(projectId: string | undefined): string { return projectId === undefined ? '/overview/queues' : `/overview/queues?projectId=${encodeURIComponent(projectId)}`; }
 export function queueErrorsForFilter(errors: QueueOverviewView['errors'], filter: string | undefined): QueueOverviewView['errors'] {
 	return errors.filter((error) => filter === undefined || error.projectId === filter);
 }
 
-function issueLink(queue: ProjectQueueView, issue: { id: string; title: string } | null): React.ReactElement {
-	if (issue === null) return <span>—</span>;
-	return <a className={cn(TEXT_LINK_CLASS, 'font-mono text-xs')} href={`/projects/${encodeURIComponent(queue.project.id)}/work#${encodeURIComponent(issue.id)}`}>{issue.id}<span className="sr-only">: {issue.title}</span></a>;
+/* What a queue is doing, in the order an operator needs to hear it. */
+export type QueueStatus = 'needs-you' | 'running' | 'paused' | 'ready' | 'empty';
+const STATUS_ORDER: readonly QueueStatus[] = ['needs-you', 'running', 'paused', 'ready', 'empty'];
+/* Mirrors the `needs-you` group in src/runtime/run-overview.ts and the shell's attention map. */
+const RUN_NEEDS_YOU: ReadonlySet<string> = new Set(['ready-to-ship', 'waiting-user', 'waiting-provider', 'failed', 'interrupted']);
+
+/** A pause only the operator can lift. `no-admissible-issue` counts only while something is planned: an empty queue is done, not stuck. */
+function pauseNeedsOperator(queue: ProjectQueueView): boolean {
+	const reason = queue.pause?.reason;
+	return reason === 'chain-disabled' || reason === 'chain-start-failed' || (reason === 'no-admissible-issue' && queue.plannedIssues.length > 0);
 }
 
-function QueueSequence({ queue, catalog }: { queue: ProjectQueueView; catalog: OverviewCatalog['queues'] }): React.ReactElement {
-	return <ol className="divide-y divide-border border-0 border-l pl-4" data-slot="item-group" aria-label={catalog.sequence}>
-		{queue.plannedIssues.map((issue, index) => <Item className="relative text-sm" key={issue.id}>
-			<span aria-hidden="true" className="absolute -left-[21px] size-2 rounded-full border-2 border-background bg-muted-foreground" />
-			<span className="w-5 shrink-0 font-mono text-xs text-muted-foreground">{index + 1}</span><ItemContent>{issueLink(queue, issue)}</ItemContent>
-			{queue.currentIssue?.id === issue.id ? <Badge variant="info">{catalog.current}</Badge> : null}
-		</Item>)}
-	</ol>;
+export function queueStatus(queue: ProjectQueueView): QueueStatus {
+	if (queue.readiness === 'needs-attention' || pauseNeedsOperator(queue) || (queue.currentRun !== null && RUN_NEEDS_YOU.has(queue.currentRun.state))) return 'needs-you';
+	if (queue.currentRun !== null) return 'running';
+	if (queue.plannedIssues.length === 0) return 'empty';
+	return queue.pause === null ? 'ready' : 'paused';
 }
 
-function needsOperator(reason: string): boolean { return reason === 'chain-disabled' || reason === 'no-admissible-issue' || reason === 'chain-start-failed'; }
+/** Queues that wait on the operator first, then what moves, then what waits on its own, then the empty ones; registry order within each. */
+export function sortQueuesByUrgency(queues: readonly ProjectQueueView[]): ProjectQueueView[] {
+	return queues.map((queue, index) => ({ queue, index })).sort((left, right) => STATUS_ORDER.indexOf(queueStatus(left.queue)) - STATUS_ORDER.indexOf(queueStatus(right.queue)) || left.index - right.index).map((entry) => entry.queue);
+}
 
 function runStateLabel(state: string, locale: Locale, catalog: OverviewCatalog['queues']): string {
 	return state === 'waiting-provider' ? catalog.providerWait : LOCALE_CATALOG[locale].runInspector.stateLabels[state as RunState] ?? state;
-}
-
-function deliveryLabel(queue: ProjectQueueView, catalog: OverviewCatalog['queues'], locale: Locale): string | null {
-	if (queue.lastDelivery.state === 'unavailable') return locale === 'pt-BR' ? 'Histórico de entregas indisponível.' : 'Delivery history unavailable.';
-	return queue.lastDelivery.run === null ? catalog.noDelivery : null;
 }
 
 export function QueueEmptyState({ projectCount, filter, queues, errors, catalog, locale }: { projectCount: number; filter: string | undefined; queues: ProjectQueueView[]; errors: QueueOverviewView['errors']; catalog: OverviewCatalog['queues']; locale: Locale }): React.ReactElement | null {
@@ -59,39 +60,77 @@ export function QueueEmptyState({ projectCount, filter, queues, errors, catalog,
 	return <EmptyState>{locale === 'pt-BR' ? 'Nenhuma fila corresponde ao projeto selecionado.' : 'No queue matches the selected project.'}</EmptyState>;
 }
 
-function QueueSummary({ queue, catalog, locale }: { queue: ProjectQueueView; catalog: OverviewCatalog['queues']; locale: Locale }): React.ReactElement {
-	return <CollapsibleTrigger className="flex-wrap gap-x-5 gap-y-3 px-4 py-3">
-		<span className="min-w-32 flex-1 font-semibold">{queue.project.name}</span>
-		<Badge variant={queue.chainEnabled ? 'success' : 'secondary'}>{queue.chainEnabled ? catalog.enabled : catalog.disabled}</Badge>
-		<Badge variant={queue.readiness === 'needs-attention' ? 'warning' : 'outline'}>{LOCALE_CATALOG[locale].projects.readiness[queue.readiness]}</Badge>
-		<span className="ml-auto text-muted-foreground text-xs group-open:hidden">{catalog.expand}</span><span className="ml-auto hidden text-muted-foreground text-xs group-open:inline">{catalog.collapse}</span>
-	</CollapsibleTrigger>;
+const STATUS_BADGE: Readonly<Record<QueueStatus, BadgeVariant>> = { 'needs-you': 'warning', running: 'info', paused: 'neutral', ready: 'neutral', empty: 'neutral' };
+
+/* The one sentence that says what the queue is doing and, when it is stopped, why. */
+function QueueStatusLine({ queue, status, catalog, locale, projectHref }: { queue: ProjectQueueView; status: QueueStatus; catalog: OverviewCatalog['queues']; locale: Locale; projectHref: string }): React.ReactElement {
+	const reason = queue.pause === null ? null : catalog.pauseReasons[queue.pause.reason] ?? queue.pause.reason;
+	const run = queue.currentRun;
+	const detail = [
+		reason,
+		status === 'paused' ? catalog.automaticResume : null,
+		queue.readiness === 'needs-attention' ? LOCALE_CATALOG[locale].projects.readiness[queue.readiness] : null,
+	].filter((part): part is string => part !== null);
+	return (
+		<p className="flex min-w-0 flex-wrap items-center gap-2 text-sm" data-slot="queue-status">
+			<Badge variant={STATUS_BADGE[status]}>{catalog.status[status]}</Badge>
+			{run === null ? null : <a className={cn(TEXT_LINK_CLASS, 'font-mono text-xs')} href={`${projectHref}/runs/${encodeURIComponent(run.id)}`}>{run.issueId} · {runStateLabel(run.state, locale, catalog)}</a>}
+			{detail.length === 0 ? null : <span className="text-muted-foreground">{detail.join(' · ')}</span>}
+		</p>
+	);
 }
 
-function QueueDetails({ queue, catalog, locale, projectHref, currentState, pauseReason }: { queue: ProjectQueueView; catalog: OverviewCatalog['queues']; locale: Locale; projectHref: string; currentState: string; pauseReason: string | null }): React.ReactElement {
-	const lastDelivery = queue.lastDelivery.state === 'available' ? queue.lastDelivery.run : null;
-	const noDeliveryLabel = deliveryLabel(queue, catalog, locale);
-	return <CollapsibleContent className="border-t-0">
-		<div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><a className={cn(TITLE_LINK_CLASS, 'font-semibold')} href={projectHref}>{catalog.openProject}</a><span className="text-muted-foreground text-xs">{catalog.current}: {currentState}</span></div>
-		<dl className="grid gap-4 px-4 py-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-			<div><dt className="text-muted-foreground">{catalog.current}</dt><dd className="mt-1">{issueLink(queue, queue.currentIssue)}{queue.currentRun === null ? null : <a className={cn(TEXT_LINK_CLASS, 'ml-2 font-mono text-xs')} href={`${projectHref}/runs/${encodeURIComponent(queue.currentRun.id)}`}>{currentState}</a>}</dd></div>
-			<div><dt className="text-muted-foreground">{catalog.next}</dt><dd className="mt-1">{issueLink(queue, queue.nextIssue)}</dd></div>
-			<div><dt className="text-muted-foreground">{catalog.planned}</dt><dd className="mt-1 font-mono tabular-nums">{queue.plannedIssues.length}</dd></div>
-			<div><dt className="text-muted-foreground">{catalog.lastDelivery}</dt><dd className="mt-1">{lastDelivery === null ? <span className="text-muted-foreground">{noDeliveryLabel}</span> : <span className="flex flex-wrap items-center gap-2"><a className={cn(TEXT_LINK_CLASS, 'font-mono text-xs')} href={`${projectHref}/runs/${encodeURIComponent(lastDelivery.id)}`}>{lastDelivery.issueId}</a><time className="text-muted-foreground text-xs" dateTime={lastDelivery.updatedAt}>{formatRunTimestamp(lastDelivery.updatedAt, locale)}</time></span>}</dd></div>
-			{queue.pause !== null ? <div className={needsOperator(queue.pause.reason) ? 'sm:col-span-2' : 'sm:col-span-2 text-muted-foreground'}><dt className="text-muted-foreground">{catalog.paused}</dt><dd className="mt-1">{pauseReason}{needsOperator(queue.pause.reason) ? '' : ` · ${catalog.automaticResume}`}</dd></div> : null}
+function QueueSequence({ queue, catalog, locale, projectHref }: { queue: ProjectQueueView; catalog: OverviewCatalog['queues']; locale: Locale; projectHref: string }): React.ReactElement | null {
+	/* The service plans only what is approved, open and unblocked, so an issue
+	 * can be running and no longer planned (blocked or respecified after it
+	 * started). It still leads the list, unnumbered: it holds no place in the
+	 * order, it is simply what is happening. */
+	const running = queue.currentIssue !== null && !queue.plannedIssues.some((issue) => issue.id === queue.currentIssue?.id) ? queue.currentIssue : null;
+	const rows = [...(running === null ? [] : [{ issue: running, order: null }]), ...queue.plannedIssues.map((issue, index) => ({ issue, order: index + 1 }))];
+	if (rows.length === 0) return null;
+	return (
+		<ol aria-label={catalog.sequence} className="divide-y divide-border border-t" data-slot="queue-sequence">
+			{rows.map(({ issue, order }) => (
+				<li className="flex min-h-8 items-center gap-3 px-4 py-1 text-sm" key={issue.id}>
+					<span className="w-4 shrink-0 text-right font-mono text-muted-foreground text-xs tabular-nums">{order}</span>
+					<a className={cn(TEXT_LINK_CLASS, 'shrink-0 font-mono text-xs')} href={`${projectHref}/work#${encodeURIComponent(issue.id)}`}>{issue.id}</a>
+					<span className="min-w-0 flex-1 truncate" title={issue.title}>{issue.title}</span>
+					{queue.currentIssue?.id === issue.id && queue.currentRun !== null ? <StatusDot active={isRunActive(queue.currentRun.state as RunState)} tone={toneOf(queue.currentRun.state as RunState)}>{runStateLabel(queue.currentRun.state, locale, catalog)}</StatusDot> : null}
+					{queue.nextIssue?.id === issue.id && queue.currentIssue?.id !== issue.id ? <span className="shrink-0 text-muted-foreground text-xs">{catalog.next}</span> : null}
+				</li>
+			))}
+		</ol>
+	);
+}
+
+function QueueFacts({ queue, catalog, locale, projectHref }: { queue: ProjectQueueView; catalog: OverviewCatalog['queues']; locale: Locale; projectHref: string }): React.ReactElement {
+	const delivery = queue.lastDelivery.state === 'available' ? queue.lastDelivery.run : null;
+	const missing = queue.lastDelivery.state === 'unavailable' ? (locale === 'pt-BR' ? 'Histórico de entregas indisponível.' : 'Delivery history unavailable.') : catalog.noDelivery;
+	return (
+		<dl className="flex flex-wrap gap-x-6 gap-y-1 border-t px-4 py-2 text-muted-foreground text-xs" data-slot="queue-facts">
+			<div className="flex items-center gap-2"><dt>{catalog.lastDelivery}</dt><dd>{delivery === null ? missing : <span className="inline-flex items-center gap-2"><a className={cn(TEXT_LINK_CLASS, 'font-mono')} href={`${projectHref}/runs/${encodeURIComponent(delivery.id)}`}>{delivery.issueId}</a><time className="font-mono tabular-nums" dateTime={delivery.updatedAt}>{formatRunTimestamp(delivery.updatedAt, locale)}</time></span>}</dd></div>
+			<div className="flex items-center gap-2"><dt>{catalog.chain}</dt><dd>{queue.chainEnabled ? catalog.enabled : <a className={TEXT_LINK_CLASS} href={`${projectHref}/settings`}>{catalog.disabled}</a>}</dd></div>
 		</dl>
-		<div className="border-t px-4 py-4"><h3 className="type-eyebrow mb-3 text-muted-foreground">{catalog.sequence}</h3><QueueSequence queue={queue} catalog={catalog} /></div>
-	</CollapsibleContent>;
+	);
 }
 
+/* One project's queue: what it is doing, the ordered work, and two facts. The
+ * sequence is the page, so nothing hides it behind a disclosure. A queue that
+ * waits on the operator carries the acid rule, the product's one acid signal. */
 export function QueueRow({ queue, catalog, locale }: { queue: ProjectQueueView; catalog: OverviewCatalog['queues']; locale: Locale }): React.ReactElement {
 	const projectHref = `/projects/${encodeURIComponent(queue.project.id)}`;
-	const currentState = queue.currentRun === null ? catalog.none : runStateLabel(queue.currentRun.state, locale, catalog);
-	const pauseReason = queue.pause === null ? null : catalog.pauseReasons[queue.pause.reason] ?? queue.pause.reason;
-	return <Collapsible defaultOpen={queue.plannedIssues.length > 0}>
-		<QueueSummary catalog={catalog} locale={locale} queue={queue} />
-		<QueueDetails catalog={catalog} currentState={currentState} locale={locale} pauseReason={pauseReason} projectHref={projectHref} queue={queue} />
-	</Collapsible>;
+	const status = queueStatus(queue);
+	return (
+		<section aria-label={queue.project.name} className="card-ring rounded-2xl border bg-card" data-slot="queue" data-status={status}>
+			<header className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+				<h2 className="type-editorial-title min-w-32 text-base"><a className={TITLE_LINK_CLASS} href={`${projectHref}/work`}>{queue.project.name}</a></h2>
+				<QueueStatusLine catalog={catalog} locale={locale} projectHref={projectHref} queue={queue} status={status} />
+				<span className="ml-auto font-mono text-muted-foreground text-xs tabular-nums">{catalog.queued(queue.plannedIssues.length)}</span>
+			</header>
+			<QueueSequence catalog={catalog} locale={locale} projectHref={projectHref} queue={queue} />
+			<QueueFacts catalog={catalog} locale={locale} projectHref={projectHref} queue={queue} />
+		</section>
+	);
 }
 
 export function OverviewQueuesSurface({ props }: { props: AppProps }): React.ReactElement {
@@ -103,15 +142,13 @@ export function OverviewQueuesSurface({ props }: { props: AppProps }): React.Rea
 	const [filter, setFilter] = useState<string | undefined>(() => projectFilter());
 	useEffect(() => { let disposed = false; let timeout: ReturnType<typeof setTimeout> | undefined; let controller: AbortController | undefined; const read = (): void => { controller = new AbortController(); void fetchOverviewQueues(controller.signal).then((value) => { if (!disposed) { setData(value); setError(null); } }).catch((reason: unknown) => { if (!disposed && !(reason instanceof DOMException && reason.name === 'AbortError')) setError(String(reason)); }).finally(() => { if (!disposed) timeout = setTimeout(read, 15_000); }); }; read(); return () => { disposed = true; controller?.abort(); if (timeout !== undefined) clearTimeout(timeout); }; }, [retryAttempt]);
 	useEffect(() => { const onPop = (): void => setFilter(projectFilter()); runtime().addEventListener?.('popstate', onPop); return () => runtime().removeEventListener?.('popstate', onPop); }, []);
-	const updateFilter = (value: string): void => { const next = value || undefined; runtime().history?.pushState(null, '', queueUrl(next)); setFilter(next); };
-	const queues = data?.queues.filter((queue) => filter === undefined || queue.project.id === filter) ?? [];
+	const queues = sortQueuesByUrgency(data?.queues.filter((queue) => filter === undefined || queue.project.id === filter) ?? []);
 	const errors = queueErrorsForFilter(data?.errors ?? [], filter);
 	return <SurfaceColumn label={queueCatalog.title} status={props.status}>
-		<SelectField aria-label={queueCatalog.filterProject} className="sm:max-w-xs" items={[{ value: '', label: queueCatalog.allProjects }, ...props.projects.map((project) => ({ value: project.id, label: project.name }))]} onValueChange={updateFilter} value={filter ?? ''} />
-		{data === null && error === null ? <div role="status" aria-label={queueCatalog.loading}><Skeleton className="h-28 w-full" /><span className="sr-only">{queueCatalog.loading}</span></div> : null}
-		{error !== null ? <Callout tone="destructive" title={queueCatalog.error} role="alert"><p>{error}</p><Button type="button" onClick={() => setRetryAttempt((attempt) => attempt + 1)}>{queueCatalog.retry}</Button></Callout> : null}
+		{data === null && error === null ? <PageLoading label={queueCatalog.loading} /> : null}
+		{error !== null ? <Alert variant="destructive"><HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2.25} /><AlertTitle>{queueCatalog.error}</AlertTitle><AlertDescription>{error}</AlertDescription><AlertAction><Button size="sm" type="button" variant="outline" onClick={() => setRetryAttempt((attempt) => attempt + 1)}>{queueCatalog.retry}</Button></AlertAction></Alert> : null}
 		{data !== null ? <QueueEmptyState catalog={queueCatalog} errors={errors} filter={filter} locale={props.locale} projectCount={props.projects.length} queues={queues} /> : null}
-		<div className="flex flex-col gap-3">{queues.map((queue) => <QueueRow catalog={queueCatalog} key={queue.project.id} locale={props.locale} queue={queue} />)}</div>
-		{errors.map((item) => <Callout key={item.projectId} tone="warning" title={item.projectName} role="alert">{queueCatalog.unavailable}</Callout>)}
+		<div className="flex flex-col gap-4">{queues.map((queue) => <QueueRow catalog={queueCatalog} key={queue.project.id} locale={props.locale} queue={queue} />)}</div>
+		{errors.map((item) => <Alert key={item.projectId} variant="warning"><HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={2.25} /><AlertTitle>{item.projectName}</AlertTitle><AlertDescription>{queueCatalog.unavailable}</AlertDescription></Alert>)}
 	</SurfaceColumn>;
 }

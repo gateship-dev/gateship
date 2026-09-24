@@ -33,9 +33,6 @@ export function applyLocalePreference(
 }
 
 export interface ShellCatalog {
-	controlCenter: string;
-	themeToggle: { label: string; light: string; dark: string };
-	widthToggle: { wide: string; compact: string };
 	sidebarToggle: { collapse: string; expand: string };
 	inspectorToggle: { collapse: string; expand: string };
 		notifications: {
@@ -59,13 +56,17 @@ export interface ShellCatalog {
 			queueActiveDetail: string;
 	};
 	operatorNavigationLabel: string;
+	tabBarLabel: string;
+	moreLabel: string;
 	projectNavigationLabel: string;
 	manageProjectsLabel: string;
 	switcherPlaceholder: string;
+	allProjectsLabel: string;
+	projectSettingsLabel: string;
 	skipLinkLabel: string;
 	languageLabel: string;
 	routeLabels: {
-		overview: string;
+		now: string;
 		overviewRuns: string;
 		overviewQueues: string;
 		overviewInsights: string;
@@ -84,6 +85,8 @@ export interface ProjectsCatalog {
 	repositoryUnknown: string;
 	readinessLabel: string;
 	readiness: Readonly<Record<'ready' | 'empty' | 'needs-attention', string>>;
+	/** The registered projects, listed on the page named for them. */
+	list: { title: string; repository: string; settings: string; add: string; closeAdd: string; empty: string; emptyDetail: string };
 	unavailableTitle: string;
 	unavailableDescription: string;
 	notFoundTitle: string;
@@ -146,12 +149,10 @@ export interface OverviewCatalog {
 	partial: string;
 	error: string;
 	metrics: { attention: string; activeRuns: string; approvedIssues: string; deliveries: string };
-	activeWork: string;
 	projectStatus: string;
 	project: string;
 	activity: string;
 	lastDelivery: string;
-	noActiveWork: string;
 	noDelivery: string;
 	activeRun: string;
 	issue: string;
@@ -168,23 +169,27 @@ export interface OverviewCatalog {
 	costCoverage: (known: number, total: number) => string;
 	trend: string;
 	outcomes: { shipped: string; failed: string; cancelled: string; incomplete: string };
-	queues: { title: string; description: string; loading: string; error: string; retry: string; openProject: string; empty: string; unavailable: string; readiness: string; chain: string; enabled: string; disabled: string; paused: string; current: string; next: string; planned: string; lastDelivery: string; sequence: string; filterProject: string; allProjects: string; noDelivery: string; none: string; expand: string; collapse: string; providerWait: string; automaticResume: string; pauseReasons: Readonly<Record<string, string>> };
+	queues: { title: string; description: string; loading: string; error: string; retry: string; empty: string; unavailable: string; chain: string; enabled: string; disabled: string; next: string; lastDelivery: string; sequence: string; noDelivery: string; providerWait: string; status: Readonly<Record<'needs-you' | 'running' | 'paused' | 'ready' | 'empty', string>>; queued: (count: number) => string; automaticResume: string; pauseReasons: Readonly<Record<string, string>> };
 }
 
 export interface OverviewRunsCatalog {
 	title: string; description: string; loading: string; error: string; partial: string; empty: string; merged: string;
 	search: string; project: string; state: string; provider: string; period: string; all: string; last7d: string; last30d: string;
 	execution: string; issue: string; duration: string; delivery: string; ci: string; model: string; previous: string; next: string; page: (from: number, to: number, total: number) => string;
+	views: { all: string; active: string; needsYou: string; shipped: string; failed: string }; viewsLabel: string;
+	run: string; date: string; roles: { orchestrator: string; executor: string; reviewer: string };
+	updated: string; rounds: string; interventions: string; cost: string; runId: string; actions: string; openRun: string; openPullRequest: string; copyRunId: string;
+	clearFilters: string; retry: string; partialProject: (project: string, message: string) => string; needsYou: string; emptyDetail: string;
 }
 
 export interface OverviewInsightsCatalog {
-	title: string; description: string; loading: string; error: string; project: string; allProjects: string; window: string; last7d: string; last30d: string; all: string;
+	title: string; description: string; loading: string; error: string; window: string; last7d: string; last30d: string; all: string;
 	delivery: string; autonomy: string; providers: string; economy: string; outcomes: string; exactValues: string; date: string; runs: string; shipped: string; failed: string; cancelled: string; incomplete: string;
-	dispatchToMerge: string; reviewRounds: string; operatorInterventions: string; resolvedQuestions: string; providerHolds: string; ciCorrections: string; costCoverage: string;
+	dispatchToMerge: string; shippedWithoutIntervention: string; firstReviewPasses: string; reviewRounds: string; operatorInterventions: string; resolvedQuestions: string; providerHolds: string; ciCorrections: string; costCoverage: string;
 	/** GSHIP-889: the three-way coverage breakdown shown once `HistoricalOverview.runsByCostCoverage` is present; older payloads fall back to the plain known/total ratio. */
 	costCoverageCounts: (complete: number, partial: number, unknown: number, total: number) => string;
 	knownCost: string; apiEquivalent: string; subscriptionSeparate: string; tokens: string; inputTokens: string; outputTokens: string; configurations: string; noComparison: string; unavailable: string; noData: string;
-	cohorts: string; cohortEvidenceInsufficient: string; workflowRevision: string; specVersion: string; sample: string; outcomeCounts: string; corrections: string; cycleQuestions: string; reconciliations: string; attentionRequests: string; cohortOperatorInterventions: string; cohortProviderHolds: string; cohortLegend: string; cohortPage: (from: number, to: number, total: number) => string; previousCohorts: string; nextCohorts: string;
+	cohorts: string; cohortEvidenceInsufficient: string; cohortSmallSample: string; workflowRevision: string; specVersion: string; sample: string; outcomeCounts: string; corrections: string; cycleQuestions: string; reconciliations: string; attentionRequests: string; cohortOperatorInterventions: string; cohortProviderHolds: string; cohortLegend: string; cohortPage: (from: number, to: number, total: number) => string; previousCohorts: string; nextCohorts: string;
 	verification: string; review: string; fullVerify: string; ci: string; executor: string; unchanged: string; adapted: string; contractChangeRequired: string;
 	factualTiming?: string; wallTime?: string; providerWait?: string; userWait?: string; research?: string; required?: string; receiptCoverage?: string; obsoleteSource?: string; versionMismatch?: string; relatedCorrection?: string;
 	phases: string; failures: string;
@@ -194,16 +199,21 @@ export interface RunInspectorCatalog {
 	homeAccessibleLabel: string;
 	currentRunTitle: string;
 	latestRunTitle: string;
+	runNotFound: string;
+	runNotFoundDetail: string;
+	runLoading: string;
+	mergedLabel: string;
+	runTitle: string;
+	allRunsLabel: string;
 	stats: {
 		expectedCost: string;
-		events: string;
 	};
 	viewDetailsLabel: string;
 	noRunLabel: string;
 	stateLabels: Readonly<Record<RunState, string>>;
 	stageLabels: Readonly<Record<'queued' | 'working' | 'verify' | 'review' | 'full-verify' | 'ready-to-ship' | 'shipping' | 'done', string>>;
 	stageStatusLabels: Readonly<Record<'complete' | 'current' | 'future', string>>;
-	stageMap: { title: string; noHistory: string; modifierLabel: string };
+	stageMap: { title: string; noHistory: string; modifierLabel: string; position: (step: number, total: number, label: string) => string };
 	phaseLabel: (phase: string) => string;
 	commandLabels: {
 		resume: string;
@@ -211,7 +221,6 @@ export interface RunInspectorCatalog {
 		cancel: string;
 		ship: string;
 	};
-	expectedCost: (formattedCost: string) => string;
 	correctionRounds: (executor: number, ci: number, decision: number, orchestrator: number, indeterminate: number) => string;
 	specFacts: {
 		title: string; description: string; version: string; fingerprint: string; specCounts: string; corrections: string; questions: string; reconciliations: string; unknown: string; durationTitle: string; wallTime: string; unassigned: string; reconciliation: string; entries: (count: number) => string; yes: string; no: string; phaseLabels: Readonly<Record<string, string>>;
@@ -292,8 +301,6 @@ export interface RunsOperationalCatalog {
 		phaseLabels: Readonly<Record<string, string>>;
 		unknownLabel: string;
 		metadataLabel: string;
-		expand: string;
-		collapse: string;
 		exitCode: string;
 		duration: string;
 		decisionLabel: string;
@@ -305,17 +312,6 @@ export interface RunsOperationalCatalog {
 	workspaces: {
 		title: string;
 		description: (count: number) => string;
-	};
-	previousRuns: {
-		title: string;
-		description: (count: number) => string;
-		columns: {
-			issue: string;
-			state: string;
-			delivery: string;
-			cost: string;
-			updated: string;
-		};
 	};
 }
 
@@ -384,7 +380,19 @@ export interface WorkCatalog {
 		queue: string;
 		approval: string;
 		ideas: string;
-		suggestions: string;
+		diagnostics: string;
+		proposals: string;
+	};
+	/** The two suggestion lists: their quick views, search and columns. */
+	list: {
+		views: string;
+		pendingProposals: string;
+		resolvedProposals: string;
+		pendingFindings: string;
+		resolvedFindings: string;
+		searchProposals: string;
+		searchFindings: string;
+		columns: { title: string; origin: string; run: string; status: string; severity: string; rule: string; location: string; occurrences: string; actions: string };
 	};
 	backlog: {
 		title: string;
@@ -441,12 +449,11 @@ export interface WorkCatalog {
 		cancel: string;
 		severityLabels: Readonly<Record<'error' | 'warning' | 'info', string>>;
 		statusLabels: Readonly<Record<'pending' | 'dismissed' | 'promoted' | 'cleared', string>>;
-		occurrences: (formattedCount: string) => string;
 		toolVersion: (version: string) => string;
 		dismiss: string;
 		defaultIssueTitle: (rule: string, file: string) => string;
 		noPending: string;
-		resolved: (formattedCount: string) => string;
+		noResolved: string;
 		omitted: (formattedCount: string) => string;
 		noHistory: string;
 		history: (promoted: string, dismissed: string, cleared: string, pending: string) => string;
@@ -454,18 +461,20 @@ export interface WorkCatalog {
 		dismissalDisclaimer: string;
 	};
 	proposals: {
-		pendingTitle: string;
-		pendingCount: (count: number, formattedCount: string) => string;
 		emptyPending: string;
 		dismiss: string;
-		resolvedTitle: string;
-		resolvedCount: (count: number, formattedCount: string) => string;
 		readOnly: string;
 		settledNote: string;
 		emptyResolved: string;
 		statusLabels: Readonly<Record<'promoted' | 'dismissed', string>>;
 		became: string;
 		omitted: (count: number, formattedCount: string) => string;
+	};
+	/** An action on several selected rows: the question the button asks, and the account of what it did. */
+	bulk: {
+		dismissFindings: (count: number) => string;
+		dismissProposals: (count: number) => string;
+		partial: (settled: number, failed: number) => string;
 	};
 }
 
@@ -475,8 +484,18 @@ export interface SettingsCatalog {
 		execution: string;
 		project: string;
 	};
+	/** The global settings page: what runs the agents, who the operator is, how they are told, how the service updates. */
+	globalTabs: { agents: string; operator: string; notifications: string; updates: string };
+	interface: {
+		title: string;
+		description: string;
+		theme: string;
+		themeChoices: Readonly<Record<'system' | 'light' | 'dark', string>>;
+		language: string;
+		width: string;
+		widthChoices: Readonly<Record<'centered' | 'wide', string>>;
+	};
 	title: string;
-	disclosure: { open: string; close: string };
 	project: {
 		title: string;
 		description: string;
@@ -505,6 +524,7 @@ export interface SettingsCatalog {
 		installedDisconnected: string;
 		clientMissing: string;
 		connectChatGpt: string;
+		signInHelp: string;
 		codexSubscriptionGuidance: string;
 		codexApiKeyWarning: string;
 		codexEnterpriseFuture: string;
@@ -551,6 +571,7 @@ export interface SettingsCatalog {
 		title: string;
 		description: string;
 		roleLabels: Readonly<Record<'orchestrator' | 'executor' | 'reviewer', string>>;
+		role: string;
 		model: string;
 		effort: string;
 		cliDefault: string;
@@ -590,6 +611,8 @@ export interface SettingsCatalog {
 		permissionStates: Readonly<Record<'granted' | 'denied' | 'unsupported' | 'default', string>>;
 		actionLabels: Readonly<Record<'granted' | 'denied' | 'unsupported' | 'default', string>>;
 		channelLabels: Readonly<Record<'ntfy' | 'resend', string>>;
+		browserLabel: string;
+		setupHelp: string;
 		configured: string;
 		notConfigured: string;
 		missing: (values: string) => string;
@@ -645,26 +668,27 @@ export interface LocaleCatalog {
 export const LOCALE_CATALOG = {
 	'en-US': {
 		shell: {
-			controlCenter: 'Control center',
 			operatorNavigationLabel: 'Navigation',
+			tabBarLabel: 'Destinations',
+			moreLabel: 'More',
 			projectNavigationLabel: 'Projects',
 			manageProjectsLabel: 'Manage projects',
 			switcherPlaceholder: 'Select a project',
+			allProjectsLabel: 'All projects',
+			projectSettingsLabel: 'Project settings',
 			skipLinkLabel: 'Skip to content',
-			themeToggle: { label: 'Theme', light: 'Light theme', dark: 'Dark theme' },
-			widthToggle: { wide: 'Wide layout', compact: 'Centered layout' },
 			sidebarToggle: { collapse: 'Collapse the sidebar', expand: 'Expand the sidebar' },
 			notifications: { label: 'Notifications', empty: 'No action is needed right now.', count: (count) => `${count} action${count === 1 ? '' : 's'} needed`, severity: { action: 'Needs action', advisory: 'Advisory' }, run: { 'waiting-user': 'Run waiting for your input', 'ready-to-ship': 'Run ready to ship', failed: 'Run failed', interrupted: 'Run interrupted' }, shipBlocked: 'Ship blocked', shipBlockedDetail: 'The ship attempt failed and needs your attention.', queueStartFailed: 'Queue failed to start the next run', queueStopped: 'Queue stopped', staleService: 'Restart the service', gitIdentity: 'Git identity is missing', workspace: 'Workspace preserved', providerWait: 'Provider waiting to retry', queueComplete: 'Queue complete', queueStartFailedDetail: 'The attempt to start the next run failed.', queueCompleteDetail: 'There is no eligible work left in the backlog.', queuePreviousDetail: 'The previous run did not finish in done.', queueActiveDetail: 'A run is still active.' },
 			inspectorToggle: { collapse: 'Collapse the run panel', expand: 'Expand the run panel' },
 			languageLabel: 'Language',
 			 routeLabels: {
-				overview: 'Overview',
+				now: 'Now',
 				overviewRuns: 'Runs',
 				overviewQueues: 'Queues',
 				overviewInsights: 'Insights',
 				projects: 'Projects',
 				runs: 'Runs',
-				work: 'Work',
+				work: 'Queue',
 				settings: 'Settings',
 				globalSettings: 'Global settings',
 			},
@@ -675,6 +699,7 @@ export const LOCALE_CATALOG = {
 			currentBadge: 'served by this instance',
 			repositoryUnknown: 'Repository not known',
 			readinessLabel: 'Readiness',
+			list: { title: 'Registered projects', repository: 'Repository', settings: 'Settings', add: 'Add project', closeAdd: 'Close', empty: 'No project registered yet.', emptyDetail: 'Add the first one below.' },
 			readiness: { ready: 'ready', empty: 'empty', 'needs-attention': 'needs attention' },
 			unavailableTitle: 'Project runtime not loaded',
 			unavailableDescription: 'This project is registered, but its runtime is not loaded in this Gateship instance.',
@@ -726,39 +751,45 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		overview: {
-			title: 'Control center', description: 'A live view of project readiness, active work and recent outcomes.', navigation: { label: 'Control center', now: 'Now', runs: 'Runs', queues: 'Queues', insights: 'Insights' }, loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.', queues: { title: 'Queues', description: 'Deterministic approved work by project.', loading: 'Loading queues…', error: 'Queues could not be loaded.', retry: 'Try again', openProject: 'Open project', empty: 'No projects are registered yet.', unavailable: 'Project queue is unavailable.', readiness: 'Readiness', chain: 'Chain', enabled: 'enabled', disabled: 'disabled', paused: 'paused', current: 'Current', next: 'Next admissible', planned: 'Planned issues', lastDelivery: 'Last delivery', sequence: 'Approved sequence', filterProject: 'Filter by project', allProjects: 'All projects', noDelivery: 'No delivery yet', none: 'None', expand: 'Show approved sequence', collapse: 'Hide approved sequence', providerWait: 'waiting for provider', automaticResume: 'will resume automatically', pauseReasons: { 'chain-disabled': 'automatic chaining is disabled', 'previous-run-not-done': 'the previous run is not done', 'no-admissible-issue': 'no approved issue is admissible', 'run-active': 'a run is active', 'chain-start-failed': 'starting the next run failed' } },
-			metrics: { attention: 'Needs attention', activeRuns: 'Active runs', approvedIssues: 'Approved issues', deliveries: 'Deliveries, last 7 days' }, activeWork: 'Active or blocked work', projectStatus: 'Project status', project: 'Project', activity: 'Current activity', lastDelivery: 'Last delivery', noActiveWork: 'No active or blocked work.', noDelivery: 'No delivery in this window', activeRun: 'Active run', issue: 'Issue', phase: 'Phase', provider: 'Provider', updated: 'Updated', backlogLabel: 'Approved queue', lastOutcome: 'Last delivery', noRun: 'No active run', noOutcome: 'No delivery in this window', databaseUnavailable: 'Operational data is unavailable.', historyUnavailable: 'Historical data is unavailable.', noCost: 'Unknown', costCoverage: (known, total) => `${known} of ${total} runs reported cost`, trend: 'Outcomes', outcomes: { shipped: 'shipped', failed: 'failed', cancelled: 'cancelled', incomplete: 'incomplete' },
+			title: 'Control center', description: 'A live view of project readiness, active work and recent outcomes.', navigation: { label: 'Control center', now: 'Now', runs: 'Runs', queues: 'Queues', insights: 'Insights' }, loading: 'Loading operational overview…', empty: 'No projects are registered yet.', partial: 'Some project data is unavailable.', error: 'The operational overview could not be loaded.', queues: { title: 'Queues', description: 'Deterministic approved work by project.', loading: 'Loading queues…', error: 'Queues could not be loaded.', retry: 'Try again', empty: 'No projects are registered yet.', unavailable: 'Project queue is unavailable.', chain: 'Chain', enabled: 'enabled', disabled: 'disabled', next: 'Next admissible', lastDelivery: 'Last delivery', sequence: 'Approved sequence', noDelivery: 'No delivery yet', providerWait: 'waiting for provider', status: { 'needs-you': 'Needs you', running: 'Running', paused: 'Paused', ready: 'Ready', empty: 'Empty' }, queued: (count) => `${count} queued`, automaticResume: 'will resume automatically', pauseReasons: { 'chain-disabled': 'automatic chaining is disabled', 'previous-run-not-done': 'the previous run is not done', 'no-admissible-issue': 'no approved issue is admissible', 'run-active': 'a run is active', 'chain-start-failed': 'starting the next run failed' } },
+			metrics: { attention: 'Needs attention', activeRuns: 'Active runs', approvedIssues: 'Approved issues', deliveries: 'Deliveries, 7 days' }, projectStatus: 'Project status', project: 'Project', activity: 'Current activity', lastDelivery: 'Last delivery', noDelivery: 'No delivery in this window', activeRun: 'Active run', issue: 'Issue', phase: 'Phase', provider: 'Provider', updated: 'Updated', backlogLabel: 'Approved queue', lastOutcome: 'Last delivery', noRun: 'No active run', noOutcome: 'No delivery in this window', databaseUnavailable: 'Operational data is unavailable.', historyUnavailable: 'Historical data is unavailable.', noCost: 'Unknown', costCoverage: (known, total) => `${known} of ${total} runs reported cost`, trend: 'Outcomes', outcomes: { shipped: 'shipped', failed: 'failed', cancelled: 'cancelled', incomplete: 'incomplete' },
 		},
-		overviewRuns: { title: 'Runs', description: 'All project runs in one operational view.', loading: 'Loading runs…', error: 'Runs could not be loaded.', partial: 'Some project histories are unavailable.', empty: 'No runs match these filters.', merged: 'Merged', search: 'Search runId or issueId', project: 'Project', state: 'State', provider: 'Provider', period: 'Period', all: 'All time', last7d: 'Last 7 days', last30d: 'Last 30 days', execution: 'Execution', issue: 'Issue', duration: 'Duration', delivery: 'Delivery', ci: 'CI', model: 'Provider / model', previous: 'Previous', next: 'Next', page: (from, to, total) => `${from}–${to} of ${total}` },
-		overviewInsights: { title: 'Insights', description: 'Compact operational history for delivery, autonomy, providers and economy.', loading: 'Loading insights…', error: 'Insights could not be loaded.', project: 'Project', allProjects: 'All projects', window: 'Window', last7d: 'Last 7 days', last30d: 'Last 30 days', all: 'All time', delivery: 'Delivery', autonomy: 'Autonomy', providers: 'Providers', economy: 'Economy', outcomes: 'Outcomes by day', exactValues: 'Exact values', date: 'Date', runs: 'Runs', shipped: 'Shipped', failed: 'Failed', cancelled: 'Cancelled', incomplete: 'Incomplete', dispatchToMerge: 'Median dispatch-to-merge', reviewRounds: 'Review rounds', operatorInterventions: 'Operator interventions', resolvedQuestions: 'Orchestrator continue answers', providerHolds: 'Provider waits', ciCorrections: 'CI corrections', costCoverage: 'Cost coverage', costCoverageCounts: (complete, partial, unknown, total) => `${complete} complete · ${partial} partial · ${unknown} unknown of ${total}`, knownCost: 'Known cost', apiEquivalent: 'API-equivalent cost', subscriptionSeparate: 'Subscription consumption is separate and is not measured here.', tokens: 'Reported tokens', inputTokens: 'Input tokens', outputTokens: 'Output tokens', configurations: 'Observed configurations', noComparison: 'Model comparisons are hidden until an explicit sample is available; no winner is declared.', unavailable: 'Historical data is unavailable.', noData: 'No historical runs in this window.', cohorts: 'Specification cohorts', cohortEvidenceInsufficient: 'Insufficient evidence: fewer than 5 terminal runs.', workflowRevision: 'Workflow revision', specVersion: 'Spec version', sample: 'Sample', outcomeCounts: 'Outcomes', corrections: 'Runs with corrections', cycleQuestions: 'Cycle questions', reconciliations: 'Reconciliations', attentionRequests: 'Attention requests', cohortOperatorInterventions: 'Operator interventions', cohortProviderHolds: 'Provider waits', cohortLegend: 'Outcomes are shown as shipped / failed / cancelled; every value is numerator/denominator.', cohortPage: (from, to, total) => `${from}–${to} of ${total}`, previousCohorts: 'Previous cohorts', nextCohorts: 'Next cohorts', verification: 'verification', review: 'review', fullVerify: 'full verification', ci: 'CI', executor: 'executor', unchanged: 'unchanged', adapted: 'adapted', contractChangeRequired: 'contract change required', factualTiming: 'Factual timing', wallTime: 'Wall time', providerWait: 'Provider wait', userWait: 'User wait', research: 'Research facts', required: 'required runs', receiptCoverage: 'receipt coverage', obsoleteSource: 'obsolete source', versionMismatch: 'version mismatch', relatedCorrection: 'related correction', phases: 'Phases', failures: 'Failures' },
+		overviewRuns: { title: 'Runs', description: 'All project runs in one operational view.', loading: 'Loading runs…', error: 'Runs could not be loaded.', partial: 'Some project histories are unavailable.', empty: 'No runs match these filters.', merged: 'Merged', search: 'Search runId or issueId', project: 'Project', state: 'State', provider: 'Provider', period: 'Period', all: 'All time', last7d: 'Last 7 days', last30d: 'Last 30 days', execution: 'Execution', issue: 'Issue', duration: 'Duration', delivery: 'Delivery', ci: 'CI', model: 'Provider / model', previous: 'Previous', next: 'Next', page: (from, to, total) => `${from}–${to} of ${total}`, views: { all: 'All', active: 'Active', needsYou: 'Needs you', shipped: 'Shipped', failed: 'Failed' }, viewsLabel: 'Quick views', run: 'Run', date: 'Date', roles: { orchestrator: 'Orchestrator', executor: 'Executor', reviewer: 'Reviewer' }, updated: 'Updated', rounds: 'Rounds', interventions: 'Interventions', cost: 'Cost', runId: 'Run ID', actions: 'Actions', openRun: 'Open run', openPullRequest: 'Open pull request', copyRunId: 'Copy run ID', clearFilters: 'Clear filters', retry: 'Try again', partialProject: (project, message) => `${project}: ${message}`, needsYou: 'Waits on you', emptyDetail: 'Try another view or clear the filters.' },
+		overviewInsights: { title: 'Insights', description: 'Compact operational history for delivery, autonomy, providers and economy.', loading: 'Loading insights…', error: 'Insights could not be loaded.', window: 'Window', last7d: 'Last 7 days', last30d: 'Last 30 days', all: 'All time', delivery: 'Delivery', autonomy: 'Autonomy', providers: 'Providers', economy: 'Economy', outcomes: 'Outcomes by day', exactValues: 'Exact values', date: 'Date', runs: 'Runs', shipped: 'Shipped', failed: 'Failed', cancelled: 'Cancelled', incomplete: 'Incomplete', dispatchToMerge: 'Median dispatch-to-merge', shippedWithoutIntervention: 'Shipped without intervention', firstReviewPasses: 'Passed the first review', reviewRounds: 'Review rounds', operatorInterventions: 'Operator interventions', resolvedQuestions: 'Orchestrator continue answers', providerHolds: 'Provider waits', ciCorrections: 'CI corrections', costCoverage: 'Cost coverage', costCoverageCounts: (complete, partial, unknown, total) => `${complete} complete · ${partial} partial · ${unknown} unknown of ${total}`, knownCost: 'Known cost', apiEquivalent: 'API-equivalent cost', subscriptionSeparate: 'Subscription consumption is separate and is not measured here.', tokens: 'Reported tokens', inputTokens: 'Input tokens', outputTokens: 'Output tokens', configurations: 'Observed configurations', noComparison: 'Model comparisons are hidden until an explicit sample is available; no winner is declared.', unavailable: 'Historical data is unavailable.', noData: 'No historical runs in this window.', cohorts: 'Specification cohorts', cohortEvidenceInsufficient: 'Insufficient evidence: fewer than 5 terminal runs.', cohortSmallSample: 'Small sample', workflowRevision: 'Workflow', specVersion: 'Spec version', sample: 'Sample', outcomeCounts: 'Outcomes', corrections: 'Runs with corrections', cycleQuestions: 'Cycle questions', reconciliations: 'Reconciliations', attentionRequests: 'Attention requests', cohortOperatorInterventions: 'Operator interventions', cohortProviderHolds: 'Provider waits', cohortLegend: 'Outcomes are shown as shipped / failed / cancelled; every value is numerator/denominator.', cohortPage: (from, to, total) => `${from}–${to} of ${total}`, previousCohorts: 'Previous cohorts', nextCohorts: 'Next cohorts', verification: 'verification', review: 'review', fullVerify: 'full verification', ci: 'CI', executor: 'executor', unchanged: 'unchanged', adapted: 'adapted', contractChangeRequired: 'contract change required', factualTiming: 'Factual timing', wallTime: 'Wall time', providerWait: 'Provider wait', userWait: 'User wait', research: 'Research facts', required: 'required runs', receiptCoverage: 'receipt coverage', obsoleteSource: 'obsolete source', versionMismatch: 'version mismatch', relatedCorrection: 'related correction', phases: 'Phases', failures: 'Failures' },
 		runInspector: {
 			homeAccessibleLabel: 'Run inspector',
 			currentRunTitle: 'Current run',
 			latestRunTitle: 'Latest run',
+			runNotFound: 'Run not found',
+			runNotFoundDetail: 'This project has no run with this id. It may belong to another project, or the address may be incomplete.',
+			runLoading: 'Loading the run…',
+			mergedLabel: 'Merged',
+			runTitle: 'Run',
+			allRunsLabel: 'All runs of this project',
 			stats: {
 				expectedCost: 'Expected cost',
-				events: 'Run events',
 			},
 			viewDetailsLabel: 'View run details',
 			noRunLabel: 'No runs recorded yet.',
 			stateLabels: {
-				queued: 'queued',
-				working: 'working',
-				verify: 'verify',
-				review: 'review',
-				'full-verify': 'full-verify',
-				'ready-to-ship': 'ready-to-ship',
-				shipping: 'shipping',
-				done: 'done',
-				'waiting-user': 'waiting-user',
-				'waiting-provider': 'waiting-provider',
-				failed: 'failed',
-				interrupted: 'interrupted',
-				cancelled: 'cancelled',
+				/* The words the stage map already uses, so a state reads the same wherever it shows; never the runtime's raw id. */
+				queued: 'Queued',
+				working: 'Working',
+				verify: 'Verify',
+				review: 'Review',
+				'full-verify': 'Full verify',
+				'ready-to-ship': 'Ready to ship',
+				shipping: 'Shipping',
+				done: 'Done',
+				'waiting-user': 'Waiting for you',
+				'waiting-provider': 'Waiting for provider',
+				failed: 'Failed',
+				interrupted: 'Interrupted',
+				cancelled: 'Cancelled',
 			},
 			stageLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' },
 			stageStatusLabels: { complete: 'completed', current: 'current stage', future: 'upcoming' },
-			stageMap: { title: 'Run stages', noHistory: 'Stage history is unavailable; no progress inferred.', modifierLabel: 'Current state' },
+			stageMap: { title: 'Run stages', noHistory: 'Stage history is unavailable; no progress inferred.', modifierLabel: 'Current state', position: (step, total, label) => `Stage ${step} of ${total} · ${label}` },
 			phaseLabel: (phase) => `Phase ${phase}`,
 			commandLabels: {
 				resume: 'Resume',
@@ -766,7 +797,6 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancel',
 				ship: 'Ship',
 			},
-			expectedCost: (formattedCost) => `Expected cost: ${formattedCost}`,
 			correctionRounds: (executor, ci, decision, orchestrator, indeterminate) => {
 				const total = executor + ci + decision + orchestrator + indeterminate;
 				const parts = [
@@ -863,24 +893,12 @@ export const LOCALE_CATALOG = {
 				toolsLabel: 'Tools',
 				cycleResponseLabel: 'Answer to the review cycle',
 				noEvents: 'No public activity has been recorded for this run.',
-				loadPrevious: 'Load previous', loadingPrevious: 'Loading previous…', returnToLive: 'Return to live', roleLabels: { executor: 'Executor', reviewer: 'Reviewer', orchestrator: 'Orchestrator', operator: 'Operator', 'agent-cli': 'Agent CLI', unknown: 'Unknown origin', runtime: 'Runtime' }, phaseLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' }, unknownLabel: 'Unknown event', metadataLabel: 'Metadata', expand: 'Show details', collapse: 'Hide details', exitCode: 'exit code', duration: 'duration', decisionLabel: 'Decision', findingLabel: 'Finding', attentionLabel: 'Needs attention', outputLabel: 'Output',
+				loadPrevious: 'Load previous', loadingPrevious: 'Loading previous…', returnToLive: 'Return to live', roleLabels: { executor: 'Executor', reviewer: 'Reviewer', orchestrator: 'Orchestrator', operator: 'Operator', 'agent-cli': 'Agent CLI', unknown: 'Unknown origin', runtime: 'Runtime' }, phaseLabels: { queued: 'Queued', working: 'Working', verify: 'Verify', review: 'Review', 'full-verify': 'Full verify', 'ready-to-ship': 'Ready to ship', shipping: 'Shipping', done: 'Done' }, unknownLabel: 'Unknown event', metadataLabel: 'Metadata', exitCode: 'exit code', duration: 'duration', decisionLabel: 'Decision', findingLabel: 'Finding', attentionLabel: 'Needs attention', outputLabel: 'Output',
 			},
 			workspaces: {
 				title: 'Preserved workspaces',
 				description: (count) =>
 					`${count} ${count === 1 ? 'local resource needs' : 'local resources need'} inspection.`,
-			},
-			previousRuns: {
-				title: 'Previous runs',
-				description: (count) =>
-					`${count} ${count === 1 ? 'run' : 'runs'} before the latest, newest first.`,
-				columns: {
-					issue: 'Issue',
-					state: 'State',
-					delivery: 'Delivery',
-					cost: 'Expected cost',
-					updated: 'Updated',
-				},
 			},
 		},
 		runsWorkflow: {
@@ -955,7 +973,18 @@ export const LOCALE_CATALOG = {
 				queue: 'Queue',
 				approval: 'Approval',
 				ideas: 'Ideas',
-				suggestions: 'Suggestions',
+				diagnostics: 'Diagnostics',
+				proposals: 'Proposals',
+			},
+			list: {
+				views: 'Views',
+				pendingProposals: 'Pending',
+				resolvedProposals: 'Resolved',
+				pendingFindings: 'Pending',
+				resolvedFindings: 'Resolved',
+				searchProposals: 'Search proposals',
+				searchFindings: 'Search findings',
+				columns: { title: 'Proposal', origin: 'Source issue', run: 'Source run', status: 'Status', severity: 'Severity', rule: 'Rule', location: 'Location', occurrences: 'Occurrences', actions: 'Actions' },
 			},
 			backlog: {
 				title: 'Executable backlog',
@@ -1013,12 +1042,11 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancel diagnostic',
 				severityLabels: { error: 'error', warning: 'warning', info: 'info' },
 				statusLabels: { pending: 'Pending', dismissed: 'Dismissed', promoted: 'Promoted', cleared: 'Did not recur' },
-				occurrences: (formattedCount) => `×${formattedCount}`,
 				toolVersion: (version) => `tool ${version}`,
 				dismiss: 'Dismiss',
 				defaultIssueTitle: (rule, file) => `${rule} in ${file}`,
 				noPending: 'No pending findings.',
-				resolved: (formattedCount) => `Resolved (${formattedCount})`,
+				noResolved: 'No resolved findings yet.',
 				omitted: (formattedCount) => `+${formattedCount} not shown.`,
 				noHistory: "There is not enough history yet to measure this analyzer's usefulness.",
 				history: (promoted, dismissed, cleared, pending) => `Local history: ${promoted} promoted, ${dismissed} dismissed, ${cleared} that did not recur and ${pending} pending.`,
@@ -1026,18 +1054,19 @@ export const LOCALE_CATALOG = {
 				dismissalDisclaimer: 'Dismissal does not mean false positive; that can only be measured when the operator explicitly classifies the reason.',
 			},
 			proposals: {
-				pendingTitle: 'Derived proposals',
-				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'pending proposal' : 'pending proposals'}.`,
 				emptyPending: 'No pending proposals. A run records out-of-scope discoveries here.',
 				dismiss: 'Dismiss',
-				resolvedTitle: 'Resolved proposals',
-				resolvedCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'resolved proposal' : 'resolved proposals'}.`,
 				readOnly: 'read-only',
 				settledNote: 'Dismissal and promotion cannot be undone here.',
 				emptyResolved: 'No resolved proposals yet.',
 				statusLabels: { promoted: 'Promoted', dismissed: 'Dismissed' },
 				became: 'became',
 				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'resolved proposal' : 'resolved proposals'} not shown.`,
+			},
+			bulk: {
+				dismissFindings: (count) => `Dismiss ${count} ${count === 1 ? 'finding' : 'findings'}`,
+				dismissProposals: (count) => `Dismiss ${count} ${count === 1 ? 'proposal' : 'proposals'}`,
+				partial: (settled, failed) => `${settled} dismissed. The service refused ${failed}, each with its reason:`,
 			},
 		},
 		settings: {
@@ -1047,12 +1076,14 @@ export const LOCALE_CATALOG = {
 				execution: 'Execution',
 				project: 'Project',
 			},
-			disclosure: { open: 'open', close: 'close' },
+			globalTabs: { agents: 'Agents', operator: 'Operator', notifications: 'Notifications', updates: 'Updates' },
+			interface: { title: 'Interface', description: 'How this screen is set: how it looks, how wide it reads and which language it speaks. Each applies at once and is kept in this browser, not on the service.', theme: 'Theme', themeChoices: { system: 'Follow the system', light: 'Light', dark: 'Dark' }, language: 'Language', width: 'Content width', widthChoices: { centered: 'Centered', wide: 'Fill the window' } },
 			project: { title: 'Project', description: 'The process operates one local project at a time; this binding is derived from Git, not hidden configuration.', stateLabels: { ready: 'ready', checking: 'checking', attention: 'attention' }, localProject: 'Local project', repository: 'Repository', runSource: 'Run source' },
 			operator: { title: 'Operator', description: 'Human identity and timezone used as non-authoritative conversation context.', name: 'Name', namePlaceholder: 'What the orchestrator should call you', timezone: 'Timezone', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'IANA identifier. The browser suggestion is saved only when you confirm.', save: 'Save profile' },
 			providers: {
 				title: 'Local agents', description: 'Gateship uses subscriptions from installed clients. Claude can optionally use a dedicated credential of its own, isolated from Claude Desktop or the terminal; Codex and the external Claude login never leave the client that owns them.', inUse: 'in use',
 				connectedUnavailable: (reason) => `Subscription connected, but currently unavailable: ${reason}.`, unavailable: (reason) => `Currently unavailable: ${reason}.`, connected: (plan) => `Subscription connected${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Installed, without a connected subscription', clientMissing: 'Client not found', connectChatGpt: 'Connect ChatGPT', useProvider: (label) => `Use ${label}`,
+				signInHelp: 'How to sign in',
 				codexSubscriptionGuidance: 'Recommended: sign in with your ChatGPT subscription using codex login in the environment where Gateship runs.',
 				codexApiKeyWarning: 'An API key uses Platform billing, not credits from your ChatGPT plan, and is not an admissible subscription login for Gateship execution.',
 				codexEnterpriseFuture: 'Codex Enterprise access-token support is planned for a future capability; it is not available here.',
@@ -1084,7 +1115,7 @@ export const LOCALE_CATALOG = {
 					originLabels: { external: 'external login', web: 'managed login', dedicated: 'dedicated credential' },
 				},
 			},
-			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Cycle resolver', executor: 'Executor', reviewer: 'Reviewer' }, model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
+			models: { title: 'Model and effort by role', description: 'Applies to the next agent started, without restarting the service. An empty field keeps the CLI default. The field is free text: the CLI itself rejects an invalid value with its own error, not Gateship.', roleLabels: { orchestrator: 'Cycle resolver', executor: 'Executor', reviewer: 'Reviewer' }, role: 'Role', model: 'model', effort: 'effort', cliDefault: 'CLI default', documentation: (provider) => `${provider} models in the official documentation`, save: 'Save models' },
 			agentDefaults: { title: 'Agent defaults', description: 'Default provider, model and effort for projects that have not set their own agent configuration.', provider: 'Default provider', save: 'Save agent defaults' },
 			agentSources: { global: 'Inherited from global defaults.', project: 'Customized for this project.', providerDefault: 'Using the provider default.', resetProvider: 'Reset provider to global default', resetModels: 'Reset models to global defaults' },
 			chain: { title: 'Automatic run chaining', description: 'When a run finishes in done, starts the next approved issue automatically in ID order.', label: 'Chain approved runs automatically' },
@@ -1096,7 +1127,7 @@ export const LOCALE_CATALOG = {
 			updates: { title: 'Gateship updates', description: 'Checks official releases at most daily and applies a verified native binary only while the project is idle.', label: 'Install verified native updates automatically', guidance: 'Fixed cadence: daily. Runs, preserved waiting states, diagnostics, containers, and source checkouts are never updated in place.', available: 'Available', unknown: 'unknown', statusLabels: { success: 'success', rollback: 'rollback', failed: 'failed', 'check-failed': 'check-failed', deferred: 'deferred' }, result: (previous, target, at) => `${previous} → ${target} at ${at}` },
 			diagnostics: { title: 'Diagnostic schedule', description: 'Runs at most one overdue diagnostic, and only while this project is idle.', label: 'Run diagnostics periodically', cadence: 'Cadence', cadenceLabels: { daily: 'Daily', weekly: 'Weekly' }, disabled: 'Disabled.', overdue: 'overdue', nextRun: (value) => `Next run: ${value}`, calculating: 'calculating', guidance: 'A manual scan also resets the window. Missed periods do not create catch-up runs.', save: 'Save schedule' },
 			notifications: {
-				title: 'Notifications', description: 'The browser and remote channels alert you only when a run needs an operator decision; remote channels work even when the tab is closed.', permissionStates: { granted: 'Active in this browser.', denied: "Blocked in this browser's permissions.", unsupported: 'Unavailable in this browser.', default: 'Permission not requested yet.' }, actionLabels: { granted: 'Notifications active', denied: 'Notifications blocked', unsupported: 'Notifications unavailable', default: 'Enable notifications' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configured', notConfigured: 'not configured', missing: (values) => ` (missing: ${values})`, sendTest: 'Send test',
+				title: 'Notifications', browserLabel: 'This browser', setupHelp: 'How to set it up', description: 'The browser and remote channels alert you only when a run needs an operator decision; remote channels work even when the tab is closed.', permissionStates: { granted: 'Active in this browser.', denied: "Blocked in this browser's permissions.", unsupported: 'Unavailable in this browser.', default: 'Permission not requested yet.' }, actionLabels: { granted: 'Notifications active', denied: 'Notifications blocked', unsupported: 'Notifications unavailable', default: 'Enable notifications' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configured', notConfigured: 'not configured', missing: (values) => ` (missing: ${values})`, sendTest: 'Send test',
 				resendFields: { from: 'Sender', to: 'Recipient', apiKey: 'Replacement API key (optional)' },
 				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operator@example.com', apiKey: 'Blank keeps the current credential' },
 				saveResend: 'Save Resend settings', removeResendCredential: 'Remove credential', externallyManaged: 'Managed by the environment', fileCredentialPresent: 'A file-backed credential is present.', fileCredentialAbsent: 'No file credential is present.',
@@ -1122,28 +1153,29 @@ export const LOCALE_CATALOG = {
 	},
 	'pt-BR': {
 		shell: {
-			controlCenter: 'Central de controle',
 			operatorNavigationLabel: 'Navegação',
+			tabBarLabel: 'Destinos',
+			moreLabel: 'Mais',
 			projectNavigationLabel: 'Projetos',
 			manageProjectsLabel: 'Gerenciar projetos',
 			switcherPlaceholder: 'Selecionar projeto',
+			allProjectsLabel: 'Todos os projetos',
+			projectSettingsLabel: 'Ajustes',
 			skipLinkLabel: 'Pular para o conteúdo',
-			themeToggle: { label: 'Tema', light: 'Tema claro', dark: 'Tema escuro' },
-			widthToggle: { wide: 'Layout largo', compact: 'Layout centralizado' },
 			sidebarToggle: { collapse: 'Recolher a barra lateral', expand: 'Expandir a barra lateral' },
 			notifications: { label: 'Notificações', empty: 'Nenhuma ação é necessária agora.', count: (count) => `${count} ${count === 1 ? 'ação necessária' : 'ações necessárias'}`, severity: { action: 'Exige ação', advisory: 'Informativo' }, run: { 'waiting-user': 'Execução aguardando sua decisão', 'ready-to-ship': 'Execução pronta para envio', failed: 'Execução com falha', interrupted: 'Execução interrompida' }, shipBlocked: 'Envio bloqueado', shipBlockedDetail: 'A tentativa de envio falhou e requer sua atenção.', queueStartFailed: 'A fila falhou ao iniciar a próxima execução', queueStopped: 'Fila interrompida', staleService: 'Reinicie o serviço', gitIdentity: 'Identidade Git ausente', workspace: 'Workspace preservado', providerWait: 'Provedor aguardando nova tentativa', queueComplete: 'Fila concluída', queueStartFailedDetail: 'A tentativa de iniciar a próxima execução falhou.', queueCompleteDetail: 'Não há trabalho elegível restante no backlog.', queuePreviousDetail: 'A execução anterior não terminou como concluída.', queueActiveDetail: 'Ainda há uma execução ativa.' },
 			inspectorToggle: { collapse: 'Recolher o painel da execução', expand: 'Expandir o painel da execução' },
 			languageLabel: 'Idioma',
 			 routeLabels: {
-				overview: 'Visão geral',
+				now: 'Agora',
 				overviewRuns: 'Execuções',
 				overviewQueues: 'Filas',
 				overviewInsights: 'Análises',
 				projects: 'Projetos',
-				runs: 'Runs',
-				work: 'Trabalho',
+				runs: 'Execuções',
+				work: 'Fila',
 				settings: 'Ajustes',
-				globalSettings: 'Ajustes globais',
+				globalSettings: 'Configurações',
 			},
 		},
 		projects: {
@@ -1152,6 +1184,7 @@ export const LOCALE_CATALOG = {
 			currentBadge: 'servido por esta instância',
 			repositoryUnknown: 'Repositório desconhecido',
 			readinessLabel: 'Prontidão',
+			list: { title: 'Projetos registrados', repository: 'Repositório', settings: 'Ajustes', add: 'Adicionar projeto', closeAdd: 'Fechar', empty: 'Nenhum projeto registrado ainda.', emptyDetail: 'Adicione o primeiro abaixo.' },
 			readiness: { ready: 'pronto', empty: 'vazio', 'needs-attention': 'requer atenção' },
 			unavailableTitle: 'Runtime do projeto não carregado',
 			unavailableDescription: 'Este projeto está registrado, mas seu runtime não está carregado nesta instância do Gateship.',
@@ -1203,18 +1236,23 @@ export const LOCALE_CATALOG = {
 			},
 		},
 		overview: {
-			title: 'Central de controle', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', navigation: { label: 'Central de controle', now: 'Agora', runs: 'Execuções', queues: 'Filas', insights: 'Insights' }, loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.', queues: { title: 'Filas', description: 'Trabalho aprovado e determinístico por projeto.', loading: 'Carregando filas…', error: 'Não foi possível carregar as filas.', retry: 'Tentar novamente', openProject: 'Abrir projeto', empty: 'Nenhum projeto foi registrado ainda.', unavailable: 'A fila do projeto está indisponível.', readiness: 'Prontidão', chain: 'Encadeamento', enabled: 'ligado', disabled: 'desligado', paused: 'pausado', current: 'Atual', next: 'Próxima admissível', planned: 'Issues planejadas', lastDelivery: 'Última entrega', sequence: 'Sequência aprovada', filterProject: 'Filtrar por projeto', allProjects: 'Todos os projetos', noDelivery: 'Nenhuma entrega ainda', none: 'Nenhuma', expand: 'Mostrar sequência aprovada', collapse: 'Ocultar sequência aprovada', providerWait: 'aguardando provider', automaticResume: 'retomará automaticamente', pauseReasons: { 'chain-disabled': 'o encadeamento automático está desligado', 'previous-run-not-done': 'a run anterior não terminou', 'no-admissible-issue': 'nenhuma issue aprovada está admissível', 'run-active': 'há uma run ativa', 'chain-start-failed': 'não foi possível iniciar a próxima run' } },
-			metrics: { attention: 'Requer atenção', activeRuns: 'Runs ativas', approvedIssues: 'Issues aprovadas', deliveries: 'Entregas, últimos 7 dias' }, activeWork: 'Trabalho ativo ou bloqueado', projectStatus: 'Estado dos projetos', project: 'Projeto', activity: 'Atividade atual', lastDelivery: 'Última entrega', noActiveWork: 'Nenhum trabalho ativo ou bloqueado.', noDelivery: 'Nenhuma entrega nesta janela', activeRun: 'Run ativa', issue: 'Issue', phase: 'Fase', provider: 'Provider', updated: 'Atualizado', backlogLabel: 'Fila aprovada', lastOutcome: 'Última entrega', noRun: 'Nenhuma run ativa', noOutcome: 'Nenhuma entrega nesta janela', databaseUnavailable: 'Dados operacionais indisponíveis.', historyUnavailable: 'Dados históricos indisponíveis.', noCost: 'Desconhecido', costCoverage: (known, total) => `${known} de ${total} runs informaram custo`, trend: 'Resultados', outcomes: { shipped: 'enviada', failed: 'falhou', cancelled: 'cancelada', incomplete: 'incompleta' },
+			title: 'Central de controle', description: 'Visão ao vivo da prontidão, do trabalho ativo e dos resultados recentes dos projetos.', navigation: { label: 'Central de controle', now: 'Agora', runs: 'Execuções', queues: 'Filas', insights: 'Insights' }, loading: 'Carregando visão operacional…', empty: 'Nenhum projeto foi registrado ainda.', partial: 'Alguns dados de projetos estão indisponíveis.', error: 'Não foi possível carregar a visão operacional.', queues: { title: 'Filas', description: 'Trabalho aprovado e determinístico por projeto.', loading: 'Carregando filas…', error: 'Não foi possível carregar as filas.', retry: 'Tentar novamente', empty: 'Nenhum projeto foi registrado ainda.', unavailable: 'A fila do projeto está indisponível.', chain: 'Encadeamento', enabled: 'ligado', disabled: 'desligado', next: 'Próxima admissível', lastDelivery: 'Última entrega', sequence: 'Sequência aprovada', noDelivery: 'Nenhuma entrega ainda', providerWait: 'aguardando provider', status: { 'needs-you': 'Precisa de você', running: 'Rodando', paused: 'Pausada', ready: 'Pronta', empty: 'Vazia' }, queued: (count) => `${count} na fila`, automaticResume: 'retomará automaticamente', pauseReasons: { 'chain-disabled': 'o encadeamento automático está desligado', 'previous-run-not-done': 'a run anterior não terminou', 'no-admissible-issue': 'nenhuma issue aprovada está admissível', 'run-active': 'há uma run ativa', 'chain-start-failed': 'não foi possível iniciar a próxima run' } },
+			metrics: { attention: 'Requer atenção', activeRuns: 'Runs ativas', approvedIssues: 'Issues aprovadas', deliveries: 'Entregas, 7 dias' }, projectStatus: 'Estado dos projetos', project: 'Projeto', activity: 'Atividade atual', lastDelivery: 'Última entrega', noDelivery: 'Nenhuma entrega nesta janela', activeRun: 'Run ativa', issue: 'Issue', phase: 'Fase', provider: 'Provider', updated: 'Atualizado', backlogLabel: 'Fila aprovada', lastOutcome: 'Última entrega', noRun: 'Nenhuma run ativa', noOutcome: 'Nenhuma entrega nesta janela', databaseUnavailable: 'Dados operacionais indisponíveis.', historyUnavailable: 'Dados históricos indisponíveis.', noCost: 'Desconhecido', costCoverage: (known, total) => `${known} de ${total} runs informaram custo`, trend: 'Resultados', outcomes: { shipped: 'enviada', failed: 'falhou', cancelled: 'cancelada', incomplete: 'incompleta' },
 		},
-		overviewRuns: { title: 'Execuções', description: 'Todas as execuções dos projetos em uma visão operacional.', loading: 'Carregando execuções…', error: 'Não foi possível carregar as execuções.', partial: 'O histórico de alguns projetos está indisponível.', empty: 'Nenhuma execução corresponde aos filtros.', merged: 'Mesclada', search: 'Buscar runId ou issueId', project: 'Projeto', state: 'Estado', provider: 'Provider', period: 'Período', all: 'Todo o período', last7d: 'Últimos 7 dias', last30d: 'Últimos 30 dias', execution: 'Execução', issue: 'Issue', duration: 'Duração', delivery: 'Entrega', ci: 'CI', model: 'Provider / modelo', previous: 'Anterior', next: 'Próxima', page: (from, to, total) => `${from}–${to} de ${total}` },
-		overviewInsights: { title: 'Insights', description: 'Histórico operacional compacto de entrega, autonomia, providers e economia.', loading: 'Carregando insights…', error: 'Não foi possível carregar os insights.', project: 'Projeto', allProjects: 'Todos os projetos', window: 'Período', last7d: 'Últimos 7 dias', last30d: 'Últimos 30 dias', all: 'Todo o período', delivery: 'Entrega', autonomy: 'Autonomia', providers: 'Providers', economy: 'Economia', outcomes: 'Resultados por dia', exactValues: 'Valores exatos', date: 'Data', runs: 'Runs', shipped: 'Enviadas', failed: 'Falhas', cancelled: 'Canceladas', incomplete: 'Incompletas', dispatchToMerge: 'Mediana de dispatch-to-merge', reviewRounds: 'Rodadas de revisão', operatorInterventions: 'Intervenções do operador', resolvedQuestions: 'Respostas continue do orquestrador', providerHolds: 'Esperas de provider', ciCorrections: 'Correções de CI', costCoverage: 'Cobertura de custos', costCoverageCounts: (complete, partial, unknown, total) => `${complete} completa · ${partial} parcial · ${unknown} desconhecida de ${total}`, knownCost: 'Custo conhecido', apiEquivalent: 'Custo equivalente à API', subscriptionSeparate: 'O consumo da assinatura é separado e não é medido aqui.', tokens: 'Tokens informados', inputTokens: 'Tokens de entrada', outputTokens: 'Tokens de saída', configurations: 'Configurações observadas', noComparison: 'Comparações por modelo ficam ocultas até haver uma amostra explícita; nenhum vencedor é declarado.', unavailable: 'Os dados históricos estão indisponíveis.', noData: 'Nenhuma run histórica neste período.', cohorts: 'Coortes da especificação', cohortEvidenceInsufficient: 'Evidência insuficiente: menos de 5 runs terminais.', workflowRevision: 'Revisão do workflow', specVersion: 'Versão da spec', sample: 'Amostra', outcomeCounts: 'Outcomes', corrections: 'Runs com correções', cycleQuestions: 'Perguntas do ciclo', reconciliations: 'Reconciliações', attentionRequests: 'Pedidos de atenção', cohortOperatorInterventions: 'Intervenções do operador', cohortProviderHolds: 'Esperas de provider', cohortLegend: 'Outcomes: enviadas / falhas / canceladas; todo valor é numerador/denominador.', cohortPage: (from, to, total) => `${from}–${to} de ${total}`, previousCohorts: 'Coortes anteriores', nextCohorts: 'Próximas coortes', verification: 'verificação', review: 'revisão', fullVerify: 'verificação completa', ci: 'CI', executor: 'executor', unchanged: 'inalterada', adapted: 'adaptada', contractChangeRequired: 'mudança de contrato necessária', factualTiming: 'Tempos factuais', wallTime: 'Tempo total', providerWait: 'Espera de provider', userWait: 'Espera do operador', research: 'Fatos da pesquisa', required: 'runs que exigiram', receiptCoverage: 'cobertura de receipts', obsoleteSource: 'fonte obsoleta', versionMismatch: 'mismatch de versão', relatedCorrection: 'correção relacionada', phases: 'Fases', failures: 'Falhas' },
+		overviewRuns: { title: 'Execuções', description: 'Todas as execuções dos projetos em uma visão operacional.', loading: 'Carregando execuções…', error: 'Não foi possível carregar as execuções.', partial: 'O histórico de alguns projetos está indisponível.', empty: 'Nenhuma execução corresponde aos filtros.', merged: 'Mesclada', search: 'Buscar runId ou issueId', project: 'Projeto', state: 'Estado', provider: 'Provider', period: 'Período', all: 'Todo o período', last7d: 'Últimos 7 dias', last30d: 'Últimos 30 dias', execution: 'Execução', issue: 'Issue', duration: 'Duração', delivery: 'Entrega', ci: 'CI', model: 'Provider / modelo', previous: 'Anterior', next: 'Próxima', page: (from, to, total) => `${from}–${to} de ${total}`, views: { all: 'Todas', active: 'Ativas', needsYou: 'Precisa de você', shipped: 'Entregues', failed: 'Falhas' }, viewsLabel: 'Visões rápidas', run: 'Run', date: 'Data', roles: { orchestrator: 'Orquestrador', executor: 'Executor', reviewer: 'Revisor' }, updated: 'Atualizada', rounds: 'Rodadas', interventions: 'Intervenções', cost: 'Custo', runId: 'ID da run', actions: 'Ações', openRun: 'Abrir run', openPullRequest: 'Abrir pull request', copyRunId: 'Copiar ID da run', clearFilters: 'Limpar filtros', retry: 'Tentar novamente', partialProject: (project, message) => `${project}: ${message}`, needsYou: 'Espera por você', emptyDetail: 'Tente outra visão ou limpe os filtros.' },
+		overviewInsights: { title: 'Insights', description: 'Histórico operacional compacto de entrega, autonomia, providers e economia.', loading: 'Carregando insights…', error: 'Não foi possível carregar os insights.', window: 'Período', last7d: 'Últimos 7 dias', last30d: 'Últimos 30 dias', all: 'Todo o período', delivery: 'Entrega', autonomy: 'Autonomia', providers: 'Providers', economy: 'Economia', outcomes: 'Resultados por dia', exactValues: 'Valores exatos', date: 'Data', runs: 'Runs', shipped: 'Enviadas', failed: 'Falhas', cancelled: 'Canceladas', incomplete: 'Incompletas', dispatchToMerge: 'Mediana de dispatch-to-merge', shippedWithoutIntervention: 'Enviadas sem intervenção', firstReviewPasses: 'Aprovadas na primeira revisão', reviewRounds: 'Rodadas de revisão', operatorInterventions: 'Intervenções do operador', resolvedQuestions: 'Respostas continue do orquestrador', providerHolds: 'Esperas de provider', ciCorrections: 'Correções de CI', costCoverage: 'Cobertura de custos', costCoverageCounts: (complete, partial, unknown, total) => `${complete} completa · ${partial} parcial · ${unknown} desconhecida de ${total}`, knownCost: 'Custo conhecido', apiEquivalent: 'Custo equivalente à API', subscriptionSeparate: 'O consumo da assinatura é separado e não é medido aqui.', tokens: 'Tokens informados', inputTokens: 'Tokens de entrada', outputTokens: 'Tokens de saída', configurations: 'Configurações observadas', noComparison: 'Comparações por modelo ficam ocultas até haver uma amostra explícita; nenhum vencedor é declarado.', unavailable: 'Os dados históricos estão indisponíveis.', noData: 'Nenhuma run histórica neste período.', cohorts: 'Coortes da especificação', cohortEvidenceInsufficient: 'Evidência insuficiente: menos de 5 runs terminais.', cohortSmallSample: 'Amostra pequena', workflowRevision: 'Workflow', specVersion: 'Versão da spec', sample: 'Amostra', outcomeCounts: 'Outcomes', corrections: 'Runs com correções', cycleQuestions: 'Perguntas do ciclo', reconciliations: 'Reconciliações', attentionRequests: 'Pedidos de atenção', cohortOperatorInterventions: 'Intervenções do operador', cohortProviderHolds: 'Esperas de provider', cohortLegend: 'Outcomes: enviadas / falhas / canceladas; todo valor é numerador/denominador.', cohortPage: (from, to, total) => `${from}–${to} de ${total}`, previousCohorts: 'Coortes anteriores', nextCohorts: 'Próximas coortes', verification: 'verificação', review: 'revisão', fullVerify: 'verificação completa', ci: 'CI', executor: 'executor', unchanged: 'inalterada', adapted: 'adaptada', contractChangeRequired: 'mudança de contrato necessária', factualTiming: 'Tempos factuais', wallTime: 'Tempo total', providerWait: 'Espera de provider', userWait: 'Espera do operador', research: 'Fatos da pesquisa', required: 'runs que exigiram', receiptCoverage: 'cobertura de receipts', obsoleteSource: 'fonte obsoleta', versionMismatch: 'mismatch de versão', relatedCorrection: 'correção relacionada', phases: 'Fases', failures: 'Falhas' },
 		runInspector: {
 			homeAccessibleLabel: 'Inspetor da execução',
 			currentRunTitle: 'Execução atual',
 			latestRunTitle: 'Execução mais recente',
+			runNotFound: 'Execução não encontrada',
+			runNotFoundDetail: 'Este projeto não tem execução com este id. Ela pode ser de outro projeto, ou o endereço pode estar incompleto.',
+			runLoading: 'Carregando a execução…',
+			mergedLabel: 'Mesclada',
+			runTitle: 'Execução',
+			allRunsLabel: 'Todas as execuções deste projeto',
 			stats: {
 				expectedCost: 'Custo esperado',
-				events: 'Eventos da execução',
 			},
 			viewDetailsLabel: 'Ver detalhes da execução',
 			noRunLabel: 'Nenhuma execução registrada ainda.',
@@ -1235,7 +1273,7 @@ export const LOCALE_CATALOG = {
 			},
 			stageLabels: { queued: 'Na fila', working: 'Em andamento', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', 'ready-to-ship': 'Pronta para envio', shipping: 'Enviando', done: 'Concluída' },
 			stageStatusLabels: { complete: 'concluída', current: 'etapa atual', future: 'próxima' },
-			stageMap: { title: 'Etapas da run', noHistory: 'O histórico de etapas está indisponível; nenhum progresso foi inferido.', modifierLabel: 'Estado atual' },
+			stageMap: { title: 'Etapas da run', noHistory: 'O histórico de etapas está indisponível; nenhum progresso foi inferido.', modifierLabel: 'Estado atual', position: (step, total, label) => `Etapa ${step} de ${total} · ${label}` },
 			phaseLabel: (phase) => `Fase ${phase}`,
 			commandLabels: {
 				resume: 'Retomar',
@@ -1243,7 +1281,6 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancelar',
 				ship: 'Enviar',
 			},
-			expectedCost: (formattedCost) => `Custo esperado: ${formattedCost}`,
 			correctionRounds: (executor, ci, decision, orchestrator, indeterminate) => {
 				const total = executor + ci + decision + orchestrator + indeterminate;
 				const parts = [
@@ -1340,24 +1377,12 @@ export const LOCALE_CATALOG = {
 				toolsLabel: 'Ferramentas',
 				cycleResponseLabel: 'Resposta ao ciclo de revisão',
 				noEvents: 'Nenhuma atividade pública foi registrada para esta execução.',
-				loadPrevious: 'Carregar anteriores', loadingPrevious: 'Carregando anteriores…', returnToLive: 'Voltar para a cauda', roleLabels: { executor: 'Executor', reviewer: 'Revisor', orchestrator: 'Orquestrador', operator: 'Operador', 'agent-cli': 'Agent CLI', unknown: 'Origem desconhecida', runtime: 'Runtime' }, phaseLabels: { queued: 'Na fila', working: 'Trabalho ativo', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', 'ready-to-ship': 'Pronta para envio', shipping: 'Enviando', done: 'Concluída' }, unknownLabel: 'Evento desconhecido', metadataLabel: 'Metadados', expand: 'Mostrar detalhes', collapse: 'Ocultar detalhes', exitCode: 'código de saída', duration: 'duração', decisionLabel: 'Decisão', findingLabel: 'Achado', attentionLabel: 'Requer atenção', outputLabel: 'Saída',
+				loadPrevious: 'Carregar anteriores', loadingPrevious: 'Carregando anteriores…', returnToLive: 'Voltar para a cauda', roleLabels: { executor: 'Executor', reviewer: 'Revisor', orchestrator: 'Orquestrador', operator: 'Operador', 'agent-cli': 'Agent CLI', unknown: 'Origem desconhecida', runtime: 'Runtime' }, phaseLabels: { queued: 'Na fila', working: 'Trabalho ativo', verify: 'Verificação', review: 'Revisão', 'full-verify': 'Verificação completa', 'ready-to-ship': 'Pronta para envio', shipping: 'Enviando', done: 'Concluída' }, unknownLabel: 'Evento desconhecido', metadataLabel: 'Metadados', exitCode: 'código de saída', duration: 'duração', decisionLabel: 'Decisão', findingLabel: 'Achado', attentionLabel: 'Requer atenção', outputLabel: 'Saída',
 			},
 			workspaces: {
 				title: 'Workspaces preservados',
 				description: (count) =>
 					`${count} ${count === 1 ? 'recurso local precisa' : 'recursos locais precisam'} de inspeção.`,
-			},
-			previousRuns: {
-				title: 'Execuções anteriores',
-				description: (count) =>
-					`${count} ${count === 1 ? 'execução' : 'execuções'} antes da mais recente, da mais nova para a mais antiga.`,
-				columns: {
-					issue: 'Issue',
-					state: 'Estado',
-					delivery: 'Entrega',
-					cost: 'Custo esperado',
-					updated: 'Atualizada',
-				},
 			},
 		},
 		runsWorkflow: {
@@ -1432,7 +1457,18 @@ export const LOCALE_CATALOG = {
 				queue: 'Fila',
 				approval: 'Aprovação',
 				ideas: 'Ideias',
-				suggestions: 'Sugestões',
+				diagnostics: 'Diagnósticos',
+				proposals: 'Propostas',
+			},
+			list: {
+				views: 'Visões',
+				pendingProposals: 'Pendentes',
+				resolvedProposals: 'Resolvidas',
+				pendingFindings: 'Pendentes',
+				resolvedFindings: 'Resolvidos',
+				searchProposals: 'Buscar propostas',
+				searchFindings: 'Buscar achados',
+				columns: { title: 'Proposta', origin: 'Issue de origem', run: 'Run de origem', status: 'Estado', severity: 'Severidade', rule: 'Regra', location: 'Local', occurrences: 'Ocorrências', actions: 'Ações' },
 			},
 			backlog: {
 				title: 'Backlog executável',
@@ -1490,12 +1526,11 @@ export const LOCALE_CATALOG = {
 				cancel: 'Cancelar diagnóstico',
 				severityLabels: { error: 'erro', warning: 'aviso', info: 'informação' },
 				statusLabels: { pending: 'Pendente', dismissed: 'Descartado', promoted: 'Promovido', cleared: 'Não voltou a ocorrer' },
-				occurrences: (formattedCount) => `×${formattedCount}`,
 				toolVersion: (version) => `ferramenta ${version}`,
 				dismiss: 'Descartar',
 				defaultIssueTitle: (rule, file) => `${rule} em ${file}`,
 				noPending: 'Nenhum achado pendente.',
-				resolved: (formattedCount) => `Resolvidos (${formattedCount})`,
+				noResolved: 'Nenhum achado resolvido ainda.',
 				omitted: (formattedCount) => `+${formattedCount} não exibidos.`,
 				noHistory: 'Ainda não há histórico suficiente para medir a utilidade deste analisador.',
 				history: (promoted, dismissed, cleared, pending) => `Histórico local: ${promoted} promovidos, ${dismissed} descartados, ${cleared} que não voltaram a ocorrer e ${pending} pendentes.`,
@@ -1503,18 +1538,19 @@ export const LOCALE_CATALOG = {
 				dismissalDisclaimer: 'Descartar não significa falso positivo; isso só pode ser medido quando o operador classifica explicitamente o motivo.',
 			},
 			proposals: {
-				pendingTitle: 'Propostas derivadas',
-				pendingCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'proposta pendente' : 'propostas pendentes'}.`,
 				emptyPending: 'Nenhuma proposta pendente. Uma execução registra aqui as descobertas fora do escopo.',
 				dismiss: 'Descartar',
-				resolvedTitle: 'Propostas resolvidas',
-				resolvedCount: (count, formattedCount) => `${formattedCount} ${count === 1 ? 'proposta resolvida' : 'propostas resolvidas'}.`,
 				readOnly: 'somente leitura',
 				settledNote: 'O descarte e a promoção não podem ser desfeitos aqui.',
 				emptyResolved: 'Nenhuma proposta resolvida ainda.',
 				statusLabels: { promoted: 'Promovida', dismissed: 'Descartada' },
 				became: 'virou',
 				omitted: (count, formattedCount) => `+${formattedCount} ${count === 1 ? 'proposta resolvida' : 'propostas resolvidas'} não exibidas.`,
+			},
+			bulk: {
+				dismissFindings: (count) => `Descartar ${count} ${count === 1 ? 'achado' : 'achados'}`,
+				dismissProposals: (count) => `Descartar ${count} ${count === 1 ? 'proposta' : 'propostas'}`,
+				partial: (settled, failed) => `${settled} descartados. O serviço recusou ${failed}, cada um com o seu motivo:`,
 			},
 		},
 		settings: {
@@ -1524,12 +1560,14 @@ export const LOCALE_CATALOG = {
 				execution: 'Execução',
 				project: 'Projeto',
 			},
-			disclosure: { open: 'abrir', close: 'fechar' },
+			globalTabs: { agents: 'Agentes', operator: 'Operador', notifications: 'Notificações', updates: 'Atualizações' },
+			interface: { title: 'Interface', description: 'Como esta tela está ajustada: a aparência, a largura de leitura e o idioma. Cada escolha vale na hora e fica neste navegador, não no serviço.', theme: 'Tema', themeChoices: { system: 'Acompanhar o sistema', light: 'Claro', dark: 'Escuro' }, language: 'Idioma', width: 'Largura do conteúdo', widthChoices: { centered: 'Centralizado', wide: 'Preencher a janela' } },
 			project: { title: 'Projeto', description: 'O processo opera um projeto local por vez; este vínculo é derivado do Git, não de uma configuração oculta.', stateLabels: { ready: 'pronto', checking: 'verificando', attention: 'atenção' }, localProject: 'Projeto local', repository: 'Repositório', runSource: 'Origem das execuções' },
 			operator: { title: 'Operador', description: 'Identidade humana e fuso horário usados como contexto não autoritativo da conversa.', name: 'Nome', namePlaceholder: 'Como o orquestrador deve chamar você', timezone: 'Fuso horário', timezonePlaceholder: 'America/Sao_Paulo', timezoneGuidance: 'Identificador IANA. A sugestão do navegador só é salva quando você confirma.', save: 'Salvar perfil' },
 			providers: {
 				title: 'Agentes locais', description: 'O Gateship usa assinaturas de clientes instalados. O Claude pode opcionalmente usar uma credencial dedicada própria, isolada do Claude Desktop ou do terminal; o Codex e o login externo do Claude nunca saem do cliente que os possui.', inUse: 'em uso',
 				connectedUnavailable: (reason) => `Assinatura conectada, mas indisponível no momento: ${reason}.`, unavailable: (reason) => `Indisponível no momento: ${reason}.`, connected: (plan) => `Assinatura conectada${plan === undefined ? '' : ` · ${plan}`}`, installedDisconnected: 'Instalado, sem uma assinatura conectada', clientMissing: 'Cliente não encontrado', connectChatGpt: 'Conectar ChatGPT', useProvider: (label) => `Usar ${label}`,
+				signInHelp: 'Como entrar',
 				codexSubscriptionGuidance: 'Recomendado: entre com sua assinatura do ChatGPT usando codex login no ambiente onde o Gateship executa.',
 				codexApiKeyWarning: 'Uma API key usa o faturamento da Platform, não os créditos do seu plano ChatGPT, e não é um login de assinatura admissível para execução no Gateship.',
 				codexEnterpriseFuture: 'O suporte a access token do Codex Enterprise é uma capacidade futura; não está disponível aqui.',
@@ -1561,7 +1599,7 @@ export const LOCALE_CATALOG = {
 					originLabels: { external: 'login externo', web: 'login gerenciado', dedicated: 'credencial dedicada' },
 				},
 			},
-			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Resolvedor do ciclo', executor: 'Executor', reviewer: 'Revisor' }, model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
+			models: { title: 'Modelo e esforço por função', description: 'Aplica-se ao próximo agente iniciado, sem reiniciar o serviço. Um campo vazio mantém o padrão da CLI. O campo é texto livre: a própria CLI rejeita um valor inválido com seu próprio erro, não o Gateship.', roleLabels: { orchestrator: 'Resolvedor do ciclo', executor: 'Executor', reviewer: 'Revisor' }, role: 'Função', model: 'modelo', effort: 'esforço', cliDefault: 'Padrão da CLI', documentation: (provider) => `Modelos do ${provider} na documentação oficial`, save: 'Salvar modelos' },
 			agentDefaults: { title: 'Padrões dos agentes', description: 'Provedor, modelo e esforço padrão para projetos que ainda não definiram sua própria configuração de agentes.', provider: 'Provedor padrão', save: 'Salvar padrões dos agentes' },
 			agentSources: { global: 'Herdado dos padrões globais.', project: 'Personalizado para este projeto.', providerDefault: 'Usando o padrão do provedor.', resetProvider: 'Redefinir provedor para o padrão global', resetModels: 'Redefinir modelos para os padrões globais' },
 			chain: { title: 'Encadeamento automático de execuções', description: 'Quando uma execução termina como concluída, inicia automaticamente a próxima issue aprovada em ordem de ID.', label: 'Encadear execuções aprovadas automaticamente' },
@@ -1573,7 +1611,7 @@ export const LOCALE_CATALOG = {
 			updates: { title: 'Atualizações do Gateship', description: 'Verifica lançamentos oficiais no máximo uma vez por dia e aplica um binário nativo verificado somente enquanto o projeto está ocioso.', label: 'Instalar atualizações nativas verificadas automaticamente', guidance: 'Cadência fixa: diária. Execuções, estados de espera preservados, diagnósticos, contêineres e checkouts de código-fonte nunca são atualizados no lugar.', available: 'Disponível', unknown: 'desconhecida', statusLabels: { success: 'sucesso', rollback: 'reversão', failed: 'falhou', 'check-failed': 'verificação falhou', deferred: 'adiada' }, result: (previous, target, at) => `${previous} → ${target} em ${at}` },
 			diagnostics: { title: 'Agenda de diagnósticos', description: 'Executa no máximo um diagnóstico atrasado e somente enquanto este projeto está ocioso.', label: 'Executar diagnósticos periodicamente', cadence: 'Cadência', cadenceLabels: { daily: 'Diária', weekly: 'Semanal' }, disabled: 'Desativada.', overdue: 'atrasado', nextRun: (value) => `Próxima execução: ${value}`, calculating: 'calculando', guidance: 'Uma análise manual também reinicia a janela. Períodos perdidos não criam execuções de compensação.', save: 'Salvar agenda' },
 			notifications: {
-				title: 'Notificações', description: 'O navegador e os canais remotos avisam apenas quando uma execução precisa de uma decisão do operador; os canais remotos funcionam mesmo com a aba fechada.', permissionStates: { granted: 'Ativas neste navegador.', denied: 'Bloqueadas nas permissões deste navegador.', unsupported: 'Indisponíveis neste navegador.', default: 'Permissão ainda não solicitada.' }, actionLabels: { granted: 'Notificações ativas', denied: 'Notificações bloqueadas', unsupported: 'Notificações indisponíveis', default: 'Ativar notificações' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configurado', notConfigured: 'não configurado', missing: (values) => ` (faltando: ${values})`, sendTest: 'Enviar teste',
+				title: 'Notificações', browserLabel: 'Este navegador', setupHelp: 'Como configurar', description: 'O navegador e os canais remotos avisam apenas quando uma execução precisa de uma decisão do operador; os canais remotos funcionam mesmo com a aba fechada.', permissionStates: { granted: 'Ativas neste navegador.', denied: 'Bloqueadas nas permissões deste navegador.', unsupported: 'Indisponíveis neste navegador.', default: 'Permissão ainda não solicitada.' }, actionLabels: { granted: 'Notificações ativas', denied: 'Notificações bloqueadas', unsupported: 'Notificações indisponíveis', default: 'Ativar notificações' }, channelLabels: { ntfy: 'ntfy', resend: 'email (Resend)' }, configured: 'configurado', notConfigured: 'não configurado', missing: (values) => ` (faltando: ${values})`, sendTest: 'Enviar teste',
 				resendFields: { from: 'Remetente', to: 'Destinatário', apiKey: 'Chave de API substituta (opcional)' },
 				resendPlaceholders: { from: 'Gateship <ops@example.com>', to: 'operador@example.com', apiKey: 'Em branco mantém a credencial atual' },
 				saveResend: 'Salvar configurações do Resend', removeResendCredential: 'Remover credencial', externallyManaged: 'Gerenciado pelo ambiente', fileCredentialPresent: 'Há uma credencial armazenada em arquivo.', fileCredentialAbsent: 'Não há credencial em arquivo.',

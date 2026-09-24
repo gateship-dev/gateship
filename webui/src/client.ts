@@ -263,6 +263,11 @@ export interface OverviewRunsPageView {
 		projectName: string;
 		repository?: string;
 		runId: string;
+		/** Absent from services older than the field; null when the backlog no longer names the issue. */
+		issueTitle?: string | null;
+		error: string | null;
+		/** Wall time minus the wait on the operator; see RunOverviewRow. Absent from services older than the field. */
+		activeDurationMs?: number | null;
 		roles: RunEvaluationView['roles'];
 		evaluation: RunEvaluationView;
 		cost: RunCostView;
@@ -668,6 +673,8 @@ export interface OverviewRunsQuery {
 	offset?: number;
 	projectId?: string;
 	state?: RunView['state'];
+	/** Mirrors RunOverviewGroup in src/runtime/run-overview.ts. */
+	group?: 'active' | 'needs-you' | 'shipped' | 'failed';
 	providerId?: 'claude' | 'codex';
 	period?: '7d' | '30d' | 'all';
 	search?: string;
@@ -1106,6 +1113,17 @@ export async function promoteDiagnosticFinding(
 export async function fetchRuns(scope: ProjectScope): Promise<RunView[]> {
 	const payload = await readScopedJson<RunsPayload>(await fetch(runsPathOf(scope)), 'Runs');
 	return payload?.runs ?? [];
+}
+
+/**
+ * One run by its id. The recent list holds fifty; the runs table links to every
+ * run the project ever had, so an address can name one the list no longer
+ * carries. Null when the service does not know the id.
+ */
+export async function fetchRun(scope: ProjectScope, runId: string): Promise<RunView | null> {
+	const response = await fetch(`${runsPathOf(scope)}/${encodeURIComponent(runId)}`);
+	if (response.status === 404) return null;
+	return (await readJson<{ run: RunView }>(response, 'Run')).run;
 }
 
 export interface ProvidersSnapshot {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { fetchProjectOnboarding, PROJECT_ONBOARDING_PATH } from '../../webui/src/client.ts';
 import { LOCALE_CATALOG } from '../../webui/src/locale.ts';
-import { clearOnboardingStorage, isCurrentOnboardingRequest, isOnboardingProposalConfirmed, onboardingCheckPresentation, onboardingDetailsVisible, onboardingSelectionPressed, onboardingTargetGuidance, onboardingTargetPlaceholder } from '../../webui/src/screens/projects-management-screen.tsx';
+import { clearOnboardingStorage, isCurrentOnboardingRequest, isOnboardingProposalConfirmed, onboardingCheckPresentation, onboardingDetailsVisible, onboardingTargetGuidance, onboardingTargetPlaceholder } from '../../webui/src/screens/projects-management-screen.tsx';
 
 describe('guided project onboarding state', () => {
 	test('invalidates a persisted confirmation when operation, target or proposal changes', () => {
@@ -26,7 +26,7 @@ describe('guided project onboarding state', () => {
 	});
 
 	test('keeps not-applicable checks neutral', () => {
-		expect(onboardingCheckPresentation('not-applicable')).toEqual({ label: 'not applicable yet', variant: 'secondary' });
+		expect(onboardingCheckPresentation('not-applicable')).toEqual({ label: 'not applicable yet', variant: 'neutral' });
 	});
 
 	test('normalizes optional onboarding targets before building the request', async () => {
@@ -58,10 +58,6 @@ describe('guided project onboarding state', () => {
 		expect(onboardingDetailsVisible('new')).toBe(true);
 	});
 
-	test('exposes selected project and operation buttons to assistive technology', () => {
-		expect(onboardingSelectionPressed(true)).toBe(true);
-		expect(onboardingSelectionPressed(false)).toBe(false);
-	});
 
 	test('localizes guidance for local and remote onboarding targets', () => {
 		for (const locale of ['en-US', 'pt-BR'] as const) {

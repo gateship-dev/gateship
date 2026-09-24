@@ -2,24 +2,28 @@
 
 import React from 'react';
 import type { AppProps } from '../app-props.ts';
-import { ShellContentFrame } from '../app-shell.tsx';
 import type { ChainPauseReason, ChainRunsView, RegisteredProjectView } from '../client.ts';
 import { GateshipMark, GateshipWordmark } from '../components/gateship-logo.tsx';
 import { Button, buttonVariants } from '../components/ui/button.tsx';
+import { Count } from '../components/ui/count.tsx';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, POPUP_CHROME } from '../components/ui/dropdown-menu.tsx';
 import { cn } from '../lib/cn.ts';
 import { LOCALE_CATALOG } from '../locale.ts';
 import type { RunInspectorCatalog, ShellCatalog } from '../locale.ts';
-import { PROJECT_SURFACES as SURFACES, routeSelection } from '../routes.ts';
+import { routeSelection } from '../routes.ts';
 import type { OperatorRoute } from '../routes.ts';
 import { attentionOf } from '../run-view.ts';
 import type { OperatorAttention, RunView } from '../run-view.ts';
 import { Menu } from '@base-ui/react/menu';
+import { KeyChip } from '../components/ui/key-chip.tsx';
+import { HintTooltip, TooltipGroup } from '../components/ui/tooltip.tsx';
 import { Popover } from '@base-ui/react/popover';
-import { Tooltip } from '@base-ui/react/tooltip';
-import { Activity01Icon, Alert02Icon, ArrowExpand01Icon, ArrowShrink01Icon, ChartAnalysisIcon, FolderManagementIcon, Globe02Icon, Grid2X2Icon, ListViewIcon, Moon02Icon, Notification02Icon, Settings01Icon, Sun02Icon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
+import { Activity01Icon, Alert02Icon, Queue01Icon, ChartAnalysisIcon, DashboardSquare01Icon, EightSquareIcon, FiveSquareIcon, FolderManagementIcon, FourSquareIcon, Globe02Icon, ListViewIcon, MoreHorizontalIcon, NineSquareIcon, Notification02Icon, OneSquareIcon, Radar01Icon, SevenSquareIcon, Settings01Icon, SixSquareIcon, SquareIcon, ThreeSquareIcon, Tick02Icon, TwoSquareIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { useCallback, useEffect, useId, useState } from 'react';
-import { KEYBOARD_SHORTCUTS, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
+import { useCallback, useId, useState, useSyncExternalStore } from 'react';
+import { KEYBOARD_SHORTCUTS, PROJECT_SHORTCUT_COUNT, presentationPlatform, projectShortcutAria, shortcutLabel } from '../keyboard-shortcuts.ts';
+import { navigationCounts } from '../overview-counts.ts';
+import type { NavigationCounts } from '../overview-counts.ts';
 
 const SHELL_ICON_SIZE = 16;
 const SHELL_ICON_CLASS = 'size-4';
@@ -38,14 +42,19 @@ function ShellIcon({
 }
 
 export const NAV_LINK_CLASS =
-	'flex min-h-11 items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:min-h-0 ' +
+	'flex min-h-11 items-center gap-2 whitespace-nowrap rounded-md px-3 py-2 text-sidebar-foreground text-sm outline-none lg:h-8 lg:min-h-0 lg:py-0 ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium ' +
 	'aria-[current=page]:text-sidebar-accent-foreground';
 
+/* Collapsed, the sidebar is an icon rail. Every tile is the expanded row cut
+ * to its icon: the row's height, the row's 12px on either side of the glyph,
+ * and the row's edges, so one margin (24px) stands between the window and the
+ * tile, the tile and the panel, the panel and its first control. The icon
+ * keeps x=36 in both states, so collapsing moves no icon. */
 const RAIL_NAV_ITEM_CLASS =
-	'flex h-8 w-full min-h-0 items-center justify-start rounded-md px-3 py-2 text-sidebar-foreground outline-none ' +
+	'flex h-8 w-full items-center justify-center rounded-md text-sidebar-foreground outline-none ' +
 	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ' +
 	'focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
 	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-accent-foreground';
@@ -116,15 +125,21 @@ export function notificationItems(
 export function NotificationsPopover({ items, catalog }: { items: readonly NotificationItem[]; catalog: ShellCatalog['notifications'] }): React.ReactElement {
 	const actionableCount = items.filter((item) => item.actionable).length;
 	const announcement = items.length === 0 ? catalog.empty : items.map((item) => `${item.title}: ${item.detail}`).join(' ');
-	return <Popover.Root>
+	const [open, setOpen] = useState(false);
+	return <Popover.Root onOpenChange={setOpen}>
 		<span aria-atomic="true" aria-live="polite" className="sr-only" data-slot="notifications-live">{announcement}</span>
+		{/* The hint names the bell while it is only a bell; once the popup is open the popup is its own label (GSHIP-874: both write the same attribute on this node). */}
+		<HintTooltip disabled={open} label={catalog.label} side="bottom">
 		<Popover.Trigger aria-label={catalog.label} className={cn(buttonVariants({ size: 'icon', variant: 'outline' }), 'relative')} data-slot="notifications-trigger">
 			<ShellIcon icon={Notification02Icon} />
-			{actionableCount === 0 ? null : <span aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1 min-w-4 rounded-full bg-attention px-1 font-mono text-[10px] leading-4 text-attention-foreground">{actionableCount}</span>}
+			{actionableCount === 0 ? null : <Count aria-label={catalog.count(actionableCount)} className="absolute -top-1 -right-1" tone="strong">{actionableCount}</Count>}
 		</Popover.Trigger>
+		</HintTooltip>
+		{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- a popup is as wide as its reading measure or as the viewport lets it be, whichever is smaller: no single token says both */}
 		<Popover.Portal><Popover.Positioner align="end" className="z-50" sideOffset={8}><Popover.Popup aria-label={catalog.label} className="w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border bg-popover p-2 text-popover-foreground shadow-lg/5 outline-none">
-			<div className="flex items-center gap-2 px-2 py-1.5"><HugeiconsIcon className="size-4" icon={Alert02Icon} size={16} strokeWidth={2.25} /><strong className="text-sm">{catalog.label}</strong><span className="ml-auto font-mono text-xs text-muted-foreground">{catalog.count(actionableCount)}</span></div>
-			{items.length === 0 ? <p className="px-2 py-5 text-center text-sm text-muted-foreground">{catalog.empty}</p> : <ul className="mt-1 flex max-h-[min(28rem,70vh)] flex-col gap-1 overflow-y-auto">{items.map((item) => <li key={item.id} className="rounded-lg border border-border/60 p-2.5 text-sm"><div className="flex items-start justify-between gap-2"><strong>{item.href === undefined ? item.title : <a className="underline decoration-border underline-offset-2 hover:decoration-foreground" href={item.href}>{item.title}</a>}</strong><span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.severity}</span></div><p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p></li>)}</ul>}
+			<div className="flex items-center gap-2 px-2 py-2"><HugeiconsIcon className="size-4" icon={Alert02Icon} size={16} strokeWidth={2.25} /><strong className="text-sm">{catalog.label}</strong><span className="ml-auto font-mono text-xs text-muted-foreground">{catalog.count(actionableCount)}</span></div>
+			{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- the list scrolls inside the popup before the popup leaves a short viewport */}
+			{items.length === 0 ? <p className="px-2 py-5 text-center text-sm text-muted-foreground">{catalog.empty}</p> : <ul className="mt-1 flex max-h-[min(28rem,70vh)] flex-col gap-1 overflow-y-auto">{items.map((item) => <li key={item.id} className="rounded-lg border border-border/60 p-3 text-sm"><div className="flex items-start justify-between gap-2"><strong>{item.href === undefined ? item.title : <a className="underline decoration-border underline-offset-2 hover:decoration-foreground" href={item.href}>{item.title}</a>}</strong><span className="shrink-0 font-mono text-xs text-muted-foreground">{item.severity}</span></div><p className="mt-1 break-words text-xs text-muted-foreground">{item.detail}</p></li>)}</ul>}
 		</Popover.Popup></Popover.Positioner></Popover.Portal>
 	</Popover.Root>;
 }
@@ -176,12 +191,14 @@ export function humanVersionOf(version: string): string {
  * held to one 16px slot so rows lane-align.
  */
 export const NAV_GLYPHS = {
-	overview: Grid2X2Icon,
+	/* Now is a sweep over what is happening, never a grid: the grid belongs to the switcher's every-project square, and two grids one above the other read as one thing said twice. */
+	overview: Radar01Icon,
 	runs: Activity01Icon,
 	work: ListViewIcon,
 	settings: Settings01Icon,
 	globalSettings: Globe02Icon,
-	overviewQueues: ListViewIcon,
+	projects: FolderManagementIcon,
+	overviewQueues: Queue01Icon,
 	overviewInsights: ChartAnalysisIcon,
 } as const;
 
@@ -196,19 +213,6 @@ export function NavGlyph({ name }: { name: keyof typeof NAV_GLYPHS }): React.Rea
 	);
 }
 
-function SidebarTooltip({ children, content, disabled = false }: { children: React.ReactElement; content: React.ReactNode; disabled?: boolean }): React.ReactElement {
-	return (
-		<Tooltip.Root disabled={disabled}>
-			<Tooltip.Trigger render={children} />
-			<Tooltip.Portal>
-				<Tooltip.Positioner className="z-50" side="right" sideOffset={8}>
-					<Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5" data-slot="sidebar-tooltip">{content}</Tooltip.Popup>
-				</Tooltip.Positioner>
-			</Tooltip.Portal>
-		</Tooltip.Root>
-	);
-}
-
 /*
  * The project switcher (operator decision, 2026-08-31, two-line
  * team-switcher anatomy): the trigger scopes projects only -- the overview
@@ -216,31 +220,66 @@ function SidebarTooltip({ children, content, disabled = false }: { children: Rea
  * second line as text, never as a chip beside the name. The acid dot on
  * "Needs you" keeps the sidebar's one acid signal.
  */
-export const SWITCHER_ITEM_CLASS =
-	'flex w-full cursor-default select-none items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm outline-none ' +
-	'data-highlighted:bg-accent data-highlighted:text-accent-foreground ' +
-	'aria-[current=page]:bg-accent aria-[current=page]:text-accent-foreground';
+export /* The kit's popup chrome, plus what this menu alone needs: it opens as wide as its trigger, borders included. */
+// oxlint-disable-next-line shadcn/no-arbitrary-values -- the anchor's width is a runtime value, and the popup adds its own two borders to match the trigger's edge
+const SWITCHER_POPUP_CLASS = cn(POPUP_CHROME, 'relative min-w-[calc(var(--anchor-width)+2px)] origin-(--transform-origin) p-1 motion-safe:duration-100 motion-reduce:transition-none motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-95');
+const SWITCHER_ITEM_CLASS =
+	'flex min-h-8 w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1 text-sm outline-none ' +
+	'data-highlighted:bg-accent data-highlighted:text-accent-foreground';
 
-function ProjectShortcut({ index }: { index: number | undefined }): React.ReactElement {
+/* The leading slot every switcher row shares, in the trigger and in its menu:
+ * one 16px glyph, on the same x as every icon in the rail. */
+const LEAD_SLOT_CLASS = 'flex shrink-0 justify-center';
+/* A project wears the digit that selects it, drawn by the icon set itself, so
+ * the square is the rail's glyph and not a chip of another material. Every
+ * project at once is no digit in that list, so it is the grid of them; past
+ * the ninth there is no digit left and the square stays empty. */
+const PROJECT_TILE_ICONS = [OneSquareIcon, TwoSquareIcon, ThreeSquareIcon, FourSquareIcon, FiveSquareIcon, SixSquareIcon, SevenSquareIcon, EightSquareIcon, NineSquareIcon] as const;
+
+function projectTileIcon(index: number | undefined): Parameters<typeof HugeiconsIcon>[0]['icon'] {
+	if (index === undefined) return DashboardSquare01Icon;
+	return PROJECT_TILE_ICONS[index] ?? SquareIcon;
+}
+
+/* The shortcut closes the row, as a menu's shortcut does everywhere; the mark that says which row is current leads it. */
+function ProjectShortcut({ index, allProjects = false }: { index: number | undefined; allProjects?: boolean }): React.ReactElement | null {
 	const platform = presentationPlatform();
+	if (allProjects) return <KeyChip data-slot="shortcut-all-projects">{shortcutLabel('overview', undefined, platform)}</KeyChip>;
+	return index === undefined ? null : <KeyChip data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</KeyChip>;
+}
+
+/* The row the switcher currently shows carries a check in the leading column,
+ * where every platform's menus put it, and the shortcut closes the row. The
+ * column is there whether or not the row is current, so the names line up. */
+function CurrentMark({ current }: { current: boolean }): React.ReactElement {
+	return <span className="flex size-4 shrink-0 items-center justify-center" data-slot="current-mark">{current ? <ShellIcon aria-hidden="true" className="opacity-70" icon={Tick02Icon} /> : null}</span>;
+}
+
+/* The project's state is a dot. Expanded it sits beside the state's name;
+ * on the rail it is the dot alone, and the tile's tooltip and its described-by
+ * text still carry the name, so colour is never the only channel. Acid is the
+ * operator's turn, blue is work advancing, and idle is a hollow ring: nothing
+ * is happening, so nothing is filled. */
+const STATE_DOT_CLASS: Record<OperatorAttention, string> = {
+	'Needs you': 'bg-warning',
+	Working: 'bg-info',
+	Idle: 'border border-muted-foreground/70',
+};
+
+function StateDot({ attention, className }: { attention: OperatorAttention; className?: string }): React.ReactElement {
+	return <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', STATE_DOT_CLASS[attention], className)} data-slot="project-state-dot" data-state={attention} />;
+}
+
+/* The leading slot of the switcher is the square that numbers what it shows.
+ * On the rail the state has no text column left, so its dot docks on the
+ * square's corner as a presence badge. */
+function SwitcherKey({ icon, badge }: { icon: Parameters<typeof HugeiconsIcon>[0]['icon']; badge: ShellStatus | null }): React.ReactElement {
+	const dot = badge === null ? null : <StateDot attention={badge.attention} className="-top-1 -right-1 absolute ring-2 ring-sidebar" />;
 	return (
-		<span className="flex w-10 shrink-0 justify-center">
-			{index === undefined ? null : <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px] leading-4 text-muted-foreground" data-slot="shortcut-project">{shortcutLabel('project', index, platform)}</kbd>}
+		<span className={LEAD_SLOT_CLASS}>
+			<span className="relative flex" data-slot="switcher-key"><ShellIcon aria-hidden="true" icon={icon} />{dot}</span>
 		</span>
 	);
-}
-
-function ProjectStateIcon({ attention }: { attention: OperatorAttention }): React.ReactElement {
-	return <ShellIcon aria-hidden="true" className="opacity-70" icon={attention === 'Working' ? Activity01Icon : Moon02Icon} />;
-}
-
-function ProjectStatusIcon({ status }: { status: ShellStatus | null }): React.ReactElement {
-	return status === null ? <ShellIcon aria-hidden="true" className="opacity-70" icon={FolderManagementIcon} /> : <ProjectStateIcon attention={status.attention} />;
-}
-
-export function projectSwitcherTooltipText(catalog: ShellCatalog, name: string, shortcut: string | null, status: ShellStatus | null): string {
-	const action = catalog.projectNavigationLabel === 'Projetos' ? 'acessar projeto' : 'open project';
-	return [name, shortcut === null ? null : `${shortcut}: ${action}`, status?.label ?? null].filter((part): part is string => part !== null).join(' · ');
 }
 
 interface ShellStatus { attention: OperatorAttention; label: string; acid: boolean }
@@ -250,35 +289,36 @@ interface ProjectSwitcherProps {
 	selection: ReturnType<typeof routeSelection>;
 	status: ShellStatus | null;
 	catalog: ShellCatalog;
+	/** Clears the persisted project filter; the link itself still routes. */
+	onSelectAllProjects?: (() => void) | undefined;
 }
 
 function ProjectSwitcherTrigger({
 	selected,
 	status,
 	catalog,
+	tile,
 	open,
 }: Pick<ProjectSwitcherProps, 'status' | 'catalog'> & {
 	selected: AppProps['projects'][number] | null;
+	tile: Parameters<typeof HugeiconsIcon>[0]['icon'];
 	open: boolean;
 }): React.ReactElement {
+	const state = selected === null ? null : status;
+	if (!open) return <SwitcherKey badge={state} icon={tile} />;
+	/* The same square open or collapsed: the project's digit, so collapsing changes no width and the name keeps its room. */
 	return (
 		<>
-			{selected === null
-				? <span data-slot="project-switcher-placeholder"><ShellIcon className="opacity-70" icon={FolderManagementIcon} /></span>
-				: <ProjectStatusIcon status={status} />}
-			<span className={cn('grid min-w-0 flex-1 leading-tight', !open && 'opacity-0')}>
-				<span className={cn('overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm', selected === null && 'text-muted-foreground')}>
-					{selected?.name ?? catalog.switcherPlaceholder}
+			<SwitcherKey badge={null} icon={tile} />
+			<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-medium text-sm">{selected?.name ?? catalog.allProjectsLabel}</span>
+			{state === null ? null : (
+				<span className="flex shrink-0 items-center gap-1 text-muted-foreground text-xs">
+					<StateDot attention={state.attention} />
+					{/* Idle is the resting state: its hollow dot says it, and the name keeps the room. A state that moves or waits is written out. */}
+					<span className={state.attention === 'Idle' ? 'sr-only' : undefined}>{state.label}</span>
 				</span>
-				{selected === null || status === null ? null : (
-					<span className="flex items-center gap-1.5 text-muted-foreground text-xs">
-						{status.acid ? <span className="size-1.5 shrink-0 rounded-full bg-attention" /> : null}
-						<span className="overflow-hidden text-ellipsis whitespace-nowrap">{status.label}</span>
-					</span>
-				)}
-			</span>
-			<span className={cn(!open && 'opacity-0')}><ShellIcon className="opacity-70" icon={UnfoldMoreIcon} /></span>
-			{status?.acid ? <span aria-hidden="true" className="absolute top-1 right-1 size-1.5 rounded-full bg-attention" data-slot="sidebar-attention" /> : null}
+			)}
+			<ShellIcon className="opacity-70" icon={UnfoldMoreIcon} />
 		</>
 	);
 }
@@ -287,35 +327,49 @@ function ProjectSwitcherMenu({
 	projects,
 	selection,
 	catalog,
-}: Pick<ProjectSwitcherProps, 'projects' | 'selection' | 'catalog'>): React.ReactElement {
+	onSelectAllProjects,
+}: Pick<ProjectSwitcherProps, 'projects' | 'selection' | 'catalog' | 'onSelectAllProjects'>): React.ReactElement {
 	return (
 		<Menu.Portal>
-			<Menu.Positioner align="start" className="z-50" sideOffset={6}>
-				<Menu.Popup className="relative min-w-(--anchor-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding p-1 text-popover-foreground shadow-lg/5 motion-safe:duration-100 motion-reduce:animate-none motion-reduce:transition-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
-					<div className="type-eyebrow px-2 pt-1.5 pb-1 text-muted-foreground">
+			{/* One pixel out on each side so the popup's border sits outside the
+			 * trigger's edge and every row inside lines up with the trigger. */}
+			<Menu.Positioner align="start" alignOffset={-1} className="z-50" sideOffset={6}>
+				<Menu.Popup className={SWITCHER_POPUP_CLASS}>
+					<div className="type-eyebrow px-2 pt-2 pb-1 text-muted-foreground">
 						{catalog.projectNavigationLabel}
 					</div>
+					<Menu.Item
+						aria-current={selection.projectId === null ? 'page' : undefined}
+						aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria}
+						className={SWITCHER_ITEM_CLASS}
+						data-slot="project-switcher-all"
+						onClick={(event) => {
+							if (onSelectAllProjects === undefined) return;
+							event.preventDefault();
+							onSelectAllProjects();
+						}}
+						render={<a href="/overview" />}
+					>
+						<CurrentMark current={selection.projectId === null} />
+						<span className="min-w-0 flex-1">{catalog.allProjectsLabel}</span>
+						<ProjectShortcut allProjects index={undefined} />
+					</Menu.Item>
 					{projects.map((project, index) => (
 						<Menu.Item
-							aria-keyshortcuts={index < 9 ? projectShortcutAria(index) : undefined}
+							aria-keyshortcuts={index < PROJECT_SHORTCUT_COUNT ? projectShortcutAria(index) : undefined}
 							aria-current={project.id === selection.projectId ? 'page' : undefined}
 							className={SWITCHER_ITEM_CLASS}
 							key={project.id}
 							render={<a href={`/projects/${encodeURIComponent(project.id)}`} />}
 						>
-							<ProjectShortcut index={index < 9 ? index : undefined} />
+							<CurrentMark current={project.id === selection.projectId} />
 							<span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
 								{project.name}
 							</span>
+							<ProjectShortcut index={index < PROJECT_SHORTCUT_COUNT ? index : undefined} />
 						</Menu.Item>
 					))}
-					<Menu.Item
-						className={cn(SWITCHER_ITEM_CLASS, 'mt-1')}
-						render={<a href="/projects" />}
-					>
-						<HugeiconsIcon className="size-4 shrink-0 opacity-70" icon={FolderManagementIcon} size={16} strokeWidth={2.25} />
-						<span className="min-w-0 flex-1">{catalog.manageProjectsLabel}</span>
-					</Menu.Item>
+					{/* Projects and settings are rows of the sidebar, always in view: the menu is the filter alone. */}
 				</Menu.Popup>
 			</Menu.Positioner>
 		</Menu.Portal>
@@ -330,15 +384,29 @@ function ProjectSwitcherRegistry({
 	return (
 		<div aria-label={catalog.projectNavigationLabel} className="sr-only">
 			<ul>
+				<li><a aria-current={selection.projectId === null ? 'page' : undefined} aria-keyshortcuts={KEYBOARD_SHORTCUTS.overview.aria} href="/overview"><ProjectShortcut allProjects index={undefined} />{catalog.allProjectsLabel}</a></li>
 				{projects.map((project, index) => (
 					<li key={project.id}>
-						<a aria-current={project.id === selection.projectId ? 'page' : undefined} aria-keyshortcuts={index < 9 ? projectShortcutAria(index) : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < 9 ? index : undefined} />{project.name}</a>
+						<a aria-current={project.id === selection.projectId ? 'page' : undefined} aria-keyshortcuts={index < PROJECT_SHORTCUT_COUNT ? projectShortcutAria(index) : undefined} href={`/projects/${encodeURIComponent(project.id)}`}><ProjectShortcut index={index < PROJECT_SHORTCUT_COUNT ? index : undefined} />{project.name}</a>
 					</li>
 				))}
+				{selection.projectId === null ? null : <li><a aria-current={selection.surface === 'settings' ? 'page' : undefined} href={`/projects/${encodeURIComponent(selection.projectId)}/settings`}>{catalog.projectSettingsLabel}</a></li>}
 				<li><a href="/projects">{catalog.manageProjectsLabel}</a></li>
 			</ul>
 		</div>
 	);
+}
+
+/* Every project in view owns the first digit; a registered project owns its
+ * own; a project past the digits has no key to show. */
+function switcherKey(selected: AppProps['projects'][number] | null, projects: AppProps['projects']): { tile: Parameters<typeof HugeiconsIcon>[0]['icon']; label: string | null; aria: string | undefined } {
+	const platform = presentationPlatform();
+	if (selected === null) return { tile: projectTileIcon(undefined), label: shortcutLabel('overview', undefined, platform), aria: KEYBOARD_SHORTCUTS.overview.aria };
+	const index = projects.indexOf(selected);
+	const tile = projectTileIcon(index);
+	/* Past the ninth project there is no key to teach, but the square still numbers it. */
+	if (index >= PROJECT_SHORTCUT_COUNT) return { tile, label: null, aria: undefined };
+	return { tile, label: shortcutLabel('project', index, platform), aria: projectShortcutAria(index) };
 }
 
 export function ProjectSwitcher({
@@ -346,18 +414,14 @@ export function ProjectSwitcher({
 	selection,
 	status,
 	catalog,
-	compact = false,
-}: ProjectSwitcherProps & {
-	compact?: boolean;
-}): React.ReactElement {
+	onSelectAllProjects,
+	open = true,
+}: ProjectSwitcherProps & { open?: boolean }): React.ReactElement {
 	const selected = projects.find((project) => project.id === selection.projectId) ?? null;
-	const selectedIndex = selected === null ? undefined : projects.indexOf(selected);
-	const selectedShortcut = selectedIndex === undefined || selectedIndex > 8 ? undefined : selectedIndex;
-	const selectedName = selected?.name ?? catalog.switcherPlaceholder;
+	const selectedName = selected?.name ?? catalog.allProjectsLabel;
 	const [menuOpen, setMenuOpen] = useState(false);
 	const statusId = useId();
-	const shortcut = selectedShortcut === undefined ? null : shortcutLabel('project', selectedShortcut, presentationPlatform());
-	const tooltipContent = projectSwitcherTooltipText(catalog, selectedName, shortcut, status);
+	const key = switcherKey(selected, projects);
 	/*
 	 * GSHIP-874: Tooltip.Trigger and Menu.Trigger share one DOM node here, so
 	 * both write the same `data-popup-open` attribute onto it -- a hover-only
@@ -373,22 +437,23 @@ export function ProjectSwitcher({
 	 */
 	return (
 		<>
-			<Tooltip.Root disabled={menuOpen}>
-				<Menu.Root onOpenChange={setMenuOpen}>
-					<Tooltip.Trigger render={<Menu.Trigger
-					aria-label={compact ? selectedName : undefined}
-					aria-describedby={status === null ? undefined : statusId}
-					aria-keyshortcuts={selectedShortcut === undefined ? undefined : projectShortcutAria(selectedShortcut)}
-					className={cn(NAV_LINK_CLASS, 'relative data-[popup-open]:bg-sidebar-accent')}
-					data-slot="project-switcher"
-					/>}>
-					<ProjectSwitcherTrigger catalog={catalog} open={!compact} selected={selected} status={status} />
-					</Tooltip.Trigger>
-				<ProjectSwitcherMenu catalog={catalog} projects={projects} selection={selection} />
-				</Menu.Root>
-				{status === null ? null : <span className="sr-only" id={statusId}>{status.label}</span>}
-				<Tooltip.Portal><Tooltip.Positioner className="z-50" side="right" sideOffset={8}><Tooltip.Popup className="max-w-64 rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground text-xs shadow-lg/5" data-slot="project-switcher-tooltip">{tooltipContent}</Tooltip.Popup></Tooltip.Positioner></Tooltip.Portal>
-			</Tooltip.Root>
+			<Menu.Root onOpenChange={setMenuOpen}>
+				{/* The hint only names the tile on the rail; expanded, the name,
+				 * the state and the key are already on screen. */}
+				<HintTooltip detail={selected === null ? undefined : status?.label} disabled={open || menuOpen} label={selectedName} shortcut={key.label ?? undefined}>
+					<Menu.Trigger
+						aria-describedby={status === null ? undefined : statusId}
+						aria-keyshortcuts={key.aria}
+						aria-label={open ? undefined : selectedName}
+						className={cn(open ? cn(NAV_LINK_CLASS, 'w-full text-left') : RAIL_NAV_ITEM_CLASS, 'data-[popup-open]:bg-sidebar-accent')}
+						data-slot="project-switcher"
+					>
+						<ProjectSwitcherTrigger catalog={catalog} open={open} selected={selected} status={status} tile={key.tile} />
+					</Menu.Trigger>
+				</HintTooltip>
+				<ProjectSwitcherMenu catalog={catalog} onSelectAllProjects={onSelectAllProjects} projects={projects} selection={selection} />
+			</Menu.Root>
+			{status === null ? null : <span className="sr-only" id={statusId}>{status.label}</span>}
 		{/* The registry as plain links (sr-only): a portal never reaches the
 		 * static render, so without this nav the closed menu would drop
 		 * every registry link from the no-JS document and from keyboard
@@ -398,23 +463,89 @@ export function ProjectSwitcher({
 	);
 }
 
-const CONTROL_CENTER_ITEMS = [
-	{ href: '/overview', label: 'overview', glyph: 'overview', surface: 'overview' },
-	{ href: '/overview/runs', label: 'overviewRuns', glyph: 'runs', surface: 'overview-runs' },
-	{ href: '/overview/queues', label: 'overviewQueues', glyph: 'overviewQueues', surface: 'overview-queues' },
-	{ href: '/overview/insights', label: 'overviewInsights', glyph: 'overviewInsights', surface: 'overview-insights' },
-] as const;
+/** The destinations in their order, for the keys that walk them and for the rows that render them. */
+export function destinationHrefs(selection: ReturnType<typeof routeSelection>, projects: AppProps['projects']): readonly string[] {
+	const known = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId);
+	const project = known && selection.projectId !== null ? `/projects/${encodeURIComponent(selection.projectId)}` : null;
+	return [
+		'/overview',
+		project === null ? '/overview/runs' : `${project}/runs`,
+		project === null ? '/overview/queues' : `${project}/work`,
+		'/overview/insights',
+		...(project === null ? [] : [`${project}/settings`]),
+	];
+}
 
-function ControlCenterSubnavigation({ catalog, open, selection }: { catalog: ShellCatalog; open: boolean; selection: ReturnType<typeof routeSelection> }): React.ReactElement {
-	return <ul className="flex flex-col gap-0.5 lg:pl-4" data-slot="control-center-subnavigation">
-		{CONTROL_CENTER_ITEMS.map((item) => <li className="shrink-0" key={item.href}>
-			<SidebarTooltip content={catalog.routeLabels[item.label]} disabled={open}>
-				<a aria-label={open ? undefined : catalog.routeLabels[item.label]} aria-current={selection.surface === item.surface ? 'page' : undefined} aria-keyshortcuts={item.surface === 'overview' ? KEYBOARD_SHORTCUTS.overview.aria : undefined} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, selection.surface === item.surface && 'bg-sidebar-accent text-sidebar-accent-foreground')} data-sidebar-id={item.href} href={item.href}>
-					<NavGlyph name={item.glyph} />{open ? <span>{catalog.routeLabels[item.label]}</span> : null}
+/** Where the current surface sits in that list, or -1 when the page is not a destination. */
+export function destinationIndex(selection: ReturnType<typeof routeSelection>): number {
+	const surface = selection.surface;
+	if (surface === 'overview') return 0;
+	if (surface === 'overview-runs' || surface === 'runs') return 1;
+	if (surface === 'overview-queues' || surface === 'work') return 2;
+	if (surface === 'overview-insights') return 3;
+	if (surface === 'settings') return 4;
+	return -1;
+}
+
+/* One stable list of destinations. The project switcher above it is a filter,
+ * not a second tree: with a project selected, Runs and Queue open that
+ * project's own surfaces; with every project in view they open the control
+ * center aggregates. Now and Insights are always global. No label appears
+ * twice and no item changes position when the filter changes. */
+function navigationItems(selection: ReturnType<typeof routeSelection>, catalog: ShellCatalog, counts: NavigationCounts | null, projects: AppProps['projects']): readonly { id: string; href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; count: number | null }[] {
+	/* An id the registry does not know filters nothing: the switcher says
+	 * "every project", so the rows must link where it says. */
+	const known = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId);
+	const project = known && selection.projectId !== null ? `/projects/${encodeURIComponent(selection.projectId)}` : null;
+	return [
+		{ id: 'now', href: '/overview', label: catalog.routeLabels.now, glyph: 'overview', active: selection.surface === 'overview', count: counts?.now ?? null },
+		{ id: 'runs', href: project === null ? '/overview/runs' : `${project}/runs`, label: catalog.routeLabels.overviewRuns, glyph: 'runs', active: selection.surface === 'overview-runs' || selection.surface === 'runs', count: counts?.runs ?? null },
+		{ id: 'queue', href: project === null ? '/overview/queues' : `${project}/work`, label: catalog.routeLabels.work, glyph: 'overviewQueues', active: selection.surface === 'overview-queues' || selection.surface === 'work', count: counts?.queue ?? null },
+		{ id: 'insights', href: '/overview/insights', label: catalog.routeLabels.overviewInsights, glyph: 'overviewInsights', active: selection.surface === 'overview-insights', count: null },
+	];
+}
+
+/* A row's figure is quiet by being small and mono, not by being faint: the
+ * sidebar's own grey already sits at the AA floor (4.82:1), so any opacity on
+ * top of it fails. It sets no colour of its own, so it follows its row (grey
+ * at rest, the accent foreground when the row is current or hovered) and
+ * wears that whatever it counts:
+ * the acid family is reserved for the surface that asks for the operator's
+ * turn, and a number beside a link is orientation, not a call. Unknown
+ * renders as nothing, never as a zero the service did not report. */
+function NavCount({ value }: { value: number | null }): React.ReactElement | null {
+	/* Unknown renders nothing, and so does zero: that one is the kit's rule for every count. */
+	if (value === null) return null;
+	return <Count className="ml-auto" data-slot="navigation-count" form="plain">{value}</Count>;
+}
+
+/* A row's key, and where that key is allowed to show. `current` is the pair
+ * that walks the list: the arrows are relative, so they only mean something on
+ * the row you are standing on, and printing them on all five would read as five
+ * different shortcuts. `hover` is a key that belongs to one row alone, so it
+ * shows when you point at that row or tab to it. On the rail neither chip fits
+ * and the hint carries the key instead, as it carries the name. */
+interface NavShortcut { label: string; aria?: string | undefined; chip: 'current' | 'hover' }
+
+
+
+/* One destination: a labelled row when the sidebar is open, a labelled icon tile on the rail. */
+function NavRow({ href, label, glyph, active, open, count = null, shortcut = null }: { href: string; label: string; glyph: keyof typeof NAV_GLYPHS; active: boolean; open: boolean; count?: number | null; shortcut?: NavShortcut | null }): React.ReactElement {
+	const chip = shortcut === null || !open || (shortcut.chip === 'current' && !active) ? null : (
+		/* The chip closes the row, so it takes the free space unless a count is
+		 * already there to take it. Zero counts for nothing here, the same way it
+		 * renders nothing: a count of none leaves the row as if it had none. */
+		<KeyChip className={cn((count ?? 0) === 0 && 'ml-auto')} data-slot="nav-shortcut" reveal={shortcut.chip === 'hover' ? 'hover' : 'always'}>{shortcut.label}</KeyChip>
+	);
+	return (
+		<li className="shrink-0">
+			<HintTooltip disabled={open} label={label} shortcut={shortcut?.label}>
+				<a aria-current={active ? 'page' : undefined} aria-keyshortcuts={shortcut?.aria} aria-label={open ? undefined : label} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, 'group/nav')} data-sidebar-id={href} href={href}>
+					<NavGlyph name={glyph} />{open ? <><span>{label}</span><NavCount value={count} />{chip}</> : null}
 				</a>
-			</SidebarTooltip>
-		</li>)}
-	</ul>;
+			</HintTooltip>
+		</li>
+	);
 }
 
 export function ShellNavigation({
@@ -423,103 +554,91 @@ export function ShellNavigation({
 	selection,
 	status,
 	open,
+	onSelectAllProjects,
+	counts,
 }: {
 	catalog: ShellCatalog;
 	projects: AppProps['projects'];
 	selection: ReturnType<typeof routeSelection>;
 	status: ShellStatus | null;
 	open: boolean;
+	onSelectAllProjects?: () => void;
+	counts: NavigationCounts | null;
 }): React.ReactElement {
-	const [desktopViewport, setDesktopViewport] = useState(() => panelRuntime().matchMedia?.('(min-width: 1024px)').matches ?? false);
-	const [mobileExpanded, setMobileExpanded] = useState(true);
-	useEffect(() => {
-		const query = panelRuntime().matchMedia?.('(min-width: 1024px)');
-		if (query === undefined) return;
-		const update = (): void => setDesktopViewport(query.matches);
-		update();
-		query.addEventListener?.('change', update);
-		return () => query.removeEventListener?.('change', update);
-	}, []);
-	const controlCenterOpen = desktopViewport || mobileExpanded;
-	const toggleControlCenter = (event: React.MouseEvent<HTMLElement>): void => {
-		event.preventDefault();
-		if (!desktopViewport) setMobileExpanded((expanded) => nextControlCenterDisclosureState(expanded, false));
-	};
-	/* The control center is a semantic group. Its disclosure stays open by
-	 * default so desktop and the compact rail keep identical destinations; on
-	 * mobile the native details/summary pair also gives the group a keyboard-
-	 * accessible collapse affordance. */
+	const projectSettingsHref = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId) ? `/projects/${encodeURIComponent(selection.projectId)}/settings` : null;
+	const platform = presentationPlatform();
+	const walk: NavShortcut = { label: shortcutLabel('destinations', undefined, platform), chip: 'current' };
+	const standing = (kind: 'manageProjects' | 'globalSettings'): NavShortcut => ({ label: shortcutLabel(kind, undefined, platform), aria: KEYBOARD_SHORTCUTS[kind].aria, chip: 'hover' });
 	return (
+		<TooltipGroup>
 		<nav aria-label={catalog.operatorNavigationLabel} className="lg:flex lg:flex-1 lg:flex-col">
-			<ul className="flex flex-wrap gap-1 lg:flex-col lg:flex-nowrap lg:gap-0.5" data-slot="global-navigation">
-				<li className="w-full min-w-0" data-slot="control-center-navigation">
-					<details aria-label={catalog.controlCenter} open={controlCenterOpen}>
-						<SidebarTooltip content={catalog.controlCenter} disabled={open}>
-							<summary aria-expanded={controlCenterOpen} aria-label={open ? undefined : catalog.controlCenter} className={cn(open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS, 'list-none marker:hidden', (selection.surface.startsWith('overview') && 'bg-sidebar-accent text-sidebar-accent-foreground'))} onClick={toggleControlCenter}>
-								<NavGlyph name="overview" />{open ? <span>{catalog.controlCenter}</span> : null}
-							</summary>
-						</SidebarTooltip>
-						<ControlCenterSubnavigation catalog={catalog} open={open} selection={selection} />
-					</details>
-				</li>
-			</ul>
-			<div className="mt-3 lg:mt-5 lg:flex lg:flex-1 lg:flex-col" data-slot="project-navigation">
-				<ul className="flex flex-wrap gap-1 lg:flex lg:flex-1 lg:flex-col lg:flex-nowrap lg:gap-0.5">
-				<li className="w-full min-w-0" data-slot="project-switcher-item">
-					<ProjectSwitcher
-						catalog={catalog}
-						projects={projects}
-						selection={selection}
-						status={status}
-						compact={!open}
-					/>
-					{selection.projectId === null ? null : (
-						<ul className="flex flex-wrap gap-1 lg:mt-1 lg:flex-col lg:flex-nowrap lg:gap-0.5 lg:pl-2" data-slot="project-surface-navigation">
-							{SURFACES.map((surface) => (
-								<li className="shrink-0" key={surface.surface}>
-									<SidebarTooltip content={catalog.routeLabels[surface.label]}>
-									<a
-										aria-label={open ? undefined : catalog.routeLabels[surface.label]}
-										aria-current={surface.surface === selection.surface ? 'page' : undefined}
-										data-sidebar-id={`/projects/${selection.projectId ?? ''}${surface.suffix}`}
-										className={cn(
-											open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
-											surface.surface === selection.surface && 'bg-sidebar-accent text-sidebar-accent-foreground',
-										)}
-										href={`/projects/${encodeURIComponent(selection.projectId ?? '')}${surface.suffix}`}
-									>
-										<NavGlyph name={surface.surface} />{open ? <span>{catalog.routeLabels[surface.label]}</span> : null}
-									</a>
-									</SidebarTooltip>
-								</li>
-							))}
-						</ul>
-					)}
-				</li>
-				<li className={cn('shrink-0', open ? 'lg:mt-auto' : 'lg:mt-auto')}>
-					<SidebarTooltip content={catalog.routeLabels.globalSettings}>
-					<a
-						aria-label={open ? undefined : catalog.routeLabels.globalSettings}
-						aria-current={selection.surface === 'global-settings' ? 'page' : undefined}
-						data-sidebar-id="/settings"
-						className={cn(
-							open ? NAV_LINK_CLASS : RAIL_NAV_ITEM_CLASS,
-							selection.surface === 'global-settings' && 'bg-sidebar-accent text-sidebar-accent-foreground',
-						)}
-						href="/settings"
-					>
-						<NavGlyph name="globalSettings" />{open ? <span>{catalog.routeLabels.globalSettings}</span> : null}
-					</a>
-					</SidebarTooltip>
-				</li>
-				</ul>
+			<div data-slot="project-switcher-item">
+				<ProjectSwitcher catalog={catalog} onSelectAllProjects={onSelectAllProjects} open={open} projects={projects} selection={selection} status={status} />
 			</div>
+			{/* Below lg the destinations live in the tab bar at the foot of the screen. */}
+			<ul className="mt-4 hidden flex-col gap-1 lg:flex" data-slot="global-navigation">
+				{navigationItems(selection, catalog, counts, projects).map((item) => <NavRow active={item.active} count={item.count} glyph={item.glyph} href={item.href} key={item.id} label={item.label} open={open} shortcut={walk} />)}
+				{/* A selected project's settings close its own group: the rows above change with the switcher, the group below never does. */}
+				{projectSettingsHref === null ? null : <NavRow active={selection.surface === 'settings'} glyph="settings" href={projectSettingsHref} label={catalog.projectSettingsLabel} open={open} shortcut={walk} />}
+			</ul>
+			<ul className="mt-auto hidden flex-col gap-1 lg:flex" data-slot="settings-navigation">
+				{/* The registry is reached from the switcher's menu, and from here: a page needs a row to be current on. */}
+				<NavRow active={selection.surface === 'projects'} glyph="projects" href="/projects" label={catalog.routeLabels.projects} open={open} shortcut={standing('manageProjects')} />
+				<NavRow active={selection.surface === 'global-settings'} glyph="globalSettings" href="/settings" label={catalog.routeLabels.globalSettings} open={open} shortcut={standing('globalSettings')} />
+			</ul>
 		</nav>
+		</TooltipGroup>
 	);
 }
 
-export function nextControlCenterDisclosureState(expanded: boolean, desktopViewport: boolean): boolean {
-	return desktopViewport ? true : !expanded;
+/* A tab is an icon over its name, as wide as its share of the bar and 48px tall for a thumb. */
+const TAB_CLASS =
+	'relative flex min-h-12 w-full flex-col items-center justify-center gap-1 rounded-lg px-1 text-sidebar-foreground text-xs outline-none ' +
+	'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring ' +
+	'aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-sidebar-accent-foreground ' +
+	'data-[current=true]:bg-sidebar-accent data-[current=true]:font-medium data-[current=true]:text-sidebar-accent-foreground';
+
+/**
+ * Below lg the destinations are a tab bar at the foot of the screen, where a
+ * thumb reaches: the four lists, and More for settings and the registry. It is
+ * the last row of the shell's column, not a layer over the content, so nothing
+ * scrolls under it.
+ */
+export function ShellTabBar({ locale, route, selectedProjectId, projects, overview = null }: Pick<AppProps, 'locale' | 'overview' | 'projects'> & { route: OperatorRoute; selectedProjectId: string | null }): React.ReactElement {
+	const catalog = LOCALE_CATALOG[locale].shell;
+	const selection = routeSelection(route, projects.find((project) => project.current)?.id ?? null, selectedProjectId);
+	const counts = navigationCounts(overview, selection.projectId);
+	const projectSettingsHref = selection.projectId !== null && projects.some((candidate) => candidate.id === selection.projectId) ? `/projects/${encodeURIComponent(selection.projectId)}/settings` : null;
+	const more = selection.surface === 'settings' || selection.surface === 'projects' || selection.surface === 'global-settings';
+	return (
+		<nav aria-label={catalog.tabBarLabel} className="shrink-0 px-2 pb-2 lg:hidden" data-slot="tab-bar">
+			<ul className="grid grid-cols-5 gap-1">
+				{navigationItems(selection, catalog, counts, projects).map((item) => (
+					<li key={item.id}>
+						<a aria-current={item.active ? 'page' : undefined} className={TAB_CLASS} href={item.href}>
+							{/* The figure keeps the sidebar's voice: small, mono, the tab's own colour. It hangs off the tab, not off the 16px glyph, so it spills out of nothing. */}
+							<NavGlyph name={item.glyph} />
+							{item.count === null ? null : <Count className="absolute top-1 left-1/2 ml-3" data-slot="tab-count" form="plain">{item.count}</Count>}
+							<span className="max-w-full truncate">{item.label}</span>
+						</a>
+					</li>
+				))}
+				<li>
+					<DropdownMenu>
+						<DropdownMenuTrigger render={<button className={TAB_CLASS} data-current={more} data-slot="tab-more" type="button" />}>
+							<HugeiconsIcon aria-hidden="true" className="size-4 shrink-0 opacity-70" icon={MoreHorizontalIcon} size={16} strokeWidth={2.25} />
+							<span className="max-w-full truncate">{catalog.moreLabel}</span>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end" className="min-w-52" side="top">
+							{projectSettingsHref === null ? null : <DropdownMenuItem render={<a aria-current={selection.surface === 'settings' ? 'page' : undefined} href={projectSettingsHref} />}><NavGlyph name="settings" />{catalog.projectSettingsLabel}</DropdownMenuItem>}
+							<DropdownMenuItem render={<a aria-current={selection.surface === 'projects' ? 'page' : undefined} href="/projects" />}><NavGlyph name="projects" />{catalog.routeLabels.projects}</DropdownMenuItem>
+							<DropdownMenuItem render={<a aria-current={selection.surface === 'global-settings' ? 'page' : undefined} href="/settings" />}><NavGlyph name="globalSettings" />{catalog.routeLabels.globalSettings}</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</li>
+			</ul>
+		</nav>
+	);
 }
 
 /*
@@ -542,6 +661,8 @@ export interface PanelKeyEvent {
 	altKey: boolean;
 	metaKey: boolean;
 	ctrlKey: boolean;
+	/** Where the key was pressed: a shortcut never takes a key away from a field. */
+	target?: { tagName?: string; isContentEditable?: boolean } | null;
 	preventDefault: () => void;
 }
 
@@ -565,16 +686,41 @@ export function useStoredOpen(key: string): [boolean, () => void] {
 	return [open, toggle];
 }
 
+const LARGE_VIEWPORT = '(min-width: 64rem)';
+
 /**
- * The shell's persistent preferences, one row at the top right of the
- * content area (operator decision, 2026-08-25, replacing the segmented
- * pills at the sidebar's foot): language, theme and content measure, each a
- * single outline button whose face names the state it switches TO. Theme
- * and measure store an explicit choice that main.tsx re-applies at boot.
+ * Whether the viewport is at Tailwind's `lg` breakpoint, where the sidebar is
+ * a column. Below it the sidebar is a horizontal header, so the stored
+ * collapse preference must not apply there; a static render (tests, no-JS)
+ * reports large so it sees the desktop layout.
+ */
+function useLargeViewport(): boolean {
+	const subscribe = useCallback((onChange: () => void) => {
+		const media = panelRuntime().matchMedia?.(LARGE_VIEWPORT);
+		media?.addEventListener?.('change', onChange);
+		return () => media?.removeEventListener?.('change', onChange);
+	}, []);
+	const read = (): boolean => panelRuntime().matchMedia?.(LARGE_VIEWPORT).matches ?? true;
+	return useSyncExternalStore(subscribe, read, read);
+}
+
+/* The stored collapse preference only means something where the sidebar is a
+ * column; the horizontal header below `lg` always shows its labels. */
+export function useSidebarOpen(): [boolean, () => void] {
+	const [stored, toggle] = useStoredOpen('gship-sidebar');
+	const large = useLargeViewport();
+	return [stored || !large, toggle];
+}
+
+/**
+ * The row at the top of the content area: the sidebar's own toggle on the
+ * left, the page's name on the centre, and on the right what the operator
+ * acts on here -- what needs them, the measure this screen is read at, and
+ * the inspector. Theme and language left this row for the settings page
+ * (operator decision, 2026-09-22): a console's chrome carries the work, not
+ * the two preferences that are chosen once and never again.
  */
 export function ShellControls({
-	locale,
-	onSelectLocale,
 	catalog,
 	title,
 	sidebarOpen,
@@ -583,7 +729,7 @@ export function ShellControls({
 	onToggleInspector,
 	showInspectorToggle,
 	notifications,
-}: Pick<AppProps, 'locale' | 'onSelectLocale'> & {
+}: {
 	catalog: ShellCatalog;
 	title: string;
 	sidebarOpen: boolean;
@@ -593,96 +739,61 @@ export function ShellControls({
 	showInspectorToggle: boolean;
 	notifications: readonly NotificationItem[];
 }): React.ReactElement {
-	const [dark, setDark] = useState(() => {
-		const runtime = panelRuntime();
-		const stored = runtime.localStorage?.getItem('gship-theme') ?? null;
-		if (stored !== null) return stored === 'dark';
-		return runtime.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
-	});
-	const [wide, setWide] = useState(
-		() => panelRuntime().localStorage?.getItem('gship-width') === 'wide',
-	);
-	const toggleTheme = (): void => {
-		const next = !dark;
-		const runtime = panelRuntime();
-		runtime.localStorage?.setItem('gship-theme', next ? 'dark' : 'light');
-		runtime.document?.documentElement.classList.toggle('dark', next);
-		setDark(next);
-	};
-	const toggleWidth = (): void => {
-		const next = !wide;
-		const runtime = panelRuntime();
-		runtime.localStorage?.setItem('gship-width', next ? 'wide' : 'centered');
-		runtime.document?.documentElement.classList.toggle('gship-wide', next);
-		setWide(next);
-	};
-	const targetLocale = locale === 'en-US' ? 'pt-BR' : 'en-US';
+	/* Each of these is a glyph with no label beside it, so its name lives in a
+	 * hint, and the one that has a key shows the key there. A chip has nowhere
+	 * to sit on a 32px square. */
+	const sidebarLabel = sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand;
+	const inspectorLabel = inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand;
 	const inspectorToggle = (): React.ReactElement | null => showInspectorToggle ? (
-		<Button
-			aria-label={inspectorOpen ? catalog.inspectorToggle.collapse : catalog.inspectorToggle.expand}
-			onClick={onToggleInspector}
-			size="icon"
-			type="button"
-			variant="outline"
-		>
-			<PanelToggleGlyph side="right" />
-		</Button>
+		<HintTooltip label={inspectorLabel} side="bottom">
+			<Button
+				aria-label={inspectorLabel}
+				onClick={onToggleInspector}
+				size="icon"
+				type="button"
+				variant="outline"
+			>
+				<PanelToggleGlyph side="right" />
+			</Button>
+		</HintTooltip>
 	) : null;
 	return (
-		<div className="w-full shrink-0 border-b border-border px-4 py-3 lg:px-6">
-			<ShellContentFrame className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" data-slot="shell-controls-layout">
+		<TooltipGroup>
+		{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- the right inset is the panel's 24px plus whatever width a classic scrollbar takes from the content under this row, a runtime value the panel measures */}
+		<div className="w-full shrink-0 border-b border-border px-4 py-3 lg:px-6 lg:pr-[calc(--spacing(6)+var(--content-scrollbar))]">
+			{/* The row is the panel's, not the content's: the toggles sit on the panel's edges whatever measure the content keeps, and the title on the panel's centre. */}
+			{/* oxlint-disable-next-line shadcn/no-arbitrary-values -- equal flexible sides keep the title on the true centre while the controls on either side differ in width */}
+			<div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" data-slot="shell-controls-layout">
 				<div className="flex min-w-0 justify-start">
 					{/* The sidebar toggle lives in the content area, not the sidebar. */}
-					<Button
-						aria-label={sidebarOpen ? catalog.sidebarToggle.collapse : catalog.sidebarToggle.expand}
-						aria-expanded={sidebarOpen}
-						data-slot="sidebar-toggle"
-						onClick={onToggleSidebar}
-						size="icon"
-						type="button"
-						variant="outline"
-					>
-						<PanelToggleGlyph side="left" />
-					</Button>
+					<HintTooltip label={sidebarLabel} shortcut={shortcutLabel('sidebar', undefined, presentationPlatform())} side="bottom">
+						<Button
+							aria-label={sidebarLabel}
+							aria-expanded={sidebarOpen}
+							aria-keyshortcuts={KEYBOARD_SHORTCUTS.sidebar.aria}
+							className="max-lg:hidden"
+							data-slot="sidebar-toggle"
+							onClick={onToggleSidebar}
+							size="icon"
+							type="button"
+							variant="outline"
+						>
+							<PanelToggleGlyph side="left" />
+						</Button>
+					</HintTooltip>
+					{/* Below lg this row is the app bar: the mark leads it, the page's name stays on the centre. */}
+					<h1 className="flex items-center lg:hidden"><GateshipMark className="size-6" portal /><span className="sr-only">Gateship</span></h1>
 				</div>
 				<div className="min-w-0 px-2 text-center type-editorial-title text-sm sm:text-base" data-slot="shell-surface-title" title={title}>
 					<span className="block overflow-hidden text-ellipsis whitespace-nowrap">{title}</span>
 				</div>
 				<div className="flex min-w-0 items-center justify-end gap-2">
 					<NotificationsPopover catalog={catalog.notifications} items={notifications} />
-						<Button
-							aria-label={targetLocale === 'pt-BR' ? 'Português (Brasil)' : 'English (US)'}
-							id="gateship-locale"
-							onClick={() => onSelectLocale(targetLocale)}
-							size="icon"
-							type="button"
-							variant="outline"
-						>
-							<span className="font-mono text-xs">{targetLocale === 'pt-BR' ? 'PT' : 'EN'}</span>
-						</Button>
-						<Button
-							aria-label={dark ? catalog.themeToggle.light : catalog.themeToggle.dark}
-							onClick={toggleTheme}
-							size="icon"
-							type="button"
-							variant="outline"
-						>
-							<ShellIcon icon={dark ? Sun02Icon : Moon02Icon} />
-						</Button>
-						<Button
-							aria-label={wide ? catalog.widthToggle.compact : catalog.widthToggle.wide}
-							className="hidden 2xl:inline-flex"
-							onClick={toggleWidth}
-							size="icon"
-							type="button"
-							variant="outline"
-						>
-							<ShellIcon icon={wide ? ArrowShrink01Icon : ArrowExpand01Icon} />
-						</Button>
 					{inspectorToggle()}
 				</div>
-			</ShellContentFrame>
+			</div>
 		</div>
+		</TooltipGroup>
 	);
 }
 
@@ -690,12 +801,14 @@ export function shellSurfaceTitle(
 	selection: ReturnType<typeof routeSelection>,
 	catalog: ShellCatalog,
 ): string {
-	if (selection.surface === 'overview') return catalog.routeLabels.overview;
+	if (selection.surface === 'overview') return catalog.routeLabels.now;
 	if (selection.surface === 'overview-runs') return catalog.routeLabels.overviewRuns;
 	if (selection.surface === 'overview-queues') return catalog.routeLabels.overviewQueues;
 	if (selection.surface === 'overview-insights') return catalog.routeLabels.overviewInsights;
 	if (selection.surface === 'projects') return catalog.routeLabels.projects;
 	if (selection.surface === 'global-settings') return catalog.routeLabels.globalSettings;
+	/* Two settings pages exist: this one says whose it is, as its sidebar row does. */
+	if (selection.surface === 'settings') return catalog.projectSettingsLabel;
 	return catalog.routeLabels[selection.surface];
 }
 
@@ -751,7 +864,9 @@ export function ShellSidebar({
 	runInspectorCatalog,
 	version,
 	open,
-}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'projects' | 'staleService' | 'workspaceNotices'> & {
+	onSelectAllProjects,
+	overview = null,
+}: Pick<AppProps, 'chainRuns' | 'gitIdentity' | 'locale' | 'onSelectAllProjects' | 'overview' | 'projects' | 'staleService' | 'workspaceNotices'> & {
 	runInspectorCatalog: RunInspectorCatalog;
 	route: OperatorRoute;
 	selectedProjectId: string | null;
@@ -767,29 +882,34 @@ export function ShellSidebar({
 	const catalog = LOCALE_CATALOG[locale].shell;
 	const currentId = projects.find((project) => project.current)?.id ?? null;
 	const selection = routeSelection(route, currentId, selectedProjectId);
-	const humanVersion = humanVersionOf(version);
 	const status = shellStatus(projects.find((project) => project.id === selection.projectId) ?? null, run, runInspectorCatalog);
 	/* The outer shell shares the global --sidebar canvas with html and body;
-	 * the content panel provides the deliberate surface contrast. */
+	 * the content panel provides the deliberate surface contrast. The right
+	 * inset is half the left one on purpose: the panel adds its own 12px
+	 * margin, so a row's fill sits 24px from the viewport edge on one side and
+	 * 24px from the panel border on the other. The vertical inset is
+	 * --shell-inset, the distance from the viewport edge to the panel's
+	 * controls row, so the switcher's first line and the sidebar toggle share
+	 * one line. Collapsed, the same list becomes an icon rail on the same
+	 * axis. */
 	return (
-		<header className={cn('scroll-container scroll-container-stable scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:pt-8', open ? 'lg:w-64 lg:gap-4' : 'lg:w-18 lg:gap-4')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
-			<h1 className="flex items-center gap-2 lg:hidden">
-				<span aria-hidden="true"><GateshipMark className="size-6" portal /></span>
-				<GateshipWordmark className="block aspect-[10187/2750] h-5 w-auto" />
-			</h1>
+		<header className={cn('scroll-container scroll-fade flex shrink-0 flex-col gap-2 px-3 pt-3 lg:h-full lg:overflow-y-auto lg:p-6 lg:py-(--shell-inset)', 'lg:gap-4 lg:pr-3', open ? 'lg:w-64' : 'lg:w-19')} data-slot="sidebar" data-state={open ? 'expanded' : 'collapsed'}>
 			<ShellNavigation
 				catalog={catalog}
 				projects={projects}
 				selection={selection}
 				status={status}
 				open={open}
+				onSelectAllProjects={onSelectAllProjects}
+				counts={navigationCounts(overview, selection.projectId)}
 			/>
-							<div className="hidden items-center gap-2 px-3 lg:mt-auto lg:flex" data-slot="sidebar-signature">
-				<GateshipMark className="size-5" portal />
-				<span className={cn('flex items-center gap-2', !open && 'opacity-0')}>
+			<div className="hidden h-8 items-center gap-2 px-3 lg:mt-auto lg:flex" data-slot="sidebar-signature">
+				{/* The 20px mark centres on the 16px icon slot: flex centring spills 2px each side, no negative margin. */}
+				<span className="flex w-4 shrink-0 justify-center"><GateshipMark className="size-5 shrink-0" portal /></span>
+				{!open ? null : <span className="flex items-center gap-2">
 					<GateshipWordmark className="block h-4 w-auto shrink-0 text-foreground" />
-					{version === '' ? null : <span className="font-mono text-[10px] text-sidebar-foreground/50">v{humanVersion}</span>}
-				</span>
+					{version === '' ? null : <span className="font-mono text-sidebar-foreground text-xs">v{humanVersionOf(version)}</span>}
+				</span>}
 			</div>
 		</header>
 	);

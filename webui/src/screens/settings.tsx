@@ -5,15 +5,19 @@ import type { AppProps } from '../app-props.ts';
 import type { AgentSettingSource, DiagnosticCadenceView, DiagnosticsView, ModelRoleName, ModelSettingsView, ModelSlotView, NotificationChannelId, NotificationChannelView, ProviderStatusView } from '../client.ts';
 import { emptyModelSettings, MODEL_PROVIDER_IDS, MODEL_ROLE_NAMES, NOTIFICATION_CHANNEL_IDS } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
+import { Button } from '../components/ui/button.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { CardFooter } from '../components/ui/card.tsx';
-import { FormStack } from '../components/ui/card-layout.tsx';
+import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
+import { Switch } from '../components/ui/switch.tsx';
 import { Textarea } from '../components/ui/textarea.tsx';
-import { cn } from '../lib/cn.ts';
 import type { Locale, SettingsCatalog } from '../locale.ts';
+import { applyThemeChoice, readThemeChoice, type ThemeChoice } from '../theme.ts';
 import type { ProviderUsageView, ProviderUsageWindowView } from '../run-view.ts';
-import { ActionButton, BUTTON_CLASS, ContextPanel, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
+import { ActionButton, ContextPanel, SectionCard } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
 import type { ProviderPanelProps } from './runs.tsx';
 import { fieldReader, formatCount, formatExactPercent, formatRunTimestamp, formatUsageTime, providerDescription, usageWindowLabel, usageWindowVariant } from './runs.tsx';
@@ -140,17 +144,16 @@ export function ClaudeCredentialConnectedCard({
 			{error === null ? null : <span className="text-destructive text-xs" role="alert">{error}</span>}
 			<div className="flex flex-wrap gap-2">
 				{provider.installed ? (
-					<button className={BUTTON_CLASS} onClick={onRotate} type="button">{text.rotate}</button>
+					<Button variant="outline" onClick={onRotate} type="button">{text.rotate}</Button>
 				) : null}
 				{error === null ? null : (
-					<button className={BUTTON_CLASS} onClick={onDismissError} type="button">{text.cancel}</button>
+					<Button variant="outline" onClick={onDismissError} type="button">{text.cancel}</Button>
 				)}
-				<button
-					className={cn(BUTTON_CLASS, 'self-end')}
+				<Button className="self-end" variant="destructive"
 					disabled={pending}
 					onClick={onDisconnectClaudeCredential}
 					type="button"
-				>{text.disconnect}</button>
+				>{text.disconnect}</Button>
 			</div>
 		</div>
 	);
@@ -230,8 +233,7 @@ export function ClaudeCredentialSection({
 					<span className="text-muted-foreground text-xs">{text.setupCommandLabel}</span>
 					<div className="flex flex-wrap items-center gap-2">
 						<code className="break-all">claude setup-token</code>
-						<button
-							className={BUTTON_CLASS}
+						<Button variant="outline"
 							onClick={() => {
 								const clipboard = (globalThis as unknown as {
 									navigator?: { clipboard?: { writeText?: (value: string) => Promise<void> } };
@@ -239,7 +241,7 @@ export function ClaudeCredentialSection({
 								void clipboard?.writeText?.('claude setup-token');
 							}}
 							type="button"
-						>{text.copyCommand}</button>
+						>{text.copyCommand}</Button>
 					</div>
 				</div>
 			) : (
@@ -261,7 +263,7 @@ export function ClaudeCredentialSection({
 						});
 					}}
 				>
-					<label className="flex flex-col gap-1" htmlFor="claude-credential-token">
+					<FormField htmlFor="claude-credential-token">
 						<span className="font-medium">{text.tokenLabel}</span>
 						<Input
 							autoComplete="off"
@@ -274,8 +276,8 @@ export function ClaudeCredentialSection({
 							value={token}
 						/>
 						{error === null ? null : <span className="text-destructive text-xs" role="alert">{error}</span>}
-					</label>
-					<label className="flex items-start gap-2">
+					</FormField>
+					<CheckField>
 						<input
 							checked={confirmed}
 							name="claude-credential-confirm"
@@ -283,16 +285,14 @@ export function ClaudeCredentialSection({
 							type="checkbox"
 						/>
 						<span>{text.confirm}</span>
-					</label>
+					</CheckField>
 					<div className="flex flex-wrap gap-2">
-						<button
-							className={cn(PRIMARY_BUTTON_CLASS, 'self-end')}
+						<Button className="self-end"
 							disabled={pending || token.trim().length === 0 || !confirmed}
 							type="submit"
-						>{connected ? text.rotate : text.connect}</button>
+						>{connected ? text.rotate : text.connect}</Button>
 						{connected ? (
-							<button
-								className={BUTTON_CLASS}
+							<Button variant="outline"
 								onClick={() => {
 									// Giving up on this attempt: the refusal that forced the form
 									// open goes with it, or Cancel would leave the form open.
@@ -302,7 +302,7 @@ export function ClaudeCredentialSection({
 									setRotating(false);
 								}}
 								type="button"
-							>{text.cancel}</button>
+							>{text.cancel}</Button>
 						) : null}
 					</div>
 				</form>
@@ -319,7 +319,7 @@ export function ClaudeInteractiveLoginNotice({
 	text: SettingsCatalog['providers']['claudeCredential'];
 }): React.ReactElement {
 	return (
-		<div className="flex flex-col gap-2 rounded-md border border-border p-3 text-sm">
+		<div className="flex flex-col gap-2 text-sm">
 			<p className="font-medium">{text.recommendedTitle}</p>
 			<p className="text-muted-foreground">{text.recommendedGuidance}</p>
 			<p className="text-muted-foreground text-xs">{text.usageGuidance}</p>
@@ -347,16 +347,16 @@ export function ProviderRow({
 	onSelectProvider,
 }: Omit<ProviderPanelProps, 'providers'> & { provider: ProviderStatusView; catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
-		<li className="flex flex-col gap-3 text-sm">
-			<div className="flex items-center justify-between gap-3">
-				<div className="min-w-0">
+		<li className="flex flex-col gap-3 rounded-lg border p-4 text-sm" data-provider={provider.id} data-slot="provider-block">
+			{/* State and action on the first line: what it is, whether it is the one in use, what can be done about it. */}
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div className="flex min-w-0 flex-col gap-1">
 					<p className="flex flex-wrap items-center gap-2 font-medium">
 						{provider.label}
-						{provider.id === selectedProvider ? <Badge variant="secondary">{catalog.providers.inUse}</Badge> : null}
-						{provider.id === 'claude' ? <Badge variant="outline">{catalog.providers.claudeCredential.originLabels[provider.login]}</Badge> : null}
+						{provider.id === selectedProvider ? <Tag>{catalog.providers.inUse}</Tag> : null}
+						{provider.id === 'claude' ? <Tag>{catalog.providers.claudeCredential.originLabels[provider.login]}</Tag> : null}
 					</p>
 					<p className="break-words text-muted-foreground">{providerDescription(provider, catalog)}</p>
-					<ProviderUsageDetail catalog={catalog} locale={locale} usage={provider.usage} />
 				</div>
 				{provider.id === 'codex' && !provider.subscription && provider.installed ? (
 					<ActionButton enabled={!pending} label={catalog.providers.connectChatGpt} onClick={onConnectCodex} />
@@ -369,28 +369,36 @@ export function ProviderRow({
 					/>
 				) : null}
 			</div>
+			<ProviderUsageDetail catalog={catalog} locale={locale} usage={provider.usage} />
 			{provider.id === 'claude' ? (
-				<>
-					{provider.login === 'dedicated' ? null : <ClaudeInteractiveLoginNotice provider={provider} text={catalog.providers.claudeCredential} />}
-					<ClaudeCredentialSection
-						catalog={catalog}
-						error={claudeCredentialError}
-						onConnectClaudeCredential={onConnectClaudeCredential}
-						onDisconnectClaudeCredential={onDisconnectClaudeCredential}
-						onDismissError={onDismissClaudeCredentialError}
-						pending={pending}
-						provider={provider}
-					/>
-				</>
+				<ClaudeCredentialSection
+					catalog={catalog}
+					error={claudeCredentialError}
+					onConnectClaudeCredential={onConnectClaudeCredential}
+					onDisconnectClaudeCredential={onDisconnectClaudeCredential}
+					onDismissError={onDismissClaudeCredentialError}
+					pending={pending}
+					provider={provider}
+				/>
 			) : null}
-			{provider.id === 'codex' ? (
-				<div className="flex flex-col gap-1 text-xs text-muted-foreground">
-					<p>{catalog.providers.codexSubscriptionGuidance}</p>
-					<code className="break-all">codex login</code>
-					<p>{catalog.providers.codexApiKeyWarning}</p>
-					<p>{catalog.providers.codexEnterpriseFuture}</p>
-				</div>
-			) : null}
+			{/* How to sign in is reference: open while the provider still needs it, folded once it is connected. */}
+			{provider.id === 'claude' && provider.login === 'dedicated' ? null : (
+				<Collapsible defaultOpen={!provider.subscription}>
+					<CollapsibleTrigger>{catalog.providers.signInHelp}</CollapsibleTrigger>
+					<CollapsibleContent>
+						<div className="flex flex-col gap-2 p-3">
+							{provider.id === 'claude' ? <ClaudeInteractiveLoginNotice provider={provider} text={catalog.providers.claudeCredential} /> : (
+								<div className="flex flex-col gap-1 text-muted-foreground text-xs">
+									<p>{catalog.providers.codexSubscriptionGuidance}</p>
+									<code className="break-all">codex login</code>
+									<p>{catalog.providers.codexApiKeyWarning}</p>
+									<p>{catalog.providers.codexEnterpriseFuture}</p>
+								</div>
+							)}
+						</div>
+					</CollapsibleContent>
+				</Collapsible>
+			)}
 		</li>
 	);
 }
@@ -401,10 +409,8 @@ function AgentSourceNotice({ catalog, source }: { catalog: SettingsCatalog; sour
 
 export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'providerSource' | 'onResetProvider'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	return (
-		<ContextPanel
-			actionLabels={props.catalog.disclosure}
+		<SectionCard
 			description={props.catalog.providers.description}
-			open
 			title={props.catalog.providers.title}
 	>
 		<AgentSourceNotice catalog={props.catalog} source={props.providerSource} />
@@ -427,11 +433,11 @@ export function ProvidersPanel(props: ProviderPanelProps & Pick<AppProps, 'provi
 			))}
 		</ul>
 		{props.providerSource === 'project' ? (
-			<CardFooter><button className={BUTTON_CLASS} disabled={props.pending} onClick={props.onResetProvider} type="button">
+			<CardFooter><Button variant="outline" disabled={props.pending} onClick={props.onResetProvider} type="button">
 				{props.catalog.agentSources.resetProvider}
-			</button></CardFooter>
+			</Button></CardFooter>
 		) : null}
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -465,6 +471,12 @@ export function readModelSettings(form: EventTarget): ModelSettingsView {
 	return settings;
 }
 
+/*
+ * One role: its name leads the row and each field is labelled by its row and
+ * its column. From `sm` the column head says what a field is, once, and the
+ * field's own label goes quiet; on a narrow screen the row stacks and the
+ * labels are what is left to read.
+ */
 export function ModelSlotFields({
 	providerId,
 	role,
@@ -476,38 +488,25 @@ export function ModelSlotFields({
 	slot: ModelSlotView;
 	catalog: SettingsCatalog;
 }): React.ReactElement {
+	const roleLabel = catalog.models.roleLabels[role];
+	/* The model takes two of the row's columns, the effort one. A wrapper carries the span: a static string the design lint can read. */
+	const field = (kind: 'model' | 'effort'): React.ReactElement => (
+		<FormField measure="full" htmlFor={`${providerId}-${role}-${kind}`}>
+			<span className="sr-only">{`${roleLabel} — ${catalog.models[kind]}`}</span>
+			<span aria-hidden="true" className="text-muted-foreground text-xs capitalize sm:hidden">{catalog.models[kind]}</span>
+			<Input defaultValue={slot[kind]} id={`${providerId}-${role}-${kind}`} mono name={`${providerId}-${role}-${kind}`} placeholder={catalog.models.cliDefault} />
+		</FormField>
+	);
 	return (
-		<div className="flex flex-col gap-2 sm:flex-row">
-			<label
-				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
-				htmlFor={`${providerId}-${role}-model`}
-			>
-				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.model}</span>
-				<Input
-					className="font-mono"
-					defaultValue={slot.model}
-					id={`${providerId}-${role}-model`}
-					name={`${providerId}-${role}-model`}
-					placeholder={catalog.models.cliDefault}
-				/>
-			</label>
-			<label
-				className="flex min-w-0 flex-1 flex-col gap-1 text-sm"
-				htmlFor={`${providerId}-${role}-effort`}
-			>
-				<span className="font-medium">{catalog.models.roleLabels[role]} — {catalog.models.effort}</span>
-				<Input
-					className="font-mono"
-					defaultValue={slot.effort}
-					id={`${providerId}-${role}-effort`}
-					name={`${providerId}-${role}-effort`}
-					placeholder={catalog.models.cliDefault}
-				/>
-			</label>
+		<div className="grid gap-2 border-t py-3 first:border-0 sm:grid-cols-4 sm:items-center sm:gap-3 sm:border-0 sm:py-0" data-slot="model-slot">
+			<span className="font-medium text-sm">{roleLabel}</span>
+			<div className="min-w-0 sm:col-span-2">{field('model')}</div>
+			<div className="min-w-0">{field('effort')}</div>
 		</div>
 	);
 }
 
+/* A provider's slots are a grid, role by (model, effort). */
 export function ModelProviderFields({
 	providerId,
 	modelSettings,
@@ -517,25 +516,13 @@ export function ModelProviderFields({
 	catalog: SettingsCatalog;
 }): React.ReactElement {
 	return (
-		<fieldset className="flex flex-col gap-3">
+		<fieldset className="flex flex-col gap-2" data-slot="model-provider">
 			<legend className="font-medium text-sm">{MODEL_PROVIDER_LABELS[providerId]}</legend>
-			<a
-				className={TEXT_LINK_CLASS}
-				href={MODEL_DOC_URLS[providerId]}
-				rel="noreferrer noopener"
-				target="_blank"
-			>
-				{catalog.models.documentation(MODEL_PROVIDER_LABELS[providerId])}
-			</a>
-			{MODEL_ROLE_NAMES.map((role) => (
-				<ModelSlotFields
-					catalog={catalog}
-					key={role}
-					providerId={providerId}
-					role={role}
-					slot={modelSettings[providerId][role]}
-				/>
-			))}
+			<a className={TEXT_LINK_CLASS} href={MODEL_DOC_URLS[providerId]} rel="noreferrer noopener" target="_blank">{catalog.models.documentation(MODEL_PROVIDER_LABELS[providerId])}</a>
+			<div aria-hidden="true" className="hidden text-muted-foreground text-sm sm:grid sm:grid-cols-4 sm:gap-3" data-slot="model-columns">
+				<span>{catalog.models.role}</span><span className="col-span-2 capitalize">{catalog.models.model}</span><span className="capitalize">{catalog.models.effort}</span>
+			</div>
+			{MODEL_ROLE_NAMES.map((role) => <ModelSlotFields catalog={catalog} key={role} providerId={providerId} role={role} slot={modelSettings[providerId][role]} />)}
 		</fieldset>
 	);
 }
@@ -554,10 +541,8 @@ export function ModelSettingsPanel({
 	catalog,
 }: Pick<AppProps, 'modelSettings' | 'modelSettingsSource' | 'pending' | 'onSaveModelSettings' | 'onResetModelSettings'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.models.description}
-			open
 			title={catalog.models.title}
 	>
 		<AgentSourceNotice catalog={catalog} source={modelSettingsSource} />
@@ -579,17 +564,17 @@ export function ModelSettingsPanel({
 					/>
 				))}
 				<CardFooter>
-					<button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
-						{catalog.models.save}
-					</button>
 					{modelSettingsSource === 'project' ? (
-						<button className={BUTTON_CLASS} disabled={pending} onClick={onResetModelSettings} type="button">
+						<Button variant="outline" disabled={pending} onClick={onResetModelSettings} type="button">
 							{catalog.agentSources.resetModels}
-						</button>
+						</Button>
 					) : null}
+					<Button disabled={pending} type="submit">
+						{catalog.models.save}
+					</Button>
 				</CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -601,7 +586,7 @@ export function AgentDefaultsPanel({
 	catalog,
 }: Pick<AppProps, 'agentDefaults' | 'pending' | 'onSaveAgentDefaults'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel actionLabels={catalog.disclosure} description={catalog.agentDefaults.description} open title={catalog.agentDefaults.title}>
+		<SectionCard description={catalog.agentDefaults.description} title={catalog.agentDefaults.title}>
 			<FormStack
 				key={JSON.stringify(agentDefaults)}
 				onSubmit={(event) => {
@@ -613,23 +598,24 @@ export function AgentDefaultsPanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="agent-default-provider">
+				<FormField htmlFor="agent-default-provider">
 					<span className="font-medium">{catalog.agentDefaults.provider}</span>
 					<SelectField
 						defaultValue={agentDefaults.provider}
 						id="agent-default-provider"
+						className="w-full sm:w-64"
 						items={[{ value: 'claude', label: 'Claude' }, { value: 'codex', label: 'Codex' }]}
 						name="agent-default-provider"
 					/>
-				</label>
+				</FormField>
 				{MODEL_PROVIDER_IDS.map((providerId) => (
 					<ModelProviderFields catalog={catalog} key={providerId} modelSettings={agentDefaults.modelSettings} providerId={providerId} />
 				))}
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<CardFooter><Button disabled={pending} type="submit">
 					{catalog.agentDefaults.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -648,23 +634,15 @@ export function ChainRunsPanel({
 	catalog,
 }: Pick<AppProps, 'chainRuns' | 'pending' | 'onSetChainRuns'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.chain.description}
-			open
 			title={catalog.chain.title}
 		>
-			<label className="flex items-center gap-2 text-sm">
-				<input
-					checked={chainRuns.enabled}
-					disabled={pending}
-					onChange={(event) =>
-						onSetChainRuns((event.currentTarget as unknown as { checked: boolean }).checked)}
-					type="checkbox"
-				/>
+			<CheckField className="items-center">
+				<Switch checked={chainRuns.enabled} disabled={pending} onCheckedChange={(checked) => onSetChainRuns(checked)} />
 				<span className="font-medium">{catalog.chain.label}</span>
-			</label>
-		</ContextPanel>
+			</CheckField>
+		</SectionCard>
 	);
 }
 
@@ -681,23 +659,15 @@ export function ExecutorHandoffPanel({
 	catalog,
 }: Pick<AppProps, 'executorHandoff' | 'pending' | 'onSetExecutorHandoff'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.executorHandoff.description}
-			open
 			title={catalog.executorHandoff.title}
 		>
-			<label className="flex items-center gap-2 text-sm">
-				<input
-					checked={executorHandoff.enabled}
-					disabled={pending}
-					onChange={(event) =>
-						onSetExecutorHandoff((event.currentTarget as unknown as { checked: boolean }).checked)}
-					type="checkbox"
-				/>
+			<CheckField className="items-center">
+				<Switch checked={executorHandoff.enabled} disabled={pending} onCheckedChange={(checked) => onSetExecutorHandoff(checked)} />
 				<span className="font-medium">{catalog.executorHandoff.label}</span>
-			</label>
-		</ContextPanel>
+			</CheckField>
+		</SectionCard>
 	);
 }
 
@@ -710,22 +680,14 @@ export function SelfUpdatePanel({
 }: Pick<AppProps, 'selfUpdate' | 'pending' | 'onSetSelfUpdate'> & { catalog: SettingsCatalog; locale: Locale }): React.ReactElement {
 	const unavailable = selfUpdate.availability.kind !== 'native';
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.updates.description}
 			title={catalog.updates.title}
 		>
-			<label className="flex items-center gap-2 text-sm">
-				<input
-					checked={selfUpdate.enabled}
-					disabled={pending || unavailable || selfUpdate.applying}
-					onChange={(event) => onSetSelfUpdate(
-						(event.currentTarget as unknown as { checked: boolean }).checked,
-					)}
-					type="checkbox"
-				/>
+			<CheckField className="items-center">
+				<Switch checked={selfUpdate.enabled} disabled={pending || unavailable || selfUpdate.applying} onCheckedChange={(checked) => onSetSelfUpdate(checked)} />
 				<span className="font-medium">{catalog.updates.label}</span>
-			</label>
+			</CheckField>
 			<p className="text-muted-foreground text-xs">
 				{catalog.updates.guidance}
 			</p>
@@ -746,7 +708,7 @@ export function SelfUpdatePanel({
 					</p>
 				</div>
 			) : null}
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -804,7 +766,7 @@ export function NotificationChannelRow({
 	const label = catalog.notifications.channelLabels[channelId];
 	const resendForm = channelId === 'resend' ? (
 		<form
-			className="grid gap-3 sm:grid-cols-2"
+			className="flex flex-col gap-3"
 			key={JSON.stringify(channel)}
 			onSubmit={(event) => {
 				event.preventDefault();
@@ -812,8 +774,10 @@ export function NotificationChannelRow({
 				onSaveResendSettings({ from: read('resend-from'), to: read('resend-to'), apiKey: read('resend-api-key') });
 			}}
 		>
+			{/* The fields keep a reading measure; the actions close the block on its own edge, as a card's footer does. */}
+			<div className="grid max-w-3xl gap-3 sm:grid-cols-2">
 			{(['from', 'to'] as const).map((field) => (
-				<label className="flex flex-col gap-1 text-sm" key={field}>
+				<FormField measure="full" key={field}>
 					<span className="font-medium">
 						{catalog.notifications.resendFields[field]}
 						{channel.externallyManaged[field] ? ` · ${catalog.notifications.externallyManaged}` : null}
@@ -826,9 +790,9 @@ export function NotificationChannelRow({
 						placeholder={catalog.notifications.resendPlaceholders[field]}
 						required
 					/>
-				</label>
+				</FormField>
 			))}
-			<label className="flex flex-col gap-1 text-sm sm:col-span-2">
+			<FormField className="sm:col-span-2" measure="full">
 				<span className="font-medium">
 					{catalog.notifications.resendFields.apiKey}
 					{channel.externallyManaged.apiKey ? ` · ${catalog.notifications.externallyManaged}` : null}
@@ -840,31 +804,33 @@ export function NotificationChannelRow({
 					placeholder={catalog.notifications.resendPlaceholders.apiKey}
 					type="password"
 				/>
-			</label>
+			</FormField>
 			<p className="text-muted-foreground text-xs sm:col-span-2">
 				{channel.fileCredentialExists ? catalog.notifications.fileCredentialPresent : catalog.notifications.fileCredentialAbsent}
 			</p>
-			<div className="flex flex-wrap gap-2 sm:col-span-2">
-				<button className={cn(PRIMARY_BUTTON_CLASS, 'self-end')} disabled={pending} type="submit">
-					{catalog.notifications.saveResend}
-				</button>
-				<button
-					className={cn(BUTTON_CLASS, 'self-end')}
+			</div>
+			<div className="flex flex-col gap-2 sm:flex-row sm:justify-end" data-slot="channel-actions">
+				<Button variant="destructive"
 					disabled={pending || !channel.fileCredentialExists}
 					onClick={onRemoveResendCredential}
 					type="button"
 				>
 					{catalog.notifications.removeResendCredential}
-				</button>
+				</Button>
+				<Button disabled={pending} type="submit">
+					{catalog.notifications.saveResend}
+				</Button>
 			</div>
 		</form>
 	) : null;
 	return (
-		<div className="flex flex-col gap-2">
-			<div className="flex items-center justify-between gap-3">
-				<p className="text-sm">
-					{label}: {channel.configured ? catalog.notifications.configured : catalog.notifications.notConfigured}
-					{!channel.configured && channel.missing.length > 0 ? catalog.notifications.missing(channel.missing.join(', ')) : null}
+		<li className="flex flex-col gap-3 rounded-lg border p-4 text-sm" data-channel={channelId} data-slot="notification-channel">
+			{/* State and action on the first line, as a provider block reads: what it is, whether it works, how to try it. */}
+			<div className="flex flex-wrap items-center justify-between gap-3">
+				<p className="flex flex-wrap items-center gap-2 font-medium">
+					{label}
+					<Badge variant={channel.configured ? 'success' : 'neutral'}>{channel.configured ? catalog.notifications.configured : catalog.notifications.notConfigured}</Badge>
+					{!channel.configured && channel.missing.length > 0 ? <span className="font-normal text-muted-foreground">{catalog.notifications.missing(channel.missing.join(', '))}</span> : null}
 				</p>
 				<ActionButton
 					enabled={channel.configured && !pending}
@@ -872,19 +838,25 @@ export function NotificationChannelRow({
 					onClick={() => onSendNotificationTest(channelId)}
 				/>
 			</div>
-			<p className="text-muted-foreground text-sm">
-				<NotificationChannelInstructions catalog={catalog} channelId={channelId} />
-				{NOTIFICATION_CHANNEL_DOCS[channelId].map((doc, index) => (
-					<React.Fragment key={doc.href}>
-						{index > 0 ? ' ' : null}
-						<a className={TEXT_LINK_CLASS} href={doc.href} rel="noreferrer noopener" target="_blank">
-							{catalog.notifications.docLabels[doc.label]}
-						</a>
-					</React.Fragment>
-				))}
-			</p>
 			{resendForm}
-		</div>
+			{/* Files and variables are reference: open while the channel still needs them, folded once it works. */}
+			<Collapsible defaultOpen={!channel.configured}>
+				<CollapsibleTrigger>{catalog.notifications.setupHelp}</CollapsibleTrigger>
+				<CollapsibleContent>
+					<p className="p-3 text-muted-foreground">
+						<NotificationChannelInstructions catalog={catalog} channelId={channelId} />
+						{NOTIFICATION_CHANNEL_DOCS[channelId].map((doc) => (
+							<React.Fragment key={doc.href}>
+								{' '}
+								<a className={TEXT_LINK_CLASS} href={doc.href} rel="noreferrer noopener" target="_blank">
+									{catalog.notifications.docLabels[doc.label]}
+								</a>
+							</React.Fragment>
+						))}
+					</p>
+				</CollapsibleContent>
+			</Collapsible>
+		</li>
 	);
 }
 
@@ -903,24 +875,22 @@ export function NotificationsPanel({
 > & { catalog: SettingsCatalog }): React.ReactElement {
 	const actionLabel = catalog.notifications.actionLabels[notificationPermission];
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.notifications.description}
-			open
 			title={catalog.notifications.title}
 		>
-			<div className="flex flex-col gap-4">
-				<div className="flex items-center justify-between gap-3">
-					<p className="text-muted-foreground text-sm">
-						{catalog.notifications.permissionStates[notificationPermission]}
-					</p>
-					<ActionButton
-						enabled={notificationPermission === 'default'}
-						label={actionLabel}
-						onClick={onEnableNotifications}
-					/>
-				</div>
-				<div className="flex flex-col gap-3 border-border border-t pt-4">
+			<ul className="flex flex-col gap-3">
+				<li className="flex flex-col gap-1 rounded-lg border p-4 text-sm" data-channel="browser" data-slot="notification-channel">
+					<div className="flex flex-wrap items-center justify-between gap-3">
+						<p className="font-medium">{catalog.notifications.browserLabel}</p>
+						<ActionButton
+							enabled={notificationPermission === 'default'}
+							label={actionLabel}
+							onClick={onEnableNotifications}
+						/>
+					</div>
+					<p className="text-muted-foreground">{catalog.notifications.permissionStates[notificationPermission]}</p>
+				</li>
 					{NOTIFICATION_CHANNEL_IDS.map((channelId) => (
 						<NotificationChannelRow
 							catalog={catalog}
@@ -933,9 +903,8 @@ export function NotificationsPanel({
 							pending={pending}
 						/>
 					))}
-				</div>
-			</div>
-		</ContextPanel>
+			</ul>
+		</SectionCard>
 	);
 }
 
@@ -979,10 +948,8 @@ export function ProjectBriefPanel({
 	catalog,
 }: Pick<AppProps, 'brief' | 'pending' | 'onSaveBrief'> & { catalog: SettingsCatalog }): React.ReactElement {
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.brief.description}
-			open
 			title={catalog.brief.title}
 		>
 			<FormStack
@@ -998,7 +965,7 @@ export function ProjectBriefPanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="brief-objective">
+				<FormField measure="prose" htmlFor="brief-objective">
 					<span className="font-medium">{catalog.brief.fieldLabels.objective}</span>
 					<Textarea
 						className="min-h-16"
@@ -1006,13 +973,9 @@ export function ProjectBriefPanel({
 						id="brief-objective"
 						name="objective"
 					/>
-				</label>
+				</FormField>
 				{BRIEF_LISTS.map((field) => (
-					<label
-						className="flex flex-col gap-1 text-sm"
-						htmlFor={`brief-${field.name}`}
-						key={field.name}
-					>
+					<FormField measure="prose" htmlFor={`brief-${field.name}`} key={field.name}>
 						<span className="font-medium">{catalog.brief.fieldLabels[field.name]}</span>
 						<Textarea
 							className="min-h-20"
@@ -1021,13 +984,14 @@ export function ProjectBriefPanel({
 							name={field.name}
 							placeholder={catalog.brief.linePlaceholder}
 						/>
-					</label>
+					</FormField>
 				))}
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				{/* The brief runs to screens of text: the way to save it stays in reach. */}
+				<CardFooter sticky><Button disabled={pending} type="submit">
 					{catalog.brief.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -1041,21 +1005,19 @@ export function ProjectBriefPanel({
 export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & { catalog: SettingsCatalog }): React.ReactElement {
 	const ready = project.state === 'ready';
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.project.description}
-			open
 			title={catalog.project.title}
 		>
 			<div className="flex flex-col gap-3 text-sm">
 				<div className="flex flex-wrap items-center gap-2">
-					<Badge variant={ready ? 'success' : project.state === 'checking' ? 'secondary' : 'warning'}>
+					<Badge variant={ready ? 'success' : project.state === 'checking' ? 'neutral' : 'warning'}>
 						{ready ? catalog.project.stateLabels.ready : project.state === 'checking' ? catalog.project.stateLabels.checking : catalog.project.stateLabels.attention}
 					</Badge>
 					<span className="font-medium">{project.name === '' ? catalog.project.localProject : project.name}</span>
 				</div>
 				{ready ? (
-					<dl className="grid gap-2 sm:grid-cols-[8rem_1fr]">
+					<dl className="grid gap-2 sm:grid-cols-facts">
 						<dt className="text-muted-foreground">{catalog.project.repository}</dt>
 						<dd><code className="break-all">{project.repository}</code></dd>
 						<dt className="text-muted-foreground">{catalog.project.runSource}</dt>
@@ -1065,7 +1027,87 @@ export function ProjectPanel({ project, catalog }: Pick<AppProps, 'project'> & {
 					<p className="text-muted-foreground">{project.detail}</p>
 				)}
 			</div>
-		</ContextPanel>
+		</SectionCard>
+	);
+}
+
+/**
+ * How this screen looks and which language it speaks. Both were buttons in the
+ * shell's top row, where an operational console should carry the work and not
+ * the preferences that are set once. Neither reaches the service: they live in
+ * this browser, so they apply the moment they are chosen and have no save.
+ *
+ * The theme offers the system as a choice because it always was one -- no
+ * stored value means the screen follows the operating system, and the boot
+ * script keeps following it as the system changes. The single button could
+ * only say light or dark, so the first press took that state away for good.
+ */
+export function InterfacePanel({
+	locale,
+	onSelectLocale,
+	catalog,
+}: Pick<AppProps, 'locale' | 'onSelectLocale'> & { catalog: SettingsCatalog }): React.ReactElement {
+	const browser = globalThis as unknown as {
+		localStorage?: { getItem: (key: string) => string | null; setItem: (key: string, value: string) => void; removeItem: (key: string) => void };
+		matchMedia?: (query: string) => { matches: boolean };
+		document?: { documentElement: { classList: { toggle: (token: string, force: boolean) => void } } };
+	};
+	const [theme, setTheme] = useState<ThemeChoice>(() => readThemeChoice(() => browser.localStorage?.getItem('gship-theme') ?? null));
+	const [width, setWidth] = useState<'centered' | 'wide'>(() => browser.localStorage?.getItem('gship-width') === 'wide' ? 'wide' : 'centered');
+	const chooseTheme = (choice: ThemeChoice): void => {
+		const dark = applyThemeChoice(choice, browser.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false, (key, value) => {
+			if (value === null) browser.localStorage?.removeItem(key);
+			else browser.localStorage?.setItem(key, value);
+		});
+		browser.document?.documentElement.classList.toggle('dark', dark);
+		setTheme(choice);
+	};
+	const chooseWidth = (choice: 'centered' | 'wide'): void => {
+		browser.localStorage?.setItem('gship-width', choice);
+		browser.document?.documentElement.classList.toggle('gship-wide', choice === 'wide');
+		setWidth(choice);
+	};
+	return (
+		<SectionCard description={catalog.interface.description} title={catalog.interface.title}>
+			<FormField htmlFor="interface-theme">
+				<span className="font-medium">{catalog.interface.theme}</span>
+				<SelectField
+					className="w-full sm:w-64"
+					id="interface-theme"
+					items={[
+						{ value: 'system', label: catalog.interface.themeChoices.system },
+						{ value: 'light', label: catalog.interface.themeChoices.light },
+						{ value: 'dark', label: catalog.interface.themeChoices.dark },
+					]}
+					onValueChange={(value) => chooseTheme(value as ThemeChoice)}
+					value={theme}
+				/>
+			</FormField>
+			{/* The measure the screen is read at: a preference like the other two, and the last control that was still a button in the row at the top. */}
+			<FormField htmlFor="interface-width">
+				<span className="font-medium">{catalog.interface.width}</span>
+				<SelectField
+					className="w-full sm:w-64"
+					id="interface-width"
+					items={[
+						{ value: 'centered', label: catalog.interface.widthChoices.centered },
+						{ value: 'wide', label: catalog.interface.widthChoices.wide },
+					]}
+					onValueChange={(value) => chooseWidth(value as 'centered' | 'wide')}
+					value={width}
+				/>
+			</FormField>
+			<FormField htmlFor="interface-language">
+				<span className="font-medium">{catalog.interface.language}</span>
+				<SelectField
+					className="w-full sm:w-64"
+					id="interface-language"
+					items={[{ value: 'en-US', label: 'English (US)' }, { value: 'pt-BR', label: 'Português (Brasil)' }]}
+					onValueChange={(value) => onSelectLocale(value as Locale)}
+					value={locale}
+				/>
+			</FormField>
+		</SectionCard>
 	);
 }
 
@@ -1081,10 +1123,8 @@ export function OperatorProfilePanel({
 > & { catalog: SettingsCatalog }): React.ReactElement {
 	const initialTimezone = operatorProfile.timezone || suggestedTimezone;
 	return (
-		<ContextPanel
-			actionLabels={catalog.disclosure}
+		<SectionCard
 			description={catalog.operator.description}
-			open
 			title={catalog.operator.title}
 		>
 			<FormStack
@@ -1098,7 +1138,7 @@ export function OperatorProfilePanel({
 					});
 				}}
 			>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-name">
+				<FormField htmlFor="operator-name">
 					<span className="font-medium">{catalog.operator.name}</span>
 					<Input
 						defaultValue={operatorProfile.name}
@@ -1106,8 +1146,8 @@ export function OperatorProfilePanel({
 						name="operator-name"
 						placeholder={catalog.operator.namePlaceholder}
 					/>
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="operator-timezone">
+				</FormField>
+				<FormField htmlFor="operator-timezone">
 					<span className="font-medium">{catalog.operator.timezone}</span>
 					<Input
 						defaultValue={initialTimezone}
@@ -1118,12 +1158,12 @@ export function OperatorProfilePanel({
 					<span className="text-muted-foreground text-xs">
 						{catalog.operator.timezoneGuidance}
 					</span>
-				</label>
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				</FormField>
+				<CardFooter><Button disabled={pending} type="submit">
 					{catalog.operator.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
-		</ContextPanel>
+		</SectionCard>
 	);
 }
 
@@ -1144,7 +1184,6 @@ export function DiagnosticSchedulePanel({
 	const schedule = diagnostics.schedule;
 	return (
 		<ContextPanel
-			actionLabels={catalog.disclosure}
 			description={catalog.diagnostics.description}
 			title={catalog.diagnostics.title}
 		>
@@ -1161,11 +1200,11 @@ export function DiagnosticSchedulePanel({
 					onSave(enabled, cadence);
 				}}
 			>
-				<label className="flex items-center gap-2 text-sm" htmlFor="diagnostic-enabled">
+				<CheckField className="items-center" htmlFor="diagnostic-enabled">
 					<input defaultChecked={schedule.enabled} id="diagnostic-enabled" name="diagnostic-enabled" type="checkbox" />
 					<span className="font-medium">{catalog.diagnostics.label}</span>
-				</label>
-				<label className="flex flex-col gap-1 text-sm" htmlFor="diagnostic-cadence">
+				</CheckField>
+				<FormField htmlFor="diagnostic-cadence">
 					<span className="font-medium">{catalog.diagnostics.cadence}</span>
 					<SelectField
 						defaultValue={schedule.cadence}
@@ -1176,7 +1215,7 @@ export function DiagnosticSchedulePanel({
 						]}
 						name="diagnostic-cadence"
 					/>
-				</label>
+				</FormField>
 				<p className="text-muted-foreground text-xs">
 					{active
 						? catalog.diagnostics.calculating
@@ -1190,9 +1229,9 @@ export function DiagnosticSchedulePanel({
 
 				</p>
 				<p className="text-muted-foreground text-xs">{catalog.diagnostics.guidance}</p>
-				<CardFooter><button className={PRIMARY_BUTTON_CLASS} disabled={pending} type="submit">
+				<CardFooter><Button disabled={pending} type="submit">
 					{catalog.diagnostics.save}
-				</button></CardFooter>
+				</Button></CardFooter>
 			</FormStack>
 		</ContextPanel>
 	);

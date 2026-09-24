@@ -8,6 +8,7 @@
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
+import { DisclosureChevron, OWNS_CHEVRON } from './disclosure-chevron.tsx';
 
 /*
  * The frame has three pieces: the surface, the child-card
@@ -30,9 +31,11 @@ const FRAME =
 	'*:data-[slot=card]:last:[--clip-bottom:1px] *:data-[slot=card]:first:[--clip-top:1px]';
 
 /* Header shared by cards and native disclosures. */
-const HEADER =
-	'relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-x-4 px-6 py-4 ' +
+const HEADER_GRID =
+	'relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-x-4 ' +
 	'has-data-[slot=card-frame-action]:grid-cols-[1fr_auto]';
+/* 16px is the text inset every surface shares (a Stat, a table's edge cells, a card), so stacked blocks have one text edge. */
+const HEADER = `${HEADER_GRID} px-4 py-3`;
 
 /*
  * The inner card uses --color-card mixed with --color-sidebar, barely
@@ -55,7 +58,7 @@ export function CardDisclosure({
 	className,
 	...props
 }: React.ComponentProps<'details'>): React.ReactElement {
-	return <details className={cn(FRAME, className)} data-slot="card-frame" {...props} />;
+	return <details className={cn(FRAME, OWNS_CHEVRON, className)} data-slot="card-frame" {...props} />;
 }
 
 export function CardHeader({
@@ -67,22 +70,26 @@ export function CardHeader({
 
 /**
  * The header of a <CardDisclosure>, which is also its whole click target. The
- * default triangle marker is removed in both spellings browsers use for it.
+ * default triangle marker is removed in both spellings browsers use for it,
+ * and a chevron that turns when the panel opens takes its place.
  */
 export function CardSummary({
 	className,
+	children,
 	...props
 }: React.ComponentProps<'summary'>): React.ReactElement {
 	return (
 		<summary
 			className={cn(
-				HEADER,
-				'cursor-pointer list-none [&::-webkit-details-marker]:hidden',
+				'flex cursor-pointer list-none items-center gap-2 px-4 py-3 [&::-webkit-details-marker]:hidden',
 				className,
 			)}
 			data-slot="card-frame-header"
 			{...props}
-		/>
+		>
+			<DisclosureChevron />
+			<span className={cn(HEADER_GRID, 'min-w-0 flex-1')}>{children}</span>
+		</summary>
 	);
 }
 
@@ -105,15 +112,22 @@ export function CardTitle({ className, ...props }: React.ComponentProps<'h2'>): 
  */
 export function CardFooter({
 	className,
+	sticky = false,
 	...props
-}: React.ComponentProps<'div'>): React.ReactElement {
+}: React.ComponentProps<'div'> & { /** Holds the action edge at the bottom of the viewport while a long form scrolls under it. */ sticky?: boolean }): React.ReactElement {
 	return (
 		<div
 			className={cn(
-				'-mx-6 -mb-6 mt-2 flex flex-col-reverse gap-2 border-border border-t bg-muted px-6 py-4 sm:flex-row sm:items-center sm:justify-end',
+				/* Actions close the card on its end edge, the primary one last: where the eye finishes, and at the bottom when they stack. */
+				'-mx-4 -mb-4 mt-2 flex flex-col gap-2 border-border border-t bg-muted px-4 py-3 sm:flex-row sm:items-center sm:justify-end',
+				/* Opaque while it floats: the wash alone lets the text under it show through. */
+				/* It rests on the column's fade (the last 16px of the scroll area), so nothing readable shows under it:
+				 * the column pads 16px, and 24px from `lg`, hence the 8px it steps down there. */
+				sticky && 'sticky bottom-0 z-10 rounded-b-[calc(var(--radius-2xl)-1px)] bg-muted-solid lg:-bottom-2',
 				className,
 			)}
 			data-slot="card-footer"
+			data-sticky={sticky ? '' : undefined}
 			{...props}
 		/>
 	);
@@ -126,7 +140,8 @@ export function CardDescription({
 }: React.ComponentProps<'div'>): React.ReactElement {
 	return (
 		<div
-			className={cn('self-center text-muted-foreground text-sm', className)}
+			/* A reading measure: across a 1080px card a sentence would run to 170 characters a line. */
+			className={cn('max-w-3xl self-center text-muted-foreground text-sm', className)}
 			data-slot="card-frame-description"
 			{...props}
 		/>
@@ -162,7 +177,7 @@ export function CardPanel({
 }: React.ComponentProps<'div'>): React.ReactElement {
 	return (
 		<div className={INNER_CARD} data-slot="card">
-			<div className={cn('flex flex-1 flex-col gap-4 p-6', className)} data-slot="card-panel" {...props}>
+			<div className={cn('flex flex-1 flex-col gap-4 p-4', className)} data-slot="card-panel" {...props}>
 				{children}
 			</div>
 		</div>

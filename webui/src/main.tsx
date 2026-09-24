@@ -11,6 +11,7 @@
 import { type ReactElement, StrictMode, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App, projectIdOf, routeOf, runIdOf } from './App.tsx';
+import { bulkOutcome, type BulkOutcome } from './app-props.ts';
 import {
 	abandonIssue,
 	type AgentDefaultsView,
@@ -49,6 +50,7 @@ import {
 	fetchProviders,
 	fetchResolvedProposals,
 	fetchRunEventsPage,
+	fetchRun,
 	fetchRuns,
 	fetchSelfUpdate,
 	type RunEventPage,
@@ -217,6 +219,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	resolvedProposals: ResolvedProposalView[];
 	resolvedProposalsOmittedCount: number;
 	runs: RunView[];
+	/** The address names a run, and neither the recent list nor the service knows it. */
+	requestedRunMissing: boolean;
 	events: RunEventView[];
 	runEventsHasPrevious: boolean;
 	runEventsLoading: boolean;
@@ -260,6 +264,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	clearClaudeCredentialError: () => void;
 	enableNotifications: () => void;
 	send: (command: () => Promise<string>) => void;
+	settleEach: (ids: readonly string[], act: (id: string) => Promise<unknown>) => Promise<BulkOutcome>;
 } {
 	const [backlog, setBacklog] = useState<PlannableIssue[]>([]);
 	const [ideas, setIdeas] = useState<PlannableIssue[]>([]);
@@ -308,7 +313,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	const [claudeCredentialError, setClaudeCredentialError] = useState<string | null>(null);
 	const [version, setVersion] = useState('');
 	const [overview, setOverview] = useState<ProjectOperationalOverviewView | null>(null);
-	const [overviewLoading, setOverviewLoading] = useState(routeOf(pathname) === '/overview');
+	const [overviewLoading, setOverviewLoading] = useState(true);
 	const [overviewError, setOverviewError] = useState<string | null>(null);
 	const [snapshotLoading, setSnapshotLoading] = useState(true);
 	const [snapshotError, setSnapshotError] = useState<string | null>(null);
@@ -444,6 +449,20 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	}, [refresh]);
 
 	/**
+	 * One action on several rows, each row its own request. Every row is tried
+	 * whatever happened to the one before, the list is read again once at the
+	 * end, and the caller learns which rows settled and which were refused, with
+	 * the service's reason, so a partial failure is reported row by row.
+	 */
+	const settleEach = useCallback(async (ids: readonly string[], act: (id: string) => Promise<unknown>): Promise<BulkOutcome> => {
+		setPending(true);
+		const outcome = bulkOutcome(ids, await Promise.allSettled(ids.map((id) => act(id))));
+		setPending(false);
+		refresh();
+		return outcome;
+	}, [refresh]);
+
+	/**
 	 * Connect, reconnect and rotate, resolved rather than fired and forgotten
 	 * (GSHIP-705): the form keeps the typed token when the service refuses it,
 	 * so it has to learn which outcome happened, and the refusal itself goes
@@ -487,6 +506,19 @@ function useOperationalRun(scope: string | null, pathname: string): {
 	}, [loadInitialSnapshot, scope]);
 
 	const requestedRunId = runIdOf(pathname);
+	/* The recent list holds fifty runs and the table links to all of them: a run the list no longer carries is read by its id. */
+	const [olderRun, setOlderRun] = useState<{ id: string; run: RunView | null } | null>(null);
+	const runsLoaded = operationalReadState.loaded.Runs === true;
+	const listed = requestedRunId === null || runs.some((run) => run.id === requestedRunId);
+	useEffect(() => {
+		if (requestedRunId === null || listed || !runsLoaded) return;
+		let disposed = false;
+		void fetchRun(scope, requestedRunId).then((run) => { if (!disposed) setOlderRun({ id: requestedRunId, run }); }).catch(() => { if (!disposed) setOlderRun({ id: requestedRunId, run: null }); });
+		return () => { disposed = true; };
+	}, [requestedRunId, listed, runsLoaded, scope]);
+	const olderRunView = olderRun !== null && olderRun.id === requestedRunId ? olderRun.run : null;
+	const shownRuns = listed || olderRunView === null ? runs : [...runs, olderRunView];
+	const requestedRunMissing = !listed && runsLoaded && olderRun !== null && olderRun.id === requestedRunId && olderRun.run === null;
 	const selectedRunId = displayedRunId(requestedRunId, runs);
 	const selectedRunIdRef = useRef<string | null>(selectedRunId);
 	selectedRunIdRef.current = selectedRunId;
@@ -552,11 +584,9 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		}
 	}, [historicalEvents, liveGapBefore, runEventsHasPrevious, runEventsLoading, scope, selectedRunId]);
 
+	// The overview feeds the sidebar counts on every route, not only its own
+	// surface, so it polls for the document's whole life.
 	useEffect(() => {
-		if (routeOf(pathname) !== '/overview') {
-			setOverviewLoading(false);
-			return;
-		}
 		const controller = new AbortController();
 		let first = true;
 		let disposed = false;
@@ -591,7 +621,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 			controller.abort();
 			if (timeout !== undefined) clearTimeout(timeout);
 		};
-	}, [pathname]);
+	}, []);
 
 	// One subscription, bound to the project this document is about. A selection
 	// the registry does not report ready has no runtime to stream, and opening it
@@ -677,7 +707,8 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		proposals,
 		resolvedProposals,
 		resolvedProposalsOmittedCount,
-		runs,
+		runs: shownRuns,
+		requestedRunMissing,
 		events: displayedEvents,
 		runEventsHasPrevious: runEventsHasPrevious || (selectedRunId !== null && liveGapBefore[selectedRunId] !== undefined),
 		runEventsLoading,
@@ -723,6 +754,7 @@ function useOperationalRun(scope: string | null, pathname: string): {
 		clearClaudeCredentialError,
 		enableNotifications,
 		send,
+		settleEach,
 	};
 }
 
@@ -741,6 +773,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		resolvedProposals,
 		resolvedProposalsOmittedCount,
 		runs,
+		requestedRunMissing,
 		events,
 		runEventsHasPrevious,
 		runEventsLoading,
@@ -784,6 +817,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 		clearClaudeCredentialError,
 		enableNotifications,
 		send,
+		settleEach,
 	} = useOperationalRun(scope, pathname);
 	const requestedRunId = runIdOf(pathname);
 	const selectedRunId = displayedRunId(requestedRunId, runs);
@@ -902,9 +936,11 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 				}));
 			}}
 			onDismissProposal={(proposalId) => send(() => dismissProposal(proposalId, scope))}
+			onDismissProposals={(proposalIds) => settleEach(proposalIds, (proposalId) => dismissProposal(proposalId, scope))}
 			onCancelDiagnostic={(scanId) => send(() => cancelDiagnostic(scanId, scope))}
 			onDismissDiagnosticFinding={(findingId) =>
 				send(() => dismissDiagnosticFinding(findingId, scope))}
+			onDismissDiagnosticFindings={(findingIds) => settleEach(findingIds, (findingId) => dismissDiagnosticFinding(findingId, scope))}
 			onPromoteDiagnosticFinding={(findingId, draft) => {
 				send(() => promoteDiagnosticFinding(findingId, draft, scope).then((created) =>
 					`${created.id} created from the diagnostic.`));
@@ -1022,6 +1058,10 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			project={project}
 			projects={projects}
 			selectedProjectId={selectedProjectId}
+			/* Route and filter change in one update: clearing the filter while the
+			 * path still names a project would let the reconcile effect above
+			 * re-select it from the route before the navigation lands. */
+			onSelectAllProjects={() => { navigate('/overview'); setSelectedProjectId(null); writeProjectSelection(window.localStorage, null); }}
 			operatorProfile={operatorProfile}
 			runEventsHasPrevious={runEventsHasPrevious}
 			runEventsLoading={runEventsLoading}
@@ -1030,6 +1070,7 @@ function Screen({ initialLocale }: { initialLocale: Locale }): ReactElement {
 			resolvedProposals={resolvedProposals}
 			resolvedProposalsOmittedCount={resolvedProposalsOmittedCount}
 			route={routeOf(pathname)}
+			requestedRunMissing={requestedRunMissing}
 			runs={runs}
 			selectedIssueId={selectedIssueId}
 			selectedProvider={selectedProvider}
@@ -1052,9 +1093,10 @@ if (!rootElement) {
 const locale = readLocalePreference(() => window.localStorage.getItem(LOCALE_STORAGE_KEY));
 document.documentElement.lang = locale;
 
-// Theme follows the system until the operator chooses: the sidebar toggle
-// stores an explicit 'light' | 'dark' under this key, and a stored choice
-// always beats the OS preference. The stylesheet's dark tokens hang off a
+// Theme follows the system until the operator chooses: the interface card in
+// the global settings stores an explicit 'light' | 'dark' under this key, and
+// removes it to go back to following the system. A stored choice always beats
+// the OS preference. The stylesheet's dark tokens hang off a
 // `.dark` class, the one switching mechanism this screen uses.
 const THEME_STORAGE_KEY = 'gship-theme';
 const darkScheme = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1064,8 +1106,9 @@ const applyScheme = (): void => {
 	document.documentElement.classList.toggle('dark', dark);
 };
 applyScheme();
-// The content measure mirrors the theme mechanism: ShellControls stores an
-// explicit choice, and the surfaces read it through one root class.
+// The content measure mirrors the theme mechanism: the row at the top of the
+// content stores an explicit choice, and the surfaces read it through one root
+// class.
 if (window.localStorage.getItem('gship-width') === 'wide') {
 	document.documentElement.classList.add('gship-wide');
 }

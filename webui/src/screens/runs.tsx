@@ -6,13 +6,15 @@ import type { ProviderStatusView } from '../client.ts';
 import { Badge } from '../components/ui/badge.tsx';
 import type { BadgeVariant } from '../components/ui/badge.tsx';
 import { Callout } from '../components/ui/callout.tsx';
+import { StatusDot } from '../components/ui/status-dot.tsx';
+import { Tag } from '../components/ui/tag.tsx';
 import { Card, CardAction, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table.tsx';
 import { cn } from '../lib/cn.ts';
 import { DEFAULT_LOCALE, LOCALE_CATALOG } from '../locale.ts';
 import type { Locale, RunInspectorCatalog, RunsOperationalCatalog, RunsWorkflowCatalog, SettingsCatalog } from '../locale.ts';
-import { actionsFor, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
+import { actionsFor, isRunActive, lastKnownRunPhase, RUN_PHASES, runStageStatuses, summarizeWorkflow, summarizeWorkflowCohorts, toneOf } from '../run-view.ts';
 import type { ProviderUsageWindowView, RunCostCoverage, RunCostRole, RunCostRoleUsage, RunEventView, RunExecutorHandoffView, RunProviderWaitView, RunView, WorkflowCohort } from '../run-view.ts';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible.tsx';
 import { ActionButton, ContextPanel } from './operator-controls.tsx';
 import { TEXT_LINK_CLASS } from './operator-links.ts';
 
@@ -350,23 +352,40 @@ function RunActivityEntry({
 		: event.kind.includes('decision') || event.kind === 'run.cycle-response'
 			? catalog.decisionLabel
 			: event.kind.includes('output') ? catalog.outputLabel : null;
+	/* One line per event: when, who, in which phase, what. The payload opens under it on demand. */
+	const kinds = grouped.length > 1 ? `${catalog.toolsLabel} ×${grouped.length} · ${[...new Set(grouped.map((item) => item.kind))].join(' · ')}` : event.kind;
+	const line = (
+		<>
+			<time className="type-data w-16 shrink-0 text-muted-foreground text-xs">{formatEventTime(event.createdAt, locale)}</time>
+			<span className="w-24 shrink-0 font-medium">{catalog.roleLabels[role]}</span>
+			{/* The phase is as wide as its name: a fixed column broke "Full verify" in two on every line. Below sm the detail is one truncated line; the disclosure holds the rest. */}
+			<span className="flex min-w-0 basis-full items-center gap-x-2 gap-y-1 overflow-hidden text-muted-foreground text-xs sm:flex-1 sm:basis-0 sm:flex-wrap sm:overflow-visible">
+				{phase === null ? null : <Tag>{catalog.phaseLabels[phase]}</Tag>}
+				<code className="min-w-0 truncate sm:break-all sm:whitespace-normal">{kinds}</code>
+				{/* A tool result can run to pages: the line keeps its first stretch, the disclosure keeps the rest. */}
+				{metadata.map((item) => <span className="min-w-0 max-w-full truncate" key={item} title={item.length > 120 ? undefined : item}>{item}</span>)}
+				{technical.map((item) => <code className="min-w-0 max-w-full truncate" key={item}>{item}</code>)}
+				{label === null ? null : <Tag>{label}</Tag>}
+				{event.kind === 'run.cycle-response' ? <Tag>{catalog.cycleResponseLabel}</Tag> : null}
+				{attention ? <Badge variant="warning">{catalog.attentionLabel}</Badge> : null}
+			</span>
+		</>
+	);
 	return (
-		<li className="min-w-0 border-border border-l-2 pl-4 text-sm" id={anchor === null ? undefined : `run-activity-${anchor}`} key={event.seq}>
-			<div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-				<span className="font-medium">{catalog.roleLabels[role]}</span>
-				{phase === null ? null : <span className="text-muted-foreground">{catalog.phaseLabels[phase]}</span>}
-				{label === null ? null : <Badge>{label}</Badge>}
-				{event.kind === 'run.cycle-response' ? <Badge>{catalog.cycleResponseLabel}</Badge> : null}
-				<time className="shrink-0 font-mono text-muted-foreground text-xs">
-					{formatEventTime(event.createdAt, locale)}
-				</time>
-			</div>
-			<div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground text-xs"><code className="break-all">{grouped.length > 1 ? `${catalog.toolsLabel} ×${grouped.length}` : event.kind}</code><span className="break-all">{grouped.map((item) => item.kind).join(' · ')}</span>{metadata.map((item) => <span key={item}>{item}</span>)}{technical.map((item) => <code className="font-mono" key={item}>{item}</code>)}</div>
-			{attention ? <Badge variant="attention">{catalog.attentionLabel}</Badge> : null}
-			{detail === null ? null : <details className="mt-2 group"><summary className="cursor-pointer text-muted-foreground text-xs underline decoration-dotted underline-offset-2"> <span className="group-open:hidden">{catalog.expand}</span><span className="hidden group-open:inline">{catalog.collapse}</span></summary><pre className="mt-2 max-w-full whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">{detail}</pre></details>}
+		<li className="min-w-0 border-b text-sm last:border-0" id={anchor === null ? undefined : `run-activity-${anchor}`} key={event.seq}>
+			{/* An entry with nothing behind it keeps the chevron's 24px, so every line starts on one edge. */}
+			{detail === null ? <div className="flex min-h-8 flex-wrap items-baseline gap-x-3 gap-y-1 py-1 pl-6">{line}</div> : (
+				<Collapsible bare>
+					<CollapsibleTrigger bare>{line}</CollapsibleTrigger>
+					<CollapsibleContent bare><pre className="mb-2 max-w-full whitespace-pre-wrap break-words pl-6 font-mono text-muted-foreground text-xs">{detail}</pre></CollapsibleContent>
+				</Collapsible>
+			)}
 		</li>
 	);
 }
+
+/** The log leads while the run moves; once it ended, it is one click away. */
+const RUN_ENDED: ReadonlySet<RunView['state']> = new Set(['done', 'failed', 'cancelled']);
 
 export function RunActivity({
 	catalog,
@@ -407,7 +426,7 @@ export function RunActivity({
 	return (
 		<ContextPanel
 			description={catalog.activity.description(visible.length)}
-			open
+			open={!RUN_ENDED.has(run.state)}
 			title={catalog.activity.title}
 		>
 			{hasPrevious || canReturnToLiveEdge ? <div className="flex flex-wrap gap-2">
@@ -419,7 +438,7 @@ export function RunActivity({
 					role="log"
 					tabIndex={0}
 					aria-label={catalog.activity.title}
-					className="flex flex-col gap-5 outline-none"
+					className="flex flex-col outline-none"
 				>
 					{RUN_PHASES.filter((phase) => !anchoredPhases.has(phase)).map((phase) => <li aria-hidden="true" className="sr-only" key={phase}><span id={`run-activity-${phase}`} /></li>)}
 					{entries.length === 0 ? <li className="text-muted-foreground text-sm">{catalog.activity.noEvents}</li> : null}
@@ -428,6 +447,31 @@ export function RunActivity({
 				</ol>
 			</div>
 		</ContextPanel>
+	);
+}
+
+/* One stage of the map: the line from the previous stage, then the dot over its name. */
+function RunStage({ catalog, phase, status, attention, first }: { catalog: RunInspectorCatalog; phase: (typeof RUN_PHASES)[number]; status: 'complete' | 'current' | 'future'; attention: boolean; first: boolean }): React.ReactElement {
+	const walked = status !== 'future';
+	const glyph = status === 'complete' ? '✓' : status === 'current' ? '•' : '○';
+	return (
+		<li className="relative flex min-w-0 flex-1 flex-col items-center" data-stage={phase} data-status={status}>
+			{/* The line runs from the previous dot's centre to this one's, under both: darker where the run has been, so the line reads the progress too. */}
+			{first ? null : <span aria-hidden="true" className={cn('absolute top-4 right-1/2 h-px w-full', walked ? 'bg-foreground/40' : 'bg-border')} data-slot="stage-connector" data-walked={walked ? '' : undefined} />}
+			<a
+				aria-current={status === 'current' ? 'step' : undefined}
+				className={cn('relative flex min-h-11 min-w-0 max-w-full flex-col items-center gap-1 rounded-sm px-1 py-1 text-center outline-none focus-visible:ring-2 focus-visible:ring-ring', attention && 'text-warning-foreground')}
+				href={`#run-activity-${phase}`}
+			>
+				{/* An opaque disc under the dot, so the line stops at its edge whatever the dot's own wash. */}
+				<span aria-hidden="true" className="rounded-full bg-card">
+					<span className={cn('flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border font-mono text-xs', status === 'complete' && 'bg-muted', status === 'current' && 'border-foreground font-semibold', attention && 'border-warning bg-warning/16')}>{glyph}</span>
+				</span>
+				{/* On a narrow map the names go to the caption under it; by the map's own width, not the window's. */}
+				<span className="text-xs leading-tight max-sm:sr-only @3xl:text-sm">{catalog.stageLabels[phase as keyof typeof catalog.stageLabels]}</span>
+				<span className="sr-only">{catalog.stageStatusLabels[status]}</span>
+			</a>
+		</li>
 	);
 }
 
@@ -441,30 +485,20 @@ export function RunProgress({
 	const statuses = runStageStatuses(run.state, runEvents);
 	const hasHistory = current !== null;
 	const actionable = run.state === 'ready-to-ship' || run.state === 'waiting-user';
+	const currentIndex = RUN_PHASES.findIndex((phase) => statuses[phase] === 'current');
 	return (
-		<nav aria-label={catalog.stageMap.title} className="flex flex-col gap-3 sm:flex-row sm:gap-0" data-slot="run-stage-map">
-			<ol className="flex flex-col gap-3 sm:flex-row sm:items-start sm:w-full sm:gap-0">
-				{RUN_PHASES.map((phase) => {
-					const status = statuses[phase];
-					const attention = status === 'current' && actionable;
-					return (
-						<li className="flex min-w-0 flex-1 items-start gap-2 sm:flex-col sm:items-center sm:gap-1" data-stage={phase} data-status={status} key={phase}>
-							<a
-								aria-current={status === 'current' ? 'step' : undefined}
-								className={cn('group flex min-h-11 min-w-0 items-center gap-2 rounded-sm px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-col sm:justify-center sm:text-center', attention && 'text-attention-text')}
-								href={`#run-activity-${phase}`}
-							>
-								<span aria-hidden="true" className={cn('flex size-6 shrink-0 items-center justify-center rounded-full border-2 border-border font-mono text-xs', status === 'complete' && 'bg-muted', status === 'current' && 'border-foreground font-semibold', attention && 'border-attention-ui bg-attention')}>{status === 'complete' ? '✓' : status === 'current' ? '•' : '○'}</span>
-								<span className="text-sm leading-tight">{catalog.stageLabels[phase as keyof typeof catalog.stageLabels]}</span>
-								<span className="sr-only">{catalog.stageStatusLabels[status]}</span>
-							</a>
-							{phase !== 'done' ? <span aria-hidden="true" className="ml-3 mt-3 h-px flex-1 bg-border sm:ml-0 sm:mt-1 sm:h-px sm:w-full" /> : null}
-						</li>
-					);
-				})}
-			</ol>
+		<nav aria-label={catalog.stageMap.title} className="@container flex flex-col gap-3" data-slot="run-stage-map">
+			{/* Without a history there is nothing to draw: eight empty circles would say less than the sentence under them. */}
+			{hasHistory ? (
+				<>
+					<ol className="flex w-full items-start">
+						{RUN_PHASES.map((phase, index) => <RunStage attention={statuses[phase] === 'current' && actionable} catalog={catalog} first={index === 0} key={phase} phase={phase} status={statuses[phase]} />)}
+					</ol>
+					{currentIndex < 0 ? null : <p className="text-sm sm:hidden" data-slot="stage-caption">{catalog.stageMap.position(currentIndex + 1, RUN_PHASES.length, catalog.stageLabels[RUN_PHASES[currentIndex] as keyof typeof catalog.stageLabels])}</p>}
+				</>
+			) : null}
 			{hasHistory ? null : <p className="text-muted-foreground text-xs">{catalog.stageMap.noHistory}</p>}
-			{run.state === 'waiting-user' || run.state === 'waiting-provider' || run.state === 'failed' || run.state === 'interrupted' || run.state === 'cancelled' ? <p className={cn('text-xs', actionable ? 'text-attention-text' : 'text-muted-foreground')}><span className="font-medium">{catalog.stageMap.modifierLabel}:</span> {catalog.stateLabels[run.state]}</p> : null}
+			{run.state === 'waiting-user' || run.state === 'waiting-provider' || run.state === 'failed' || run.state === 'interrupted' || run.state === 'cancelled' ? <p className={cn('text-xs', actionable ? 'text-warning-foreground' : 'text-muted-foreground')}><span className="font-medium">{catalog.stageMap.modifierLabel}:</span> {catalog.stateLabels[run.state]}</p> : null}
 			{hasHistory ? <span className="sr-only">{catalog.phaseLabel(catalog.stateLabels[current])}</span> : null}
 			{hasNoRounds(run.roundOrigins) ? null : <p className="text-muted-foreground text-xs">{catalog.correctionRounds(run.roundOrigins.executor, run.roundOrigins.ci ?? 0, run.roundOrigins.decision, run.roundOrigins.orchestrator ?? 0, run.roundOrigins.indeterminate)}</p>}
 		</nav>
@@ -484,8 +518,8 @@ export function PullRequestDelivery({
 				<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
 					{catalog.pullRequestLabel(delivery.prNumber)}
 				</a>
-				{run.state === 'done' ? <Badge variant="merged">Merged</Badge> : null}
-				<Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>
+				{/* Merged says CI passed: the check only speaks while the pull request is open. */}
+				{run.state === 'done' ? <Badge variant="merged">{catalog.mergedLabel}</Badge> : <Badge variant={ciBadgeVariant(delivery.ciStatus)}>{catalog.ciLabels[delivery.ciStatus]}</Badge>}
 			</>}
 			{correction === null ? null : correction.check.url === undefined ? (
 				<span className="text-warning-foreground text-xs">
@@ -511,7 +545,7 @@ export function ciBadgeVariant(status: NonNullable<RunView['pullRequest']>['ciSt
 	if (status === 'failed') return 'error';
 	if (status === 'pending') return 'warning';
 	if (status === 'passed') return 'success';
-	return 'outline';
+	return 'neutral';
 }
 
 export function ProviderWaitCallout({
@@ -605,13 +639,16 @@ export function RunCommands({
 			label: catalog.commandLabels.resume,
 			shown: actions.resume && run?.state !== 'waiting-user',
 			onClick: () => onResume(),
+			variant: 'default' as const,
 		},
 		// The other way out of an interrupted run: end it here, without reopening
 		// the provider session, so the next issue is no longer blocked by it.
-		{ label: catalog.commandLabels.abandon, shown: actions.abandon, onClick: onAbandon },
-		{ label: catalog.commandLabels.cancel, shown: actions.cancel, onClick: onCancel },
-		{ label: catalog.commandLabels.ship, shown: actions.ship, onClick: onShip },
+		{ label: catalog.commandLabels.abandon, shown: actions.abandon, onClick: onAbandon, variant: 'destructive' as const },
+		{ label: catalog.commandLabels.cancel, shown: actions.cancel, onClick: onCancel, variant: 'destructive' as const },
+		{ label: catalog.commandLabels.ship, shown: actions.ship, onClick: onShip, variant: 'default' as const },
 	].filter((command) => command.shown);
+	/* What the state asks for is the primary action and closes the row; what ends the run says so in the danger family and comes first. */
+	offered.sort((left, right) => Number(left.variant === 'default') - Number(right.variant === 'default'));
 	if (offered.length === 0) return null;
 	return (
 		<div className="flex flex-wrap gap-2">
@@ -621,6 +658,7 @@ export function RunCommands({
 					key={command.label}
 					label={command.label}
 					onClick={command.onClick}
+					variant={command.variant}
 				/>
 			))}
 		</div>
@@ -646,7 +684,6 @@ export function RunCard({
 	onAbandon,
 	onCancel,
 	onShip,
-	showCost = true,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	catalog: RunInspectorCatalog;
 	events?: readonly RunEventView[];
@@ -654,7 +691,6 @@ export function RunCard({
 	run: RunView | null;
 	title: string;
 	footer?: React.ReactNode;
-	showCost?: boolean;
 }): React.ReactElement {
 	return (
 		<Card>
@@ -668,13 +704,13 @@ export function RunCard({
 					<span className="type-eyebrow text-muted-foreground">
 						{title}
 					</span>
-					<CardTitle className={cn('break-all text-sm', run !== null && 'font-mono')}>
-						{run === null ? catalog.noRunLabel : run.issueId}
+					<CardTitle className="self-start break-all">
+						{run === null ? catalog.noRunLabel : <span className="type-data text-sm">{run.issueId}</span>}
 					</CardTitle>
 				</div>
 				{run === null ? null : (
 					<CardAction>
-						<Badge variant={toneOf(run.state)}>{catalog.stateLabels[run.state]}</Badge>
+						<StatusDot active={isRunActive(run.state)} tone={toneOf(run.state)}>{catalog.stateLabels[run.state]}</StatusDot>
 					</CardAction>
 				)}
 			</CardHeader>
@@ -691,7 +727,6 @@ export function RunCard({
 							onShip={onShip}
 							pending={pending}
 							run={run}
-							showCost={showCost}
 						/>
 					)}
 					{footer}
@@ -699,6 +734,27 @@ export function RunCard({
 			)}
 		</Card>
 	);
+}
+
+/** Wall time without the stretch the run spent waiting on the operator: their absence is not the run's pace. */
+function activeDurationMs(run: RunView): number | null {
+	const wall = run.evaluation?.wallTimeMs ?? null;
+	return wall === null ? null : Math.max(0, wall - (run.evaluation?.phaseDurations['waiting-user']?.durationMs ?? 0));
+}
+
+/* What the run delivered, what it cost and how long it worked, as one strip of facts under the stage map. */
+function RunFacts({ catalog, locale, run }: { catalog: RunInspectorCatalog; locale: Locale; run: RunView }): React.ReactElement | null {
+	const runsCatalog = LOCALE_CATALOG[locale].overviewRuns;
+	const coverage = formatCostCoverage(run.cost.costCoverage, LOCALE_CATALOG[locale].runsOperational.cost);
+	const active = activeDurationMs(run);
+	const delivery = run.pullRequest === null && (run.ciCorrection ?? null) === null ? null : <PullRequestDelivery catalog={catalog} run={run} />;
+	const facts: Array<[string, React.ReactNode]> = [
+		...(delivery === null ? [] : [[runsCatalog.delivery, delivery] as [string, React.ReactNode]]),
+		...(run.cost.totalCostUsd === null ? [] : [[catalog.stats.expectedCost, <span className="type-data" key="cost">{`${formatCostUsd(run.cost.totalCostUsd, locale)}${coverage === null ? '' : ` · ${coverage}`}`}</span>] as [string, React.ReactNode]]),
+		...(active === null ? [] : [[runsCatalog.duration, <span className="type-data" key="duration">{formatWallTime(active, LOCALE_CATALOG[locale].runsWorkflow.benchmarks.card.wallTime)}</span>] as [string, React.ReactNode]]),
+	];
+	if (facts.length === 0) return null;
+	return <dl className="flex flex-wrap gap-x-8 gap-y-3 text-sm" data-slot="run-facts">{facts.map(([label, value]) => <div className="flex min-w-0 flex-col gap-1" key={label}><dt className="type-eyebrow text-muted-foreground">{label}</dt><dd className="min-w-0">{value}</dd></div>)}</dl>;
 }
 
 export function RunCardContent({
@@ -711,30 +767,19 @@ export function RunCardContent({
 	onAbandon,
 	onCancel,
 	onShip,
-	showCost = true,
 }: Pick<AppProps, 'pending' | 'onResume' | 'onAbandon' | 'onCancel' | 'onShip'> & {
 	catalog: RunInspectorCatalog;
 	events?: readonly RunEventView[];
 	locale: Locale;
 	run: RunView;
-	showCost?: boolean;
 }): React.ReactElement {
 	return (
 		<>
 			<RunProgress catalog={catalog} events={events ?? []} run={run} />
+			<RunFacts catalog={catalog} locale={locale} run={run} />
 			<SpecFactsPanel catalog={catalog} evaluation={run.evaluation} />
-			<PullRequestDelivery catalog={catalog} run={run} />
 			<ProviderWaitCallout catalog={catalog} locale={locale} wait={run.providerWait} />
 			<ExecutorHandoffCallout catalog={catalog} handoff={run.executorHandoff} />
-			{/* /runs shows the cost in its stat row, so the card yields the sentence
-			 * there. The round origins stay a sentence everywhere: their breakdown
-			 * is provenance and never collapses into one number. */}
-			{showCost && run.cost.totalCostUsd !== null ? (
-				<p className="text-muted-foreground text-sm">
-					{catalog.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}
-					{costCoverageSuffix(run.cost.costCoverage, locale)}
-				</p>
-			) : null}
 			<RunCommands
 				catalog={catalog}
 				onAbandon={onAbandon}
@@ -773,9 +818,14 @@ function SpecFactsPanel({
 	const { specProfile: profile, corrections, cycleQuestions, reconciliations } = evaluation;
 	const count = (value: number | null): string => value === null ? catalog.specFacts.unknown : String(value);
 	const duration = (value: number | null): string => value === null ? catalog.specFacts.unknown : `${Math.round(value / 1000)}s`;
+	/* Inside the run's card, so it is a collapsible: a card-level disclosure lives at page level only. */
 	return (
-		<ContextPanel description={catalog.specFacts.description} title={catalog.specFacts.title}>
-			<dl className="grid gap-2 text-sm sm:grid-cols-[10rem_1fr]">
+		<Collapsible data-slot="spec-facts">
+			<CollapsibleTrigger>{catalog.specFacts.title}</CollapsibleTrigger>
+			<CollapsibleContent>
+				<div className="flex flex-col gap-4 p-3">
+				<p className="text-muted-foreground text-sm">{catalog.specFacts.description}</p>
+			<dl className="grid gap-2 text-sm sm:grid-cols-facts">
 				<dt className="text-muted-foreground">{catalog.specFacts.version}</dt><dd>{profile.version}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.fingerprint}</dt><dd className="break-all font-mono text-xs">{profile.fingerprint ?? catalog.specFacts.unknown}</dd>
 				<dt className="text-muted-foreground">{catalog.specFacts.specCounts}</dt><dd>{catalog.specFacts.counts(count(profile.counts.acceptance), count(profile.counts.boundaries), count(profile.counts.verify), count(profile.counts.evidence))}</dd>
@@ -788,14 +838,16 @@ function SpecFactsPanel({
 			</dl>
 			<div className="mt-4 border-t pt-3">
 				<h3 className="text-sm font-medium">{catalog.specFacts.durationTitle}</h3>
-				<dl className="mt-2 grid gap-1 text-sm sm:grid-cols-[10rem_1fr]">
+				<dl className="mt-2 grid gap-1 text-sm sm:grid-cols-facts">
 					<dt className="text-muted-foreground">{catalog.specFacts.wallTime}</dt><dd>{duration(evaluation.wallTimeMs)}</dd>
 					{Object.entries(evaluation.phaseDurations).map(([phase, value]) => <React.Fragment key={phase}><dt className="text-muted-foreground">{catalog.specFacts.phaseLabels[phase] ?? phase}</dt><dd>{duration(value.durationMs)} · {catalog.specFacts.entries(value.entries)}</dd></React.Fragment>)}
 					<dt className="text-muted-foreground">{catalog.specFacts.unassigned}</dt><dd>{duration(evaluation.unassignedDuration.durationMs)}</dd>
 					<dt className="text-muted-foreground">{catalog.specFacts.reconciliation}</dt><dd>{evaluation.durationReconciliation.reconciles === null ? catalog.specFacts.unknown : evaluation.durationReconciliation.reconciles ? catalog.specFacts.yes : catalog.specFacts.no}</dd>
 				</dl>
 			</div>
-		</ContextPanel>
+				</div>
+			</CollapsibleContent>
+		</Collapsible>
 	);
 }
 
@@ -899,108 +951,6 @@ export function RunCostPanel({
 	);
 }
 
-/** How much history the operator needs to place the current run in a session. */
-export const PREVIOUS_RUNS_SHOWN = 4;
-
-export function PreviousRunRow({
-	locale,
-	run,
-	runInspector,
-	showCost,
-}: {
-	locale: Locale;
-	run: RunView;
-	runInspector: RunInspectorCatalog;
-	showCost: boolean;
-}): React.ReactElement {
-	const delivery = run.pullRequest;
-	return (
-		<TableRow>
-			<TableCell className="break-all font-mono text-xs">{run.issueId}</TableCell>
-			<TableCell>
-				<span className="flex flex-wrap items-center gap-1.5">
-					<Badge variant={toneOf(run.state)}>{runInspector.stateLabels[run.state]}</Badge>
-					{delivery !== null && run.state === 'done'
-						? <Badge variant="merged">Merged</Badge>
-						: null}
-				</span>
-			</TableCell>
-			<TableCell>
-				{delivery === null ? null : (
-					<span className="flex flex-wrap items-center gap-1.5">
-						<a className={TEXT_LINK_CLASS} href={delivery.url} rel="noreferrer" target="_blank">
-							{runInspector.pullRequestLabel(delivery.prNumber)}
-						</a>
-						<Badge variant={ciBadgeVariant(delivery.ciStatus)}>
-							{runInspector.ciLabels[delivery.ciStatus]}
-						</Badge>
-					</span>
-				)}
-			</TableCell>
-			{showCost ? (
-				<TableCell className="text-right font-mono text-muted-foreground text-xs">
-					{run.cost.totalCostUsd === null
-						? null
-						: `${runInspector.expectedCost(formatCostUsd(run.cost.totalCostUsd, locale))}${costCoverageSuffix(run.cost.costCoverage, locale)}`}
-				</TableCell>
-			) : null}
-			<TableCell className="text-right">
-				<time className="font-mono text-muted-foreground text-xs">
-					{formatRunTimestamp(run.updatedAt, locale)}
-				</time>
-			</TableCell>
-		</TableRow>
-	);
-}
-
-/**
- * The runs before the one the page above commands, read-only: there is no
- * selection and no command here, only what an operator returning to the screen
- * needs to know about what already ran. Each row carries its own expected cost
- * (GSHIP-639) so Sonnet and another choice can be compared without opening
- * either run -- labeled the same "expected cost" as every other cost figure
- * on this screen, never the amount actually billed, and omitted entirely
- * rather than shown as zero when its run never reported one.
- */
-export function PreviousRunsPanel({
-	catalog,
-	locale,
-	runs,
-}: Pick<AppProps, 'locale' | 'runs'> & {
-	catalog: RunsOperationalCatalog;
-}): React.ReactElement | null {
-	const previous = runs.slice(1, 1 + PREVIOUS_RUNS_SHOWN);
-	if (previous.length === 0) return null;
-	const runInspector = LOCALE_CATALOG[locale].runInspector;
-	// A column with no datum in any row is not drawn.
-	const showCost = previous.some((run) => run.cost.totalCostUsd !== null);
-	return (
-		<ContextPanel
-			description={catalog.previousRuns.description(previous.length)}
-			title={catalog.previousRuns.title}
-		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>{catalog.previousRuns.columns.issue}</TableHead>
-						<TableHead>{catalog.previousRuns.columns.state}</TableHead>
-						<TableHead>{catalog.previousRuns.columns.delivery}</TableHead>
-						{showCost ? (
-							<TableHead className="text-right">{catalog.previousRuns.columns.cost}</TableHead>
-						) : null}
-						<TableHead className="text-right">{catalog.previousRuns.columns.updated}</TableHead>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{previous.map((run) => (
-						<PreviousRunRow key={run.id} locale={locale} run={run} runInspector={runInspector} showCost={showCost} />
-					))}
-				</TableBody>
-			</Table>
-		</ContextPanel>
-	);
-}
-
 /**
  * One compact read of the complete /api/runs window. The raw outcome,
  * correction and cost facts stay inspectable; Gateship does not collapse them
@@ -1023,7 +973,7 @@ export function WorkflowInsightsPanel({
 			description={catalog.signals.description(insights.runCount)}
 			title={catalog.signals.title}
 		>
-			<dl className="grid gap-3 text-sm sm:grid-cols-[9rem_1fr]">
+			<dl className="grid gap-3 text-sm sm:grid-cols-facts">
 				<dt className="text-muted-foreground">{catalog.signals.outcomesLabel}</dt>
 				<dd>{catalog.signals.outcomes(
 					insights.outcomes.done,
@@ -1121,7 +1071,7 @@ export function WorkflowCohortCard({
 				<h4 className="font-medium">{label}</h4>
 				<code className="break-all text-muted-foreground text-xs">{cohort.revision}</code>
 			</div>
-			<dl className="grid gap-2 text-sm sm:grid-cols-[9rem_1fr]">
+			<dl className="grid gap-2 text-sm sm:grid-cols-facts">
 				<dt className="text-muted-foreground">{card.terminalSampleLabel}</dt>
 				<dd>{card.terminalSample(cohort.terminalRunCount, cohort.incompleteRunCount)}</dd>
 				<dt className="text-muted-foreground">{card.outcomesLabel}</dt>
@@ -1226,7 +1176,7 @@ export function WorkspaceNoticesPanel({
 						key={`${notice.kind}-${notice.runId}-${notice.workspacePath}-${notice.branch}`}
 					>
 						<div className="flex flex-wrap items-center gap-2">
-							<Badge variant="outline">{notice.kind}</Badge>
+							<Tag>{notice.kind}</Tag>
 							{notice.runId === null ? null : <code className="break-all">{notice.runId}</code>}
 						</div>
 						<code className="break-all text-muted-foreground">
@@ -1275,7 +1225,7 @@ export function usageWindowLabel(window: ProviderUsageWindowView, locale: Locale
 export function usageWindowVariant(status: ProviderUsageWindowView['status']): BadgeVariant {
 	if (status === 'rejected') return 'error';
 	if (status === 'allowed_warning') return 'warning';
-	return 'outline';
+	return 'neutral';
 }
 
 export function formatUsageTime(value: string, locale: Locale): string {

@@ -9,7 +9,6 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { AttentionCard } from '../../webui/src/components/ui/attention-card.tsx';
 import { Badge } from '../../webui/src/components/ui/badge.tsx';
 import {
 	CardDisclosure,
@@ -18,23 +17,37 @@ import {
 	CardSummary,
 	CardTitle,
 } from '../../webui/src/components/ui/card.tsx';
-import { CardGrid, CardSplit, CardStack, FormField, FormStack } from '../../webui/src/components/ui/card-layout.tsx';
+import { CardGrid, CardSplit, CardStack, CheckField, FormField, FormStack } from '../../webui/src/components/ui/card-layout.tsx';
 import { EmptyState } from '../../webui/src/components/ui/empty-state.tsx';
 import { Progress } from '../../webui/src/components/ui/progress.tsx';
 import { Separator } from '../../webui/src/components/ui/separator.tsx';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../webui/src/components/ui/collapsible.tsx';
+import { Count } from '../../webui/src/components/ui/count.tsx';
+import { Reference } from '../../webui/src/components/ui/reference.tsx';
+import { GateshipMark } from '../../webui/src/components/gateship-logo.tsx';
+import { PageLoading } from '../../webui/src/components/ui/page-loading.tsx';
 import { Stat } from '../../webui/src/components/ui/stat.tsx';
+import { OperationalReadPanel } from '../../webui/src/operational-unavailable.tsx';
+import { Switch } from '../../webui/src/components/ui/switch.tsx';
+import { StatusDot } from '../../webui/src/components/ui/status-dot.tsx';
+import { Tag } from '../../webui/src/components/ui/tag.tsx';
 import {
 	Tabs,
+	TabsCount,
 	TabsList,
 	TabsPanel,
 	TabsTab,
 } from '../../webui/src/components/ui/tabs.tsx';
 import { cn } from '../../webui/src/lib/cn.ts';
-import { ContextPanel } from '../../webui/src/screens/operator-controls.tsx';
+import { ContextPanel, SectionCard } from '../../webui/src/screens/operator-controls.tsx';
 import {
 	DataTable,
-	DataTableColumnVisibility,
+	DataTableClearFilters,
+	DataTableFacet,
+	DataTableFilter,
+	DataTableViewOptions,
 	DataTablePagination,
+	DataTableToolbar,
 	gateshipTableFeatures,
 	useGateshipTable,
 	type GateshipColumnDef,
@@ -42,11 +55,11 @@ import {
 
 type TableFixtureRow = { id: string; name: string; state: string; execution?: string; providerId?: string };
 const TABLE_FIXTURE_COLUMNS: GateshipColumnDef<TableFixtureRow>[] = [
-	{ accessorKey: 'name', header: 'Name', minSize: 160 },
-	{ accessorKey: 'state', header: 'State', minSize: 120 },
+	{ accessorKey: 'name', header: 'Name', meta: { kind: 'name' } },
+	{ accessorKey: 'state', header: 'State', meta: { kind: 'measure' } },
 ];
 
-function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, server = false, loading = false, pageSize = 1, rowCount = 4 }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; pinned?: boolean; server?: boolean; loading?: boolean; pageSize?: number; rowCount?: number }): React.ReactElement {
+function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, server = false, loading = false, pageSize = 1, rowCount = 4 }: { columns?: GateshipColumnDef<TableFixtureRow>[]; data: TableFixtureRow[]; server?: boolean; loading?: boolean; pageSize?: number; rowCount?: number }): React.ReactElement {
 	const table = useGateshipTable({
 		columns,
 		data,
@@ -58,17 +71,16 @@ function TableFixture({ columns = TABLE_FIXTURE_COLUMNS, data, pinned = false, s
 		rowCount: server ? rowCount : undefined,
 		state: {
 			pagination: { pageIndex: server ? 1 : 0, pageSize },
-			...(pinned ? { columnPinning: { start: ['name'], end: [] } } : {}),
 			...(server ? { globalFilter: 'not applied locally', sorting: [{ desc: true, id: 'name' }] } : {}),
 		},
 	});
 	return <><DataTable table={table} locale="pt-BR" status={loading ? 'loading' : 'ready'} /><DataTablePagination table={table} locale="pt-BR" /></>;
 }
 
-function TableControlsFixture(): React.ReactElement {
+function TableControlsFixture({ rowCount = 40 }: { rowCount?: number }): React.ReactElement {
 	const columns: GateshipColumnDef<TableFixtureRow>[] = [{ accessorKey: 'execution', header: 'Execução', enableSorting: false }, { accessorKey: 'providerId', header: 'Provider / modelo' }, ...TABLE_FIXTURE_COLUMNS];
-	const table = useGateshipTable({ columns, data: [{ id: 'a', name: 'Nome', state: 'Pronto', execution: 'run-1', providerId: 'Claude Code / modelo' }], features: gateshipTableFeatures, getRowId: (row) => row.id, rowCount: 1, state: { sorting: [], pagination: { pageIndex: 0, pageSize: 1 } } });
-	return <><DataTable table={table} locale="pt-BR" /><DataTablePagination table={table} locale="pt-BR" /><DataTableColumnVisibility defaultOpen table={table} locale="pt-BR" /></>;
+	const table = useGateshipTable({ columns, data: [{ id: 'a', name: 'Nome', state: 'Pronto', execution: 'run-1', providerId: 'Claude Code / modelo' }], features: gateshipTableFeatures, getRowId: (row) => row.id, manualPagination: true, rowCount, state: { sorting: [], pagination: { pageIndex: 0, pageSize: 20 } } });
+	return <DataTable foot={<DataTablePagination table={table} locale="pt-BR" />} head={<DataTableToolbar><DataTableViewOptions table={table} locale="pt-BR" /></DataTableToolbar>} table={table} locale="pt-BR" />;
 }
 
 describe('ui primitives', () => {
@@ -78,7 +90,7 @@ describe('ui primitives', () => {
 		expect(html).toContain('data-slot="data-table"');
 		expect(html).toContain('data-slot="table-container"');
 		expect(html).toContain('aria-sort="none"');
-		expect(html).toContain('Página 1 / 2');
+		expect(html).toContain('Página 1 de 2');
 		expect(html).toContain('Próxima página');
 		expect(other).toContain('Estado');
 	});
@@ -90,33 +102,84 @@ describe('ui primitives', () => {
 		expect(html).toContain('Carregando…');
 	});
 
-	test('data tables preserve pinned columns and server-owned row processing', () => {
-		const html = renderToStaticMarkup(<TableFixture pinned data={[{ id: 'a', name: 'Nome fixado', state: 'Pronto' }]} />);
+	test('data tables leave row processing to the server and keep header voice apart from cell voice', () => {
+		const html = renderToStaticMarkup(<TableFixture data={[{ id: 'a', name: 'Nome', state: 'Pronto' }]} />);
 		const server = renderToStaticMarkup(<TableFixture server data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }, { id: 'b', name: 'Resposta do servidor B', state: 'Em fila' }]} />);
-		expect(html).toContain('position:sticky');
-		expect((html.match(/position:sticky/g) ?? []).length).toBeGreaterThanOrEqual(2);
-		expect(html).toContain('background-color:var(--background)');
-		expect(html).toContain('inset-inline-start:0');
+		// A column's kind reaches its cells; its header is the eyebrow of the column and only follows the alignment the kind asks for.
+		const stateHead = html.slice(html.lastIndexOf('<th', html.indexOf('State')), html.indexOf('State'));
+		expect(stateHead).toContain('type-eyebrow');
+		expect(stateHead).toContain('text-right');
+		expect(stateHead).not.toContain('font-mono');
+		expect(html).toMatch(/<td[^>]*class="[^"]*font-mono[^"]*text-right/);
+		// The global filter and the sort are not applied locally: both rows arrive as the server sent them.
 		expect(server).toContain('Resposta do servidor A');
 		expect(server).toContain('Resposta do servidor B');
-		expect(server).toContain('Página 2 / 4');
+		expect(server).toContain('Página 2 de 4');
 		const server25 = renderToStaticMarkup(<TableFixture server pageSize={25} rowCount={100} data={[{ id: 'a', name: 'Resposta do servidor A', state: 'Pronto' }]} />);
-		expect(server25).toContain('Página 2 / 4');
+		expect(server25).toContain('Página 2 de 4');
 	});
 
 	test('data table controls name their column and localize sorting and ranges', () => {
 		const html = renderToStaticMarkup(<TableControlsFixture />);
-		expect(html).toContain('aria-label="Colunas: Name"');
-		expect(html).toContain('aria-label="Fixar no início: Name"');
-		expect(html).toContain('aria-label="Tamanho: Name"');
-		expect(html).toContain('aria-label="Restaurar tamanho: Name"');
-		expect(html).toContain('Execução');
+		// A sortable header announces its state; one that only hides names itself and promises no sort.
+		expect(html).toContain('aria-label="Name, sem ordenação"');
+		expect(html).toContain('aria-label="Execução"');
+		expect(html).not.toContain('aria-label="Execução, ');
 		expect(html).toContain('Provider / modelo');
-		expect(html).toContain('aria-label="Colunas: Provider / modelo"');
-		expect(html).not.toContain('title="Ordenar Execução');
-		expect(html).toContain('title="Ordenar Name, sem ordenação"');
-		expect(html).toContain('1–1 de 1');
+		expect(html).toContain('>Colunas</button>');
+		expect(html).toContain('aria-label="Linhas por página"');
+		expect(html).toContain('aria-label="Próxima página"');
+		expect(html).toContain('1–1 de 40');
 		expect(html).not.toContain(' of ');
+		// The controls and the pager are zones of the table's own frame, in reading order: controls, rows, pager.
+		const frame = html.indexOf('data-slot="data-table-surface"');
+		expect(frame).toBeLessThan(html.indexOf('data-slot="data-table-head"'));
+		expect(html.indexOf('data-slot="data-table-head"')).toBeLessThan(html.indexOf('<table'));
+		expect(html.indexOf('</table>')).toBeLessThan(html.indexOf('data-slot="data-table-foot"'));
+		// A table that fits the smallest page has no pager at all: a range of "1 to 1 of 1" beside buttons that cannot move is furniture.
+		const small = renderToStaticMarkup(<TableControlsFixture rowCount={1} />);
+		expect(small).not.toContain('data-slot="data-table-pagination"');
+		// The zone stays in the markup with nothing in it, and an empty zone takes no room: no rule, no 48px band under the rows.
+		expect(small).toMatch(/<div class="[^"]*empty:hidden[^"]*" data-slot="data-table-foot"><\/div>/);
+	});
+
+	test('a facet names its column in full ink and shows what is chosen as tags, then a count past two', () => {
+		const options = [{ value: 'done', label: 'Done' }, { value: 'failed', label: 'Failed' }, { value: 'cancelled', label: 'Cancelled' }];
+		const empty = renderToStaticMarkup(<DataTableFacet options={options} selected={[]} title="State" onChange={() => {}} />);
+		const one = renderToStaticMarkup(<DataTableFacet options={options} selected={['failed']} title="State" onChange={() => {}} />);
+		const three = renderToStaticMarkup(<DataTableFacet multiple options={options} selected={['done', 'failed', 'cancelled']} title="State" onChange={() => {}} />);
+		// The name is the button's own text, never a placeholder: nothing mutes it.
+		expect(empty).toContain('>State</span>');
+		expect(empty).not.toContain('text-muted-foreground');
+		expect(empty).toContain('aria-label="State"');
+		expect(empty).not.toContain('data-slot="tag"');
+		// Chosen, the value follows the name after a hairline, and the label says both.
+		expect(one).toContain('aria-label="State: Failed"');
+		expect(one).toContain('>Failed<');
+		expect((one.match(/data-slot="tag"/g) ?? []).length).toBe(1);
+		expect(three).toContain('3 selected');
+		expect((three.match(/data-slot="tag"/g) ?? []).length).toBe(1);
+	});
+
+	test('clearing filters exists only while something is applied, and says how many', () => {
+		expect(renderToStaticMarkup(<DataTableClearFilters count={0} onClear={() => {}} />)).toBe('');
+		const three = renderToStaticMarkup(<DataTableClearFilters count={3} locale="pt-BR" onClear={() => {}} />);
+		expect(three).toContain('Limpar filtros');
+		expect(three).toContain('data-slot="count"');
+		expect(three).toContain('>3</span>');
+	});
+
+	test('the search field says what it is with a magnifier and offers a clear only once it holds text', () => {
+		function SearchFixture({ value }: { value: string }): React.ReactElement {
+			const table = useGateshipTable({ columns: TABLE_FIXTURE_COLUMNS, data: [], features: gateshipTableFeatures, state: { globalFilter: value } });
+			return <DataTableFilter locale="pt-BR" placeholder="Buscar" table={table} />;
+		}
+		const blank = renderToStaticMarkup(<SearchFixture value="" />);
+		const typed = renderToStaticMarkup(<SearchFixture value="GSHIP-9" />);
+		expect(blank).toContain('<svg');
+		expect(blank).not.toContain('aria-label="Limpar busca"');
+		expect(typed).toContain('value="GSHIP-9"');
+		expect(typed).toContain('aria-label="Limpar busca"');
 	});
 
 	test('card composition owns its standard, compact, split and form rhythm', () => {
@@ -152,6 +215,20 @@ describe('ui primitives', () => {
 		expect(html).toContain('duas issues');
 		expect(html).not.toContain('open=""');
 		expect(renderToStaticMarkup(<CardDisclosure open />)).toContain('open=""');
+		// One chevron for everything that opens, turned by its own <details> alone: a group, named or not,
+		// would also turn the chevron of every disclosure nested inside an open one.
+		const owns = '[&amp;[open]&gt;summary&gt;[data-slot=disclosure-chevron]]:rotate-90';
+		expect(html).toContain(owns);
+		expect(html).toContain('data-slot="disclosure-chevron"');
+		expect(html).not.toMatch(/group-open/);
+		const nested = renderToStaticMarkup(<Collapsible defaultOpen><CollapsibleTrigger>outer</CollapsibleTrigger><CollapsibleContent><Collapsible><CollapsibleTrigger>inner</CollapsibleTrigger></Collapsible></CollapsibleContent></Collapsible>);
+		expect(nested).not.toMatch(/group-open|class="[^"]*\bgroup\b/);
+		expect((nested.match(/data-slot="disclosure-chevron"/g) ?? []).length).toBe(2);
+		// A row of a list opens the same way, without a frame of its own and with the denser glyph in the same 16px slot.
+		const bare = renderToStaticMarkup(<Collapsible bare><CollapsibleTrigger bare>row</CollapsibleTrigger></Collapsible>);
+		expect(bare).not.toContain('rounded-lg border');
+		expect(bare).toContain('size-3.5');
+		expect(bare).toMatch(/class="flex size-4 [^"]*" data-slot="disclosure-chevron"/);
 	});
 
 	test('content titles use sans, metric labels use the eyebrow voice, and the footer exists only with actions', () => {
@@ -167,7 +244,16 @@ describe('ui primitives', () => {
 		expect(footer).toContain('border-t');
 		expect(footer).toContain('bg-muted');
 		expect(renderToStaticMarkup(<CardPanel>read only</CardPanel>)).not.toContain('card-footer');
+		// A disclosure keeps its description inside, so it closes to one line; a plain section names and describes itself in its header.
 		expect(context).not.toContain('data-slot="card-frame-description"');
+		const section = renderToStaticMarkup(<SectionCard description="What this section is" title="Section"><p>content</p></SectionCard>);
+		const header = section.slice(section.indexOf('data-slot="card-frame-header"'), section.indexOf('data-slot="card"'));
+		expect(header).toContain('data-slot="card-frame-description"');
+		expect(header).toContain('What this section is');
+		// One text inset for every surface: a card pads 16px, as a Stat and a table's edge cells do.
+		expect(section).toContain('px-4 py-3');
+		expect(section).toMatch(/class="[^"]*\bp-4\b[^"]*" data-slot="card-panel"/);
+		expect(section).not.toMatch(/\bp-6\b|px-6/);
 		expect(context).toContain('Supporting context');
 		expect(context).toContain('<button type="submit">Save</button>');
 	});
@@ -185,22 +271,64 @@ describe('ui primitives', () => {
 		expect(html).toContain('width:33%');
 	});
 
-	test('a badge carries the family it was told, and is neutral by default', () => {
+	test('a badge carries the family it was told, is neutral by default and starts with a capital', () => {
 		// The family, not the tint strength: the alpha is a design value.
-		expect(renderToStaticMarkup(<Badge variant="warning">waiting-user</Badge>))
-			.toContain('bg-warning/');
-		expect(renderToStaticMarkup(<Badge>ocioso</Badge>)).toContain('bg-primary');
+		expect(renderToStaticMarkup(<Badge variant="warning">aguardando você</Badge>)).toContain('bg-warning/');
+		// Neutral, never the solid black chip: a badge that shouts louder than the thing it describes.
+		const idle = renderToStaticMarkup(<Badge>ocioso</Badge>);
+		expect(idle).toContain('data-variant="neutral"');
+		expect(idle).not.toContain('bg-primary');
+		// First letter capital, the rest as written: "Aguardando você", never "Aguardando Você".
+		expect(idle).toContain('>Ocioso<');
+		expect(renderToStaticMarkup(<Badge variant="warning">aguardando você</Badge>)).toContain('>Aguardando você<');
 	});
 
-	test('the attention card is the acid surface and announces its title', () => {
-		const html = renderToStaticMarkup(
-			<AttentionCard title="O executor tem uma pergunta">corpo</AttentionCard>,
-		);
-		// The family, not the exact wash: acid marks what waits on the operator.
-		expect(html).toContain('bg-attention-surface');
-		expect(html).toContain('border-attention-ui');
-		expect(html).toContain('O executor tem uma pergunta');
-		expect(html).toContain('corpo');
+	test('each short label has one job: a dot for the life of a run, a tag for an attribute, a reference for an id, a count for a number', () => {
+		const dot = renderToStaticMarkup(<StatusDot active tone="info">em andamento</StatusDot>);
+		expect(dot).toContain('>Em andamento<');
+		expect(dot).toContain('motion-safe:animate-pulse');
+		expect(renderToStaticMarkup(<StatusDot tone="success">concluída</StatusDot>)).not.toContain('animate-pulse');
+		// A tag has no hue: nothing about an attribute changes or asks for anything.
+		const tag = renderToStaticMarkup(<Tag>somente leitura</Tag>);
+		expect(tag).toContain('>Somente leitura<');
+		expect(tag).not.toMatch(/bg-(info|success|warning|destructive|merged)/);
+		// An id is read character by character and is a link only when there is somewhere to go.
+		expect(renderToStaticMarkup(<Reference>GSHIP-902</Reference>)).toMatch(/^<span [^>]*type-data/);
+		expect(renderToStaticMarkup(<Reference href="/projects/p/runs/r">69864f95</Reference>)).toMatch(/^<a [^>]*href="\/projects\/p\/runs\/r"/);
+		expect(renderToStaticMarkup(<Count tone="warning">3</Count>)).toContain('tabular-nums');
+		// A count declares its weight: beside a current tab or a selected row it must not inherit that row's emphasis.
+		expect(renderToStaticMarkup(<Count tone="warning">3</Count>)).toContain('font-normal');
+		expect(renderToStaticMarkup(<Count form="plain">3</Count>)).toContain('font-normal');
+	});
+
+	test('the attention stat speaks in the warning family, never in the acid of the mark, and a stat with a list behind it is a link', () => {
+		const html = renderToStaticMarkup(<Stat label="Requer atenção" tone="attention" value={1} />);
+		// The family, not the exact wash. The acid is the mark's alone.
+		expect(html).toContain('bg-warning/');
+		expect(html).toContain('border-warning/');
+		expect(html).not.toMatch(/(bg|text|border)-attention/);
+		expect(html).toContain('Requer atenção');
+		expect(renderToStaticMarkup(<Stat label="Runs ativas" value={0} />)).not.toContain('attention');
+		const link = renderToStaticMarkup(<Stat href="/overview/queues" label="Issues aprovadas" value={2} />);
+		expect(link).toMatch(/^<a [^>]*href="\/overview\/queues"/);
+		expect(link).toContain('focus-visible:ring-2');
+		// A link says so at rest, because a touch screen has no hover to ask; a figure that leads nowhere carries no arrow.
+		expect(link).toContain('data-slot="stat-arrow"');
+		expect(link).toMatch(/^<a class="group\/stat /);
+		expect(html).not.toContain('data-slot="stat-arrow"');
+	});
+
+	test('a lone figure sits on the foot of its card, and a figure with detail puts it beside itself once the card is wide', () => {
+		const lone = renderToStaticMarkup(<Stat label="Issues aprovadas" value={2} />);
+		expect(lone).toMatch(/^<div class="[^"]*flex flex-col/);
+		expect(lone).toContain('mt-auto pt-2');
+		const led = renderToStaticMarkup(<Stat hint="Enviadas" label="Entrega" value="1/4"><p>Falhas 0</p></Stat>);
+		expect(led).not.toContain('mt-auto');
+		// By the card's own width, not the window's.
+		expect(led).toContain('class="@container"');
+		expect(led).toContain('@xl:flex-row');
+		expect(led.indexOf('data-slot="stat-head"')).toBeLessThan(led.indexOf('data-slot="stat-detail"'));
+		expect(led.slice(led.indexOf('data-slot="stat-detail"'))).toContain('Falhas 0');
 	});
 
 	test('tabs keep every label in a named horizontal scroller with reduced motion support', () => {
@@ -219,10 +347,11 @@ describe('ui primitives', () => {
 		expect(html).toContain('data-slot="tabs-scroll"');
 		expect(html).toContain('overflow-x-auto');
 		expect(html).toContain('scroll-container');
-		expect(html).toContain('pr-8');
-		expect(html).toContain('sm:pr-0.5');
-		expect(html).toContain('py-0.5');
-		expect(html).toContain('pl-0.5');
+		// The fade at its edges says the row scrolls; no trailing pad pretends to.
+		expect(html).toContain('scroll-fade-x');
+		expect(html).not.toContain('pr-8');
+		// One size at every width: a tab is not a field.
+		expect(html).not.toContain('text-base');
 		expect(html).toContain('aria-label="Work"');
 		for (const label of ['Queue', 'Approval', 'Ideas', 'Suggestions']) {
 			expect(html).toContain(`>${label}</button>`);
@@ -230,6 +359,51 @@ describe('ui primitives', () => {
 		expect(html).toContain('whitespace-nowrap');
 		expect(html).toContain('pointer-coarse:min-h-11');
 		expect(html).toContain('motion-reduce:transition-none');
+	});
+
+	test('a field is as wide as what is typed in it, and a boolean that acts at once is a switch in the product ink', () => {
+		expect(renderToStaticMarkup(<FormField>name</FormField>)).toContain('max-w-md');
+		expect(renderToStaticMarkup(<FormField measure="prose">brief</FormField>)).toContain('max-w-3xl');
+		expect(renderToStaticMarkup(<FormField measure="full">in a grid</FormField>)).not.toMatch(/max-w-/);
+		expect(renderToStaticMarkup(<CheckField><input type="checkbox" />I confirm</CheckField>)).toMatch(/^<label class="[^"]*flex items-start gap-2/);
+		const off = renderToStaticMarkup(<Switch checked={false} />);
+		const on = renderToStaticMarkup(<Switch checked disabled />);
+		expect(off).toContain('role="switch"');
+		expect(off).toContain('aria-checked="false"');
+		expect(on).toContain('aria-checked="true"');
+		expect(on).toContain('aria-disabled="true"');
+		// Ink when on, never the acid of the mark.
+		expect(on).toContain('data-checked:bg-primary');
+		expect(on).not.toMatch(/attention/);
+	});
+
+	test('a page that waits shows the mark drawing its arch; a block that waits inside a page shows a skeleton', () => {
+		const page = renderToStaticMarkup(<PageLoading label="Loading queues…" />);
+		expect(page).toContain('role="status"');
+		expect(page).toContain('aria-busy="true"');
+		expect(page).toContain('data-slot="loading-mark"');
+		expect(page).toContain('loading-mark');
+		expect(page).toContain('viewBox="0 0 2750 2750"');
+		// The stair is built as its four steps, bottom to top: the shaft's three blocks, then the arrowhead's five at once.
+		expect([...page.matchAll(/data-step="(\d)"/g)].map((match) => match[1])).toEqual(['1', '2', '3', '4', '4', '4', '4', '4']);
+		// The static mark keeps its one stair path.
+		expect(renderToStaticMarkup(<GateshipMark />)).not.toContain('data-step');
+		expect(page).toContain('Loading queues…');
+		expect(page).not.toContain('data-slot="skeleton"');
+		// The panel is a block inside a page that is already there: it keeps the skeleton, in the frame the panel will have.
+		const panel = renderToStaticMarkup(<OperationalReadPanel detail={undefined} loaded={false} locale="en-US" pending resource="Providers">ready</OperationalReadPanel>);
+		expect(panel).toContain('data-slot="skeleton"');
+		expect(panel).toContain('data-slot="card-frame"');
+		expect(panel).not.toContain('data-slot="loading-mark"');
+	});
+
+	test('a count says how many, and says nothing when there are none', () => {
+		expect(renderToStaticMarkup(<Count>3</Count>)).toContain('>3</span>');
+		expect(renderToStaticMarkup(<Count>{0}</Count>)).toBe('');
+		expect(renderToStaticMarkup(<Count form="plain">0</Count>)).toBe('');
+		expect(renderToStaticMarkup(<TabsCount>{0}</TabsCount>)).toBe('');
+		// Unknown is not zero: the dash a screen shows for it stays.
+		expect(renderToStaticMarkup(<TabsCount>—</TabsCount>)).toContain('—');
 	});
 
 	test('a compact empty state keeps its explanation without reserving a tall region', () => {

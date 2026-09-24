@@ -7,15 +7,19 @@ import { LOCALE_CATALOG } from '../locale.ts';
 import { SurfaceColumn } from './surface-column.tsx';
 import { OperationalReadPanel } from '../operational-unavailable.tsx';
 import { ChainRunsPanel, DiagnosticSchedulePanel, ExecutorHandoffPanel, ModelSettingsPanel, ProjectBriefPanel, ProjectPanel, ProvidersPanel } from './settings.tsx';
+import { useTabParam } from '../lib/use-tab-param.ts';
+
+const SETTINGS_TABS = ['providers', 'execution', 'project'] as const;
 
 export function SettingsSurface(props: AppProps & { removePanel?: React.ReactNode }): React.ReactElement {
 	const catalog = LOCALE_CATALOG[props.locale].settings;
 	const failed = (resource: keyof NonNullable<typeof props.operationalFailures>): string | undefined => props.operationalFailures?.[resource];
 	const loaded = (resource: keyof NonNullable<typeof props.operationalLoaded>): boolean => props.operationalLoaded?.[resource] === true;
 	const pending = (resource: keyof NonNullable<typeof props.operationalPending>): boolean => props.operationalPending?.[resource] === true;
+	const [tab, setTab] = useTabParam(SETTINGS_TABS, 'providers');
 	return (
-		<SurfaceColumn label={catalog.title} status={props.status}>
-			<Tabs defaultValue="providers">
+		<SurfaceColumn label={LOCALE_CATALOG[props.locale].shell.projectSettingsLabel} status={props.status}>
+			<Tabs value={tab} onValueChange={(next) => setTab(next as typeof tab)}>
 				<TabsList>
 					<TabsTab value="providers">{catalog.tabs.providers}</TabsTab>
 					<TabsTab value="execution">{catalog.tabs.execution}</TabsTab>

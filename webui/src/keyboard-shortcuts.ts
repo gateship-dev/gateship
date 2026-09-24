@@ -19,8 +19,22 @@ export function presentationPlatform(signals?: PlatformSignals): PresentationPla
 
 type Modifier = 'alt' | 'control' | 'meta';
 
+/* The registered projects take the digits in menu order, one hand on the left
+ * of the row: the first project is 1, so a project's key and the number it
+ * wears are the same. Every project at once is not a number in that list, so
+ * it takes the letter of its name. Nine projects carry a shortcut; the rest
+ * stay reachable from the menu. */
 export const KEYBOARD_SHORTCUTS = {
-	overview: { code: 'Digit0', key: '0', modifiers: ['alt'] as const, aria: 'Alt+0' },
+	overview: { code: 'KeyA', key: 'a', modifiers: ['alt'] as const, aria: 'Alt+A' },
+	/* The destinations are a list, so they take the list keys: one step down or up, wrapping at the ends. */
+	nextDestination: { code: 'ArrowDown', key: 'ArrowDown', modifiers: ['alt'] as const, aria: 'Alt+ArrowDown' },
+	previousDestination: { code: 'ArrowUp', key: 'ArrowUp', modifiers: ['alt'] as const, aria: 'Alt+ArrowUp' },
+	/* Three standing surfaces take the letter of what they are: the registry,
+	 * the global settings on the comma every product gives preferences, and the
+	 * sidebar on the B that VS Code and Linear taught. */
+	manageProjects: { code: 'KeyP', key: 'p', modifiers: ['alt'] as const, aria: 'Alt+P' },
+	globalSettings: { code: 'Comma', key: ',', modifiers: ['alt'] as const, aria: 'Alt+,' },
+	sidebar: { code: 'KeyB', key: 'b', modifiers: ['alt'] as const, aria: 'Alt+B' },
 	projects: [
 		{ code: 'Digit1', key: '1', modifiers: ['alt'] as const }, { code: 'Digit2', key: '2', modifiers: ['alt'] as const },
 		{ code: 'Digit3', key: '3', modifiers: ['alt'] as const }, { code: 'Digit4', key: '4', modifiers: ['alt'] as const },
@@ -29,6 +43,9 @@ export const KEYBOARD_SHORTCUTS = {
 		{ code: 'Digit9', key: '9', modifiers: ['alt'] as const },
 	],
 } as const;
+
+/** How many registered projects carry a digit (1 to 9). */
+export const PROJECT_SHORTCUT_COUNT = KEYBOARD_SHORTCUTS.projects.length;
 
 export type ShortcutEvent = { key: string; code?: string; altKey: boolean; metaKey: boolean; ctrlKey: boolean; shiftKey?: boolean };
 
@@ -44,9 +61,17 @@ export function matchesShortcut(event: ShortcutEvent, shortcut: { code: string; 
 	return event.code === shortcut.code || ((event.code === undefined || event.code === '') && event.key === shortcut.key);
 }
 
-export function shortcutLabel(kind: 'overview' | 'project', index: number | undefined, platform: PresentationPlatform): string {
-	if (kind === 'project' && index !== undefined) return platform === 'macOS' ? `⌥${index + 1}` : `Alt+${index + 1}`;
-	return platform === 'macOS' ? '⌥0' : 'Alt+0';
+/** The key each standing surface answers to, the way its chip spells it. */
+const SHORTCUT_KEYS = { overview: 'A', manageProjects: 'P', globalSettings: ',', sidebar: 'B' } as const;
+
+export type ShortcutKind = keyof typeof SHORTCUT_KEYS | 'project' | 'destinations';
+
+export function shortcutLabel(kind: ShortcutKind, index: number | undefined, platform: PresentationPlatform): string {
+	const alt = platform === 'macOS' ? '⌥' : 'Alt+';
+	/* One chip for the pair: the two keys walk the same list, so naming them apart would read as two shortcuts. */
+	if (kind === 'destinations') return `${alt}↑↓`;
+	if (kind === 'project') return index === undefined ? `${alt}${SHORTCUT_KEYS.overview}` : `${alt}${index + 1}`;
+	return `${alt}${SHORTCUT_KEYS[kind]}`;
 }
 
 export function projectShortcutAria(index: number): string { return `Alt+${index + 1}`; }

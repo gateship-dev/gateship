@@ -5,7 +5,7 @@
 // staying the surface's ink -- the frame carries the state, the words stay
 // readable. Tones map to the state families; neutral is for facts that are
 // not states. Never acid: what waits on the operator has its own surface
-// (attention-card.tsx).
+// (the attention tone of stat.tsx).
 
 import type React from 'react';
 import { cn } from '../../lib/cn.ts';
@@ -32,11 +32,12 @@ export function Callout({
 	return (
 		<section
 			className={cn(
-				'relative flex w-full flex-col gap-y-0.5 rounded-xl border px-3.5 py-3 text-card-foreground text-sm',
+				'relative flex w-full flex-col gap-y-1 rounded-xl border px-4 py-3 text-card-foreground text-sm',
 				TONE[tone],
 				className,
 			)}
 			data-slot="callout"
+			data-tone={tone}
 			{...props}
 		>
 			{title === undefined ? null : <p className="font-medium">{title}</p>}

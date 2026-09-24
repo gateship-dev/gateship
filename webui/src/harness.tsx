@@ -3,17 +3,23 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import type { AppProps } from './app-props.ts';
-import { emptyDiagnostics, emptyModelSettings, emptyNotificationChannels, emptySelfUpdate, type OverviewRunsPageView, type ProjectOperationalOverviewView, type QueueOverviewView } from './client.ts';
+import { type DiagnosticsView, emptyDiagnostics, emptyModelSettings, emptyNotificationChannels, emptySelfUpdate, type OverviewRunsPageView, type ProjectOperationalOverviewView, type QueueOverviewView } from './client.ts';
 import { Button } from './components/ui/button.tsx';
 import type { Locale } from './locale.ts';
 import type { OperatorRoute } from './routes.ts';
 import type { RunView } from './run-view.ts';
+/* The harness is its own Vite entry: without this import it renders the real
+ * routes with no stylesheet at all, and every screenshot of it is of bare HTML. */
+import './index.css';
 
 type Theme = 'light' | 'dark';
 type Motion = 'full' | 'reduced';
 type Scenario = 'usual' | 'empty' | 'loading' | 'error' | 'attention' | 'unavailable' | 'long' | 'refreshing' | 'dense' | 'insights-zero' | 'insights-null' | 'insights-long' | 'insights-cohorts' | 'sidebar-expanded' | 'sidebar-collapsed' | 'tooltip-open' | 'selector-open';
-type Viewport = '390' | '768' | '1440';
+type Viewport = '390' | '768' | '1000' | '1440';
 const CENTRAL_ROUTES = ['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const;
+/* A project's Work: the lists whose items open in the drawer, served here so the drawer can be iterated on mock data instead of the live service. */
+const WORK_ROUTE = '/projects/harness-project/work' as const;
+const HARNESS_ROUTES = [...CENTRAL_ROUTES, WORK_ROUTE] as const;
 const PROJECT = { id: 'harness-project', name: 'Gateship fixture', root: '/fixture/gateship', stateDir: '/fixture/state', readiness: 'ready' as const, repository: 'fixture/gateship', current: true };
 const SECOND_PROJECT = { ...PROJECT, id: 'harness-project-beta', name: 'Gateship fixture beta', repository: 'fixture/gateship-beta', current: false };
 const BLOCKED_PROJECT = { ...PROJECT, id: 'harness-project-blocked', name: 'Gateship fixture blocked', repository: 'fixture/gateship-blocked', current: false };
@@ -34,7 +40,8 @@ const DENSE_QUEUES: QueueOverviewView = { queues: [
 	{ ...QUEUES.queues[0]!, project: BLOCKED_PROJECT, chainEnabled: true, pause: { reason: 'previous-run-not-done', createdAt: FIXED_NOW }, currentIssue: null, plannedIssues: [{ id: 'GSHIP-863', title: 'Blocked queue item' }] },
 	{ ...QUEUES.queues[0]!, project: ATTENTION_PROJECT, readiness: 'needs-attention', chainEnabled: false, pause: { reason: 'chain-disabled', createdAt: FIXED_NOW }, currentIssue: { id: 'GSHIP-864', title: 'Attention queue item' }, plannedIssues: [{ id: 'GSHIP-864', title: 'Attention queue item' }] },
 ], errors: [] };
-const FRAME_WIDTHS = ['390', '768', '1440'] as const;
+/* 1000 is between md and xl, where the drawer lays over the table instead of pushing it. */
+const FRAME_WIDTHS = ['390', '768', '1000', '1440'] as const;
 const SCENARIOS = ['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'insights-zero', 'insights-null', 'insights-long', 'insights-cohorts', 'sidebar-expanded', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const satisfies readonly Scenario[];
 let harnessScenario: Scenario = 'usual';
 let responseRevision = 0;
@@ -56,14 +63,31 @@ function isMotion(value: string | null): value is Motion {
 	return value === 'full' || value === 'reduced';
 }
 
-function isCentralRoute(value: string | null): value is typeof CENTRAL_ROUTES[number] {
-	return value !== null && (CENTRAL_ROUTES as readonly string[]).includes(value);
+function isCentralRoute(value: string | null): value is typeof HARNESS_ROUTES[number] {
+	return value !== null && (HARNESS_ROUTES as readonly string[]).includes(value);
 }
+
+/* Findings as the analyzer writes them: a name, why it matters, what to do, with code between backticks. Long enough that the drawer scrolls. */
+const FINDING_EVIDENCE = [
+	'Effect subscription or timer never cleaned up\n`setTimeout` creates a timer in useEffect without guaranteed cleanup. Return a cleanup function that owns every allocation so it does not leak after unmount.\nReturn a cleanup function that stops the subscription or timer: `return () => target.removeEventListener(name, handler)` for listeners, `return () => clearInterval(id)` or `clearTimeout(id)` for timers, `return () => observer.disconnect()` for observers, `return () => socket.close()` for connections, or `return unsubscribe` if the subscribe call already gave you one.',
+	'Ref mutated during render\nThis ref is mutated during render. React can replay or discard render work, so the mutation can leak from UI that never commits.\nMove ref writes into an event handler or effect.',
+	'Loading flag reset outside finally\nThe flag is cleared after the await, so a rejected promise leaves it set.\nMove the reset into `finally`.',
+] as const;
+const FINDING_RULES = ['effect-needs-cleanup', 'no-ref-current-in-render', 'no-loading-flag-reset-outside-finally'] as const;
+function workDiagnostics(): DiagnosticsView {
+	const findings = Array.from({ length: 24 }, (_, index) => ({
+		id: `finding-${index + 1}`, analyzer: 'react', rule: FINDING_RULES[index % 3]!, severity: index < 2 ? 'error' as const : 'warning' as const,
+		file: 'webui/src/main.tsx', line: 100 + index, column: 2, evidence: FINDING_EVIDENCE[index % 3]!, toolVersion: '0.9.12', sourceSha: 'e3a475ac4643aa11', status: 'pending' as const,
+		promotedIssueId: null, occurrenceCount: 2 + (index % 3), firstSeenAt: FIXED_NOW, lastSeenAt: FIXED_NOW, updatedAt: FIXED_NOW,
+	}));
+	return { ...emptyDiagnostics(), analyzers: [{ id: 'react', label: 'React', version: 'v0.9.12', description: 'Errors, security, performance and accessibility in React projects.' }] as DiagnosticsView['analyzers'], findings, stats: { total: 24, pending: 24, dismissed: 0, promoted: 0, cleared: 0, recurring: 24 } };
+}
+const WORK_PROPOSALS = Array.from({ length: 6 }, (_, index) => ({ id: `proposal-${index + 1}`, title: ['Cobrir o retry do shipper', 'Extrair o parser de eventos', 'Medir a espera do provider'][index % 3]!, evidence: 'Sem teste no caminho de erro.\nO shipper tenta de novo sem limite quando o `gh` falha.', sourceRunId: `run-${index + 1}0f4a2b9`, sourceIssueId: `GSHIP-${880 + index}` }));
 
 const DENSE_EVALUATION: NonNullable<RunView['evaluation']> = {
 	specProfile: { version: 'v2', fingerprint: 'fixture', counts: { acceptance: 8, boundaries: 4, verify: 3, evidence: 2 } }, corrections: { verification: 1, review: 1, fullVerify: 0, ci: 0, total: 2 }, cycleQuestions: { executor: 0, review: 0, fullVerify: 0, total: 0 }, reconciliations: { unchanged: 1, adapted: 0, 'contract-change-required': 0, total: 1 }, workflowRevision: 'fixture-v2', provider: 'codex', outcome: 'shipped', wallTimeMs: 120000, phaseDurations: { queued: { durationMs: 1000, entries: 1 }, working: { durationMs: 40000, entries: 1 }, verify: { durationMs: 20000, entries: 1 }, review: { durationMs: 30000, entries: 1 }, 'full-verify': { durationMs: 10000, entries: 1 }, shipping: { durationMs: 19000, entries: 1 }, 'waiting-provider': { durationMs: null, entries: 0 }, 'waiting-user': { durationMs: null, entries: 0 } }, unassignedDuration: { durationMs: 0, entries: 0 }, durationReconciliation: { classifiedMs: 120000, unassignedMs: 0, totalMs: 120000, toleranceMs: 1000, reconciles: true }, attentionRequests: 0, operatorInterventions: 0, providerHolds: 0, resolvedCycleQuestions: 0, roles: [],
 };
-const DENSE_ROWS: OverviewRunsPageView['runs'] = Array.from({ length: 45 }, (_, index) => { const project = index % 2 === 0 ? PROJECT : SECOND_PROJECT; const states = ['done', 'failed', 'waiting-user'] as const; const state = states[index % states.length]!; const updatedAt = index % 5 === 0 ? '2026-08-01T12:00:00.000Z' : index % 2 === 0 ? FIXED_NOW : '2026-09-06T12:00:00.000Z'; return { id: `fixture-run-${index + 1}`, issueId: `GSHIP-${900 + index}`, state, createdAt: updatedAt, updatedAt, providerId: index % 2 === 0 ? 'codex' as const : 'claude' as const, projectId: project.id, projectName: project.name, repository: project.repository, runId: `fixture-run-${index + 1}`, roles: [], evaluation: DENSE_EVALUATION, cost: RUN.cost, coverage: { verified: true, reviewed: true, fullVerification: true }, pullRequest: null, ci: null, merge: state === 'done' ? { status: 'merged' as const } : null }; });
+const DENSE_ROWS: OverviewRunsPageView['runs'] = Array.from({ length: 45 }, (_, index) => { const project = index % 2 === 0 ? PROJECT : SECOND_PROJECT; const states = ['done', 'failed', 'waiting-user'] as const; const state = states[index % states.length]!; const updatedAt = index % 5 === 0 ? '2026-08-01T12:00:00.000Z' : index % 2 === 0 ? FIXED_NOW : '2026-09-06T12:00:00.000Z'; const titles = ['Fila: ordenar por urgência', 'Insights: comparar coortes por versão da spec', 'Runs: duração ativa exclui a espera do operador'] as const; return { id: `fixture-run-${index + 1}`, issueId: `GSHIP-${900 + index}`, issueTitle: index % 7 === 6 ? null : titles[index % titles.length]!, state, createdAt: updatedAt, updatedAt, providerId: index % 2 === 0 ? 'codex' as const : 'claude' as const, error: state === 'failed' ? 'Verification failed: bun test exited with 1.' : null, activeDurationMs: 1_260_000, projectId: project.id, projectName: project.name, repository: project.repository, runId: `fixture-run-${index + 1}`, roles: [], evaluation: DENSE_EVALUATION, cost: RUN.cost, coverage: { verified: true, reviewed: true, fullVerification: true }, pullRequest: null, ci: null, merge: state === 'done' ? { status: 'merged' as const } : null }; });
 const USUAL_RUNS: OverviewRunsPageView = { runs: [{ ...DENSE_ROWS[0]!, issueId: 'GSHIP-855', runId: 'fixture-run' }], page: { limit: 20, offset: 0, returned: 1, total: 1 }, errors: [] };
 const DENSE_COHORT: ProjectOperationalOverviewView['overview']['cohorts'][number] = { workflowRevision: 'fixture-v2', specVersion: 'v2', latestTerminalRunAt: FIXED_NOW, sampleSize: 2, evidenceSufficient: true, outcomes: { shipped: { count: 2, denominator: 2 }, failed: { count: 0, denominator: 2 }, cancelled: { count: 0, denominator: 2 } }, corrections: { verification: { count: 0, denominator: 2 }, review: { count: 0, denominator: 2 }, fullVerify: { count: 0, denominator: 2 }, ci: { count: 0, denominator: 2 } }, cycleQuestions: { executor: { count: 0, denominator: 2 }, review: { count: 0, denominator: 2 }, fullVerify: { count: 0, denominator: 2 } }, reconciliations: { unchanged: { count: 2, denominator: 2 }, adapted: { count: 0, denominator: 2 }, 'contract-change-required': { count: 0, denominator: 2 } }, attentionRequests: { count: 0, denominator: 2 }, operatorInterventions: { count: 0, denominator: 2 }, providerHolds: { count: 0, denominator: 2 } };
 const INSIGHTS_DAILY = (length: number, zero = false): NonNullable<ProjectOperationalOverviewView['overview']>['daily'] => Array.from({ length }, (_, index) => ({ date: index < 30 ? `2026-08-${String(index + 1).padStart(2, '0')}` : `2026-09-${String(index - 29).padStart(2, '0')}`, totalRuns: zero ? 0 : 4, runsWithKnownCost: 0, knownCostUsd: null, terminalRuns: zero ? 0 : 4, shippedWithoutIntervention: 0, ciCorrections: 0, inputTokens: null, outputTokens: null, thinkingTokens: null, runsByOutcome: zero ? { shipped: 0, failed: 0, cancelled: 0, incomplete: 0 } : { shipped: 1, failed: 1, cancelled: 1, incomplete: 1 } }));
@@ -88,8 +112,9 @@ function filterDenseRuns(rows: OverviewRunsPageView['runs'], params: URLSearchPa
 }
 
 function sortDenseRuns(rows: OverviewRunsPageView['runs'], params: URLSearchParams): OverviewRunsPageView['runs'] {
-	const sortBy = params.get('sortBy');
-	if (sortBy === null) return rows;
+	/* The service's default order is the newest change first, and the table's
+	 * header says so; the fixture answers the same way with no `sortBy`. */
+	const sortBy = params.get('sortBy') ?? 'updatedAt';
 	const direction = params.get('sortDirection') === 'asc' ? 1 : -1;
 	const value = (run: OverviewRunsPageView['runs'][number]): string => {
 		switch (sortBy) {
@@ -122,7 +147,7 @@ function insightsOverview(scenario: Scenario, url = ''): NonNullable<ProjectOper
 	return { ...base, totalRuns: scenario === 'insights-long' ? 180 : 4, daily: INSIGHTS_DAILY(scenario === 'insights-long' ? 45 : 3), cohorts, cohortsPage: { limit, offset, returned: cohorts.length, total: filtered.length } };
 }
 
-function longRuns(): OverviewRunsPageView { return { runs: [{ ...DENSE_ROWS[0]!, issueId: LONG_RUN.issueId, projectId: LONG_PROJECT.id, projectName: LONG_PROJECT.name, repository: LONG_PROJECT.repository, runId: LONG_RUN.id }], page: { limit: 20, offset: 0, returned: 1, total: 1 }, errors: [] }; }
+function longRuns(): OverviewRunsPageView { return { runs: [{ ...DENSE_ROWS[0]!, issueId: LONG_RUN.issueId, issueTitle: 'A deliberately long issue title rendered by the real Central runs surface for truncation coverage', projectId: LONG_PROJECT.id, projectName: LONG_PROJECT.name, repository: LONG_PROJECT.repository, runId: LONG_RUN.id }], page: { limit: 20, offset: 0, returned: 1, total: 1 }, errors: [] }; }
 function longOverview(): ProjectOperationalOverviewView { return { ...OVERVIEW, projects: [{ ...OVERVIEW.projects[0]!, project: LONG_PROJECT, activeRun: { ...OVERVIEW.projects[0]!.activeRun!, issueId: LONG_RUN.issueId } }] }; }
 
 function installClock(): () => void {
@@ -142,7 +167,7 @@ function installTransport(): void {
 	const runtime = globalThis as unknown as { window?: { fetch: (input: unknown, init?: unknown) => Promise<Response> } };
 	if (runtime.window === undefined || runtime.window.fetch.name === 'gateshipHarnessFetch') return;
 	const memory = new Map<string, string>();
-	Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); } } });
+	Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } } });
 	const json = (body: unknown): Response => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
 	runtime.window.fetch = async function gateshipHarnessFetch(input: unknown, init?: unknown): Promise<Response> { return harnessResponse(String(input), (init as { method?: string } | undefined)?.method, json); };
 }
@@ -259,7 +284,7 @@ export function Harness(): React.ReactElement {
 	useEffect(() => { const document = (globalThis as unknown as { document: { documentElement: { lang: string; classList: { toggle: (name: string, force: boolean) => void } } } }).document; document.documentElement.lang = locale; document.documentElement.classList.toggle('dark', theme === 'dark'); }, [locale, theme]);
 	useEffect(() => { const browser = globalThis as unknown as { document: { documentElement: { classList: { toggle: (name: string, force: boolean) => void } } }; window?: { history?: { replaceState: (state: null, title: string, url: string) => void }; location?: { search: string } } }; browser.document.documentElement.classList.toggle('gship-harness-reduced-motion', motion === 'reduced'); const params = new URLSearchParams(browser.window?.location?.search ?? ''); params.set('route', route); params.set('scenario', scenario); params.set('locale', locale); params.set('theme', theme); params.set('motion', motion); browser.window?.history?.replaceState(null, '', `?${params}`); }, [locale, motion, route, scenario, theme]);
 	if (frame === null) return <ViewportPicker />;
-	return <div className="min-h-screen bg-background text-foreground" data-harness="gateship-ui" data-fixture-catalog="central-real-routes-v2" data-locale={locale} data-theme={theme} data-motion={motion} data-scenario={scenario} data-viewport={viewport}><nav className="sticky top-0 z-10 flex flex-wrap gap-2 border-b bg-background/95 p-3" aria-label="Harness controls" data-fixture="controls" data-fixture-id="central-controls-v2"><strong className="mr-auto">Gateship UI harness</strong>{(['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const).map((value) => <Button key={value} size="sm" variant={route === value ? 'default' : 'outline'} aria-pressed={route === value} onClick={() => setRoute(value)}>{value.replace('/overview', 'Central') || 'Central'}</Button>)}{(['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'sidebar-expanded', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const).map((value) => <Button key={value} size="sm" variant={scenario === value ? 'default' : 'outline'} onClick={() => setScenario(value)}>{value}</Button>)}{(['en-US', 'pt-BR'] as const).map((value) => <Button key={value} size="sm" variant={locale === value ? 'default' : 'outline'} onClick={() => setLocale(value)}>{value}</Button>)}{(['light', 'dark'] as const).map((value) => <Button key={value} size="sm" variant={theme === value ? 'default' : 'outline'} onClick={() => setTheme(value)}>{value}</Button>)}{(['full', 'reduced'] as const).map((value) => <Button key={value} size="sm" variant={motion === value ? 'default' : 'outline'} onClick={() => setMotion(value)}>{value}</Button>)}</nav><section className="border-b p-4" data-fixture-catalog="visible-catalog"><h2 className="font-semibold">Fixture catalog</h2><p className="text-sm text-muted-foreground">Examples for extending the real Central surfaces:</p><ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><li><code>central.overview</code>: usual, empty, loading, error</li><li><code>central.runs</code>: dense table, filters, pagination</li><li><code>central.queues</code>: dense, empty, blocked, attention, long, unavailable, error, loading</li><li><code>central.insights</code>: long text, refreshing cohorts</li><li><code>central.shell</code>: sidebar-expanded, sidebar-collapsed, tooltip-open, selector-open</li><li><code>effects</code>: full, reduced</li></ul></section><div className="min-h-[calc(100vh-5rem)]"><App diagnostics={emptyDiagnostics()} {...props} /></div></div>;
+	return <div className="min-h-screen bg-background text-foreground" data-harness="gateship-ui" data-fixture-catalog="central-real-routes-v2" data-locale={locale} data-theme={theme} data-motion={motion} data-scenario={scenario} data-viewport={viewport}><nav className="sticky top-0 z-10 flex flex-wrap gap-2 border-b bg-background/95 p-3" aria-label="Harness controls" data-fixture="controls" data-fixture-id="central-controls-v2"><strong className="mr-auto">Gateship UI harness</strong>{(['/overview', '/overview/runs', '/overview/queues', '/overview/insights'] as const).map((value) => <Button key={value} size="sm" variant={route === value ? 'default' : 'outline'} aria-pressed={route === value} onClick={() => setRoute(value)}>{value.replace('/overview', 'Central') || 'Central'}</Button>)}{(['usual', 'empty', 'loading', 'error', 'attention', 'unavailable', 'long', 'refreshing', 'dense', 'sidebar-expanded', 'sidebar-collapsed', 'tooltip-open', 'selector-open'] as const).map((value) => <Button key={value} size="sm" variant={scenario === value ? 'default' : 'outline'} onClick={() => setScenario(value)}>{value}</Button>)}{(['en-US', 'pt-BR'] as const).map((value) => <Button key={value} size="sm" variant={locale === value ? 'default' : 'outline'} onClick={() => setLocale(value)}>{value}</Button>)}{(['light', 'dark'] as const).map((value) => <Button key={value} size="sm" variant={theme === value ? 'default' : 'outline'} onClick={() => setTheme(value)}>{value}</Button>)}{(['full', 'reduced'] as const).map((value) => <Button key={value} size="sm" variant={motion === value ? 'default' : 'outline'} onClick={() => setMotion(value)}>{value}</Button>)}</nav><section className="border-b p-4" data-fixture-catalog="visible-catalog"><h2 className="font-semibold">Fixture catalog</h2><p className="text-sm text-muted-foreground">Examples for extending the real Central surfaces:</p><ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2"><li><code>central.overview</code>: usual, empty, loading, error</li><li><code>central.runs</code>: dense table, filters, pagination</li><li><code>central.queues</code>: dense, empty, blocked, attention, long, unavailable, error, loading</li><li><code>central.insights</code>: long text, refreshing cohorts</li><li><code>central.shell</code>: sidebar-expanded, sidebar-collapsed, tooltip-open, selector-open</li><li><code>effects</code>: full, reduced</li></ul></section><div className="min-h-[calc(100vh-5rem)]" data-harness-app=""><App diagnostics={route === WORK_ROUTE ? workDiagnostics() : emptyDiagnostics()} {...props} {...(route === WORK_ROUTE ? { proposals: WORK_PROPOSALS } : {})} /></div></div>;
 }
 function ViewportPicker(): React.ReactElement {
 	const [viewport, setViewport] = useState<Viewport>('1440');

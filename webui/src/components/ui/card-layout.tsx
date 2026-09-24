@@ -22,7 +22,9 @@ export function CardGrid({
 	compact = false,
 	equalHeight = false,
 }: LayoutProps & { compact?: boolean; equalHeight?: boolean }): React.ReactElement {
+	/* The columns answer to the room the grid has, not to the window: beside an open sidebar a 1024px window leaves it 680px. */
 	return (
+		<div className="@container" data-slot="card-grid-frame">
 		<Tag
 			className={cn(
 				'card-ring-group grid',
@@ -35,6 +37,7 @@ export function CardGrid({
 		>
 			{children}
 		</Tag>
+		</div>
 	);
 }
 
@@ -51,10 +54,24 @@ export function CardSplit({ className, children }: Omit<LayoutProps, 'as'>): Rea
 }
 
 /** Form rhythm: 12px between fields and 4px within a field. */
+/** A row of controls that act on the whole page, above every block on it: a time window, a page's own action. A table's controls live in the table. */
+export function PageToolbar({ className, children, ...props }: React.ComponentProps<'div'>): React.ReactElement {
+	return <div className={cn('flex flex-wrap items-center gap-2', className)} data-slot="page-toolbar" {...props}>{children}</div>;
+}
+
 export function FormStack({ className, children, ...props }: React.ComponentProps<'form'>): React.ReactElement {
 	return <form className={cn('flex flex-col gap-3', className)} data-slot="form-stack" {...props}>{children}</form>;
 }
 
-export function FormField({ className, children, ...props }: React.ComponentProps<'label'>): React.ReactElement {
-	return <label className={cn('flex flex-col gap-1', className)} data-slot="form-field" {...props}>{children}</label>;
+/* A field is as wide as what is typed in it, not as the card that holds it: a name or a choice in 448px, prose in a reading measure. */
+const FIELD_MEASURE = { field: 'max-w-md', prose: 'max-w-3xl', full: '' } as const;
+
+export function FormField({ className, children, measure = 'field', ...props }: React.ComponentProps<'label'> & { /** `prose` for a textarea that holds paragraphs, `full` for a field a grid already sizes. */ measure?: keyof typeof FIELD_MEASURE }): React.ReactElement {
+	/* A field reads at the body size everywhere: the label, the help under it, the control's own text. */
+	return <label className={cn('flex min-w-0 flex-col gap-1 text-sm', FIELD_MEASURE[measure], className)} data-measure={measure} data-slot="form-field" {...props}>{children}</label>;
+}
+
+/** A box and what it says, side by side: a checkbox that waits for the form's save, or a switch that acts at once. The box comes first in the markup. */
+export function CheckField({ className, children, ...props }: React.ComponentProps<'label'>): React.ReactElement {
+	return <label className={cn('flex items-start gap-2 text-sm', className)} data-slot="check-field" {...props}>{children}</label>;
 }

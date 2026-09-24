@@ -3,12 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import type { AppProps } from '../app-props.ts';
 import type { ProjectOverviewView, RegisteredProjectView } from '../client.ts';
-import { Card, CardFooter, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
-import { FormField, FormStack } from '../components/ui/card-layout.tsx';
+import { Card, CardDescription, CardFooter, CardHeader, CardPanel, CardTitle } from '../components/ui/card.tsx';
+import { CheckField, FormField, FormStack } from '../components/ui/card-layout.tsx';
 import { Input } from '../components/ui/input.tsx';
 import { SelectField } from '../components/ui/select.tsx';
 import type { ProjectsCatalog } from '../locale.ts';
-import { BUTTON_CLASS, PRIMARY_BUTTON_CLASS } from './operator-controls.tsx';
+import { Button } from '../components/ui/button.tsx';
 import { fieldReader } from './runs.tsx';
 
 export function RegisterProjectPanel({
@@ -28,9 +28,9 @@ export function RegisterProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.register.title}</CardTitle>
+				<CardDescription>{catalog.register.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.register.description}</p>
 				<FormStack
 					 onSubmit={(event) => {
 						event.preventDefault();
@@ -39,7 +39,7 @@ export function RegisterProjectPanel({
 						if (root !== '') onRegisterProject(root);
 					}}
 				>
-					<FormField className="text-sm" htmlFor="project-root">
+					<FormField htmlFor="project-root" measure="prose">
 						<span className="font-medium">{catalog.register.rootLabel}</span>
 						<Input
 							id="project-root"
@@ -52,9 +52,9 @@ export function RegisterProjectPanel({
 						<span className="text-muted-foreground text-xs">{catalog.register.containerGuidance}</span>
 					</FormField>
 					<CardFooter>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !onboardingConfirmed} type="submit">
+						<Button disabled={pending || !onboardingConfirmed} type="submit">
 						{catalog.register.submit}
-					</button>
+					</Button>
 					</CardFooter>
 				</FormStack>
 			</CardPanel>
@@ -85,9 +85,9 @@ export function ImportProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.import.title}</CardTitle>
+				<CardDescription>{catalog.import.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.import.description}</p>
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -96,7 +96,7 @@ export function ImportProjectPanel({
 						if (repository !== '') onImportProject(repository);
 					}}
 				>
-					<FormField className="text-sm" htmlFor="project-import-repository">
+					<FormField htmlFor="project-import-repository">
 						<span className="font-medium">{catalog.import.repositoryLabel}</span>
 						<Input
 							id="project-import-repository"
@@ -112,9 +112,9 @@ export function ImportProjectPanel({
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.import.pending}</p>
 						: null}
 					<CardFooter>
-							<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !onboardingConfirmed} type="submit">
+							<Button disabled={pending || !onboardingConfirmed} type="submit">
 							{catalog.import.submit}
-						</button>
+						</Button>
 					</CardFooter>
 				</FormStack>
 			</CardPanel>
@@ -152,9 +152,9 @@ export function CreateProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.create.title}</CardTitle>
+				<CardDescription>{catalog.create.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.create.description}</p>
 				<FormStack
 					onSubmit={(event) => {
 						event.preventDefault();
@@ -167,7 +167,7 @@ export function CreateProjectPanel({
 						});
 					}}
 				>
-					<FormField className="text-sm" htmlFor="project-create-repository">
+					<FormField htmlFor="project-create-repository">
 						<span className="font-medium">{catalog.create.repositoryLabel}</span>
 						<Input
 							id="project-create-repository"
@@ -180,7 +180,7 @@ export function CreateProjectPanel({
 							value={value ?? repository}
 						/>
 					</FormField>
-					<FormField className="text-sm" htmlFor="project-create-description">
+					<FormField htmlFor="project-create-description" measure="prose">
 						<span className="font-medium">{catalog.create.descriptionLabel}</span>
 						<Input
 							id="project-create-description"
@@ -192,7 +192,7 @@ export function CreateProjectPanel({
 							value={description}
 						/>
 					</FormField>
-					<FormField className="text-sm" htmlFor="project-create-visibility">
+					<FormField htmlFor="project-create-visibility">
 						<span className="font-medium">{catalog.create.visibilityLabel}</span>
 						<SelectField
 							id="project-create-visibility"
@@ -213,7 +213,7 @@ export function CreateProjectPanel({
 					) : null}
 					<p className="text-muted-foreground text-xs">{catalog.create.destinationGuidance}</p>
 					<p className="text-muted-foreground text-xs">{catalog.create.credentialGuidance}</p>
-					<label className="flex items-start gap-2 text-sm">
+					<CheckField>
 						<input
 							checked={confirmed}
 							disabled={pending || namedRepository === ''}
@@ -223,14 +223,14 @@ export function CreateProjectPanel({
 							type="checkbox"
 						/>
 						<span>{authorization}</span>
-					</label>
+					</CheckField>
 					{projectOnboardingPending === 'create'
 						? <p className="text-muted-foreground text-xs" role="status">{catalog.create.pending}</p>
 						: null}
 					<CardFooter>
-						<button className={PRIMARY_BUTTON_CLASS} disabled={pending || !confirmed || !onboardingConfirmed || namedRepository === ''} type="submit">
+						<Button disabled={pending || !confirmed || !onboardingConfirmed || namedRepository === ''} type="submit">
 							{catalog.create.submit}
-						</button>
+						</Button>
 					</CardFooter>
 				</FormStack>
 			</CardPanel>
@@ -258,11 +258,11 @@ export function UnregisterProjectPanel({
 		<Card>
 			<CardHeader>
 				<CardTitle>{catalog.remove.title}</CardTitle>
+				<CardDescription>{catalog.remove.description}</CardDescription>
 			</CardHeader>
 			<CardPanel>
-				<p className="text-muted-foreground text-sm">{catalog.remove.description}</p>
 				<p className="text-muted-foreground text-sm">{catalog.remove.filesRemain}</p>
-				<label className="flex items-start gap-2 text-sm">
+				<CheckField>
 					<input
 						checked={confirmed}
 						disabled={pending}
@@ -272,10 +272,9 @@ export function UnregisterProjectPanel({
 						type="checkbox"
 					/>
 					<span>{catalog.remove.confirm(project.name)}</span>
-				</label>
+				</CheckField>
 				<CardFooter>
-					<button
-					className={BUTTON_CLASS}
+					<Button variant="destructive"
 					disabled={pending || !confirmed}
 					onClick={() => {
 						setConfirmed(false);
@@ -284,7 +283,7 @@ export function UnregisterProjectPanel({
 					type="button"
 				>
 					{catalog.remove.submit}
-				</button>
+				</Button>
 				</CardFooter>
 			</CardPanel>
 		</Card>
